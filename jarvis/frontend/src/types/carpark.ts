@@ -134,6 +134,9 @@ export interface Vehicle extends VehicleCatalogItem {
   // TEXT column holding a JSON string of acquisition cost lines
   // ([{type, description, date, lei, kurs, eur}]). Returned by SELECT v.*.
   cost_lines: string | null
+  // TEXT column holding a JSON string of versioned pricing sheets (Fișă de
+  // preț): [{id, status, created_at, published_at, ...inputs}]. SELECT v.*.
+  pricing_sheets: string | null
   minimum_price: number | null
   price_includes_vat: boolean
   vat_deductible: boolean

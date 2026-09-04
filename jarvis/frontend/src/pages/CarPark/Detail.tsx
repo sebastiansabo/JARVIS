@@ -1,5 +1,5 @@
-import { useState, useMemo, useRef, useEffect, type PointerEvent as ReactPointerEvent } from 'react'
-import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
+import { useState, useMemo, useRef, useEffect, Fragment, type PointerEvent as ReactPointerEvent } from 'react'
+import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Pencil,
@@ -10,7 +10,6 @@ import {
   ChevronLeft,
   ChevronDown,
   ChevronRight,
-  ArrowLeft,
   Car,
   LayoutGrid,
   Maximize2,
@@ -34,6 +33,8 @@ import { mediaUrl } from '@/lib/media'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { reductionPct, formatReductionPct } from './priceReduction'
+import { PricingSheet, PriceZone, computePricingModel, type PricingModel, type PricingSheetSnapshot, type SheetInputs } from './PricingSheet'
+import { econ, type EngineParams } from './pricingEngine'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -87,7 +88,6 @@ import {
   type RevenueType,
   type Profitability,
   type PricingHistoryEntry,
-  type FloorPrice,
   type Promotion,
   type PublishingPlatform,
   type VehicleLink,
@@ -152,6 +152,29 @@ function parseCostLines(raw: string | null | undefined): CostLineJson[] {
   }
 }
 
+// ── Fișă de preț (versioned pricing sheets) ────────────────────────────────
+// The vehicle.pricing_sheets TEXT column holds a JSON array of snapshots, in
+// chronological order (last = most recent). Latest PUBLISHED sheet is the live
+// price; a published sheet is editable only within 24h of publishing.
+const SHEET_LOCK_MS = 24 * 3600 * 1000
+
+function parseSheets(raw: string | null | undefined): PricingSheetSnapshot[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? (parsed as PricingSheetSnapshot[]) : []
+  } catch {
+    return []
+  }
+}
+
+// A published sheet locks 24h after its publish time; drafts never lock.
+function sheetEditable(s: PricingSheetSnapshot): boolean {
+  if (s.status !== 'published' || !s.published_at) return true
+  const t = new Date(s.published_at).getTime()
+  return Number.isNaN(t) || Date.now() - t < SHEET_LOCK_MS
+}
+
 // Map an acquisition-source slug to its Romanian label (VEHICLE_SOURCES),
 // falling back to the raw value; null → null so <Field> shows a dash.
 function sourceLabel(source: string | null): string | null {
@@ -181,24 +204,10 @@ function Field({ label, value, className }: { label: string; value: React.ReactN
 export default function CarParkDetail() {
   const { vehicleId } = useParams<{ vehicleId: string }>()
   const navigate = useNavigate()
-  const location = useLocation()
   const queryClient = useQueryClient()
   const user = useAuthStore((s) => s.user)
   const canEdit = user?.can_edit_carpark ?? false
   const canDelete = user?.can_delete_carpark ?? false
-
-  // Back navigation — returns to the Dispo view (table/kanban, same stage) the
-  // user opened this car from, when that origin was passed via router state.
-  const backTo = (location.state as { from?: string } | null)?.from
-  const goBack = () => {
-    if (backTo) {
-      navigate(backTo)
-    } else if (window.history.length > 1) {
-      navigate(-1)
-    } else {
-      navigate('/app/carpark/dispo')
-    }
-  }
 
   const id = Number(vehicleId)
 
@@ -241,12 +250,6 @@ export default function CarParkDetail() {
   const { data: pricingHistoryData } = useQuery({
     queryKey: ['carpark', 'pricing-history', id],
     queryFn: () => carparkApi.getPricingHistory(id),
-    enabled: !!id,
-  })
-
-  const { data: floorPriceData } = useQuery({
-    queryKey: ['carpark', 'floor-price', id],
-    queryFn: () => carparkApi.getFloorPrice(id),
     enabled: !!id,
   })
 
@@ -350,17 +353,6 @@ export default function CarParkDetail() {
 
   return (
     <div className="space-y-6">
-      {/* Back navigation — returns to the Dispo origin (table/kanban, same stage) */}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="-ml-2 h-8 gap-1 text-muted-foreground hover:text-foreground"
-        onClick={goBack}
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Înapoi
-      </Button>
-
       {/* Header */}
       <PageHeader
         title={`${vehicle.brand} ${vehicle.model}`}
@@ -426,7 +418,7 @@ export default function CarParkDetail() {
         <TabsList>
           <TabsTrigger value="details">Detalii</TabsTrigger>
           <TabsTrigger value="vanzare">Vânzare</TabsTrigger>
-          <TabsTrigger value="pricing">Prețuri</TabsTrigger>
+          <TabsTrigger value="pricing">Pricing</TabsTrigger>
           <TabsTrigger value="costs">Costuri ({parseCostLines(vehicle.cost_lines).length})</TabsTrigger>
           <TabsTrigger value="revenues">Venituri ({revenues.length})</TabsTrigger>
           <TabsTrigger value="listings">Anunțuri ({listings.length})</TabsTrigger>
@@ -452,13 +444,13 @@ export default function CarParkDetail() {
           <PricingTab
             vehicle={vehicle}
             pricingHistory={pricingHistory}
-            floorPrice={floorPriceData ?? null}
             promotions={vehiclePromos}
+            canEdit={canEdit}
           />
         </TabsContent>
 
         <TabsContent value="costs" className="mt-4 space-y-4">
-          <AcqCostLines vehicle={vehicle} />
+          <AcqCostLines vehicle={vehicle} canEdit={canEdit} />
           {costLines.length > 0 && (
             <CostsTab vehicleId={id} costLines={costLines} canEdit={canEdit} currency={vehicle.price_currency || 'EUR'} />
           )}
@@ -1008,7 +1000,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
   return (
     <div className="space-y-6">
       {/* Photo Gallery + Identification + Quick Info */}
-      <div className="grid gap-6 items-start xl:grid-cols-[600px_minmax(0,1fr)_400px]">
+      <div className="grid gap-6 items-stretch xl:grid-cols-[600px_minmax(0,1fr)_400px]">
         <div className="space-y-2">
           <PhotoGallery photos={photos} onPhotoClick={onPhotoClick} />
           {canEdit && (
@@ -1035,64 +1027,28 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           )}
         </div>
 
-        {/* Identification + Technical */}
-        <div className="space-y-6">
-          <Card className="p-4 h-fit">
-            <h3 className="text-sm font-semibold mb-3">Identificare</h3>
-            <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              <Field label="VIN" value={v.vin} />
-              <Field label="Nr. stoc" value={v.nr_stoc} />
-              <Field label="Înmatriculare" value={v.registration_number} />
-              <Field label="Cod șasiu" value={v.chassis_code} />
-              <Field label="Cod emisii" value={v.emission_code} />
-              <Field label="Prima înmatriculare" value={formatDate(v.first_registration_date)} />
-              <Field label="Data fabricației" value={formatDate(v.manufacture_date)} />
-            </dl>
-          </Card>
+        {/* Identification */}
+        <Card className="p-4 h-full">
+          <h3 className="text-sm font-semibold mb-3">Identificare</h3>
+          <dl className="grid grid-cols-2 gap-3">
+            <Field label="Marcă" value={v.brand} />
+            <Field label="Model" value={v.model} />
+            <Field label="Versiune" value={v.variant} />
+            <Field label="Stare" value={v.state} />
+            <Field label="Generație" value={v.generation} />
+            <Field label="Nivel echipare" value={v.equipment_level} />
+            <Field label="Tip stoc" value={CATEGORY_LABELS[v.category] ?? v.category} />
+            <Field label="VIN" value={v.vin} />
+            <Field label="Nr. stoc" value={v.nr_stoc} />
+            <Field label="Prima înmatriculare" value={formatDate(v.first_registration_date)} />
+            <Field label="Data fabricației" value={formatDate(v.manufacture_date)} />
+            <Field label="Înmatriculare" value={v.registration_number} />
+            <Field label="Cod șasiu" value={v.chassis_code} />
+            <Field label="Cod emisii" value={v.emission_code} />
+          </dl>
+        </Card>
 
-          {/* Technical */}
-          <Card className="p-4 h-fit">
-            <h3 className="text-sm font-semibold mb-3">Specificații tehnice</h3>
-            <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-              <Field label="Motor" value={v.engine_displacement_cc ? `${v.engine_displacement_cc} cc` : null} />
-              <Field label="Putere" value={v.engine_power_hp ? `${v.engine_power_hp} HP${v.engine_power_kw ? ` (${v.engine_power_kw} kW)` : ''}` : null} />
-              <Field label="Cuplu" value={v.engine_torque_nm ? `${v.engine_torque_nm} Nm` : null} />
-              <Field label="Tracțiune" value={v.drive_type} />
-              <Field label="CO2" value={v.co2_emissions ? `${v.co2_emissions} g/km` : null} />
-              <Field label="Normă poluare" value={v.euro_standard} />
-              <Field label="Consum" value={v.fuel_consumption} />
-              <Field label="Locuri" value={v.seats} />
-              <Field label="Capacitate rezervor" value={v.fuel_tank_capacity_liters != null ? `${v.fuel_tank_capacity_liters} L` : null} />
-              <Field label="Capacitate baterie" value={v.battery_capacity_kwh != null ? `${v.battery_capacity_kwh} kWh` : null} />
-              <Field label="Autonomie electrică" value={v.electric_range_km != null ? `${v.electric_range_km} km` : null} />
-              <Field label="Consum urban" value={v.consum_urban != null ? `${v.consum_urban} l/100km` : null} />
-              <Field label="Consum extraurban" value={v.consum_extraurban != null ? `${v.consum_extraurban} l/100km` : null} />
-              <Field label="Consum mixt" value={v.consum_mixt != null ? `${v.consum_mixt} l/100km` : null} />
-              <Field label="Normă consum" value={v.norma_combustibil} />
-              <Field label="Normă energie" value={v.norma_energie} />
-              <Field label="Tapițerie" value={v.interior_material} />
-              <Field label="Tip culoare" value={v.color_finish} />
-            </dl>
-          </Card>
-
-          {/* Cargo (Utilitară) — only for vans */}
-          {v.body_type === 'van' && (
-            <Card className="p-4 h-fit">
-              <h3 className="text-sm font-semibold mb-3">Cargo (Utilitară)</h3>
-              <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                <Field label="Masă maximă" value={v.max_weight_kg != null ? `${v.max_weight_kg} kg` : null} />
-                <Field label="Sarcină utilă" value={v.payload_kg != null ? `${v.payload_kg} kg` : null} />
-                <Field label="Volum util" value={v.cargo_volume_m3 != null ? `${v.cargo_volume_m3} m³` : null} />
-                <Field label="Lungime cală" value={v.cargo_length_mm != null ? `${v.cargo_length_mm} mm` : null} />
-                <Field label="Lățime cală" value={v.cargo_width_mm != null ? `${v.cargo_width_mm} mm` : null} />
-                <Field label="Înălțime cală" value={v.cargo_height_mm != null ? `${v.cargo_height_mm} mm` : null} />
-                <Field label="Europaleți" value={v.euro_pallets} />
-              </dl>
-            </Card>
-          )}
-        </div>
-
-        <Card className="p-4 space-y-4 h-fit">
+        <Card className="p-4 space-y-4 h-full">
           {displayPrice != null && (
             <div>
               <div className="text-xs text-muted-foreground">Preț</div>
@@ -1140,6 +1096,43 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
         </Card>
       </div>
 
+      {/* Technical + Cargo — single full-width card */}
+      <Card className="p-4">
+        <h3 className="text-sm font-semibold mb-3">Specificații tehnice</h3>
+        <dl className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <Field label="Motor" value={v.engine_displacement_cc ? `${v.engine_displacement_cc} cc` : null} />
+          <Field label="Putere" value={v.engine_power_hp ? `${v.engine_power_hp} HP${v.engine_power_kw ? ` (${v.engine_power_kw} kW)` : ''}` : null} />
+          <Field label="Cuplu" value={v.engine_torque_nm ? `${v.engine_torque_nm} Nm` : null} />
+          <Field label="Tracțiune" value={v.drive_type} />
+          <Field label="CO2" value={v.co2_emissions ? `${v.co2_emissions} g/km` : null} />
+          <Field label="Normă poluare" value={v.euro_standard} />
+          <Field label="Consum" value={v.fuel_consumption} />
+          <Field label="Locuri" value={v.seats} />
+          <Field label="Capacitate rezervor" value={v.fuel_tank_capacity_liters != null ? `${v.fuel_tank_capacity_liters} L` : null} />
+          <Field label="Capacitate baterie" value={v.battery_capacity_kwh != null ? `${v.battery_capacity_kwh} kWh` : null} />
+          <Field label="Autonomie electrică" value={v.electric_range_km != null ? `${v.electric_range_km} km` : null} />
+          <Field label="Consum urban" value={v.consum_urban != null ? `${v.consum_urban} l/100km` : null} />
+          <Field label="Consum extraurban" value={v.consum_extraurban != null ? `${v.consum_extraurban} l/100km` : null} />
+          <Field label="Consum mixt" value={v.consum_mixt != null ? `${v.consum_mixt} l/100km` : null} />
+          <Field label="Normă consum" value={v.norma_combustibil} />
+          <Field label="Normă energie" value={v.norma_energie} />
+          <Field label="Tapițerie" value={v.interior_material} />
+          <Field label="Culoare interior" value={v.color_interior} />
+          <Field label="Tip culoare" value={v.color_finish} />
+          {v.body_type === 'van' && (
+            <>
+              <Field label="Masă maximă" value={v.max_weight_kg != null ? `${v.max_weight_kg} kg` : null} />
+              <Field label="Sarcină utilă" value={v.payload_kg != null ? `${v.payload_kg} kg` : null} />
+              <Field label="Volum util" value={v.cargo_volume_m3 != null ? `${v.cargo_volume_m3} m³` : null} />
+              <Field label="Lungime cală" value={v.cargo_length_mm != null ? `${v.cargo_length_mm} mm` : null} />
+              <Field label="Lățime cală" value={v.cargo_width_mm != null ? `${v.cargo_width_mm} mm` : null} />
+              <Field label="Înălțime cală" value={v.cargo_height_mm != null ? `${v.cargo_height_mm} mm` : null} />
+              <Field label="Europaleți" value={v.euro_pallets} />
+            </>
+          )}
+        </dl>
+      </Card>
+
       {/* Detail cards */}
       <div className="grid gap-6 md:grid-cols-2">
       {/* Condition */}
@@ -1157,6 +1150,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           <Field label="Vehicul de epocă" value={v.is_vintage ? 'Da' : null} />
           <Field label="Avariat" value={v.is_damaged ? 'Da' : null} />
           <Field label="Rulaj certificat" value={v.certified_mileage ? 'Da' : null} />
+          <Field label="Înmatriculat" value={v.is_registered ? 'Da' : null} />
           <Field label="Nr. proprietari" value={v.previous_owners} />
           <Field label="Țara de origine" value={v.country_of_origin} />
         </dl>
@@ -1172,6 +1166,9 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           <Field label="Nr. contract" value={v.purchase_contract_number} />
           <Field label="Dată contract" value={formatDate(v.purchase_contract_date)} />
           <Field label="Proprietar" value={v.owner_name} />
+          <Field label="Nr. factură intrare" value={v.acquisition_document_number} />
+          <Field label="Preț achiziție (RON)" value={v.acquisition_price != null ? `${fmtMoney(v.acquisition_price)} RON` : null} />
+          <Field label="Curs BNR" value={v.acquisition_exchange_rate} />
         </dl>
       </Card>
 
@@ -1237,6 +1234,25 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
         </Card>
       )}
 
+      {/* Announcement / listing */}
+      {(v.listing_title || v.listing_description) && (
+        <Card className="p-4 md:col-span-2">
+          <h3 className="text-sm font-semibold mb-3">Anunț</h3>
+          {v.listing_title && (
+            <div className="mb-3">
+              <div className="text-xs text-muted-foreground mb-1">Titlu anunț</div>
+              <p className="text-sm whitespace-pre-wrap">{v.listing_title}</p>
+            </div>
+          )}
+          {v.listing_description && (
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Descriere anunț</div>
+              <p className="text-sm whitespace-pre-wrap">{v.listing_description}</p>
+            </div>
+          )}
+        </Card>
+      )}
+
       {/* Notes */}
       {(v.notes || v.internal_notes) && (
         <Card className="p-4 md:col-span-2">
@@ -1264,129 +1280,269 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
 function PricingTab({
   vehicle: v,
   pricingHistory,
-  floorPrice,
   promotions,
+  canEdit,
 }: {
   vehicle: Vehicle
   pricingHistory: PricingHistoryEntry[]
-  floorPrice: FloorPrice | null
   promotions: Promotion[]
+  canEdit: boolean
 }) {
+  const queryClient = useQueryClient()
+
+  const sheets = useMemo(() => parseSheets(v.pricing_sheets), [v.pricing_sheets])
+  const latest = sheets.length ? sheets[sheets.length - 1] : null
+  const latestPublished = useMemo(
+    () => [...sheets].reverse().find((s) => s.status === 'published') ?? null,
+    [sheets],
+  )
+  const costLinesForSheet = useMemo(
+    () => parseCostLines(v.cost_lines).map((l) => ({ eur: typeof l.eur === 'number' ? l.eur : null })),
+    [v.cost_lines],
+  )
+
+  // Adding a fișă: "Deschide fișă nouă" starts a blank editable draft shown as a
+  // synthetic top row in the history table; `newSeq` re-seeds the editor.
+  const [newDraft, setNewDraft] = useState(false)
+  const [newSeq, setNewSeq] = useState(0)
+
+  // The editor edits the newest fișă in place when it's still editable (draft or
+  // published <24h); otherwise you open a new one. Seeds come from that context.
+  const active = newDraft ? null : latest
+  const seedList = active?.list_price ?? (latestPublished?.list_price ?? v.list_price ?? null)
+  const seedPromo = active?.promotional_price ?? (latestPublished?.promotional_price ?? v.promotional_price ?? null)
+  const initialInputs: Partial<SheetInputs> | undefined = active
+    ? { target: active.target, finRate: active.finRate, targetDays: active.targetDays, warrantyPct: active.warrantyPct, anchor: active.anchor, comps: active.comps, anchorDate: active.anchorDate }
+    : undefined
+  const seedKey = active ? `sheet-${active.id}` : `new-${newSeq}`
+
+  // Zona de preț stays on top, fed by the LAST fișă (published if any, else the
+  // most recent). If no fișă exists yet, fall back to the vehicle's own price +
+  // default params so the ladder never disappears (needs an acquisition basis).
+  const liveSheet = latestPublished ?? latest
+  const liveModel = useMemo(() => {
+    const form = {
+      ...(v as unknown as Record<string, unknown>),
+      list_price: liveSheet ? liveSheet.list_price : v.list_price,
+      promotional_price: liveSheet ? liveSheet.promotional_price : v.promotional_price,
+      price_currency: liveSheet ? liveSheet.price_currency : v.price_currency,
+    }
+    const inputs = liveSheet
+      ? { target: liveSheet.target, finRate: liveSheet.finRate, targetDays: liveSheet.targetDays, warrantyPct: liveSheet.warrantyPct, anchor: liveSheet.anchor, comps: liveSheet.comps, anchorDate: liveSheet.anchorDate }
+      : { target: 600, finRate: 0.05, targetDays: 45, warrantyPct: 1.5, anchor: 0, comps: null, anchorDate: '' }
+    const model = computePricingModel(form, costLinesForSheet, inputs)
+    return model.hasBasis ? model : null
+  }, [liveSheet, v, costLinesForSheet])
+
+  // Per-row expand/collapse in the fișe history table. The synthetic "new fișă"
+  // row uses the sentinel id below.
+  const NEW_ROW = '__new__'
+  const [expandedSheets, setExpandedSheets] = useState<Set<string>>(new Set())
+  const toggleSheet = (id: string) => setExpandedSheets((prev) => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+  const openNewSheet = () => {
+    setNewDraft(true)
+    setNewSeq((n) => n + 1)
+    setExpandedSheets((prev) => new Set(prev).add(NEW_ROW))
+  }
+  const cancelNewSheet = () => {
+    setNewDraft(false)
+    setExpandedSheets((prev) => { const n = new Set(prev); n.delete(NEW_ROW); return n })
+  }
+
+  const saveSheets = useMutation({
+    mutationFn: (payload: Partial<Vehicle>) => carparkApi.updateVehicle(v.id, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', v.id] })
+      setNewDraft(false)
+      setExpandedSheets((prev) => { const n = new Set(prev); n.delete(NEW_ROW); return n })
+    },
+    onError: () => toast.error('Salvarea fișei a eșuat'),
+  })
+
+  // Upsert the working sheet: reuse the active sheet if it is still editable,
+  // otherwise append a new one. Publishing also writes the vehicle live price.
+  const upsertSheet = (inputs: SheetInputs, derived: { breakeven: number; critic: number }, status: 'draft' | 'published') => {
+    const nowIso = new Date().toISOString()
+    const reuse = active && sheetEditable(active) ? active : null
+    const snap: PricingSheetSnapshot = {
+      id: reuse?.id ?? `sheet-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+      status,
+      created_at: reuse?.created_at ?? nowIso,
+      published_at: status === 'published' ? (reuse?.status === 'published' ? reuse.published_at : nowIso) : null,
+      ...inputs,
+      breakeven: derived.breakeven,
+      critic: derived.critic,
+    }
+    const next = reuse ? sheets.map((s) => (s.id === reuse.id ? snap : s)) : [...sheets, snap]
+    const payload: Partial<Vehicle> = { pricing_sheets: JSON.stringify(next) }
+    if (status === 'published') {
+      payload.list_price = inputs.list_price
+      payload.promotional_price = inputs.promotional_price
+      if (inputs.price_currency) payload.price_currency = inputs.price_currency
+    }
+    return payload
+  }
+  const handleDraft = (inputs: SheetInputs, d: { breakeven: number; critic: number }) =>
+    saveSheets.mutate(upsertSheet(inputs, d, 'draft'), { onSuccess: () => toast.success('Ciornă salvată — prețul mașinii nu s-a schimbat') })
+  const handlePublish = (inputs: SheetInputs, d: { breakeven: number; critic: number }) =>
+    saveSheets.mutate(upsertSheet(inputs, d, 'published'), { onSuccess: () => toast.success('Preț publicat') })
+
+  const currency = latestPublished?.price_currency ?? v.price_currency
+  const editorProps = {
+    vehicle: v, costLines: costLinesForSheet, editable: canEdit, locked: false,
+    initial: initialInputs, seedList, seedPromo, saving: saveSheets.isPending,
+    onSaveDraft: handleDraft, onPublish: handlePublish,
+  }
+
   return (
     <div className="space-y-6">
-      <div className="grid gap-6 md:grid-cols-2">
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold mb-3">Prețuri vânzare</h3>
-          <dl className="grid grid-cols-2 gap-3">
-            <Field label="Preț" value={v.list_price != null ? <CurrencyDisplay value={v.list_price} currency={v.price_currency} /> : null} />
-            <Field label="Preț promoțional" value={v.promotional_price != null ? <CurrencyDisplay value={v.promotional_price} currency={v.price_currency} /> : null} />
-            <Field label="Preț minim" value={v.minimum_price != null ? <CurrencyDisplay value={v.minimum_price} currency={v.price_currency} /> : null} />
+      {/* Zona de preț — fed by the LAST fișă (not the live editor). */}
+      {liveModel && <PriceZone model={liveModel} />}
+
+      {/* Fișe de preț — create/edit inline; the table is the single surface. */}
+      {(sheets.length > 0 || canEdit) && (
+        <Card className="overflow-hidden p-0">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+              <span className="font-semibold">Fișe de preț ({sheets.length})</span>
+              <span className="text-muted-foreground">· Preț publicat:</span>
+              {latestPublished && latestPublished.list_price != null ? (
+                <b className="tabular-nums"><CurrencyDisplay value={latestPublished.list_price} currency={latestPublished.price_currency} /></b>
+              ) : (
+                <b className="text-amber-600 dark:text-amber-400">fără preț publicat</b>
+              )}
+            </div>
+            {canEdit && (newDraft ? (
+              <Button type="button" variant="ghost" size="sm" onClick={cancelNewSheet}>Renunță</Button>
+            ) : (
+              <Button type="button" variant="outline" size="sm" onClick={openNewSheet}>
+                <Plus className="mr-1 h-3.5 w-3.5" /> Fișă nouă
+              </Button>
+            ))}
+          </div>
+          <div className="overflow-x-auto border-t">
+            <table className="w-full text-sm">
+              <thead className="text-xs text-muted-foreground">
+                <tr className="border-b">
+                  <th className="w-8 px-3 py-2"></th>
+                  <th className="px-3 py-2 text-left font-medium">Dată</th>
+                  <th className="px-3 py-2 text-left font-medium">Status</th>
+                  <th className="px-3 py-2 text-right font-medium">Listă</th>
+                  <th className="px-3 py-2 text-right font-medium">Promo</th>
+                  <th className="px-3 py-2 text-right font-medium">Breakeven</th>
+                  <th className="px-3 py-2 text-right font-medium">Critic</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* New fișă — synthetic editable row */}
+                {newDraft && canEdit && (
+                  <Fragment key={NEW_ROW}>
+                    <tr className="cursor-pointer border-b bg-blue-50/40 dark:bg-blue-950/20" onClick={() => toggleSheet(NEW_ROW)}>
+                      <td className="px-3 py-2 text-muted-foreground">{expandedSheets.has(NEW_ROW) ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</td>
+                      <td className="px-3 py-2 tabular-nums">azi</td>
+                      <td className="px-3 py-2"><Badge variant="outline" className="text-[10px] uppercase">fișă nouă</Badge></td>
+                      <td className="px-3 py-2 text-right tabular-nums">{seedList != null ? <CurrencyDisplay value={seedList} currency={currency} /> : '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{seedPromo != null ? <CurrencyDisplay value={seedPromo} currency={currency} /> : '—'}</td>
+                      <td className="px-3 py-2 text-right text-muted-foreground">—</td>
+                      <td className="px-3 py-2 text-right text-muted-foreground">—</td>
+                    </tr>
+                    {expandedSheets.has(NEW_ROW) && (
+                      <tr className="border-b bg-muted/30">
+                        <td></td>
+                        <td colSpan={6} className="px-3 py-3"><SheetEditor key={seedKey} {...editorProps} /></td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )}
+                {sheets.length === 0 && !newDraft && (
+                  <tr><td colSpan={7} className="px-3 py-6 text-center text-muted-foreground">Nicio fișă de preț. Apasă „Fișă nouă" pentru a crea prima.</td></tr>
+                )}
+                {[...sheets].reverse().map((s) => {
+                  const ed = sheetEditable(s)
+                  const editRow = !newDraft && latest?.id === s.id && ed // the one in-place-editable fișă
+                  const isOpen = expandedSheets.has(s.id)
+                  // Recompute breakeven/critic from the engine so the table, the
+                  // expanded summary and the Zona all show the same numbers
+                  // (stored values are only a fallback).
+                  const rowModel = sheetModel(s, v, costLinesForSheet)
+                  const eur0 = (x: number) => `${Math.round(x).toLocaleString('ro-RO')} €`
+                  return (
+                    <Fragment key={s.id}>
+                      <tr className="cursor-pointer border-b last:border-0 hover:bg-muted/50" onClick={() => toggleSheet(s.id)}>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {isOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </td>
+                        <td className="px-3 py-2 tabular-nums">{formatDate(s.published_at ?? s.created_at)}</td>
+                        <td className="px-3 py-2">
+                          <Badge variant="outline" className="text-[10px] uppercase">
+                            {s.status === 'draft' ? 'ciornă' : ed ? 'publicat · editabil' : 'publicat · blocat'}
+                          </Badge>
+                          {editRow && <span className="ml-1.5 text-[10px] text-blue-600 dark:text-blue-400">editează</span>}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">{s.list_price != null ? <CurrencyDisplay value={s.list_price} currency={s.price_currency} /> : '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{s.promotional_price != null ? <CurrencyDisplay value={s.promotional_price} currency={s.price_currency} /> : '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{rowModel.hasBasis ? eur0(rowModel.be) : '—'}</td>
+                        <td className="px-3 py-2 text-right tabular-nums">{rowModel.hasBasis ? eur0(rowModel.critic) : '—'}</td>
+                      </tr>
+                      {isOpen && (
+                        <tr className="border-b bg-muted/30 last:border-0">
+                          <td></td>
+                          <td colSpan={6} className="px-3 py-3">
+                            {editRow ? <SheetEditor key={seedKey} {...editorProps} /> : <SheetSummary sheet={s} model={rowModel} />}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Config flags + promotions — collapsed. Prices live in the header/fișă,
+          costs on the Costuri tab, sale info on the Vânzare tab. */}
+      <details className="rounded-lg border">
+        <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">Detalii preț & configurare</summary>
+        <div className="space-y-4 border-t p-4">
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Field label="TVA inclus" value={v.price_includes_vat ? 'Da' : 'Nu'} />
             <Field label="Negociabil" value={v.is_negotiable ? 'Da' : 'Nu'} />
             <Field label="Regim marjă" value={v.margin_scheme ? 'Da' : 'Nu'} />
             <Field label="Finanțare" value={v.eligible_for_financing ? 'Da' : 'Nu'} />
           </dl>
-        </Card>
-
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold mb-3">Costuri achiziție</h3>
-          <dl className="grid grid-cols-2 gap-3">
-            <Field label="Preț achiziție" value={v.purchase_price_net != null ? <CurrencyDisplay value={v.purchase_price_net} currency={v.purchase_price_currency} /> : null} />
-            <Field label="Valoare achiziție" value={v.acquisition_value != null ? <CurrencyDisplay value={v.acquisition_value} currency={v.acquisition_currency} /> : null} />
-            <Field label="TVA" value={v.acquisition_vat != null ? <CurrencyDisplay value={v.acquisition_vat} currency={v.acquisition_currency} /> : null} />
-            <Field label="Recondiționare" value={v.reconditioning_cost != null ? <CurrencyDisplay value={v.reconditioning_cost} currency={v.price_currency} /> : null} />
-            <Field label="Transport" value={v.transport_cost != null ? <CurrencyDisplay value={v.transport_cost} currency={v.price_currency} /> : null} />
-            <Field label="Înmatriculare" value={v.registration_cost != null ? <CurrencyDisplay value={v.registration_cost} currency={v.price_currency} /> : null} />
-            <Field label="Alte costuri" value={v.other_costs != null ? <CurrencyDisplay value={v.other_costs} currency={v.price_currency} /> : null} />
-            <Field label="Cost total" value={v.total_cost != null ? <CurrencyDisplay value={v.total_cost} currency={v.price_currency} className="font-bold" /> : null} />
-          </dl>
-        </Card>
-
-        {v.sale_price != null && (
-          <Card className="p-4 md:col-span-2">
-            <h3 className="text-sm font-semibold mb-3">Informații vânzare</h3>
-            <dl className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Field label="Preț vânzare" value={<CurrencyDisplay value={v.sale_price} currency={v.price_currency} />} />
-              <Field label="Dată vânzare" value={formatDate(v.sale_date)} />
-              <Field label="Marjă brută" value={
-                v.total_cost != null ? (
-                  <CurrencyDisplay value={v.sale_price - v.total_cost} currency={v.price_currency} showSign />
-                ) : '-'
-              } />
-            </dl>
-          </Card>
-        )}
-      </div>
-
-      {/* Floor Price */}
-      {floorPrice && floorPrice.floor_price > 0 && (
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold mb-3">Analiză preț minim</h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {promotions.length > 0 && (
             <div>
-              <div className="text-xs text-muted-foreground">Preț minim</div>
-              <div className="text-lg font-bold">
-                <CurrencyDisplay value={floorPrice.floor_price} currency={v.price_currency} />
+              <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Promoții active</h4>
+              <div className="space-y-2">
+                {promotions.map((promo) => (
+                  <div key={promo.id} className="flex items-center justify-between rounded border p-2">
+                    <div>
+                      <span className="text-sm font-medium">{promo.name}</span>
+                      <Badge variant="outline" className="ml-2 text-[10px]">
+                        {PROMO_TYPE_LABELS[promo.promo_type]}
+                      </Badge>
+                      {promo.discount_value != null && promo.promo_type === 'discount' && (
+                        <span className="ml-2 text-sm text-muted-foreground">
+                          {promo.discount_type === 'percent' ? `${promo.discount_value}%` : `${promo.discount_value} ${v.price_currency}`}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(promo.start_date)} — {formatDate(promo.end_date)}
+                    </span>
+                  </div>
+                ))}
               </div>
-              <Badge variant="outline" className="mt-1 text-[10px]">
-                {floorPrice.binding_constraint === 'minimum_price' ? 'Preț minim' :
-                 floorPrice.binding_constraint === 'cost_plus_margin' ? 'Cost + marjă' : 'Recuperare achiziție'}
-              </Badge>
-            </div>
-            <div>
-              <div className="text-xs text-muted-foreground">Preț minim setat</div>
-              <div className="text-sm font-medium">
-                <CurrencyDisplay value={floorPrice.components.minimum_price} currency={v.price_currency} />
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-muted-foreground">Cost + {floorPrice.components.min_margin_percent}% marjă</div>
-              <div className="text-sm font-medium">
-                <CurrencyDisplay value={floorPrice.components.cost_plus_margin} currency={v.price_currency} />
-              </div>
-            </div>
-            <div>
-              <div className="text-xs text-muted-foreground">Recuperare achiziție</div>
-              <div className="text-sm font-medium">
-                <CurrencyDisplay value={floorPrice.components.purchase_recovery} currency={v.price_currency} />
-              </div>
-            </div>
-          </div>
-          {(v.promotional_price ?? v.list_price ?? Infinity) < floorPrice.floor_price && (
-            <div className="mt-3 flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-              <TrendingDown className="h-4 w-4" />
-              Prețul curent este sub pragul minim calculat
             </div>
           )}
-        </Card>
-      )}
-
-      {/* Active Promotions */}
-      {promotions.length > 0 && (
-        <Card className="p-4">
-          <h3 className="text-sm font-semibold mb-3">Promoții active</h3>
-          <div className="space-y-2">
-            {promotions.map((promo) => (
-              <div key={promo.id} className="flex items-center justify-between rounded border p-2">
-                <div>
-                  <span className="text-sm font-medium">{promo.name}</span>
-                  <Badge variant="outline" className="ml-2 text-[10px]">
-                    {PROMO_TYPE_LABELS[promo.promo_type]}
-                  </Badge>
-                  {promo.discount_value != null && promo.promo_type === 'discount' && (
-                    <span className="ml-2 text-sm text-muted-foreground">
-                      {promo.discount_type === 'percent' ? `${promo.discount_value}%` : `${promo.discount_value} ${v.price_currency}`}
-                    </span>
-                  )}
-                </div>
-                <span className="text-xs text-muted-foreground">
-                  {formatDate(promo.start_date)} — {formatDate(promo.end_date)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
+        </div>
+      </details>
 
       {/* Pricing History */}
       {pricingHistory.length > 0 && (
@@ -1421,6 +1577,114 @@ function PricingTab({
         </Card>
       )}
     </div>
+  )
+}
+
+// Build the engine model for one saved fișă snapshot (list/promo + inputs)
+// against the current vehicle acquisition. Pure — safe to call in render.
+function sheetModel(s: PricingSheetSnapshot, v: Vehicle, costLines: { eur: number | null }[]): PricingModel {
+  const form = { ...(v as unknown as Record<string, unknown>), list_price: s.list_price, promotional_price: s.promotional_price, price_currency: s.price_currency }
+  return computePricingModel(form, costLines, {
+    target: s.target, finRate: s.finRate, targetDays: s.targetDays,
+    warrantyPct: s.warrantyPct, anchor: s.anchor, comps: s.comps, anchorDate: s.anchorDate,
+  })
+}
+
+// Expanded fișă summary — compact. A stat strip (recomputed economics) on top,
+// then a dense parameter grid. Breakeven/critic come from `model` (recomputed),
+// so they match the table cells and the Zona.
+function SheetSummary({ sheet: s, model }: {
+  sheet: PricingSheetSnapshot
+  model: PricingModel
+}) {
+  const eur = (x: number) => `${Math.round(x).toLocaleString('ro-RO')} €`
+  const eL = model.listEur > 0 ? econ(model.listEur, model.params) : null
+  const profitCls = eL ? (eL.profitNet >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') : ''
+
+  const stats: [string, string, string?][] = [
+    ['Profit net', eL ? eur(eL.profitNet) : '—', profitCls],
+    ['Marjă netă', eL ? `${(eL.marginNet * 100).toFixed(1)}%` : '—', profitCls],
+    ['Cost total', eur(model.landedCostEur)],
+    ['Breakeven', eur(model.be)],
+    ['Critic', eur(model.critic)],
+    ['Regim', model.regime === 'MARGIN' ? 'Marjă' : 'TVA'],
+  ]
+  const params: [string, string][] = [
+    ['Creată', formatDate(s.created_at)],
+    ['Publicată', s.published_at ? formatDate(s.published_at) : '—'],
+    ['Profit țintă', eur(s.target)],
+    ['Zile țintă', `${s.targetDays}`],
+    ['Finanțare/zi', `${s.finRate}%`],
+    ['Garanție', `${s.warrantyPct}%`],
+    ['Preț piață', s.anchor > 0 ? eur(s.anchor) : '—'],
+    ['Nr. anunțuri', s.comps != null ? `${s.comps}` : '—'],
+    ['Data piață', s.anchorDate ? formatDate(s.anchorDate) : '—'],
+  ]
+
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-px overflow-hidden rounded-md border bg-border sm:grid-cols-6">
+        {stats.map(([t, val, cls]) => (
+          <div key={t} className="bg-card px-2.5 py-1.5">
+            <div className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">{t}</div>
+            <div className={`text-xs font-semibold tabular-nums ${cls ?? ''}`}>{val}</div>
+          </div>
+        ))}
+      </div>
+      <dl className="grid grid-cols-2 gap-x-4 text-[11px] sm:grid-cols-3 lg:grid-cols-5">
+        {params.map(([k, val]) => (
+          <div key={k} className="flex justify-between gap-2 border-b border-dashed border-border/60 py-0.5">
+            <dt className="text-muted-foreground">{k}</dt>
+            <dd className="font-medium tabular-nums">{val}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+// Holds the working list/promo prices for one fișă; remounted (re-seeded) by
+// its `key` in PricingTab whenever the active sheet changes.
+function SheetEditor({
+  vehicle: v,
+  costLines,
+  editable,
+  locked,
+  initial,
+  seedList,
+  seedPromo,
+  saving,
+  onSaveDraft,
+  onPublish,
+}: {
+  vehicle: Vehicle
+  costLines: { eur: number | null }[]
+  editable: boolean
+  locked: boolean
+  initial?: Partial<SheetInputs>
+  seedList: number | null
+  seedPromo: number | null
+  saving: boolean
+  onSaveDraft: (inputs: SheetInputs, derived: { breakeven: number; critic: number }) => void
+  onPublish: (inputs: SheetInputs, derived: { breakeven: number; critic: number }) => void
+}) {
+  const [prices, setPrices] = useState<{ list_price: number | null; promotional_price: number | null }>({
+    list_price: seedList,
+    promotional_price: seedPromo,
+  })
+  const formForSheet = { ...(v as unknown as Record<string, unknown>), ...prices }
+  return (
+    <PricingSheet
+      form={formForSheet}
+      costLines={costLines}
+      editable={editable}
+      locked={locked}
+      initial={initial}
+      onPriceChange={(f, val) => setPrices((p) => ({ ...p, [f]: val }))}
+      onSaveDraft={onSaveDraft}
+      onPublish={onPublish}
+      saving={saving}
+    />
   )
 }
 
@@ -1696,17 +1960,25 @@ function ModificationsTab({ modifications }: { modifications: Array<{ id: number
 function ProfitabilitySummary({ data, vehicle }: { data: Profitability; vehicle: Vehicle }) {
   const currency = 'EUR'
   const costLinesEur = parseCostLines(vehicle.cost_lines).reduce((s, l) => s + (Number(l.eur) || 0), 0)
-  const acquisition = Number(vehicle.purchase_price_net) || 0
+  const acquisition = Number(vehicle.purchase_price_net) || 0 // GROSS EUR paid (incl. VAT)
   const totalCosts = costLinesEur
   const totalRevenues = data.total_revenues
-  // Marjă = income − total cost (acquisition + cost lines). If the car has
-  // revenues (sold), the income is the actual revenue; otherwise it's the
-  // potential income at the asking price (promo ?? list).
-  const costTotal = acquisition + costLinesEur
   const sellPrice = Number(vehicle.promotional_price ?? vehicle.list_price) || 0
   const income = totalRevenues > 0 ? totalRevenues : sellPrice
-  const margin = income > 0 && costTotal > 0 ? income - costTotal : null
-  const marginPct = margin != null && costTotal > 0 ? (margin / costTotal) * 100 : null
+  // Marjă = VAT-adjusted profit net, via the same engine as the Fișă de preț
+  // (not the raw gross spread). purchase_price_net is the GROSS EUR paid; the
+  // net cost basis = gross ÷ (1+TVA) in NORMAL, or the gross itself in MARGIN.
+  const regime = vehicle.vat_deductible === false ? 'MARGIN' : 'NORMAL'
+  const vatRate = regime === 'MARGIN' ? 21 : (Number(vehicle.purchase_vat_rate) || 21)
+  const netAcqEur = regime === 'NORMAL' ? acquisition / (1 + vatRate / 100) : acquisition
+  const baseCostEur = netAcqEur + costLinesEur
+  const engineParams: EngineParams = {
+    regime, vatRate, landedCostEur: baseCostEur,
+    purchaseGrossEur: acquisition, inputVatEur: regime === 'NORMAL' ? acquisition - netAcqEur : 0,
+  }
+  const e = income > 0 && baseCostEur > 0 ? econ(income, engineParams) : null
+  const margin = e ? e.profitNet : null
+  const marginPct = e ? e.marginNet * 100 : null
   const isProfit = (margin ?? 0) >= 0
   return (
     <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-6">
@@ -1736,7 +2008,7 @@ function ProfitabilitySummary({ data, vehicle }: { data: Profitability; vehicle:
       </Card>
       <Card className={`p-3 ${isProfit ? 'bg-green-50 dark:bg-green-950' : 'bg-red-50 dark:bg-red-950'}`}>
         <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-          <DollarSign className="h-3 w-3" /> Marjă
+          <DollarSign className="h-3 w-3" /> Marjă netă
         </div>
         {margin != null ? (
           <div className="flex items-baseline gap-2">
@@ -1770,22 +2042,45 @@ function ProfitabilitySummary({ data, vehicle }: { data: Profitability; vehicle:
 // Read-only view of the vehicle's acquisition cost lines (the edit-form model,
 // stored in cost_lines JSON) — the same costs that feed the profile's Costuri
 // totale / Marjă. Edited from the Comercial tab of the edit form.
-function AcqCostLines({ vehicle }: { vehicle: Vehicle }) {
-  const lines = parseCostLines(vehicle.cost_lines)
-  const total = lines.reduce((s, l) => s + (Number(l.eur) || 0), 0)
+function AcqCostLines({ vehicle, canEdit }: { vehicle: Vehicle; canEdit: boolean }) {
+  const queryClient = useQueryClient()
+  const original = useMemo(
+    () => parseCostLines(vehicle.cost_lines).map((l) => ({
+      type: String(l.type ?? ''),
+      description: String(l.description ?? ''),
+      eur: typeof l.eur === 'number' ? l.eur : null,
+    })),
+    [vehicle.cost_lines],
+  )
+  const [lines, setLines] = useState(original)
+  const total = lines.reduce((s, l) => s + (l.eur ?? 0), 0)
+  const dirty = JSON.stringify(lines) !== JSON.stringify(original)
+  const saveMut = useMutation({
+    mutationFn: () => carparkApi.updateVehicle(vehicle.id, { cost_lines: lines.length ? JSON.stringify(lines) : null } as Partial<Vehicle>),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicle.id] })
+      toast.success('Costuri salvate')
+    },
+    onError: () => toast.error('Salvarea costurilor a eșuat'),
+  })
+  const patch = (i: number, k: 'type' | 'description' | 'eur', v: string | number | null) =>
+    setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, [k]: v } : l)))
   return (
     <Card className="p-4">
-      <div className="flex items-center justify-between mb-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold">Costuri achiziție</h3>
         <div className="flex items-center gap-3">
-          <span className="text-sm font-medium">Total: {total.toLocaleString('ro-RO')} EUR</span>
-          <Button variant="ghost" size="sm" asChild>
-            <Link to={`/app/carpark/${vehicle.id}/edit?tab=comercial`}>Editează</Link>
-          </Button>
+          <span className="text-sm font-medium tabular-nums">Total: {total.toLocaleString('ro-RO')} EUR</span>
+          {canEdit && (
+            <>
+              <Button variant="ghost" size="sm" onClick={() => setLines((ls) => [...ls, { type: '', description: '', eur: null }])}>+ Adaugă linie</Button>
+              <Button size="sm" onClick={() => saveMut.mutate()} disabled={!dirty || saveMut.isPending}>{saveMut.isPending ? 'Se salvează…' : 'Salvează'}</Button>
+            </>
+          )}
         </div>
       </div>
       {lines.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nicio linie de cost. Adaugă din formularul de editare.</p>
+        <p className="text-sm text-muted-foreground">Nicio linie de cost.{canEdit ? ' Apasă „Adaugă linie".' : ''}</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -1793,19 +2088,27 @@ function AcqCostLines({ vehicle }: { vehicle: Vehicle }) {
               <tr className="text-left text-xs text-muted-foreground">
                 <th className="py-1 pr-3 font-normal">Tip</th>
                 <th className="py-1 pr-3 font-normal">Descriere</th>
-                <th className="py-1 pr-3 font-normal">Data</th>
-                <th className="py-1 pr-3 font-normal text-right">LEI</th>
-                <th className="py-1 font-normal text-right">EUR</th>
+                <th className="py-1 pr-3 font-normal text-right">EUR (net)</th>
+                {canEdit && <th className="w-8" />}
               </tr>
             </thead>
             <tbody>
               {lines.map((l, i) => (
                 <tr key={i} className="border-t">
-                  <td className="py-1 pr-3">{l.type || '-'}</td>
-                  <td className="py-1 pr-3">{l.description || '-'}</td>
-                  <td className="py-1 pr-3">{l.date ? formatDate(l.date) : '-'}</td>
-                  <td className="py-1 pr-3 text-right">{l.lei != null ? Number(l.lei).toLocaleString('ro-RO') : '-'}</td>
-                  <td className="py-1 text-right">{l.eur != null ? Number(l.eur).toLocaleString('ro-RO') : '-'}</td>
+                  {canEdit ? (
+                    <>
+                      <td className="py-1 pr-3"><Input className="h-8" value={l.type} placeholder="Recondiționare…" onChange={(e) => patch(i, 'type', e.target.value)} /></td>
+                      <td className="py-1 pr-3"><Input className="h-8" value={l.description} onChange={(e) => patch(i, 'description', e.target.value)} /></td>
+                      <td className="py-1 pr-3 text-right"><Input className="h-8 text-right" type="number" step="10" value={l.eur ?? ''} onChange={(e) => patch(i, 'eur', e.target.value === '' ? null : Number(e.target.value))} /></td>
+                      <td className="py-1"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))}><X className="h-4 w-4" /></Button></td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="py-1 pr-3">{l.type || '-'}</td>
+                      <td className="py-1 pr-3">{l.description || '-'}</td>
+                      <td className="py-1 pr-3 text-right tabular-nums">{l.eur != null ? l.eur.toLocaleString('ro-RO') : '-'}</td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>
