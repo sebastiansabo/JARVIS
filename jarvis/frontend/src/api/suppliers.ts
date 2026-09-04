@@ -36,6 +36,20 @@ export interface WorklistItem {
   method: string
 }
 
+export interface BudgetedInvoice {
+  id: number
+  supplier: string
+  invoice_number: string
+  invoice_date: string
+  net_value: number | null
+  invoice_value: number
+  value_ron: number | null
+  value_eur: number | null
+  currency: string
+  status: string
+  supplier_id: number
+}
+
 export const suppliersApi = {
   list: (companyId?: number, search?: string) => {
     const params = new URLSearchParams()
@@ -56,6 +70,9 @@ export const suppliersApi = {
     api.post<{ success: boolean }>(`/api/suppliers/merge`, { survivor_id, duplicate_id }),
   worklist: (companyId?: number) =>
     api.get<{ success: boolean; items: WorklistItem[] }>(`/api/suppliers/worklist${companyId !== undefined ? `?company_id=${companyId}` : ''}`),
+  fetchInvoices: (companyId: number, startDate: string, endDate: string) =>
+    api.get<{ success: boolean; invoices: BudgetedInvoice[] }>(
+      `/api/suppliers/invoices?company_id=${companyId}&start_date=${startDate}&end_date=${endDate}`),
   resolve: (body: { action: 'link' | 'create' | 'ignore'; partner_name: string; partner_cif?: string | null; supplier_id?: number }) =>
     api.post<{ success: boolean; supplier_id?: number; efactura_linked?: number }>(`/api/suppliers/resolve`, body),
   backfillEfactura: () =>

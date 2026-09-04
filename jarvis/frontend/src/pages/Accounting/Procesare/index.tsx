@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Pencil } from 'lucide-react'
 
+import { cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -13,11 +14,44 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DateField } from '@/components/ui/date-field'
 import { PageHeader } from '@/components/shared/PageHeader'
+import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { useAuthStore } from '@/stores/authStore'
 import { organizationApi } from '@/api/organization'
-import { suppliersApi, type MasterSupplier, type WorklistItem, type KontoConfig } from '@/api/suppliers'
+import { suppliersApi, type MasterSupplier, type BudgetedInvoice, type KontoConfig } from '@/api/suppliers'
 import type { CompanyWithBrands } from '@/types/organization'
+
+/* ── period preset control (mirrors FoiParcurs/ReportsTab's Seg + rangeForPreset) ── */
+type PeriodPreset = 'month' | '30d' | 'year' | 'custom'
+
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function rangeForPreset(preset: PeriodPreset, from: string, to: string): { from: string; to: string } {
+  const now = new Date()
+  if (preset === 'month') return { from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)), to: ymd(now) }
+  if (preset === 'year') return { from: ymd(new Date(now.getFullYear(), 0, 1)), to: ymd(now) }
+  if (preset === 'custom') return { from, to }
+  return { from: ymd(new Date(now.getTime() - 29 * 864e5)), to: ymd(now) } // 30d default
+}
+
+function Seg<T extends string>({ value, onChange, options }: {
+  value: T; onChange: (v: T) => void; options: readonly (readonly [T, string])[]
+}) {
+  return (
+    <div className="inline-flex gap-0.5 rounded-lg border bg-muted/50 p-0.5">
+      {options.map(([v, label]) => (
+        <button key={v} type="button" onClick={() => onChange(v)}
+          className={cn('rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+            value === v ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground')}>
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 // EuroFib konto editor — Debit/Credit column layout (pattern: MEDLINE EuroFib file)
 const DEBIT_FIELDS: { key: keyof KontoConfig; label: string }[] = [
@@ -184,24 +218,21 @@ export default function Procesare() {
     setCompanyId(companies[0].id)
   }, [companies, companyId, user, setCompanyId])
 
-  const { data: wl } = useQuery({
-    queryKey: ['supplier-worklist', companyId],
-    queryFn: () => suppliersApi.worklist(companyId as number),
+  // Worklist period filter — presets mirror FoiParcurs/ReportsTab; 'custom' uses DateField range.
+  const [preset, setPreset] = useState<PeriodPreset>('month')
+  const [customFrom, setCustomFrom] = useState<string>(ymd(new Date(Date.now() - 29 * 864e5)))
+  const [customTo, setCustomTo] = useState<string>(ymd(new Date()))
+  const { from: startDate, to: endDate } = rangeForPreset(preset, customFrom, customTo)
+
+  const { data: invoicesData, isLoading: invoicesLoading } = useQuery({
+    queryKey: ['supplier-worklist-invoices', companyId, startDate, endDate],
+    queryFn: () => suppliersApi.fetchInvoices(companyId as number, startDate, endDate),
     enabled: !!companyId,
   })
   const { data: masters, isLoading: mastersLoading } = useQuery({
     queryKey: ['supplier-master', companyId, search],
     queryFn: () => suppliersApi.list(companyId as number, search || undefined),
     enabled: !!companyId,
-  })
-
-  const resolveMut = useMutation({
-    mutationFn: (i: WorklistItem) =>
-      suppliersApi.resolve(i.candidate_id
-        ? { action: 'link', partner_name: i.partner_name, partner_cif: i.partner_cif, supplier_id: i.candidate_id }
-        : { action: 'create', partner_name: i.partner_name, partner_cif: i.partner_cif }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['supplier-worklist'] }); toast.success('Resolved') },
-    onError: () => toast.error('Failed to resolve'),
   })
 
   // ── Add supplier dialog ──
@@ -284,33 +315,46 @@ export default function Procesare() {
       ) : (
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList>
-          <TabsTrigger value="worklist">Worklist ({wl?.items.length ?? 0})</TabsTrigger>
+          <TabsTrigger value="worklist">Worklist ({invoicesData?.invoices.length ?? 0})</TabsTrigger>
           <TabsTrigger value="master">Master</TabsTrigger>
         </TabsList>
 
         <TabsContent value="worklist">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <Seg value={preset} onChange={setPreset} options={[['month', 'Luna curentă'], ['30d', 'Ultimele 30 zile'], ['year', 'Anul curent'], ['custom', 'Interval']] as const} />
+            {preset === 'custom' && (
+              <DateField
+                mode="range"
+                startDate={customFrom}
+                endDate={customTo}
+                onRangeChange={(start, end) => { setCustomFrom(start); setCustomTo(end) }}
+              />
+            )}
+          </div>
           <Card><CardContent className="p-0">
             <Table>
               <TableHeader><TableRow>
-                <TableHead>Source</TableHead><TableHead>Name</TableHead><TableHead>CUI</TableHead>
-                <TableHead>Suggested</TableHead><TableHead>Confidence</TableHead><TableHead /></TableRow></TableHeader>
+                <TableHead>Furnizor</TableHead><TableHead>Nr. factură</TableHead><TableHead>Data</TableHead>
+                <TableHead className="text-right">Net</TableHead><TableHead className="text-right">Total</TableHead>
+                <TableHead>Monedă</TableHead><TableHead /></TableRow></TableHeader>
               <TableBody>
-                {(wl?.items ?? []).map((i, idx) => (
-                  <TableRow key={idx}>
-                    <TableCell>{i.source}</TableCell>
-                    <TableCell>{i.partner_name}</TableCell>
-                    <TableCell>{i.partner_cif ?? '-'}</TableCell>
-                    <TableCell>{i.candidate_id ? `#${i.candidate_id} (${i.method})` : '—'}</TableCell>
-                    <TableCell>{i.confidence}</TableCell>
+                {(invoicesData?.invoices ?? []).map((inv: BudgetedInvoice) => (
+                  <TableRow key={inv.id}>
+                    <TableCell>{inv.supplier}</TableCell>
+                    <TableCell>{inv.invoice_number}</TableCell>
+                    <TableCell className="whitespace-nowrap">{new Date(inv.invoice_date).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}</TableCell>
                     <TableCell className="text-right">
-                      <Button size="sm" onClick={() => resolveMut.mutate(i)} disabled={resolveMut.isPending}>
-                        {i.candidate_id ? 'Link' : 'Create'}
-                      </Button>
+                      {inv.net_value != null ? <CurrencyDisplay value={Number(inv.net_value)} currency={inv.currency} /> : '—'}
+                    </TableCell>
+                    <TableCell className="text-right"><CurrencyDisplay value={Number(inv.invoice_value)} currency={inv.currency} /></TableCell>
+                    <TableCell>{inv.currency}</TableCell>
+                    <TableCell className="text-right">
+                      <Badge className="bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/15 dark:text-emerald-400">Ready</Badge>
                     </TableCell>
                   </TableRow>
                 ))}
-                {(wl?.items ?? []).length === 0 && (
-                  <TableRow><TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">Nimic de rezolvat</TableCell></TableRow>
+                {!invoicesLoading && (invoicesData?.invoices ?? []).length === 0 && (
+                  <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">Nicio factură bugetată în interval</TableCell></TableRow>
                 )}
               </TableBody>
             </Table>
