@@ -74,10 +74,12 @@ def test_belegnummer_numeric_rightmost6():
     assert _col(c2, 'belegnummer') == '234567'
 
 
-def test_credit_valuta_is_due_date_debit_has_no_valuta():
+def test_valuta_and_brutto_netto_same_on_both_lines():
     credit, debit = build_medline_rows(_SAMPLE_INVOICE, _SAMPLE_CONFIG)
     assert _col(credit, 'valuta') == '2026-09-30'
-    assert _col(debit, 'valuta') == ''
+    assert _col(debit, 'valuta') == '2026-09-30'
+    assert _col(credit, 'brutto_netto') == 'N'
+    assert _col(debit, 'brutto_netto') == 'N'
 
 
 def test_debit_row_has_blank_klient_and_marker():
@@ -85,10 +87,10 @@ def test_debit_row_has_blank_klient_and_marker():
     assert _col(debit, 'klient') == ''
 
 
-def test_extbeleg_debit_directive_when_configured():
+def test_extbeleg_same_on_both_when_configured_either_side():
     config = dict(_SAMPLE_CONFIG, extbeleg_credit='', extbeleg_debit='invoice_number')
     credit, debit = build_medline_rows(_SAMPLE_INVOICE, config)
-    assert _col(credit, 'extbeleg') == ''
+    assert _col(credit, 'extbeleg') == '17278'
     assert _col(debit, 'extbeleg') == '17278'
 
 
