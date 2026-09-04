@@ -18,20 +18,94 @@ import { organizationApi } from '@/api/organization'
 import { suppliersApi, type MasterSupplier, type WorklistItem, type KontoConfig } from '@/api/suppliers'
 import type { CompanyWithBrands } from '@/types/organization'
 
-const KONTO_FIELD_DEFS: { key: keyof KontoConfig; label: string }[] = [
+// EuroFib konto editor — Debit/Credit column layout (pattern: MEDLINE EuroFib file)
+const DEBIT_FIELDS: { key: keyof KontoConfig; label: string }[] = [
   { key: 'konto_debit', label: 'Konto Debit' },
-  { key: 'konto_credit', label: 'Konto Credit' },
-  { key: 'klient', label: 'Klient' },
   { key: 'gegenkonto_debit', label: 'Gegenkonto Debit' },
-  { key: 'gegenkonto_credit', label: 'Gegenkonto Credit' },
   { key: 'kostenstelle_debit', label: 'Kostenstelle Debit' },
-  { key: 'kostenstelle_credit', label: 'Kostenstelle Credit' },
   { key: 'extbeleg_debit', label: 'Extbeleg Debit' },
+]
+const CREDIT_FIELDS: { key: keyof KontoConfig; label: string }[] = [
+  { key: 'konto_credit', label: 'Konto Credit' },
+  { key: 'gegenkonto_credit', label: 'Gegenkonto Credit' },
+  { key: 'kostenstelle_credit', label: 'Kostenstelle Credit' },
   { key: 'extbeleg_credit', label: 'Extbeleg Credit' },
+]
+const GENERAL_FIELDS: { key: keyof KontoConfig; label: string }[] = [
+  { key: 'klient', label: 'Klient' },
   { key: 'steuercode', label: 'Steuercode' },
   { key: 'text_template', label: 'Text Template' },
   { key: 'belegart', label: 'Belegart' },
 ]
+const EMPTY_KONTO: KontoConfig = {
+  konto_debit: null, konto_credit: null, klient: null,
+  gegenkonto_debit: null, gegenkonto_credit: null,
+  kostenstelle_debit: null, kostenstelle_credit: null,
+  extbeleg_debit: null, extbeleg_credit: null,
+  steuercode: null, text_template: null, belegart: null,
+}
+
+/** Debit/Credit + General EuroFib field grid, shared by the konto editor and the Add-supplier dialog. */
+function KontoFieldsGrid({
+  form,
+  onChange,
+  disabled,
+}: {
+  form: KontoConfig
+  onChange: (key: keyof KontoConfig, value: string) => void
+  disabled?: boolean
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+        <div className="space-y-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Debit (Soll)</div>
+          {DEBIT_FIELDS.map((f) => (
+            <div key={f.key}>
+              <Label className="text-xs">{f.label}</Label>
+              <Input
+                className="h-8 text-sm font-mono"
+                disabled={disabled}
+                value={form[f.key] ?? ''}
+                onChange={(e) => onChange(f.key, e.target.value)}
+              />
+            </div>
+          ))}
+        </div>
+        <div className="space-y-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Credit (Haben)</div>
+          {CREDIT_FIELDS.map((f) => (
+            <div key={f.key}>
+              <Label className="text-xs">{f.label}</Label>
+              <Input
+                className="h-8 text-sm font-mono"
+                disabled={disabled}
+                value={form[f.key] ?? ''}
+                onChange={(e) => onChange(f.key, e.target.value)}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">General</div>
+        <div className="grid grid-cols-2 gap-3">
+          {GENERAL_FIELDS.map((f) => (
+            <div key={f.key}>
+              <Label className="text-xs">{f.label}</Label>
+              <Input
+                className="h-8 text-sm font-mono"
+                disabled={disabled}
+                value={form[f.key] ?? ''}
+                onChange={(e) => onChange(f.key, e.target.value)}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function companyLabel(c: CompanyWithBrands): string {
   return `${c.company} · ${c.vat || '—'}`
@@ -91,19 +165,29 @@ export default function Procesare() {
   // ── Add supplier dialog ──
   const [addOpen, setAddOpen] = useState(false)
   const [addForm, setAddForm] = useState({ name: '', cui: '', nr_reg_com: '', ref_no: '' })
+  const [addKonto, setAddKonto] = useState<KontoConfig>(EMPTY_KONTO)
+  const setAddKontoField = (key: keyof KontoConfig, value: string) =>
+    setAddKonto((prev) => ({ ...prev, [key]: value || null }))
 
   const createMut = useMutation({
-    mutationFn: () => suppliersApi.create({
-      name: addForm.name.trim(),
-      cui: addForm.cui.trim() || null,
-      nr_reg_com: addForm.nr_reg_com.trim() || null,
-      ref_no: addForm.ref_no.trim() || null,
-    }),
+    mutationFn: async () => {
+      const res = await suppliersApi.create({
+        name: addForm.name.trim(),
+        cui: addForm.cui.trim() || null,
+        nr_reg_com: addForm.nr_reg_com.trim() || null,
+        ref_no: addForm.ref_no.trim() || null,
+      })
+      if (companyId !== 'all' && res.id) {
+        await suppliersApi.updateKonto(res.id, companyId, addKonto)
+      }
+      return res
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['supplier-master'] })
       toast.success('Furnizor adăugat')
       setAddOpen(false)
       setAddForm({ name: '', cui: '', nr_reg_com: '', ref_no: '' })
+      setAddKonto(EMPTY_KONTO)
     },
     onError: () => toast.error('Nu s-a putut adăuga furnizorul'),
   })
@@ -140,6 +224,12 @@ export default function Procesare() {
                 ))}
               </SelectContent>
             </Select>
+            <Input
+              placeholder="Search suppliers…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-56"
+            />
             <Button size="icon" onClick={() => setAddOpen(true)} title="Adaugă furnizor">
               <Plus className="h-4 w-4" />
             </Button>
@@ -182,12 +272,9 @@ export default function Procesare() {
         </TabsContent>
 
         <TabsContent value="master">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <Input placeholder="Search suppliers…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
-            {companyId === 'all' && (
-              <span className="text-xs text-muted-foreground">Selectează o companie pentru a edita configurația specifică</span>
-            )}
-          </div>
+          {companyId === 'all' && (
+            <div className="mb-3 text-xs text-muted-foreground">Selectează o companie pentru a edita configurația specifică</div>
+          )}
           <Card><CardContent className="p-0">
             <Table>
               <TableHeader><TableRow>
@@ -241,27 +328,41 @@ export default function Procesare() {
 
       {/* ═══ Add supplier ═══ */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Adaugă furnizor</DialogTitle>
             <DialogDescription>Creează o identitate nouă de furnizor în master.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label className="text-xs">Nume *</Label>
-              <Input className="h-8 text-sm" value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} />
+          <div className="max-h-[70vh] space-y-5 overflow-y-auto pr-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Nume *</Label>
+                <Input className="h-8 text-sm" value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div>
+                <Label className="text-xs">CUI</Label>
+                <Input className="h-8 text-sm" value={addForm.cui} onChange={(e) => setAddForm((f) => ({ ...f, cui: e.target.value }))} />
+              </div>
+              <div>
+                <Label className="text-xs">Nr. Reg. Com.</Label>
+                <Input className="h-8 text-sm" value={addForm.nr_reg_com} onChange={(e) => setAddForm((f) => ({ ...f, nr_reg_com: e.target.value }))} />
+              </div>
+              <div>
+                <Label className="text-xs">Ref. No.</Label>
+                <Input className="h-8 text-sm" value={addForm.ref_no} onChange={(e) => setAddForm((f) => ({ ...f, ref_no: e.target.value }))} />
+              </div>
             </div>
-            <div>
-              <Label className="text-xs">CUI</Label>
-              <Input className="h-8 text-sm" value={addForm.cui} onChange={(e) => setAddForm((f) => ({ ...f, cui: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-xs">Nr. Reg. Com.</Label>
-              <Input className="h-8 text-sm" value={addForm.nr_reg_com} onChange={(e) => setAddForm((f) => ({ ...f, nr_reg_com: e.target.value }))} />
-            </div>
-            <div>
-              <Label className="text-xs">Ref. No.</Label>
-              <Input className="h-8 text-sm" value={addForm.ref_no} onChange={(e) => setAddForm((f) => ({ ...f, ref_no: e.target.value }))} />
+
+            <div className="space-y-2 border-t pt-4">
+              <div>
+                <div className="text-sm font-medium">Configurație EuroFib (Table 2)</div>
+                {companyId === 'all' ? (
+                  <p className="text-xs text-muted-foreground">Selectează o companie în antet pentru a seta și configurația EuroFib pentru acest furnizor.</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Se va salva pentru {selectedCompany ? companyLabel(selectedCompany) : ''}.</p>
+                )}
+              </div>
+              <KontoFieldsGrid form={addKonto} onChange={setAddKontoField} disabled={companyId === 'all'} />
             </div>
           </div>
           <DialogFooter>
@@ -341,18 +442,7 @@ function KontoEditorDialog({
         {isLoading || !form ? (
           <div className="py-8 text-center text-sm text-muted-foreground">Se încarcă...</div>
         ) : (
-          <div className="grid grid-cols-2 gap-3">
-            {KONTO_FIELD_DEFS.map((f) => (
-              <div key={f.key}>
-                <Label className="text-xs">{f.label}</Label>
-                <Input
-                  className="h-8 text-sm font-mono"
-                  value={form[f.key] ?? ''}
-                  onChange={(e) => setField(f.key, e.target.value)}
-                />
-              </div>
-            ))}
-          </div>
+          <KontoFieldsGrid form={form} onChange={setField} />
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Anulează</Button>
