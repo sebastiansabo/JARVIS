@@ -1,5 +1,6 @@
 """Repository for suppliers table (master supplier list)."""
 from core.base_repository import BaseRepository
+from core.suppliers.normalize import normalize_cui, normalize_nr_reg
 
 
 class SupplierRepository(BaseRepository):
@@ -85,23 +86,26 @@ class SupplierRepository(BaseRepository):
     def create(self, name, company_id, created_by, **kwargs):
         return self.execute('''
             INSERT INTO suppliers
-                (name, supplier_type, cui, j_number, address, city, county, nr_reg_com,
+                (name, supplier_type, cui, cui_normalized, j_number, address, city, county,
+                 nr_reg_com, nr_reg_normalized,
                  bank_account, iban, bank_name, phone, email,
                  contact_name, contact_function, contact_email, contact_phone,
                  owner_name, owner_function, owner_email, owner_phone,
                  company_id, created_by, is_active)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING id
         ''', (
             name,
             kwargs.get('supplier_type', 'company'),
             kwargs.get('cui'),
+            normalize_cui(kwargs.get('cui')),
             kwargs.get('j_number'),
             kwargs.get('address'),
             kwargs.get('city'),
             kwargs.get('county'),
             kwargs.get('nr_reg_com'),
+            normalize_nr_reg(kwargs.get('nr_reg_com')),
             kwargs.get('bank_account'),
             kwargs.get('iban'),
             kwargs.get('bank_name'),
@@ -132,6 +136,12 @@ class SupplierRepository(BaseRepository):
             if key in fields:
                 sets.append(f'{key} = %s')
                 params.append(fields[key])
+        if 'cui' in fields:
+            sets.append('cui_normalized = %s')
+            params.append(normalize_cui(fields['cui']))
+        if 'nr_reg_com' in fields:
+            sets.append('nr_reg_normalized = %s')
+            params.append(normalize_nr_reg(fields['nr_reg_com']))
         if not sets:
             return None
         sets.append('updated_at = CURRENT_TIMESTAMP')
