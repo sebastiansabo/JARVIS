@@ -62,6 +62,8 @@ export const suppliersApi = {
     api.post<{ success: boolean; bound: number }>(`/api/suppliers/backfill-efactura`, {}),
   getKonto: (id: number, companyId: number) =>
     api.get<{ success: boolean; konto: KontoConfig; has_company_config: boolean }>(`/api/suppliers/${id}/konto?company_id=${companyId}`),
-  updateKonto: (id: number, companyId: number, fields: Partial<KontoConfig>) =>
-    api.put<{ success: boolean; id: number }>(`/api/suppliers/${id}/konto?company_id=${companyId}`, fields),
+  updateKonto: (id: number, companyId: number, fields: Partial<KontoConfig>, replicateAll?: boolean) =>
+    api.put<{ success: boolean; id?: number; replicated?: number }>(
+      `/api/suppliers/${id}/konto?company_id=${companyId}`,
+      replicateAll ? { ...fields, replicate_all: true } : fields),
 }
