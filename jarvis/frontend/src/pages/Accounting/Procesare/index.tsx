@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -107,6 +108,36 @@ function KontoFieldsGrid({
   )
 }
 
+/** "Replicate to all group companies" checkbox row, shared by the Add dialog and the konto editor. */
+function ReplicateAllCheckbox({
+  checked,
+  onCheckedChange,
+  id,
+}: {
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  id: string
+}) {
+  return (
+    <div className="flex items-start gap-2 border-t pt-3">
+      <Checkbox
+        id={id}
+        checked={checked}
+        onCheckedChange={(v) => onCheckedChange(v === true)}
+        className="mt-0.5"
+      />
+      <div className="grid gap-0.5 leading-none">
+        <Label htmlFor={id} className="cursor-pointer text-sm font-normal">
+          Aplică pentru toate companiile din grup
+        </Label>
+        <p className="text-xs text-muted-foreground">
+          Salvează aceeași configurație EuroFib pentru toate companiile
+        </p>
+      </div>
+    </div>
+  )
+}
+
 function companyLabel(c: CompanyWithBrands): string {
   return `${c.company} · ${c.vat || '—'}`
 }
@@ -177,6 +208,7 @@ export default function Procesare() {
   const [addOpen, setAddOpen] = useState(false)
   const [addForm, setAddForm] = useState({ name: '', cui: '', nr_reg_com: '', ref_no: '' })
   const [addKonto, setAddKonto] = useState<KontoConfig>(EMPTY_KONTO)
+  const [addReplicateAll, setAddReplicateAll] = useState(false)
   const setAddKontoField = (key: keyof KontoConfig, value: string) =>
     setAddKonto((prev) => ({ ...prev, [key]: value || null }))
 
@@ -189,17 +221,23 @@ export default function Procesare() {
         nr_reg_com: addForm.nr_reg_com.trim() || null,
         ref_no: addForm.ref_no.trim() || null,
       })
+      let replicated: number | undefined
       if (res.id) {
-        await suppliersApi.updateKonto(res.id, companyId, addKonto)
+        const kontoRes = await suppliersApi.updateKonto(res.id, companyId, addKonto, addReplicateAll)
+        replicated = kontoRes.replicated
       }
-      return res
+      return { ...res, replicated }
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['supplier-master'] })
-      toast.success('Furnizor adăugat')
+      toast.success(
+        res.replicated
+          ? `Furnizor adăugat — configurație salvată pentru ${res.replicated} companii`
+          : 'Furnizor adăugat')
       setAddOpen(false)
       setAddForm({ name: '', cui: '', nr_reg_com: '', ref_no: '' })
       setAddKonto(EMPTY_KONTO)
+      setAddReplicateAll(false)
     },
     onError: () => toast.error('Nu s-a putut adăuga furnizorul'),
   })
@@ -365,6 +403,7 @@ export default function Procesare() {
               </div>
               <KontoFieldsGrid form={addKonto} onChange={setAddKontoField} />
             </div>
+            <ReplicateAllCheckbox id="add-replicate-all" checked={addReplicateAll} onCheckedChange={setAddReplicateAll} />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)}>Anulează</Button>
@@ -400,6 +439,7 @@ function KontoEditorDialog({
 }) {
   const qc = useQueryClient()
   const [form, setForm] = useState<KontoConfig | null>(null)
+  const [replicateAll, setReplicateAll] = useState(false)
 
   const open = !!supplier && !!company
   const supplierId = supplier?.id ?? null
@@ -416,15 +456,20 @@ function KontoEditorDialog({
     else if (!open) setForm(null)
   }, [data, open])
 
+  // Reset the "replicate to all" choice whenever a different supplier is opened for editing.
+  useEffect(() => {
+    setReplicateAll(false)
+  }, [supplierId])
+
   const saveMut = useMutation({
     mutationFn: () => {
       if (!supplierId || companyId === null || !form) throw new Error('Missing data')
-      return suppliersApi.updateKonto(supplierId, companyId, form)
+      return suppliersApi.updateKonto(supplierId, companyId, form, replicateAll)
     },
-    onSuccess: () => {
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['supplier-master'] })
       qc.invalidateQueries({ queryKey: ['supplier-konto', supplierId, companyId] })
-      toast.success('Configurație salvată')
+      toast.success(res.replicated ? `Configurație salvată pentru ${res.replicated} companii` : 'Configurație salvată')
       onOpenChange(false)
     },
     onError: () => toast.error('Nu s-a putut salva configurația'),
@@ -443,7 +488,10 @@ function KontoEditorDialog({
         {isLoading || !form ? (
           <div className="py-8 text-center text-sm text-muted-foreground">Se încarcă...</div>
         ) : (
-          <KontoFieldsGrid form={form} onChange={setField} />
+          <div className="space-y-4">
+            <KontoFieldsGrid form={form} onChange={setField} />
+            <ReplicateAllCheckbox id="edit-replicate-all" checked={replicateAll} onCheckedChange={setReplicateAll} />
+          </div>
         )}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Anulează</Button>
