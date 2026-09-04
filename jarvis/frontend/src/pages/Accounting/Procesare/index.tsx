@@ -442,7 +442,7 @@ export default function Procesare() {
 
             <div className="space-y-2 border-t pt-4">
               <div>
-                <div className="text-sm font-medium">Configurație EuroFib (Table 2)</div>
+                <div className="text-sm font-medium">Eurofib Company Data</div>
                 <p className="text-xs text-muted-foreground">Se va salva pentru {selectedCompany ? companyLabel(selectedCompany) : ''}.</p>
               </div>
               <KontoFieldsGrid form={addKonto} onChange={setAddKontoField} />
@@ -527,7 +527,7 @@ function KontoEditorDialog({
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{supplier?.name} — {company ? companyLabel(company) : ''}</DialogTitle>
-          <DialogDescription>Configurație EuroFib pentru această companie (Table 2)</DialogDescription>
+          <DialogDescription>Eurofib Company Data — pentru această companie</DialogDescription>
         </DialogHeader>
         {isLoading || !form ? (
           <div className="py-8 text-center text-sm text-muted-foreground">Se încarcă...</div>
