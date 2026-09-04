@@ -529,7 +529,16 @@ class SupplierMasterRepository(BaseRepository):
                     """INSERT INTO supplier_aliases (supplier_id, alias_name, alias_cui_normalized, source, created_by)
                        VALUES (%s, %s, %s, 'merge', %s)""",
                     (survivor_id, dup['name'], dup['cui_normalized'], created_by))
-            cursor.execute("UPDATE suppliers SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s", (duplicate_id,))
+            # Free the partial-unique identity index: null the dup's normalized keys on
+            # deactivation (the CUI/name are preserved above via the 'merge' alias, so the
+            # survivor still resolves). Otherwise idx_suppliers_cui_norm (WHERE cui_normalized
+            # IS NOT NULL, not scoped to is_active) keeps the CUI claimed → later create/update
+            # with the same CUI throws IntegrityError.
+            cursor.execute(
+                """UPDATE suppliers
+                   SET is_active = FALSE, cui_normalized = NULL, nr_reg_normalized = NULL, ref_no = NULL,
+                       updated_at = CURRENT_TIMESTAMP
+                   WHERE id = %s""", (duplicate_id,))
             return True
         return self.execute_many(_work)
 
