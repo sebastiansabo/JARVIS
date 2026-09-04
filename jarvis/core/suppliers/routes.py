@@ -3,13 +3,15 @@ from flask import Blueprint, jsonify, request
 from flask_login import login_required, current_user
 from psycopg2 import errors as pg_errors
 
+from core.organization.repositories.company_repository import CompanyRepository
 from core.roles.repositories.permission_repository import PermissionRepository
-from core.suppliers.repository import SupplierMasterRepository
+from core.suppliers.repository import SupplierMasterRepository, KONTO_FIELDS
 from core.suppliers.resolver import SupplierResolver
 
 suppliers_bp = Blueprint('suppliers', __name__)
 _perm_repo = PermissionRepository()
 _repo = SupplierMasterRepository()
+_company_repo = CompanyRepository()
 _resolver = SupplierResolver(_repo)
 
 
@@ -31,15 +33,27 @@ def _check_supplier_perm(action: str) -> bool:
     return perm.get('has_permission', False)
 
 
+def _parse_company_id(raw):
+    """Parse a required company_id query param. Returns (company_id, error_response)."""
+    if not raw:
+        return None, (jsonify({'success': False, 'error': 'company_id is required'}), 400)
+    try:
+        return int(raw), None
+    except (TypeError, ValueError):
+        return None, (jsonify({'success': False, 'error': 'company_id must be an integer'}), 400)
+
+
 @suppliers_bp.route('/api/suppliers', methods=['GET'])
 @login_required
 def api_list_suppliers():
     if not _check_supplier_perm('view'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    company_id = request.args.get('company_id')
     suppliers = _repo.list_master(
         search=request.args.get('search'),
         limit=min(int(request.args.get('limit', 100)), 500),
-        offset=int(request.args.get('offset', 0)))
+        offset=int(request.args.get('offset', 0)),
+        company_id=int(company_id) if company_id else None)
     return jsonify({'success': True, 'suppliers': suppliers})
 
 
@@ -86,6 +100,32 @@ def api_update_supplier(supplier_id):
     return jsonify({'success': True})
 
 
+@suppliers_bp.route('/api/suppliers/<int:supplier_id>/konto', methods=['GET'])
+@login_required
+def api_get_konto(supplier_id):
+    if not _check_supplier_perm('view'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    company_id, err = _parse_company_id(request.args.get('company_id'))
+    if err:
+        return err
+    result = _repo.get_effective_konto(supplier_id, company_id)
+    return jsonify({'success': True, 'konto': result['konto'], 'has_company_config': result['has_company_config']})
+
+
+@suppliers_bp.route('/api/suppliers/<int:supplier_id>/konto', methods=['PUT'])
+@login_required
+def api_update_konto(supplier_id):
+    if not _check_supplier_perm('edit'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    company_id, err = _parse_company_id(request.args.get('company_id'))
+    if err:
+        return err
+    data = request.get_json(force=True) or {}
+    fields = {k: v for k, v in data.items() if k in KONTO_FIELDS}
+    kc_id = _repo.upsert_konto(supplier_id, company_id, created_by=getattr(current_user, 'id', None), **fields)
+    return jsonify({'success': True, 'id': kc_id})
+
+
 @suppliers_bp.route('/api/suppliers/<int:supplier_id>/aliases', methods=['POST'])
 @login_required
 def api_add_alias(supplier_id):
@@ -120,14 +160,24 @@ def api_merge_suppliers():
 def api_worklist():
     if not _check_supplier_perm('view'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    raw_company_id = request.args.get('company_id')
+    company_id, company_name = None, None
+    if raw_company_id:
+        try:
+            company_id = int(raw_company_id)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'company_id must be an integer'}), 400
+        company = _company_repo.get(company_id)
+        company_name = company['company'] if company else None
+
     items = []
-    for row in _repo.unresolved_efactura():
+    for row in _repo.unresolved_efactura(company_id=company_id):
         res = _resolver.resolve(name=row['partner_name'], cui=row['partner_cif'])
         if res.confidence != 'high':
             items.append({'source': 'efactura', 'partner_name': row['partner_name'],
                           'partner_cif': row['partner_cif'],
                           'candidate_id': res.supplier_id, 'confidence': res.confidence, 'method': res.method})
-    for row in _repo.unresolved_invoice_suppliers():
+    for row in _repo.unresolved_invoice_suppliers(company_name=company_name):
         res = _resolver.resolve(name=row['partner_name'])
         if res.confidence != 'high':
             items.append({'source': 'invoice', 'partner_name': row['partner_name'], 'partner_cif': None,
