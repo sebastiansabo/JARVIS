@@ -41,6 +41,7 @@ MODULES = [
             {'module_key': 'accounting_controlling', 'name': 'Controlling', 'description': 'BAB import and margin reports', 'icon': 'bi-bar-chart', 'url': '/accounting/controlling', 'sort_order': 6},
             {'module_key': 'accounting_add', 'name': 'Add Invoice', 'description': 'Create new invoice', 'icon': 'bi-plus-circle', 'url': '/add-invoice', 'sort_order': 7},
             {'module_key': 'accounting_templates', 'name': 'Templates', 'description': 'Manage parsing templates', 'icon': 'bi-file-earmark-code', 'url': '/templates', 'sort_order': 8},
+            {'module_key': 'accounting_procesare', 'name': 'Procesare', 'description': 'Supplier master resolution console', 'icon': 'bi-building-gear', 'url': '/accounting/procesare', 'sort_order': 9},
         ],
     },
     {
