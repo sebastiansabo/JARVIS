@@ -1,5 +1,7 @@
 """Supplier master + Procesare resolution API."""
+import io
 import re
+import zipfile
 
 from flask import Blueprint, Response, jsonify, request
 from flask_login import login_required, current_user
@@ -44,6 +46,44 @@ def _parse_company_id(raw):
         return int(raw), None
     except (TypeError, ValueError):
         return None, (jsonify({'success': False, 'error': 'company_id must be an integer'}), 400)
+
+
+def _to_invoice_config_pairs(rows, company_id, skipped):
+    """Map raw list_budgeted_invoices rows to (invoice, konto) pairs consumable by
+    build_csv, appending {'invoice_number', 'supplier', 'reason': 'missing_amounts'} to
+    `skipped` (mutated in place) for any row missing net/gross amounts. Shared by the
+    single-file /export route and the per-supplier ZIP /export-all route."""
+    pairs = []
+    for row in rows:
+        net = row.get('net_value')
+        gross = row.get('gross_amount') if row.get('gross_amount') is not None else row.get('invoice_value')
+        if net is None or gross is None:
+            skipped.append({'invoice_number': row.get('invoice_number'), 'supplier': row.get('supplier'),
+                            'reason': 'missing_amounts'})
+            continue
+        vat = float(gross) - float(net)
+        konto = _repo.get_effective_konto(row['supplier_id'], company_id)['konto']
+        invoice = {
+            'supplier': row.get('supplier'),
+            'supplier_id': row.get('supplier_id'),
+            'invoice_number': row.get('invoice_number'),
+            'invoice_date': row.get('invoice_date'),
+            # `invoices` has no due_date column (only efactura_invoices does) — fall back to
+            # invoice_date as the "valuta" value date until a real due_date is plumbed through.
+            'due_date': row.get('invoice_date'),
+            'net_amount': net,
+            'vat_amount': vat,
+            'gross_amount': gross,
+        }
+        pairs.append((invoice, konto))
+    return pairs
+
+
+def _safe_filename_part(name):
+    """Sanitize a supplier name into a filesystem-safe filename stem."""
+    name = re.sub(r'[^A-Za-z0-9 _.\-]+', '_', (name or '').strip())
+    name = re.sub(r'\s+', ' ', name).strip()
+    return name or 'furnizor'
 
 
 @suppliers_bp.route('/api/suppliers', methods=['GET'])
@@ -248,29 +288,7 @@ def api_export():
         rows = [r for r in rows if r['id'] in wanted]
 
     skipped = []
-    invoices_with_configs = []
-    for row in rows:
-        net = row.get('net_value')
-        gross = row.get('gross_amount') if row.get('gross_amount') is not None else row.get('invoice_value')
-        if net is None or gross is None:
-            skipped.append({'invoice_number': row.get('invoice_number'), 'supplier': row.get('supplier'),
-                            'reason': 'missing_amounts'})
-            continue
-        vat = float(gross) - float(net)
-        konto = _repo.get_effective_konto(row['supplier_id'], company_id)['konto']
-        invoice = {
-            'supplier': row.get('supplier'),
-            'supplier_id': row.get('supplier_id'),
-            'invoice_number': row.get('invoice_number'),
-            'invoice_date': row.get('invoice_date'),
-            # `invoices` has no due_date column (only efactura_invoices does) — fall back to
-            # invoice_date as the "valuta" value date until a real due_date is plumbed through.
-            'due_date': row.get('invoice_date'),
-            'net_amount': net,
-            'vat_amount': vat,
-            'gross_amount': gross,
-        }
-        invoices_with_configs.append((invoice, konto))
+    invoices_with_configs = _to_invoice_config_pairs(rows, company_id, skipped)
 
     skipped_before_csv = len(skipped)
     csv_text = build_csv(invoices_with_configs, skipped=skipped)
@@ -285,6 +303,72 @@ def api_export():
     return Response(
         csv_text,
         mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+    )
+
+
+@suppliers_bp.route('/api/suppliers/export-all', methods=['POST'])
+@login_required
+def api_export_all():
+    """Export ALL budgeted invoices for a company + period as a ZIP containing one EuroFib
+    (MEDLINE) CSV per supplier. Body: {company_id, start_date, end_date}."""
+    if not _check_supplier_perm('view'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
+    data = request.get_json(force=True) or {}
+    start_date = data.get('start_date')
+    end_date = data.get('end_date')
+    company_id, err = _parse_company_id(data.get('company_id'))
+    if err:
+        return err
+    if not start_date or not end_date:
+        return jsonify({'success': False, 'error': 'start_date and end_date are required'}), 400
+
+    company = _company_repo.get(company_id)
+    if not company:
+        return jsonify({'success': False, 'error': 'Company not found'}), 404
+
+    rows = _repo.list_budgeted_invoices(company_id, company['company'], start_date, end_date, limit=5000)
+
+    by_supplier = {}
+    for row in rows:
+        key = row.get('supplier_id')
+        group = by_supplier.setdefault(key, {'name': row.get('supplier'), 'rows': []})
+        group['rows'].append(row)
+
+    zip_buffer = io.BytesIO()
+    used_names = set()
+    all_skipped = []
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for group in sorted(by_supplier.values(), key=lambda g: (g['name'] or '').lower()):
+            skipped = []
+            pairs = _to_invoice_config_pairs(group['rows'], company_id, skipped)
+            skipped_before_csv = len(skipped)
+            csv_text = build_csv(pairs, skipped=skipped)
+            skipped_in_csv = len(skipped) - skipped_before_csv
+            written = len(pairs) - skipped_in_csv
+            all_skipped.extend(skipped)
+            if written == 0:
+                continue
+
+            base_name = _safe_filename_part(group['name'])
+            filename = f"{base_name}.csv"
+            suffix = 2
+            while filename in used_names:
+                filename = f"{base_name}_{suffix}.csv"
+                suffix += 1
+            used_names.add(filename)
+            zf.writestr(filename, csv_text)
+
+    if not used_names:
+        return jsonify({'success': False, 'skipped': all_skipped}), 200
+
+    zip_buffer.seek(0)
+    filename = f"eurofib_{company['company']}_{start_date}_{end_date}.zip"
+    filename = re.sub(r'[^A-Za-z0-9_.\-]+', '_', filename)
+    return Response(
+        zip_buffer.getvalue(),
+        mimetype='application/zip',
         headers={'Content-Disposition': f'attachment; filename="{filename}"'}
     )
 
