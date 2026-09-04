@@ -1216,3 +1216,9 @@ Route handlers in `jarvis/core/suppliers/routes.py` must not splat the raw reque
 - `api_update_supplier`: `fields = {k:v for k,v in data.items() if k not in {'id','supplier_id','created_by','created_at','updated_at'}}` then `update_master(supplier_id, **fields)`.
 - `api_merge_suppliers`: `int()`-coerce `survivor_id`/`duplicate_id` in a try/except → 400 on non-int; keep the `survivor == dup` → 400 check.
 - `api_resolve` `create` branch: 400 if `partner_name` is empty before `create_master`.
+
+## Amendment — sidebar menu registration (review round 1, 2026-09-04)
+
+Task 13 must also register the sidebar module so it renders (Sidebar filters items by `module_menu_items`): add to `jarvis/core/settings/menus/registry.py` MODULES, under the `accounting` module's children:
+`{'module_key': 'accounting_procesare', 'name': 'Procesare', 'description': 'Supplier master resolution console', 'icon': 'bi-building-gear', 'url': '/accounting/procesare', 'sort_order': 9}`
+It auto-provisions into `module_menu_items` on backend startup.
