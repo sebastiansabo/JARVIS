@@ -2131,6 +2131,17 @@ def _create_carpark_incremental(conn, cursor):
         END $$;
     """)
 
+    # ── CarPark: versioned pricing sheets (Fișă de preț) — JSON text list of
+    #    dated snapshots {id,status:'draft'|'published',created_at,published_at,inputs…} ──
+    cursor.execute("""
+        DO $$ BEGIN
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                         WHERE table_name='carpark_vehicles' AND column_name='pricing_sheets') THEN
+            ALTER TABLE carpark_vehicles ADD COLUMN pricing_sheets TEXT;
+          END IF;
+        END $$;
+    """)
+
     # ── CarPark condition flags (Autovit «Detalii») ──
     for _col in ['is_right_hand_drive', 'has_particle_filter', 'is_vintage',
                  'is_damaged', 'certified_mileage']:
@@ -2293,6 +2304,27 @@ def _create_schema_incremental_continued(conn, cursor):
         INSERT INTO notification_settings (setting_key, setting_value)
         VALUES ('ghost_visible_admin_ids', '')
         ON CONFLICT (setting_key) DO NOTHING;
+    ''')
+
+    # ── flexible schedule for the Bilet de Invoire form ──
+    # Marks an employee whose real start/end slides (e.g. 8-17 or 9-18 in Sincron).
+    # When set, the leave form's selectable window widens to [flex_start, flex_end]
+    # instead of the Sincron program window; norma-based day cap & lunch are unchanged.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'schedule_flexible') THEN
+                ALTER TABLE users ADD COLUMN schedule_flexible BOOLEAN DEFAULT FALSE;
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'flex_start') THEN
+                ALTER TABLE users ADD COLUMN flex_start VARCHAR(5);
+            END IF;
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'users' AND column_name = 'flex_end') THEN
+                ALTER TABLE users ADD COLUMN flex_end VARCHAR(5);
+            END IF;
+        END $$;
     ''')
 
     # ── company_id on biostar_employees — maps BioStar group → JARVIS company ──
