@@ -127,7 +127,7 @@ def build_medline_rows(invoice: dict, config: dict) -> list:
         betrag=_money(invoice.get('gross_amount')),
         gegenkonto=_s(config.get('gegenkonto_credit')),
         text=text,
-        brutto_netto='N',
+        brutto_netto='B',
         valuta=due_date,
         extbeleg=extbeleg_val,
         kostenstelle=kostenstelle,
