@@ -57,12 +57,18 @@ def _belegnummer(invoice_number):
 
 
 def _date_str(value):
-    """YYYY-MM-DD. Accepts date/datetime objects or already-formatted strings. None -> ''."""
-    if value is None:
+    """DD.MM.YYYY (e.g. '31.08.2026'). Accepts date/datetime objects or 'YYYY-MM-DD'
+    strings. None/blank -> ''."""
+    if value is None or value == '':
         return ''
-    if hasattr(value, 'isoformat'):
-        return value.isoformat()[:10]
-    return str(value)[:10]
+    if hasattr(value, 'strftime'):
+        return value.strftime('%d.%m.%Y')
+    s = str(value)[:10]
+    parts = s.split('-')
+    if len(parts) == 3 and len(parts[0]) == 4:
+        y, m, d = parts
+        return f"{d}.{m}.{y}"
+    return s
 
 
 def _resolve_text(template, invoice):
@@ -188,6 +194,7 @@ def build_csv(invoices_with_configs, skipped=None) -> str:
     buffer = io.StringIO()
     writer = csv.writer(buffer, delimiter=';', lineterminator='\r\n')
     writer.writerow(HEADER)
+    writer.writerow([''] * len(HEADER))  # required empty row after the label/header row
 
     for invoice, config in pairs:
         if _config_incomplete(config):
