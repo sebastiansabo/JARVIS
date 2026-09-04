@@ -142,4 +142,7 @@ export const suppliersApi = {
       '/api/suppliers/export-all',
       { company_id: companyId, start_date: startDate, end_date: endDate },
       `eurofib_${companyId}_${startDate}_${endDate}.zip`),
+  /** Revert exported invoices back to 'Bugetata' (send to In lucru). */
+  unprocess: (invoiceIds: number[]) =>
+    api.post<{ success: boolean; reverted: number }>('/api/suppliers/unprocess', { invoice_ids: invoiceIds }),
 }
