@@ -4,10 +4,12 @@ from flask_login import login_required, current_user
 
 from core.roles.repositories.permission_repository import PermissionRepository
 from core.suppliers.repository import SupplierMasterRepository
+from core.suppliers.resolver import SupplierResolver
 
 suppliers_bp = Blueprint('suppliers', __name__)
 _perm_repo = PermissionRepository()
 _repo = SupplierMasterRepository()
+_resolver = SupplierResolver(_repo)
 
 
 def _check_supplier_perm(action: str) -> bool:
@@ -90,3 +92,51 @@ def api_merge_suppliers():
         return jsonify({'success': False, 'error': 'survivor_id and distinct duplicate_id are required'}), 400
     _repo.merge(survivor, dup, created_by=getattr(current_user, 'id', None))
     return jsonify({'success': True})
+
+
+@suppliers_bp.route('/api/suppliers/worklist', methods=['GET'])
+@login_required
+def api_worklist():
+    if not _check_supplier_perm('view'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    items = []
+    for row in _repo.unresolved_efactura():
+        res = _resolver.resolve(name=row['partner_name'], cui=row['partner_cif'])
+        if res.confidence != 'high':
+            items.append({'source': 'efactura', 'partner_name': row['partner_name'],
+                          'partner_cif': row['partner_cif'],
+                          'candidate_id': res.supplier_id, 'confidence': res.confidence, 'method': res.method})
+    for row in _repo.unresolved_invoice_suppliers():
+        res = _resolver.resolve(name=row['partner_name'])
+        if res.confidence != 'high':
+            items.append({'source': 'invoice', 'partner_name': row['partner_name'], 'partner_cif': None,
+                          'count': row['n'], 'candidate_id': res.supplier_id,
+                          'confidence': res.confidence, 'method': res.method})
+    return jsonify({'success': True, 'items': items})
+
+
+@suppliers_bp.route('/api/suppliers/resolve', methods=['POST'])
+@login_required
+def api_resolve():
+    if not _check_supplier_perm('resolve'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(force=True) or {}
+    action = data.get('action')          # 'link' | 'create' | 'ignore'
+    partner_name = data.get('partner_name')
+    partner_cif = data.get('partner_cif')
+    uid = getattr(current_user, 'id', None)
+
+    if action == 'link':
+        sid = data.get('supplier_id')
+        if not sid:
+            return jsonify({'success': False, 'error': 'supplier_id required for link'}), 400
+    elif action == 'create':
+        sid = _repo.create_master(partner_name, created_by=uid, cui=partner_cif)
+    elif action == 'ignore':
+        return jsonify({'success': True, 'ignored': True})
+    else:
+        return jsonify({'success': False, 'error': 'unknown action'}), 400
+
+    _repo.add_alias(sid, alias_name=partner_name, alias_cui=partner_cif, source='resolve', created_by=uid)
+    linked = _repo.set_efactura_supplier_id(sid, partner_name=partner_name, partner_cif=partner_cif)
+    return jsonify({'success': True, 'supplier_id': sid, 'efactura_linked': linked})
