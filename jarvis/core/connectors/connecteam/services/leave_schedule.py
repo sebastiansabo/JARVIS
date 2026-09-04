@@ -53,6 +53,36 @@ def _fetch_company_schedules(jarvis_user_id, date_str):
     return SincronRepository().get_active_company_schedules(jarvis_user_id) or []
 
 
+def _fetch_flex_config(jarvis_user_id):
+    """Per-user flexible-schedule override from `users` — isolated for monkeypatching.
+
+    Returns {'schedule_flexible', 'flex_start', 'flex_end'} or None."""
+    from core.base_repository import BaseRepository
+    return BaseRepository().query_one(
+        'SELECT schedule_flexible, flex_start, flex_end FROM users WHERE id = %s',
+        (jarvis_user_id,))
+
+
+def _apply_flex(result, flex):
+    """Widen the selectable window to the user's personal flex interval when they are
+    marked flexible. Day cap (norma) and lunch are left untouched — flexibility moves
+    WHEN the workday sits, not how long the leave can be. Invalid/missing bounds are
+    ignored (the Sincron/default window stands)."""
+    if not flex or not flex.get('schedule_flexible'):
+        return result
+    fs, fe = _hm(flex.get('flex_start')), _hm(flex.get('flex_end'))
+    ms, me = parse_hm(fs), parse_hm(fe)
+    if ms is None or me is None or ms >= me:
+        return result
+    result['schedule_start'] = fs
+    result['schedule_end'] = fe
+    result['flexible'] = True
+    for c in result.get('companies', []):
+        c['schedule_start'] = fs
+        c['schedule_end'] = fe
+    return result
+
+
 def _window(row):
     """(start, end) HH:MM from a schedule row, falling back to the default window."""
     return (_hm(row.get('schedule_start')) or DEFAULT_START,
@@ -90,20 +120,28 @@ def get_leave_schedule(jarvis_user_id, date_str=None, company_name=None):
     pick = next((r for r in rows if r.get('company_name') == company_name), None) if company_name else None
     if pick is None and rows:
         pick = rows[0]
+    try:
+        flex = _fetch_flex_config(jarvis_user_id)
+    except Exception as e:
+        logger.warning('flex config fetch failed for user %s: %s', jarvis_user_id, e)
+        flex = None
     if pick is not None:
         start, end = _window(pick)
-        return {
+        result = {
             'schedule_start': start,
             'schedule_end': end,
             'day_cap_hours': _day_cap(pick.get('norma_lucru'), pick.get('lunch_break_minutes')),
             'lunch_break_minutes': int(pick.get('lunch_break_minutes') or 0),
             'source': 'sincron',
             'selected_company': pick.get('company_name'),
+            'flexible': False,
             'companies': companies,
         }
-    return {'schedule_start': DEFAULT_START, 'schedule_end': DEFAULT_END,
-            'day_cap_hours': DEFAULT_CAP, 'lunch_break_minutes': 60, 'source': 'default',
-            'selected_company': None, 'companies': []}
+    else:
+        result = {'schedule_start': DEFAULT_START, 'schedule_end': DEFAULT_END,
+                  'day_cap_hours': DEFAULT_CAP, 'lunch_break_minutes': 60, 'source': 'default',
+                  'selected_company': None, 'flexible': False, 'companies': []}
+    return _apply_flex(result, flex)
 
 
 def compute_return(start_hm, duration_hours, extra_minutes=0):
