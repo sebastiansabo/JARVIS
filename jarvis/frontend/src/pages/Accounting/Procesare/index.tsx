@@ -302,7 +302,11 @@ export default function Procesare() {
       const invoiceIds = selectedInGroup.length > 0 ? selectedInGroup : group.invoices.map((inv) => inv.id)
       await suppliersApi.exportCsv(companyId, startDate, endDate, invoiceIds)
     },
-    onSuccess: (_res, group) => toast.success(`Export CSV descărcat — ${group.supplierName}`),
+    onSuccess: (_res, group) => {
+      // Exported invoices flip Bugetata → processed server-side — refresh the worklist so they drop off.
+      qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] })
+      toast.success(`Exportat — facturile au fost marcate procesate (${group.supplierName})`)
+    },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Exportul a eșuat'),
   })
 
@@ -311,7 +315,10 @@ export default function Procesare() {
       if (companyId === null) throw new Error('Nicio companie selectată')
       await suppliersApi.exportAllZip(companyId, startDate, endDate)
     },
-    onSuccess: () => toast.success('Export ZIP descărcat'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] })
+      toast.success('Exportat — facturile au fost marcate procesate')
+    },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Exportul a eșuat'),
   })
 
