@@ -117,19 +117,17 @@ export default function Procesare() {
   const [tab, setTab] = useState<'worklist' | 'master'>('worklist')
   const [search, setSearch] = useState('')
 
-  // Company gating — persisted to URL (?company=<id>|all)
-  const initialParams = new URLSearchParams(window.location.search)
-  const [companyId, setCompanyIdState] = useState<number | 'all'>(() => {
-    const raw = initialParams.get('company')
-    if (raw === 'all') return 'all'
+  // Company gating — a specific company is always required (persisted to URL as ?company=<id>)
+  const [companyId, setCompanyIdState] = useState<number | null>(() => {
+    const raw = new URLSearchParams(window.location.search).get('company')
     if (raw) {
       const n = Number(raw)
       if (!Number.isNaN(n)) return n
     }
-    return user?.company_id ?? 'all'
+    return null
   })
 
-  const setCompanyId = useCallback((value: number | 'all') => {
+  const setCompanyId = useCallback((value: number) => {
     setCompanyIdState(value)
     const url = new URL(window.location.href)
     url.searchParams.set('company', String(value))
@@ -142,15 +140,28 @@ export default function Procesare() {
     staleTime: 10 * 60_000,
   })
   const companies = companiesData || []
-  const selectedCompany = companyId === 'all' ? null : companies.find((c) => c.id === companyId) || null
+  const selectedCompany = companies.find((c) => c.id === companyId) || null
+
+  // Resolve the default company once the list loads: URL param → user's own company → first in list.
+  useEffect(() => {
+    if (companies.length === 0) return
+    if (companyId !== null && companies.some((c) => c.id === companyId)) return
+    if (user?.company_id && companies.some((c) => c.id === user.company_id)) {
+      setCompanyId(user.company_id)
+      return
+    }
+    setCompanyId(companies[0].id)
+  }, [companies, companyId, user, setCompanyId])
 
   const { data: wl } = useQuery({
     queryKey: ['supplier-worklist', companyId],
-    queryFn: () => suppliersApi.worklist(companyId === 'all' ? undefined : companyId),
+    queryFn: () => suppliersApi.worklist(companyId as number),
+    enabled: !!companyId,
   })
   const { data: masters, isLoading: mastersLoading } = useQuery({
     queryKey: ['supplier-master', companyId, search],
-    queryFn: () => suppliersApi.list(companyId === 'all' ? undefined : companyId, search || undefined),
+    queryFn: () => suppliersApi.list(companyId as number, search || undefined),
+    enabled: !!companyId,
   })
 
   const resolveMut = useMutation({
@@ -171,13 +182,14 @@ export default function Procesare() {
 
   const createMut = useMutation({
     mutationFn: async () => {
+      if (companyId === null) throw new Error('No company selected')
       const res = await suppliersApi.create({
         name: addForm.name.trim(),
         cui: addForm.cui.trim() || null,
         nr_reg_com: addForm.nr_reg_com.trim() || null,
         ref_no: addForm.ref_no.trim() || null,
       })
-      if (companyId !== 'all' && res.id) {
+      if (res.id) {
         await suppliersApi.updateKonto(res.id, companyId, addKonto)
       }
       return res
@@ -194,14 +206,7 @@ export default function Procesare() {
 
   // ── Per-company konto editor ──
   const [editorSupplier, setEditorSupplier] = useState<MasterSupplier | null>(null)
-
-  const openEditor = (s: MasterSupplier) => {
-    if (companyId === 'all') {
-      toast.info('Selectează o companie pentru a edita configurația')
-      return
-    }
-    setEditorSupplier(s)
-  }
+  const openEditor = (s: MasterSupplier) => setEditorSupplier(s)
 
   return (
     <div className="space-y-4">
@@ -211,14 +216,14 @@ export default function Procesare() {
         actions={
           <>
             <Select
-              value={String(companyId)}
-              onValueChange={(v) => setCompanyId(v === 'all' ? 'all' : Number(v))}
+              value={companyId !== null ? String(companyId) : undefined}
+              onValueChange={(v) => setCompanyId(Number(v))}
+              disabled={companies.length === 0}
             >
               <SelectTrigger className="w-64">
-                <SelectValue placeholder="Toate companiile" />
+                <SelectValue placeholder="Se încarcă companiile…" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Toate companiile</SelectItem>
                 {companies.map((c) => (
                   <SelectItem key={c.id} value={String(c.id)}>{companyLabel(c)}</SelectItem>
                 ))}
@@ -230,12 +235,15 @@ export default function Procesare() {
               onChange={(e) => setSearch(e.target.value)}
               className="w-56"
             />
-            <Button size="icon" onClick={() => setAddOpen(true)} title="Adaugă furnizor">
+            <Button size="icon" onClick={() => setAddOpen(true)} title="Adaugă furnizor" disabled={companyId === null}>
               <Plus className="h-4 w-4" />
             </Button>
           </>
         }
       />
+      {companyId === null ? (
+        <div className="py-12 text-center text-sm text-muted-foreground">Se încarcă companiile…</div>
+      ) : (
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList>
           <TabsTrigger value="worklist">Worklist ({wl?.items.length ?? 0})</TabsTrigger>
@@ -272,9 +280,6 @@ export default function Procesare() {
         </TabsContent>
 
         <TabsContent value="master">
-          {companyId === 'all' && (
-            <div className="mb-3 text-xs text-muted-foreground">Selectează o companie pentru a edita configurația specifică</div>
-          )}
           <Card><CardContent className="p-0">
             <Table>
               <TableHeader><TableRow>
@@ -286,13 +291,13 @@ export default function Procesare() {
                 {(masters?.suppliers ?? []).map((s: MasterSupplier) => (
                   <TableRow
                     key={s.id}
-                    className={companyId !== 'all' ? 'cursor-pointer hover:bg-muted/40' : undefined}
+                    className="cursor-pointer hover:bg-muted/40"
                     onClick={() => openEditor(s)}
                   >
                     <TableCell>
                       <div className="flex items-center gap-1.5">
                         {s.name}
-                        {companyId !== 'all' && s.has_company_config === false && (
+                        {s.has_company_config === false && (
                           <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground" title="Folosește configurația implicită a furnizorului">implicit</Badge>
                         )}
                       </div>
@@ -308,8 +313,7 @@ export default function Procesare() {
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
-                        disabled={companyId === 'all'}
-                        title={companyId === 'all' ? 'Selectează o companie pentru a edita' : 'Editează konto'}
+                        title="Editează konto"
                         onClick={(e) => { e.stopPropagation(); openEditor(s) }}
                       >
                         <Pencil className="h-3.5 w-3.5" />
@@ -325,6 +329,7 @@ export default function Procesare() {
           </CardContent></Card>
         </TabsContent>
       </Tabs>
+      )}
 
       {/* ═══ Add supplier ═══ */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
@@ -356,13 +361,9 @@ export default function Procesare() {
             <div className="space-y-2 border-t pt-4">
               <div>
                 <div className="text-sm font-medium">Configurație EuroFib (Table 2)</div>
-                {companyId === 'all' ? (
-                  <p className="text-xs text-muted-foreground">Selectează o companie în antet pentru a seta și configurația EuroFib pentru acest furnizor.</p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">Se va salva pentru {selectedCompany ? companyLabel(selectedCompany) : ''}.</p>
-                )}
+                <p className="text-xs text-muted-foreground">Se va salva pentru {selectedCompany ? companyLabel(selectedCompany) : ''}.</p>
               </div>
-              <KontoFieldsGrid form={addKonto} onChange={setAddKontoField} disabled={companyId === 'all'} />
+              <KontoFieldsGrid form={addKonto} onChange={setAddKontoField} />
             </div>
           </div>
           <DialogFooter>
