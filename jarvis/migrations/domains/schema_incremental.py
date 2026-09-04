@@ -1727,6 +1727,30 @@ def create_schema_incremental(conn, cursor):
                     ON CONFLICT (role_id, permission_id) DO NOTHING
                 ''', (role['id'], perm['id'], scope, granted))
 
+    # ── suppliers.master permissions (Procesare console) ──
+    cursor.execute("SELECT COUNT(*) AS cnt FROM permissions_v2 WHERE module_key = 'suppliers' AND entity_key = 'master'")
+    if cursor.fetchone()['cnt'] == 0:
+        master_perms = [
+            ('suppliers', 'Suppliers', 'bi-building', 'master', 'Supplier Master', 'view',    'View',    'View supplier master & worklist', False, 1),
+            ('suppliers', 'Suppliers', 'bi-building', 'master', 'Supplier Master', 'edit',    'Edit',    'Create/edit master suppliers',    False, 2),
+            ('suppliers', 'Suppliers', 'bi-building', 'master', 'Supplier Master', 'merge',   'Merge',   'Merge duplicate suppliers',       False, 3),
+            ('suppliers', 'Suppliers', 'bi-building', 'master', 'Supplier Master', 'resolve', 'Resolve', 'Resolve worklist entries',        False, 4),
+        ]
+        for p in master_perms:
+            cursor.execute('''
+                INSERT INTO permissions_v2 (module_key, module_label, module_icon,
+                    entity_key, entity_label, action_key, action_label, description, is_scope_based, sort_order)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+            ''', p)
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, 'all', TRUE
+            FROM roles r CROSS JOIN permissions_v2 p
+            WHERE r.name IN ('Admin', 'Manager', 'Dep Contabilitate') AND p.module_key = 'suppliers'
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''')
+
     # Seed folder permissions (incremental — safe to re-run)
     cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'dms' AND entity_key = 'folder'")
     if cursor.fetchone()['cnt'] == 0:
