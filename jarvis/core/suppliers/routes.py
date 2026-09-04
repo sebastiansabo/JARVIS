@@ -74,6 +74,7 @@ def _to_invoice_config_pairs(rows, company_id, skipped):
             'net_amount': net,
             'vat_amount': vat,
             'gross_amount': gross,
+            'line_description': row.get('line_description'),
         }
         pairs.append((invoice, konto))
     return pairs
@@ -238,8 +239,10 @@ def api_worklist():
 @suppliers_bp.route('/api/suppliers/invoices', methods=['GET'])
 @login_required
 def api_worklist_invoices():
-    """Budgeted invoices for the Procesare Worklist tab — company + period gated, restricted
-    to suppliers with a complete Table-2 konto config for that company."""
+    """Invoices for the Procesare Worklist tab — company + period gated, restricted to
+    suppliers with a complete Table-2 konto config for that company. `?status=` selects which
+    invoice status to list (default 'Bugetata'; the Worklist's "Procesate" toggle passes
+    'processed' for a read-only history view)."""
     if not _check_supplier_perm('view'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     company_id, err = _parse_company_id(request.args.get('company_id'))
@@ -249,10 +252,11 @@ def api_worklist_invoices():
     end_date = request.args.get('end_date')
     if not start_date or not end_date:
         return jsonify({'success': False, 'error': 'start_date and end_date are required'}), 400
+    status = request.args.get('status', 'Bugetata')
     company = _company_repo.get(company_id)
     if not company:
         return jsonify({'success': False, 'error': 'Company not found'}), 404
-    invoices = _repo.list_budgeted_invoices(company_id, company['company'], start_date, end_date)
+    invoices = _repo.list_budgeted_invoices(company_id, company['company'], start_date, end_date, status=status)
     return jsonify({'success': True, 'invoices': invoices})
 
 

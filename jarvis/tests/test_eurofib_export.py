@@ -87,6 +87,24 @@ def test_debit_row_has_blank_klient_and_marker():
     assert _col(debit, 'klient') == ''
 
 
+def test_text_uses_line_description_when_present():
+    invoice = dict(_SAMPLE_INVOICE, line_description='Servicii mentenanta lift august 2026')
+    credit, debit = build_medline_rows(invoice, _SAMPLE_CONFIG)
+    assert _col(credit, 'text') == 'Servicii mentenanta lift august 2026'
+
+
+def test_text_falls_back_to_text_template_when_no_line_description():
+    credit, debit = build_medline_rows(_SAMPLE_INVOICE, _SAMPLE_CONFIG)
+    assert _col(credit, 'text') == _SAMPLE_CONFIG['text_template']
+
+
+def test_text_falls_back_when_line_description_is_none_or_blank():
+    for blank in (None, ''):
+        invoice = dict(_SAMPLE_INVOICE, line_description=blank)
+        credit, _ = build_medline_rows(invoice, _SAMPLE_CONFIG)
+        assert _col(credit, 'text') == _SAMPLE_CONFIG['text_template']
+
+
 def test_extbeleg_same_on_both_when_configured_either_side():
     config = dict(_SAMPLE_CONFIG, extbeleg_credit='', extbeleg_debit='invoice_number')
     credit, debit = build_medline_rows(_SAMPLE_INVOICE, config)
