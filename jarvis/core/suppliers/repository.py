@@ -244,6 +244,41 @@ class SupplierMasterRepository(BaseRepository):
         params.append(limit)
         return self.query_all(sql, tuple(params))
 
+    def list_budgeted_invoices(self, company_id, company_name, start_date, end_date, limit=500):
+        """Budgeted ('bugetata') invoices allocated to `company_name`, within [start_date,
+        end_date] on invoice_date, whose free-text supplier resolves (by exact name or alias)
+        to a master supplier with a COMPLETE Table-2 konto config for `company_id` (all key
+        posting fields non-empty). GROUP BY i.id collapses the allocation fan-out (an invoice
+        can have multiple allocation rows for the same company, split across departments)."""
+        sql = """
+            SELECT i.id, i.supplier, i.invoice_number, i.invoice_date, i.net_value,
+                   i.invoice_value, i.value_ron, i.value_eur, i.currency, i.status,
+                   MIN(s.id) AS supplier_id
+            FROM invoices i
+            JOIN allocations a ON a.invoice_id = i.id AND lower(a.company) = lower(%s)
+            JOIN suppliers s ON (
+                lower(s.name) = lower(i.supplier)
+                OR EXISTS (
+                    SELECT 1 FROM supplier_aliases al
+                    WHERE al.supplier_id = s.id AND lower(al.alias_name) = lower(i.supplier)
+                )
+            )
+            JOIN supplier_konto_config kc ON kc.supplier_id = s.id AND kc.company_id = %s
+            WHERE lower(i.status) = 'bugetata'
+              AND i.deleted_at IS NULL
+              AND i.invoice_date BETWEEN %s AND %s
+              AND NULLIF(kc.konto_debit, '') IS NOT NULL
+              AND NULLIF(kc.konto_credit, '') IS NOT NULL
+              AND NULLIF(kc.klient, '') IS NOT NULL
+              AND NULLIF(kc.steuercode, '') IS NOT NULL
+              AND NULLIF(kc.belegart, '') IS NOT NULL
+            GROUP BY i.id, i.supplier, i.invoice_number, i.invoice_date, i.net_value,
+                     i.invoice_value, i.value_ron, i.value_eur, i.currency, i.status
+            ORDER BY i.invoice_date DESC, i.id DESC
+            LIMIT %s
+        """
+        return self.query_all(sql, (company_name, company_id, start_date, end_date, limit))
+
     def unresolved_invoice_suppliers(self, limit=200, company_name=None):
         if company_name is not None:
             # allocations can hold multiple rows per invoice for the same company (split across
