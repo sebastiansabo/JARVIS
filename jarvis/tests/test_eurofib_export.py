@@ -76,8 +76,8 @@ def test_belegnummer_numeric_rightmost6():
 
 def test_valuta_on_both_lines_and_brutto_netto_B_then_N():
     credit, debit = build_medline_rows(_SAMPLE_INVOICE, _SAMPLE_CONFIG)
-    assert _col(credit, 'valuta') == '2026-09-30'
-    assert _col(debit, 'valuta') == '2026-09-30'
+    assert _col(credit, 'valuta') == '30.09.2026'
+    assert _col(debit, 'valuta') == '30.09.2026'
     assert _col(credit, 'brutto_netto') == 'B'
     assert _col(debit, 'brutto_netto') == 'N'
 
@@ -117,10 +117,11 @@ def test_build_csv_has_bom_semicolons_header_and_two_rows_per_invoice():
     assert csv_text.startswith('﻿')
     body = csv_text[1:]
     lines = [l for l in body.split('\r\n') if l]
-    assert len(lines) == 3  # header + credit + debit
+    assert len(lines) == 4  # header + empty row + credit + debit
     assert lines[0].split(';')[1] == 'klient'
-    assert '40102793' in lines[1]
-    assert '628701' in lines[2]
+    assert lines[1] == ';' * (len(HEADER) - 1)  # empty row after the label row
+    assert '40102793' in lines[2]
+    assert '628701' in lines[3]
 
 
 def test_build_csv_groups_and_orders_by_supplier():
@@ -131,7 +132,7 @@ def test_build_csv_groups_and_orders_by_supplier():
     lines = [l for l in body.split('\r\n') if l]
     # header, then Alpha's 2 rows, then Zeta's 2 rows
     assert 'Alpha' not in lines[0]
-    first_data_belegnummer = lines[1].split(';')[HEADER.index('belegnummer')]
+    first_data_belegnummer = lines[2].split(';')[HEADER.index('belegnummer')]
     assert first_data_belegnummer == '2'  # Alpha SRL's invoice comes first
 
 
@@ -151,7 +152,7 @@ def test_build_csv_skips_incomplete_config_and_missing_amounts():
     )
     body = csv_text[1:]
     lines = [l for l in body.split('\r\n') if l]
-    assert len(lines) == 3  # header + only the good invoice's 2 rows
+    assert len(lines) == 4  # header + empty row + the good invoice's 2 rows
     assert len(skipped) == 2
     reasons = {s['reason'] for s in skipped}
     assert reasons == {'incomplete_config', 'missing_amounts'}
