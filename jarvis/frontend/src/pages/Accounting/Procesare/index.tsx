@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, ChevronDown, ChevronRight, Download } from 'lucide-react'
+import { Plus, Pencil, ChevronDown, ChevronRight, Download, RotateCcw } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
@@ -325,6 +325,18 @@ export default function Procesare() {
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Exportul a eșuat'),
   })
 
+  const unprocessMut = useMutation({
+    mutationFn: async (group: SupplierGroup) => {
+      await suppliersApi.unprocess(group.invoices.map((inv) => inv.id))
+    },
+    onSuccess: (_res, group) => {
+      qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] })
+      setWorklistView('bugetata')
+      toast.success(`Readuse în lucru (${group.supplierName})`)
+    },
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Acțiunea a eșuat'),
+  })
+
   const exportAllMut = useMutation({
     mutationFn: async () => {
       if (companyId === null) throw new Error('Nicio companie selectată')
@@ -494,6 +506,17 @@ export default function Procesare() {
                             >
                               <Download className="mr-1.5 h-3.5 w-3.5" />
                               Export CSV
+                            </Button>
+                          )}
+                          {isProcessedView && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={(e) => { e.stopPropagation(); unprocessMut.mutate(group) }}
+                              disabled={unprocessMut.isPending}
+                            >
+                              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                              Înapoi în lucru
                             </Button>
                           )}
                         </TableCell>
