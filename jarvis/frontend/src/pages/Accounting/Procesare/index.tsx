@@ -1,21 +1,83 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { Plus, Pencil } from 'lucide-react'
+
 import { Card, CardContent } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { PageHeader } from '@/components/shared/PageHeader'
-import { suppliersApi, type MasterSupplier, type WorklistItem } from '@/api/suppliers'
+import { useAuthStore } from '@/stores/authStore'
+import { organizationApi } from '@/api/organization'
+import { suppliersApi, type MasterSupplier, type WorklistItem, type KontoConfig } from '@/api/suppliers'
+import type { CompanyWithBrands } from '@/types/organization'
+
+const KONTO_FIELD_DEFS: { key: keyof KontoConfig; label: string }[] = [
+  { key: 'konto_debit', label: 'Konto Debit' },
+  { key: 'konto_credit', label: 'Konto Credit' },
+  { key: 'klient', label: 'Klient' },
+  { key: 'gegenkonto_debit', label: 'Gegenkonto Debit' },
+  { key: 'gegenkonto_credit', label: 'Gegenkonto Credit' },
+  { key: 'kostenstelle_debit', label: 'Kostenstelle Debit' },
+  { key: 'kostenstelle_credit', label: 'Kostenstelle Credit' },
+  { key: 'extbeleg_debit', label: 'Extbeleg Debit' },
+  { key: 'extbeleg_credit', label: 'Extbeleg Credit' },
+  { key: 'steuercode', label: 'Steuercode' },
+  { key: 'text_template', label: 'Text Template' },
+  { key: 'belegart', label: 'Belegart' },
+]
+
+function companyLabel(c: CompanyWithBrands): string {
+  return `${c.company} · ${c.vat || '—'}`
+}
 
 export default function Procesare() {
   const qc = useQueryClient()
+  const user = useAuthStore((s) => s.user)
   const [tab, setTab] = useState<'worklist' | 'master'>('worklist')
   const [search, setSearch] = useState('')
 
-  const { data: wl } = useQuery({ queryKey: ['supplier-worklist'], queryFn: () => suppliersApi.worklist() })
-  const { data: masters } = useQuery({ queryKey: ['supplier-master', search], queryFn: () => suppliersApi.list(search) })
+  // Company gating — persisted to URL (?company=<id>|all)
+  const initialParams = new URLSearchParams(window.location.search)
+  const [companyId, setCompanyIdState] = useState<number | 'all'>(() => {
+    const raw = initialParams.get('company')
+    if (raw === 'all') return 'all'
+    if (raw) {
+      const n = Number(raw)
+      if (!Number.isNaN(n)) return n
+    }
+    return user?.company_id ?? 'all'
+  })
+
+  const setCompanyId = useCallback((value: number | 'all') => {
+    setCompanyIdState(value)
+    const url = new URL(window.location.href)
+    url.searchParams.set('company', String(value))
+    window.history.replaceState({}, '', url.toString())
+  }, [])
+
+  const { data: companiesData } = useQuery({
+    queryKey: ['companies-config'],
+    queryFn: () => organizationApi.getCompaniesConfig(),
+    staleTime: 10 * 60_000,
+  })
+  const companies = companiesData || []
+  const selectedCompany = companyId === 'all' ? null : companies.find((c) => c.id === companyId) || null
+
+  const { data: wl } = useQuery({
+    queryKey: ['supplier-worklist', companyId],
+    queryFn: () => suppliersApi.worklist(companyId === 'all' ? undefined : companyId),
+  })
+  const { data: masters, isLoading: mastersLoading } = useQuery({
+    queryKey: ['supplier-master', companyId, search],
+    queryFn: () => suppliersApi.list(companyId === 'all' ? undefined : companyId, search || undefined),
+  })
 
   const resolveMut = useMutation({
     mutationFn: (i: WorklistItem) =>
@@ -26,9 +88,64 @@ export default function Procesare() {
     onError: () => toast.error('Failed to resolve'),
   })
 
+  // ── Add supplier dialog ──
+  const [addOpen, setAddOpen] = useState(false)
+  const [addForm, setAddForm] = useState({ name: '', cui: '', nr_reg_com: '', ref_no: '' })
+
+  const createMut = useMutation({
+    mutationFn: () => suppliersApi.create({
+      name: addForm.name.trim(),
+      cui: addForm.cui.trim() || null,
+      nr_reg_com: addForm.nr_reg_com.trim() || null,
+      ref_no: addForm.ref_no.trim() || null,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['supplier-master'] })
+      toast.success('Furnizor adăugat')
+      setAddOpen(false)
+      setAddForm({ name: '', cui: '', nr_reg_com: '', ref_no: '' })
+    },
+    onError: () => toast.error('Nu s-a putut adăuga furnizorul'),
+  })
+
+  // ── Per-company konto editor ──
+  const [editorSupplier, setEditorSupplier] = useState<MasterSupplier | null>(null)
+
+  const openEditor = (s: MasterSupplier) => {
+    if (companyId === 'all') {
+      toast.info('Selectează o companie pentru a edita configurația')
+      return
+    }
+    setEditorSupplier(s)
+  }
+
   return (
     <div className="space-y-4">
-      <PageHeader title="Procesare Furnizori" breadcrumbs={[{ label: 'Accounting' }, { label: 'Procesare' }]} />
+      <PageHeader
+        title="Procesare Furnizori"
+        breadcrumbs={[{ label: 'Accounting' }, { label: 'Procesare' }]}
+        actions={
+          <>
+            <Select
+              value={String(companyId)}
+              onValueChange={(v) => setCompanyId(v === 'all' ? 'all' : Number(v))}
+            >
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Toate companiile" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toate companiile</SelectItem>
+                {companies.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>{companyLabel(c)}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button size="icon" onClick={() => setAddOpen(true)} title="Adaugă furnizor">
+              <Plus className="h-4 w-4" />
+            </Button>
+          </>
+        }
+      />
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <TabsList>
           <TabsTrigger value="worklist">Worklist ({wl?.items.length ?? 0})</TabsTrigger>
@@ -56,36 +173,194 @@ export default function Procesare() {
                     </TableCell>
                   </TableRow>
                 ))}
+                {(wl?.items ?? []).length === 0 && (
+                  <TableRow><TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">Nimic de rezolvat</TableCell></TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent></Card>
         </TabsContent>
 
         <TabsContent value="master">
-          <div className="mb-3"><Input placeholder="Search suppliers…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" /></div>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <Input placeholder="Search suppliers…" value={search} onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
+            {companyId === 'all' && (
+              <span className="text-xs text-muted-foreground">Selectează o companie pentru a edita configurația specifică</span>
+            )}
+          </div>
           <Card><CardContent className="p-0">
             <Table>
               <TableHeader><TableRow>
                 <TableHead>Name</TableHead><TableHead>CUI</TableHead>
                 <TableHead>Konto (D/C)</TableHead><TableHead>Gegenkonto (D/C)</TableHead>
-                <TableHead>Kostenstelle (D/C)</TableHead><TableHead>Extbeleg (D/C)</TableHead><TableHead>Klient</TableHead></TableRow></TableHeader>
+                <TableHead>Kostenstelle (D/C)</TableHead><TableHead>Extbeleg (D/C)</TableHead><TableHead>Klient</TableHead>
+                <TableHead className="w-10" /></TableRow></TableHeader>
               <TableBody>
                 {(masters?.suppliers ?? []).map((s: MasterSupplier) => (
-                  <TableRow key={s.id}>
-                    <TableCell>{s.name}</TableCell>
+                  <TableRow
+                    key={s.id}
+                    className={companyId !== 'all' ? 'cursor-pointer hover:bg-muted/40' : undefined}
+                    onClick={() => openEditor(s)}
+                  >
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        {s.name}
+                        {companyId !== 'all' && s.has_company_config === false && (
+                          <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground" title="Folosește configurația implicită a furnizorului">implicit</Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>{s.cui ?? '-'}</TableCell>
                     <TableCell>{`${s.konto_debit ?? '-'} / ${s.konto_credit ?? '-'}`}</TableCell>
                     <TableCell>{`${s.gegenkonto_debit ?? '-'} / ${s.gegenkonto_credit ?? '-'}`}</TableCell>
                     <TableCell>{`${s.kostenstelle_debit ?? '-'} / ${s.kostenstelle_credit ?? '-'}`}</TableCell>
                     <TableCell>{`${s.extbeleg_debit ?? '-'} / ${s.extbeleg_credit ?? '-'}`}</TableCell>
                     <TableCell>{s.klient ?? '-'}</TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        disabled={companyId === 'all'}
+                        title={companyId === 'all' ? 'Selectează o companie pentru a edita' : 'Editează konto'}
+                        onClick={(e) => { e.stopPropagation(); openEditor(s) }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
+                {!mastersLoading && (masters?.suppliers ?? []).length === 0 && (
+                  <TableRow><TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">Niciun furnizor găsit</TableCell></TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent></Card>
         </TabsContent>
       </Tabs>
+
+      {/* ═══ Add supplier ═══ */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Adaugă furnizor</DialogTitle>
+            <DialogDescription>Creează o identitate nouă de furnizor în master.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Nume *</Label>
+              <Input className="h-8 text-sm" value={addForm.name} onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">CUI</Label>
+              <Input className="h-8 text-sm" value={addForm.cui} onChange={(e) => setAddForm((f) => ({ ...f, cui: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">Nr. Reg. Com.</Label>
+              <Input className="h-8 text-sm" value={addForm.nr_reg_com} onChange={(e) => setAddForm((f) => ({ ...f, nr_reg_com: e.target.value }))} />
+            </div>
+            <div>
+              <Label className="text-xs">Ref. No.</Label>
+              <Input className="h-8 text-sm" value={addForm.ref_no} onChange={(e) => setAddForm((f) => ({ ...f, ref_no: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddOpen(false)}>Anulează</Button>
+            <Button onClick={() => createMut.mutate()} disabled={!addForm.name.trim() || createMut.isPending}>
+              {createMut.isPending ? 'Se salvează...' : 'Salvează'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══ Per-company konto editor ═══ */}
+      <KontoEditorDialog
+        supplier={editorSupplier}
+        company={selectedCompany}
+        onOpenChange={(open) => { if (!open) setEditorSupplier(null) }}
+      />
     </div>
+  )
+}
+
+/* ═══════════════════════════════════════
+   Konto editor — per (supplier, company)
+   ═══════════════════════════════════════ */
+
+function KontoEditorDialog({
+  supplier,
+  company,
+  onOpenChange,
+}: {
+  supplier: MasterSupplier | null
+  company: CompanyWithBrands | null
+  onOpenChange: (open: boolean) => void
+}) {
+  const qc = useQueryClient()
+  const [form, setForm] = useState<KontoConfig | null>(null)
+
+  const open = !!supplier && !!company
+  const supplierId = supplier?.id ?? null
+  const companyId = company?.id ?? null
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['supplier-konto', supplierId, companyId],
+    queryFn: () => suppliersApi.getKonto(supplierId as number, companyId as number),
+    enabled: open,
+  })
+
+  useEffect(() => {
+    if (data?.konto) setForm(data.konto)
+    else if (!open) setForm(null)
+  }, [data, open])
+
+  const saveMut = useMutation({
+    mutationFn: () => {
+      if (!supplierId || companyId === null || !form) throw new Error('Missing data')
+      return suppliersApi.updateKonto(supplierId, companyId, form)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['supplier-master'] })
+      qc.invalidateQueries({ queryKey: ['supplier-konto', supplierId, companyId] })
+      toast.success('Configurație salvată')
+      onOpenChange(false)
+    },
+    onError: () => toast.error('Nu s-a putut salva configurația'),
+  })
+
+  const setField = (key: keyof KontoConfig, value: string) =>
+    setForm((prev) => (prev ? { ...prev, [key]: value || null } : prev))
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{supplier?.name} — {company ? companyLabel(company) : ''}</DialogTitle>
+          <DialogDescription>Configurație EuroFib pentru această companie (Table 2)</DialogDescription>
+        </DialogHeader>
+        {isLoading || !form ? (
+          <div className="py-8 text-center text-sm text-muted-foreground">Se încarcă...</div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {KONTO_FIELD_DEFS.map((f) => (
+              <div key={f.key}>
+                <Label className="text-xs">{f.label}</Label>
+                <Input
+                  className="h-8 text-sm font-mono"
+                  value={form[f.key] ?? ''}
+                  onChange={(e) => setField(f.key, e.target.value)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Anulează</Button>
+          <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !form}>
+            {saveMut.isPending ? 'Se salvează...' : 'Salvează'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
