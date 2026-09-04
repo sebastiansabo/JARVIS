@@ -40,7 +40,8 @@ def get_all_hr_employees(active_only=True, scope='all', user_context=None, contr
 
         query = '''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, notify_missing_punch, is_active, contract_status, created_at, updated_at
+                   notify_on_allocation, notify_missing_punch, schedule_flexible, flex_start, flex_end,
+                   is_active, contract_status, created_at, updated_at
             FROM users
             WHERE 1=1
         '''
@@ -76,7 +77,8 @@ def get_hr_employee(employee_id):
         cursor = get_cursor(conn)
         cursor.execute('''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, notify_missing_punch, is_active, contract_status, created_at, updated_at
+                   notify_on_allocation, notify_missing_punch, schedule_flexible, flex_start, flex_end,
+                   is_active, contract_status, created_at, updated_at
             FROM users WHERE id = %s
         ''', (employee_id,))
         row = cursor.fetchone()
@@ -105,8 +107,12 @@ def save_hr_employee(name, department=None, subdepartment=None, brand=None, comp
         release_db(conn)
 def update_hr_employee(employee_id, name=None, department=None, subdepartment=None, brand=None, company=None,
                        email=None, phone=None, notify_on_allocation=None, is_active=None,
-                       contract_status=None, notify_missing_punch=None):
-    """Update an HR employee in users table. All fields use COALESCE for partial updates."""
+                       contract_status=None, notify_missing_punch=None,
+                       schedule_flexible=None, flex_start=None, flex_end=None):
+    """Update an HR employee in users table. All fields use COALESCE for partial updates
+    (None keeps the current value). schedule_flexible/flex_start/flex_end drive the
+    flexible leave-permit window; when schedule_flexible is False the bounds are ignored
+    downstream, so they need no clearing."""
     conn = get_db()
     try:
         cursor = get_cursor(conn)
@@ -123,10 +129,14 @@ def update_hr_employee(employee_id, name=None, department=None, subdepartment=No
                 is_active = COALESCE(%s, is_active),
                 contract_status = COALESCE(%s, contract_status),
                 notify_missing_punch = COALESCE(%s, notify_missing_punch),
+                schedule_flexible = COALESCE(%s, schedule_flexible),
+                flex_start = COALESCE(%s, flex_start),
+                flex_end = COALESCE(%s, flex_end),
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = %s
         ''', (name, department, subdepartment, brand, company, email, phone, notify_on_allocation,
-              is_active, contract_status, notify_missing_punch, employee_id))
+              is_active, contract_status, notify_missing_punch,
+              schedule_flexible, flex_start, flex_end, employee_id))
         conn.commit()
 
 
@@ -152,7 +162,8 @@ def search_hr_employees(query):
         cursor = get_cursor(conn)
         cursor.execute('''
             SELECT id, name, email, phone, department AS departments, subdepartment, company, brand,
-                   notify_on_allocation, notify_missing_punch, is_active, contract_status, created_at, updated_at
+                   notify_on_allocation, notify_missing_punch, schedule_flexible, flex_start, flex_end,
+                   is_active, contract_status, created_at, updated_at
             FROM users
             WHERE is_active = TRUE AND name ILIKE %s
             ORDER BY name

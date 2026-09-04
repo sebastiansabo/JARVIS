@@ -58,6 +58,11 @@ export interface HrEmployee {
   contract_status: ContractStatus
   notify_on_allocation: boolean
   notify_missing_punch: boolean | null
+  /** Flexible leave-permit window: when true the Bilet de Invoire form uses
+   *  [flex_start, flex_end] instead of the Sincron program window. */
+  schedule_flexible?: boolean | null
+  flex_start?: string | null
+  flex_end?: string | null
 }
 
 export interface EmployeeWorkStats {
