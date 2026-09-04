@@ -1397,6 +1397,63 @@ def create_schema_incremental(conn, cursor):
         END $$;
     ''')
 
+    # ── suppliers master: identity normalization + AP EuroFib posting (2026-09-04) ──
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'suppliers' AND column_name = 'cui_normalized') THEN
+                ALTER TABLE suppliers ADD COLUMN cui_normalized TEXT;
+                ALTER TABLE suppliers ADD COLUMN nr_reg_normalized TEXT;
+                ALTER TABLE suppliers ADD COLUMN ref_no TEXT;
+                ALTER TABLE suppliers ADD COLUMN konto_debit TEXT;
+                ALTER TABLE suppliers ADD COLUMN konto_credit TEXT;
+                ALTER TABLE suppliers ADD COLUMN klient TEXT;
+                ALTER TABLE suppliers ADD COLUMN gegenkonto_debit TEXT;
+                ALTER TABLE suppliers ADD COLUMN gegenkonto_credit TEXT;
+                ALTER TABLE suppliers ADD COLUMN kostenstelle_debit TEXT;
+                ALTER TABLE suppliers ADD COLUMN kostenstelle_credit TEXT;
+                ALTER TABLE suppliers ADD COLUMN extbeleg_debit TEXT;
+                ALTER TABLE suppliers ADD COLUMN extbeleg_credit TEXT;
+            END IF;
+        END $$;
+    ''')
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_suppliers_cui_norm ON suppliers(cui_normalized) WHERE cui_normalized IS NOT NULL")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_suppliers_nrreg_norm ON suppliers(nr_reg_normalized)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_suppliers_ref_no ON suppliers(ref_no)")
+
+    # Backfill normalized identity for existing rows (digits-only CUI; upper/no-space Nr.Reg)
+    cursor.execute("UPDATE suppliers SET cui_normalized = NULLIF(regexp_replace(COALESCE(cui,''), '\\D', '', 'g'), '') WHERE cui_normalized IS NULL")
+    cursor.execute("UPDATE suppliers SET nr_reg_normalized = NULLIF(upper(regexp_replace(COALESCE(nr_reg_com,''), '\\s', '', 'g')), '') WHERE nr_reg_normalized IS NULL")
+
+    # ── supplier_aliases (spelling/CUI variants → one master) ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS supplier_aliases (
+            id SERIAL PRIMARY KEY,
+            supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+            alias_name TEXT,
+            alias_cui_normalized TEXT,
+            source TEXT,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_supplier_aliases_supplier ON supplier_aliases(supplier_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_supplier_aliases_cui ON supplier_aliases(alias_cui_normalized)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_supplier_aliases_name ON supplier_aliases (lower(alias_name))")
+
+    # ── efactura_invoices.supplier_id (bind inbound e-Factura to the master) ──
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'efactura_invoices' AND column_name = 'supplier_id') THEN
+                ALTER TABLE efactura_invoices ADD COLUMN supplier_id INTEGER REFERENCES suppliers(id) ON DELETE SET NULL;
+            END IF;
+        END $$;
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_efactura_invoices_supplier ON efactura_invoices(supplier_id)")
+
     # ── document_wml + chunks (Phase D) ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS document_wml (
