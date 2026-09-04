@@ -128,6 +128,35 @@ class SupplierMasterRepository(BaseRepository):
             tuple(insert_vals), returning=True)
         return row['id']
 
+    def replicate_konto(self, supplier_id, fields, created_by=None):
+        """Upsert the given (whitelisted) KONTO_FIELDS into supplier_konto_config for EVERY
+        company, atomically in a single transaction. Mirrors upsert_konto's INSERT ... ON
+        CONFLICT per company. Only KONTO_FIELDS are ever written — arbitrary keys in `fields`
+        are silently dropped, never interpolated as SQL identifiers.
+
+        Returns the number of companies written.
+        """
+        cols = [f for f in KONTO_FIELDS if f in fields]
+        vals = [fields[f] for f in cols]
+        insert_cols = ['supplier_id', 'company_id', 'created_by'] + cols
+        placeholders = ', '.join(['%s'] * len(insert_cols))
+        update_sets = ', '.join(f"{f} = EXCLUDED.{f}" for f in cols)
+        update_clause = (update_sets + ', ') if update_sets else ''
+        sql = (
+            f"""INSERT INTO supplier_konto_config ({', '.join(insert_cols)})
+                VALUES ({placeholders})
+                ON CONFLICT (supplier_id, company_id) DO UPDATE SET
+                    {update_clause}updated_at = CURRENT_TIMESTAMP""")
+
+        def _work(cursor):
+            cursor.execute("SELECT id FROM companies")
+            company_ids = [row['id'] for row in cursor.fetchall()]
+            for company_id in company_ids:
+                cursor.execute(sql, tuple([supplier_id, company_id, created_by] + vals))
+            return len(company_ids)
+
+        return self.execute_many(_work)
+
     def get_master(self, supplier_id):
         sup = self.query_one("SELECT * FROM suppliers WHERE id = %s", (supplier_id,))
         if sup:
