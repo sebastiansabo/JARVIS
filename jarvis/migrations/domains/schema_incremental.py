@@ -1423,7 +1423,20 @@ def create_schema_incremental(conn, cursor):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_suppliers_ref_no ON suppliers(ref_no)")
 
     # Backfill normalized identity for existing rows (digits-only CUI; upper/no-space Nr.Reg)
-    cursor.execute("UPDATE suppliers SET cui_normalized = NULLIF(regexp_replace(COALESCE(cui,''), '\\D', '', 'g'), '') WHERE cui_normalized IS NULL")
+    # cui_normalized is dedup-aware: only the FIRST (lowest id) supplier per normalized CUI
+    # is assigned; later duplicates stay NULL (they surface in the Procesare worklist for merge).
+    # This keeps the partial-unique index idx_suppliers_cui_norm intact on dirty data.
+    cursor.execute('''
+        UPDATE suppliers s SET cui_normalized = sub.norm
+        FROM (
+            SELECT DISTINCT ON (regexp_replace(cui, '\\D', '', 'g')) id,
+                   NULLIF(regexp_replace(cui, '\\D', '', 'g'), '') AS norm
+            FROM suppliers
+            WHERE cui IS NOT NULL AND regexp_replace(cui, '\\D', '', 'g') <> ''
+            ORDER BY regexp_replace(cui, '\\D', '', 'g'), id
+        ) sub
+        WHERE s.id = sub.id AND s.cui_normalized IS NULL
+    ''')
     cursor.execute("UPDATE suppliers SET nr_reg_normalized = NULLIF(upper(regexp_replace(COALESCE(nr_reg_com,''), '\\s', '', 'g')), '') WHERE nr_reg_normalized IS NULL")
 
     # ── supplier_aliases (spelling/CUI variants → one master) ──
@@ -1743,13 +1756,15 @@ def create_schema_incremental(conn, cursor):
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
             ''', p)
-        cursor.execute('''
-            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
-            SELECT r.id, p.id, 'all', TRUE
-            FROM roles r CROSS JOIN permissions_v2 p
-            WHERE r.name IN ('Admin', 'Manager', 'Dep Contabilitate') AND p.module_key = 'suppliers'
-            ON CONFLICT (role_id, permission_id) DO NOTHING
-        ''')
+    # Grant runs on every pass (idempotent via ON CONFLICT) so roles created after the
+    # first seed still receive suppliers.master access; must stay OUTSIDE the count-guard.
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, p.id, 'all', TRUE
+        FROM roles r CROSS JOIN permissions_v2 p
+        WHERE r.name IN ('Admin', 'Manager', 'Dep Contabilitate') AND p.module_key = 'suppliers'
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+    ''')
 
     # Seed folder permissions (incremental — safe to re-run)
     cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'dms' AND entity_key = 'folder'")
