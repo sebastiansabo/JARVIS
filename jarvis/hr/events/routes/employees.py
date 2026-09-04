@@ -532,6 +532,12 @@ def api_update_employee(employee_id):
         kwargs['contract_status'] = data['contract_status']
     if 'notify_missing_punch' in data:
         kwargs['notify_missing_punch'] = data['notify_missing_punch']
+    if 'schedule_flexible' in data:
+        kwargs['schedule_flexible'] = data['schedule_flexible']
+    if 'flex_start' in data:
+        kwargs['flex_start'] = data['flex_start']
+    if 'flex_end' in data:
+        kwargs['flex_end'] = data['flex_end']
 
     update_hr_employee(employee_id=employee_id, **kwargs)
 
