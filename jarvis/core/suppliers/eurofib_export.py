@@ -13,6 +13,7 @@ different delimiter.
 """
 import csv
 import io
+import re
 
 # 56-column MEDLINE header, verbatim from the plan. Column 0 is an unnamed "new document"
 # marker column (holds "x" on the first row of a document, blank otherwise).
@@ -47,6 +48,12 @@ def _money(value):
     if value is None:
         return ''
     return f"{float(value):.2f}"
+
+
+def _belegnummer(invoice_number):
+    """Belegnummer/extbeleg = digits only, rightmost up to 6 (e.g. 'MEDL2 195' -> '2195')."""
+    digits = re.sub(r'\D', '', '' if invoice_number is None else str(invoice_number))
+    return digits[-6:]
 
 
 def _date_str(value):
@@ -98,6 +105,8 @@ def build_medline_rows(invoice: dict, config: dict) -> list:
     invoice_date = _date_str(invoice.get('invoice_date'))
     due_date = _date_str(invoice.get('due_date'))
     belegart = _s(config.get('belegart'))
+    # Same kostenstelle on both lines (Debit value wins, else Credit).
+    kostenstelle = _s(config.get('kostenstelle_debit')) or _s(config.get('kostenstelle_credit'))
     text = _resolve_text(config.get('text_template'), invoice)
 
     credit = _new_row()
@@ -108,16 +117,16 @@ def build_medline_rows(invoice: dict, config: dict) -> list:
         konto=_s(config.get('konto_credit')),
         soll_haben='h',
         buchdatum=invoice_date,
-        belegart=belegart.upper(),
+        belegart=belegart,
         belegdatum=invoice_date,
-        belegnummer=_s(invoice_number),
+        belegnummer=_belegnummer(invoice_number),
         betrag=_money(invoice.get('gross_amount')),
         gegenkonto=_s(config.get('gegenkonto_credit')),
         text=text,
         brutto_netto='N',
         valuta=due_date,
-        extbeleg=_s(invoice_number) if config.get('extbeleg_credit') == 'invoice_number' else '',
-        kostenstelle=_s(config.get('kostenstelle_credit')),
+        extbeleg=_belegnummer(invoice_number) if config.get('extbeleg_credit') == 'invoice_number' else '',
+        kostenstelle=kostenstelle,
     )
 
     debit = _new_row()
@@ -126,15 +135,15 @@ def build_medline_rows(invoice: dict, config: dict) -> list:
         konto=_s(config.get('konto_debit')),
         soll_haben='s',
         buchdatum=invoice_date,
-        belegart=belegart.lower(),
+        belegart=belegart,
         belegdatum=invoice_date,
-        belegnummer=_s(invoice_number),
+        belegnummer=_belegnummer(invoice_number),
         betrag=_money(invoice.get('net_amount')),
         steuercode=_s(config.get('steuercode')),
         steuerbetrag=_money(invoice.get('vat_amount')),
         gegenkonto=_s(config.get('gegenkonto_debit')),
-        kostenstelle=_s(config.get('kostenstelle_debit')),
-        extbeleg=_s(invoice_number) if config.get('extbeleg_debit') == 'invoice_number' else '',
+        kostenstelle=kostenstelle,
+        extbeleg=_belegnummer(invoice_number) if config.get('extbeleg_debit') == 'invoice_number' else '',
     )
 
     return [credit, debit]

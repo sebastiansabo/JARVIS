@@ -57,12 +57,21 @@ def test_build_medline_rows_returns_credit_then_debit():
     assert _col(debit, 'kostenstelle') == '0393'
 
 
-def test_credit_row_marker_and_belegart_upper_debit_lower():
+def test_credit_row_marker_and_belegart_same_both():
     credit, debit = build_medline_rows(_SAMPLE_INVOICE, _SAMPLE_CONFIG)
     assert credit[0] == 'x'
     assert debit[0] == ''
     assert _col(credit, 'belegart') == 'JC'
-    assert _col(debit, 'belegart') == 'jc'
+    assert _col(debit, 'belegart') == 'JC'
+
+
+def test_belegnummer_numeric_rightmost6():
+    credit, debit = build_medline_rows({**_SAMPLE_INVOICE, 'invoice_number': 'MEDL2 195'}, _SAMPLE_CONFIG)
+    assert _col(credit, 'belegnummer') == '2195'
+    assert _col(debit, 'belegnummer') == '2195'
+    assert _col(credit, 'extbeleg') == '2195'
+    c2, _ = build_medline_rows({**_SAMPLE_INVOICE, 'invoice_number': 'AB-1234567'}, _SAMPLE_CONFIG)
+    assert _col(c2, 'belegnummer') == '234567'
 
 
 def test_credit_valuta_is_due_date_debit_has_no_valuta():
