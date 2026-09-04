@@ -33,6 +33,7 @@ const MarjaReport = lazy(() => import('./pages/Accounting/Controlling/MarjaRepor
 const VoucherTracking = lazy(() => import('./pages/Accounting/Vouchers'))
 const VoucherNew = lazy(() => import('./pages/Accounting/Vouchers/NewVoucher'))
 const VoucherRedeem = lazy(() => import('./pages/Accounting/Vouchers/RedeemScan'))
+const Procesare = lazy(() => import('./pages/Accounting/Procesare'))
 const AiAgent = lazy(() => import('./pages/AiAgent/AiAgent'))
 const Crm = lazy(() => import('./pages/Crm'))
 const CrmClientProfile = lazy(() => import('./pages/Crm/ClientProfile'))
@@ -196,6 +197,7 @@ export default function App() {
         <Route path="accounting/vouchers" element={<Guard flag="can_access_accounting"><V2Guard permKey="vouchers.accounting.view"><SuspensePage><VoucherTracking /></SuspensePage></V2Guard></Guard>} />
         <Route path="accounting/vouchers/new" element={<V2Guard permKey="vouchers.form.view"><SuspensePage><VoucherNew /></SuspensePage></V2Guard>} />
         <Route path="accounting/vouchers/redeem" element={<V2Guard permKey="vouchers.accounting.redeem"><SuspensePage><VoucherRedeem /></SuspensePage></V2Guard>} />
+        <Route path="accounting/procesare" element={<Guard flag="can_access_accounting"><V2Guard permKey="suppliers.master.view"><SuspensePage><Procesare /></SuspensePage></V2Guard></Guard>} />
         <Route path="voucher" element={<V2Guard permKey="vouchers.form.view"><SuspensePage><VoucherPortal /></SuspensePage></V2Guard>} />
         <Route path="voucher/:code" element={<V2Guard permKey="vouchers.form.view"><SuspensePage><VoucherPortal /></SuspensePage></V2Guard>} />
 
