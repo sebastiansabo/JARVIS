@@ -77,7 +77,7 @@ import {
   detectMergedGroupsFromAllocations,
 } from './allocationUtils'
 import { ApprovalWidget } from '@/components/shared/ApprovalWidget'
-import { BrandFilter } from '@/components/shared/BrandFilter'
+import { AccountingTenantSelector } from '@/components/shared/AccountingTenantSelector'
 
 
 // Subtle row tint based on invoice status
@@ -128,7 +128,6 @@ export default function Accounting() {
   const [totalCurrency, setTotalCurrency] = useState<'RON' | 'EUR'>('RON')
   const [showFilters, setShowFilters] = useState(true)
   const [selectMode, setSelectMode] = useState(false)
-  const [brandFilterKey, setBrandFilterKey] = useState<string | null>(null)
   const [binSelectedIds, setBinSelectedIds] = useState<number[]>([])
   const [highlightedInvoiceId, setHighlightedInvoiceId] = useState<number | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -152,6 +151,8 @@ export default function Accounting() {
   const updateFilter = useAccountingStore((s) => s.updateFilter)
   const visibleColumns = useAccountingStore((s) => s.visibleColumns)
   const setVisibleColumns = useAccountingStore((s) => s.setVisibleColumns)
+  // Accounting tenant switcher (shared across accounting pages). Drives the company filter below.
+  const selectedCompanyId = useAccountingStore((s) => s.selectedCompanyId)
 
   // Data queries
   const apiFilters: InvoiceFilters & { include_allocations?: boolean; archive_view?: string } = {
@@ -220,6 +221,23 @@ export default function Accounting() {
     queryFn: () => organizationApi.getCompanies(),
     staleTime: 5 * 60 * 1000,
   })
+
+  // Company config (id + name) to translate the tenant switcher's selectedCompanyId into the
+  // company-name filter the invoice query already uses. null selection = "Toate companiile".
+  const { data: companiesConfig = [] } = useQuery({
+    queryKey: ['companies-config'],
+    queryFn: () => organizationApi.getCompaniesConfig(),
+    staleTime: 10 * 60 * 1000,
+  })
+
+  useEffect(() => {
+    const name = selectedCompanyId == null
+      ? undefined
+      : companiesConfig.find((c) => c.id === selectedCompanyId)?.company
+    if ((filters.company ?? undefined) !== (name ?? undefined)) {
+      updateFilter('company', name as InvoiceFilters['company'])
+    }
+  }, [selectedCompanyId, companiesConfig, filters.company, updateFilter])
 
   const { data: dropdownOptions = [] } = useQuery({
     queryKey: ['settings', 'dropdowns'],
@@ -479,17 +497,16 @@ export default function Accounting() {
     else setBinSelectedIds(displayedBinInvoices.map((i) => i.id))
   }, [binAllSelected, displayedBinInvoices, clearBinSelected])
 
+  // Company is controlled by the header tenant selector (AccountingTenantSelector), not the filter bar.
   const filterFields: FilterField[] = useMemo(() => [
-    { key: 'company', label: 'Company', type: 'select' as const, options: companyOptions },
     { key: 'department', label: 'Department', type: 'select' as const, options: departmentOptions },
     { key: 'status', label: 'Status', type: 'select' as const, options: statusOptions },
-  ], [companyOptions, departmentOptions, statusOptions])
+  ], [departmentOptions, statusOptions])
 
   const filterValues: Record<string, string> = useMemo(() => ({
-    company: filters.company ?? '',
     department: filters.department ?? '',
     status: filters.status ?? '',
-  }), [filters.company, filters.department, filters.status])
+  }), [filters.department, filters.status])
 
   const handleFilterChange = useCallback((values: Record<string, string>) => {
     Object.entries(values).forEach(([key, value]) => {
@@ -524,16 +541,7 @@ export default function Accounting() {
         }
         actions={
           <div className="flex items-center gap-2">
-            {!isNarrow && (
-              <BrandFilter
-                mode="company"
-                value={brandFilterKey}
-                onSelect={(item) => {
-                  setBrandFilterKey(item?.key ?? null)
-                  updateFilter('company', (item?.companyName ?? '') as InvoiceFilters['company'])
-                }}
-              />
-            )}
+            {!isNarrow && <AccountingTenantSelector className="w-56" />}
             <Button variant="ghost" size="icon" className={showStats ? 'bg-muted' : ''} onClick={() => setShowStats(s => !s)} title="Toggle stats">
               <BarChart3 className="h-4 w-4" />
             </Button>
