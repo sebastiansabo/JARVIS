@@ -1,7 +1,5 @@
 """Supplier master + Procesare resolution API."""
-import io
 import re
-import zipfile
 
 from flask import Blueprint, Response, jsonify, request
 from flask_login import login_required, current_user
@@ -9,7 +7,7 @@ from psycopg2 import errors as pg_errors
 
 from core.organization.repositories.company_repository import CompanyRepository
 from core.roles.repositories.permission_repository import PermissionRepository
-from core.suppliers.eurofib_export import build_csv
+from core.suppliers.eurofib_export import build_csv, build_xlsx
 from core.suppliers.normalize import normalize_cui
 from core.suppliers.repository import SupplierMasterRepository, KONTO_FIELDS
 from core.suppliers.resolver import SupplierResolver
@@ -55,8 +53,7 @@ def _parse_company_id(raw):
 def _to_invoice_config_pairs(rows, company_id, skipped):
     """Map raw list_budgeted_invoices rows to (invoice, konto) pairs consumable by
     build_csv, appending {'invoice_number', 'supplier', 'reason': 'missing_amounts'} to
-    `skipped` (mutated in place) for any row missing net/gross amounts. Shared by the
-    single-file /export route and the per-supplier ZIP /export-all route."""
+    `skipped` (mutated in place) for any row missing net/gross amounts."""
     pairs = []
     for row in rows:
         net = row.get('net_value')
@@ -82,13 +79,6 @@ def _to_invoice_config_pairs(rows, company_id, skipped):
         }
         pairs.append((invoice, konto))
     return pairs
-
-
-def _safe_filename_part(name):
-    """Sanitize a supplier name into a filesystem-safe filename stem."""
-    name = re.sub(r'[^A-Za-z0-9 _.\-]+', '_', (name or '').strip())
-    name = re.sub(r'\s+', ' ', name).strip()
-    return name or 'furnizor'
 
 
 @suppliers_bp.route('/api/suppliers', methods=['GET'])
@@ -264,11 +254,25 @@ def api_worklist_invoices():
     return jsonify({'success': True, 'invoices': invoices})
 
 
+# Export-format dispatch: token -> (mimetype, file extension, builder(pairs, skipped=...)).
+_EXPORT_FORMATS = {
+    'csv': ('text/csv', 'csv', build_csv),
+    'xlsx': ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx', build_xlsx),
+}
+
+
+def _export_format(fmt):
+    """Resolve an export-format token to (mimetype, extension, builder). Unknown/blank -> csv."""
+    return _EXPORT_FORMATS.get((fmt or 'csv').lower(), _EXPORT_FORMATS['csv'])
+
+
 @suppliers_bp.route('/api/suppliers/export', methods=['POST'])
 @login_required
 def api_export():
-    """Batch EuroFib (MEDLINE) CSV export of budgeted invoices for a company + period,
-    grouped by supplier. Body: {company_id, start_date, end_date, invoice_ids?}."""
+    """Batch EuroFib (MEDLINE) export of budgeted invoices for a company + period, as a single
+    file (grouped/ordered by supplier). Body: {company_id, start_date, end_date, invoice_ids?,
+    format?}. format is 'csv' (default) or 'xlsx'. When invoice_ids is given, only those
+    invoices are exported (the general export passes the checked rows, or all shown if none)."""
     if not _check_supplier_perm('view'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
@@ -284,6 +288,8 @@ def api_export():
     company = _company_repo.get(company_id)
     if not company:
         return jsonify({'success': False, 'error': 'Company not found'}), 404
+
+    mimetype, ext, builder = _export_format(data.get('format'))
 
     rows = _repo.list_budgeted_invoices(company_id, company['company'], start_date, end_date, limit=5000)
 
@@ -298,10 +304,10 @@ def api_export():
     skipped = []
     invoices_with_configs = _to_invoice_config_pairs(rows, company_id, skipped)
 
-    skipped_before_csv = len(skipped)
-    csv_text = build_csv(invoices_with_configs, skipped=skipped)
-    skipped_in_csv = len(skipped) - skipped_before_csv
-    written = len(invoices_with_configs) - skipped_in_csv
+    skipped_before = len(skipped)
+    output = builder(invoices_with_configs, skipped=skipped)
+    skipped_in_build = len(skipped) - skipped_before
+    written = len(invoices_with_configs) - skipped_in_build
 
     if written == 0:
         return jsonify({'success': False, 'skipped': skipped}), 200
@@ -310,83 +316,11 @@ def api_export():
     exported_ids = [r['id'] for r in rows if r.get('invoice_number') not in skipped_numbers]
     _repo.mark_invoices_processed(exported_ids)
 
-    filename = f"eurofib_{company['company']}_{start_date}_{end_date}.csv"
+    filename = f"eurofib_{company['company']}_{start_date}_{end_date}.{ext}"
     filename = re.sub(r'[^A-Za-z0-9_.\-]+', '_', filename)
     return Response(
-        csv_text,
-        mimetype='text/csv',
-        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
-    )
-
-
-@suppliers_bp.route('/api/suppliers/export-all', methods=['POST'])
-@login_required
-def api_export_all():
-    """Export ALL budgeted invoices for a company + period as a ZIP containing one EuroFib
-    (MEDLINE) CSV per supplier. Body: {company_id, start_date, end_date}."""
-    if not _check_supplier_perm('view'):
-        return jsonify({'success': False, 'error': 'Permission denied'}), 403
-
-    data = request.get_json(force=True) or {}
-    start_date = data.get('start_date')
-    end_date = data.get('end_date')
-    company_id, err = _parse_company_id(data.get('company_id'))
-    if err:
-        return err
-    if not start_date or not end_date:
-        return jsonify({'success': False, 'error': 'start_date and end_date are required'}), 400
-
-    company = _company_repo.get(company_id)
-    if not company:
-        return jsonify({'success': False, 'error': 'Company not found'}), 404
-
-    rows = _repo.list_budgeted_invoices(company_id, company['company'], start_date, end_date, limit=5000)
-
-    by_supplier = {}
-    for row in rows:
-        key = row.get('supplier_id')
-        group = by_supplier.setdefault(key, {'name': row.get('supplier'), 'rows': []})
-        group['rows'].append(row)
-
-    zip_buffer = io.BytesIO()
-    used_names = set()
-    all_skipped = []
-    exported_ids = []
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for group in sorted(by_supplier.values(), key=lambda g: (g['name'] or '').lower()):
-            skipped = []
-            pairs = _to_invoice_config_pairs(group['rows'], company_id, skipped)
-            skipped_before_csv = len(skipped)
-            csv_text = build_csv(pairs, skipped=skipped)
-            skipped_in_csv = len(skipped) - skipped_before_csv
-            written = len(pairs) - skipped_in_csv
-            all_skipped.extend(skipped)
-            if written == 0:
-                continue
-
-            skipped_numbers = {s['invoice_number'] for s in skipped}
-            exported_ids.extend(r['id'] for r in group['rows'] if r.get('invoice_number') not in skipped_numbers)
-
-            base_name = _safe_filename_part(group['name'])
-            filename = f"{base_name}.csv"
-            suffix = 2
-            while filename in used_names:
-                filename = f"{base_name}_{suffix}.csv"
-                suffix += 1
-            used_names.add(filename)
-            zf.writestr(filename, csv_text)
-
-    if not used_names:
-        return jsonify({'success': False, 'skipped': all_skipped}), 200
-
-    _repo.mark_invoices_processed(exported_ids)
-
-    zip_buffer.seek(0)
-    filename = f"eurofib_{company['company']}_{start_date}_{end_date}.zip"
-    filename = re.sub(r'[^A-Za-z0-9_.\-]+', '_', filename)
-    return Response(
-        zip_buffer.getvalue(),
-        mimetype='application/zip',
+        output,
+        mimetype=mimetype,
         headers={'Content-Disposition': f'attachment; filename="{filename}"'}
     )
 
