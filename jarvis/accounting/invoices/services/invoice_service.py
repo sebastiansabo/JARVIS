@@ -16,6 +16,23 @@ logger = logging.getLogger('jarvis.invoices.service')
 
 ROLE_HIERARCHY = ['Viewer', 'User', 'HR', 'Manager', 'Dep Contabilitate', 'Admin']
 
+# Invoice budgeting lifecycle: freshly-arrived invoices sit in an unbudgeted state
+# ('new' from parsing/manual, 'Nebugetata' from e-Factura import). Once a user saves an
+# allocation the invoice is budgeted -> 'Bugetata' (the status the Procesare worklist and
+# EuroFib export key off). Downstream states ('processed', 'approved', ...) are never
+# clobbered by a later allocation edit.
+BUDGETED_STATUS = 'Bugetata'
+_UNBUDGETED_STATUSES = ('new', 'Nebugetata')
+
+
+def budgeted_status_after_allocation(current_status):
+    """The invoice status after a user saves its allocations: an unbudgeted invoice
+    (`new`/`Nebugetata`) becomes `Bugetata`; anything else is left unchanged. Returns the
+    new status value, or None when no transition should happen."""
+    if current_status in _UNBUDGETED_STATUSES:
+        return BUDGETED_STATUS
+    return None
+
 
 @dataclass
 class UserContext:
@@ -321,19 +338,19 @@ class InvoiceService:
         try:
             self.allocation_repo.update_invoice_allocations(invoice_id, allocations)
 
-            # Auto-set status to first invoice_status option
+            # Budget the invoice: an unbudgeted invoice (new/Nebugetata) becomes Bugetata
+            # once its allocations are saved. Downstream states (processed, ...) are left
+            # untouched so re-editing an exported invoice doesn't send it back to the worklist.
             old_status = current_invoice.get('status') if current_invoice else None
-            from core.settings.dropdowns.repositories import DropdownRepository
-            status_options = DropdownRepository().get_options('invoice_status', active_only=True)
-            default_status = status_options[0]['value'] if status_options else None
-            if default_status and old_status != default_status:
-                self.invoice_repo.update(invoice_id, status=default_status)
+            new_status = budgeted_status_after_allocation(old_status)
+            if new_status and new_status != old_status:
+                self.invoice_repo.update(invoice_id, status=new_status)
                 self._log_event(
                     user, 'status_changed',
                     f'Invoice #{current_invoice.get("invoice_number", invoice_id)} '
-                    f'status auto-changed to "{default_status}" after allocation edit',
+                    f'status auto-changed to "{new_status}" after allocation edit',
                     entity_type='invoice', entity_id=invoice_id,
-                    details={'old_status': old_status, 'new_status': default_status},
+                    details={'old_status': old_status, 'new_status': new_status},
                 )
 
             notifications_sent = 0
