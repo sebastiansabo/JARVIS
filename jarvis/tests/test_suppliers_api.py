@@ -50,6 +50,35 @@ def test_export_format_defaults_to_csv_for_unknown_or_blank():
         assert (mime, ext, builder) == ('text/csv', 'csv', build_csv)
 
 
+# ── _resolve_amounts: net/gross for EuroFib, incl. whole-value (no-VAT) invoices ──
+
+def test_resolve_amounts_vat_invoice_uses_net_and_gross():
+    import core.suppliers.routes as r
+    assert r._resolve_amounts({'net_value': 100, 'invoice_value': 119, 'subtract_vat': True}) == (100, 119)
+
+
+def test_resolve_amounts_whole_value_invoice_nets_to_gross():
+    # Foreign reverse-charge / whole-value (subtract_vat False): net_value is NULL by design;
+    # it must still export with net = gross (VAT 0), not be skipped.
+    import core.suppliers.routes as r
+    assert r._resolve_amounts({'net_value': None, 'invoice_value': 50, 'subtract_vat': False}) == (50, 50)
+
+
+def test_resolve_amounts_vat_invoice_missing_net_is_unusable():
+    import core.suppliers.routes as r
+    assert r._resolve_amounts({'net_value': None, 'invoice_value': 119, 'subtract_vat': True}) == (None, None)
+
+
+def test_resolve_amounts_no_gross_is_unusable():
+    import core.suppliers.routes as r
+    assert r._resolve_amounts({'net_value': None, 'invoice_value': None, 'subtract_vat': False}) == (None, None)
+
+
+def test_resolve_amounts_gross_amount_takes_precedence():
+    import core.suppliers.routes as r
+    assert r._resolve_amounts({'gross_amount': 200, 'invoice_value': 119, 'net_value': 150}) == (150, 200)
+
+
 # ── _import_partner: create-vs-link decision for the "Sync cu e-Factura" import ──
 
 from core.suppliers.resolver import Resolution
