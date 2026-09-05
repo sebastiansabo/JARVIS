@@ -25,6 +25,31 @@ def test_perm_helper_uses_has_permission(monkeypatch):
     assert _check_supplier_perm('edit') is False
 
 
+# ── _export_format: CSV/XLSX dispatch for the general export ──
+
+def test_export_format_resolves_xlsx():
+    import core.suppliers.routes as r
+    from core.suppliers.eurofib_export import build_xlsx
+    mime, ext, builder = r._export_format('xlsx')
+    assert ext == 'xlsx'
+    assert mime == 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    assert builder is build_xlsx
+
+
+def test_export_format_is_case_insensitive():
+    import core.suppliers.routes as r
+    _, ext, _ = r._export_format('XLSX')
+    assert ext == 'xlsx'
+
+
+def test_export_format_defaults_to_csv_for_unknown_or_blank():
+    import core.suppliers.routes as r
+    from core.suppliers.eurofib_export import build_csv
+    for fmt in ('csv', None, '', 'bogus'):
+        mime, ext, builder = r._export_format(fmt)
+        assert (mime, ext, builder) == ('text/csv', 'csv', build_csv)
+
+
 # ── _import_partner: create-vs-link decision for the "Sync cu e-Factura" import ──
 
 from core.suppliers.resolver import Resolution

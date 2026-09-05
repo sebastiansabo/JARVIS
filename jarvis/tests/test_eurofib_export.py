@@ -1,4 +1,8 @@
-from core.suppliers.eurofib_export import HEADER, build_csv, build_medline_rows
+import io
+
+import openpyxl
+
+from core.suppliers.eurofib_export import HEADER, build_csv, build_medline_rows, build_xlsx
 
 _SAMPLE_CONFIG = {
     'klient': '140',
@@ -134,6 +138,50 @@ def test_build_csv_groups_and_orders_by_supplier():
     assert 'Alpha' not in lines[0]
     first_data_belegnummer = lines[2].split(';')[HEADER.index('belegnummer')]
     assert first_data_belegnummer == '2'  # Alpha SRL's invoice comes first
+
+
+def _xlsx_rows(xlsx_bytes):
+    wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes))
+    ws = wb.active
+    return [list(row) for row in ws.iter_rows(values_only=True)]
+
+
+def test_build_xlsx_mirrors_csv_header_empty_and_two_rows_per_invoice():
+    xlsx_bytes = build_xlsx([(_SAMPLE_INVOICE, _SAMPLE_CONFIG)])
+    rows = _xlsx_rows(xlsx_bytes)
+    assert len(rows) == 4  # header + empty row + credit + debit
+    assert rows[0][1] == 'klient'
+    assert all(c in (None, '') for c in rows[1])  # empty row after the label row
+    assert '40102793' in rows[2]  # credit konto
+    assert '628701' in rows[3]    # debit konto
+
+
+def test_build_xlsx_preserves_account_codes_as_strings():
+    """Account/belegnummer codes must stay text so leading zeros survive in Excel."""
+    xlsx_bytes = build_xlsx([(_SAMPLE_INVOICE, dict(_SAMPLE_CONFIG, kostenstelle_debit='0393'))])
+    rows = _xlsx_rows(xlsx_bytes)
+    assert rows[2][HEADER.index('kostenstelle')] == '0393'
+    assert isinstance(rows[2][HEADER.index('konto')], str)
+
+
+def test_build_xlsx_skips_incomplete_config_and_missing_amounts():
+    incomplete_config = dict(_SAMPLE_CONFIG, konto_debit='')
+    missing_amount_invoice = dict(_SAMPLE_INVOICE, invoice_number='3', net_amount=None)
+    good_invoice = dict(_SAMPLE_INVOICE, invoice_number='4')
+
+    skipped = []
+    xlsx_bytes = build_xlsx(
+        [
+            (dict(_SAMPLE_INVOICE, invoice_number='2'), incomplete_config),
+            (missing_amount_invoice, _SAMPLE_CONFIG),
+            (good_invoice, _SAMPLE_CONFIG),
+        ],
+        skipped=skipped,
+    )
+    rows = _xlsx_rows(xlsx_bytes)
+    assert len(rows) == 4  # header + empty row + the good invoice's 2 rows
+    assert len(skipped) == 2
+    assert {s['reason'] for s in skipped} == {'incomplete_config', 'missing_amounts'}
 
 
 def test_build_csv_skips_incomplete_config_and_missing_amounts():
