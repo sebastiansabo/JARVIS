@@ -50,14 +50,31 @@ def _parse_company_id(raw):
         return None, (jsonify({'success': False, 'error': 'company_id must be an integer'}), 400)
 
 
+def _resolve_amounts(row):
+    """Resolve (net, gross) for EuroFib posting from an invoice row.
+
+    Whole-value invoices (subtract_vat False — e.g. foreign reverse-charge services that carry
+    no VAT line) leave net_value NULL by design; they post net = gross (VAT 0). A VAT invoice
+    (subtract_vat True) that is missing its net split is a data gap and is treated as unusable.
+    Returns (None, None) when the row can't be posted."""
+    gross = row.get('gross_amount') if row.get('gross_amount') is not None else row.get('invoice_value')
+    net = row.get('net_value')
+    if gross is None:
+        return None, None
+    if net is None:
+        if row.get('subtract_vat'):
+            return None, None  # VAT invoice missing its net split → unusable
+        net = gross            # whole-value / reverse-charge → net = gross, VAT 0
+    return net, gross
+
+
 def _to_invoice_config_pairs(rows, company_id, skipped):
     """Map raw list_budgeted_invoices rows to (invoice, konto) pairs consumable by
     build_csv, appending {'invoice_number', 'supplier', 'reason': 'missing_amounts'} to
-    `skipped` (mutated in place) for any row missing net/gross amounts."""
+    `skipped` (mutated in place) for any row whose amounts can't be posted."""
     pairs = []
     for row in rows:
-        net = row.get('net_value')
-        gross = row.get('gross_amount') if row.get('gross_amount') is not None else row.get('invoice_value')
+        net, gross = _resolve_amounts(row)
         if net is None or gross is None:
             skipped.append({'invoice_number': row.get('invoice_number'), 'supplier': row.get('supplier'),
                             'reason': 'missing_amounts'})

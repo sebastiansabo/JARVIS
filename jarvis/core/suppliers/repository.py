@@ -281,6 +281,7 @@ class SupplierMasterRepository(BaseRepository):
         sql = """
             SELECT i.id, i.supplier, i.invoice_number, i.invoice_date, i.net_value,
                    i.invoice_value, i.value_ron, i.value_eur, i.currency, i.status,
+                   i.subtract_vat,
                    i.line_items->0->>'description' AS line_description,
                    MIN(s.id) AS supplier_id
             FROM invoices i
@@ -303,7 +304,7 @@ class SupplierMasterRepository(BaseRepository):
               AND NULLIF(kc.belegart, '') IS NOT NULL
             GROUP BY i.id, i.supplier, i.invoice_number, i.invoice_date, i.net_value,
                      i.invoice_value, i.value_ron, i.value_eur, i.currency, i.status,
-                     i.line_items
+                     i.subtract_vat, i.line_items
             ORDER BY i.invoice_date DESC, i.id DESC
             LIMIT %s
         """
