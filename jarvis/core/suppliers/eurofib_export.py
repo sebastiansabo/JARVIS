@@ -173,16 +173,17 @@ def _amounts_missing(invoice):
     return invoice.get('net_amount') is None or invoice.get('gross_amount') is None
 
 
-def build_csv(invoices_with_configs, skipped=None) -> str:
-    """Build the full MEDLINE CSV for a batch of invoices, grouped/ordered by supplier.
+def build_rows(invoices_with_configs, skipped=None) -> list:
+    """Build the full MEDLINE row matrix for a batch of invoices, grouped/ordered by supplier.
 
     invoices_with_configs: iterable of (invoice: dict, config: dict) pairs.
     skipped: optional list; if given, any invoice whose supplier has no complete Table-2
         config or is missing net/gross amounts is appended to it (mutated in place) as
-        {'invoice_number', 'supplier', 'reason'} and excluded from the CSV.
+        {'invoice_number', 'supplier', 'reason'} and excluded from the output.
 
-    Returns the CSV text: leading UTF-8 BOM + the 56-column header + two rows per included
-    invoice, ';'-delimited (EuroFib/MEDLINE convention).
+    Returns a list of 56-element rows: the label/header row, the required empty row, then
+    two rows (credit/Haben, debit/Soll) per included invoice. Shared by build_csv/build_xlsx
+    so both formats carry identical content.
     """
     if skipped is None:
         skipped = []
@@ -191,10 +192,7 @@ def build_csv(invoices_with_configs, skipped=None) -> str:
         invoices_with_configs,
         key=lambda pair: (str(pair[0].get('supplier') or ''), str(pair[0].get('invoice_number') or '')))
 
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=';', lineterminator='\r\n')
-    writer.writerow(HEADER)
-    writer.writerow([''] * len(HEADER))  # required empty row after the label/header row
+    rows = [list(HEADER), [''] * len(HEADER)]  # label row + required empty row after it
 
     for invoice, config in pairs:
         if _config_incomplete(config):
@@ -205,7 +203,45 @@ def build_csv(invoices_with_configs, skipped=None) -> str:
             skipped.append({'invoice_number': invoice.get('invoice_number'),
                              'supplier': invoice.get('supplier'), 'reason': 'missing_amounts'})
             continue
-        for row in build_medline_rows(invoice, config):
-            writer.writerow(row)
+        rows.extend(build_medline_rows(invoice, config))
+
+    return rows
+
+
+def build_csv(invoices_with_configs, skipped=None) -> str:
+    """Build the full MEDLINE CSV for a batch of invoices, grouped/ordered by supplier.
+
+    See build_rows for the invoices_with_configs/skipped contract. Returns the CSV text:
+    leading UTF-8 BOM + the 56-column header + two rows per included invoice, ';'-delimited
+    (EuroFib/MEDLINE convention).
+    """
+    rows = build_rows(invoices_with_configs, skipped=skipped)
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=';', lineterminator='\r\n')
+    for row in rows:
+        writer.writerow(row)
 
     return '\ufeff' + buffer.getvalue()
+
+
+def build_xlsx(invoices_with_configs, skipped=None) -> bytes:
+    """Build the full MEDLINE export as a single-sheet .xlsx workbook.
+
+    Same content and ordering as build_csv (see build_rows for the skipped contract). All
+    cells are written as strings so account codes / belegnummer keep leading zeros in Excel.
+    Returns the raw .xlsx bytes.
+    """
+    from openpyxl import Workbook
+
+    rows = build_rows(invoices_with_configs, skipped=skipped)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'EuroFib'
+    for row in rows:
+        ws.append(row)
+
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
