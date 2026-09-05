@@ -5,7 +5,7 @@ import { toast } from 'sonner'
 
 import { api } from '@/api/client'
 import { controllingApi } from '@/api/controlling'
-import { useAuthStore } from '@/stores/authStore'
+import { useAccountingStore } from '@/stores/accountingStore'
 import type { BabPeriod, MarjaReportData, BabAccountGroup, BabConfigRow } from '@/types/controlling'
 
 import { Button } from '@/components/ui/button'
@@ -29,18 +29,11 @@ function fmtNum(value: number): string {
 
 export default function Controlling() {
   const queryClient = useQueryClient()
-  const user = useAuthStore((s) => s.user)
-  // Persist company + tab to URL params
+  // Company comes from the shared accounting tenant switcher (accountingStore); tab still persists to the URL.
   const params = new URLSearchParams(window.location.search)
-  const [companyId, setCompanyIdState] = useState<number>(Number(params.get('company')) || (user as unknown as Record<string, unknown>)?.company_id as number || 0)
   const [activeTab, setActiveTab] = useState(params.get('tab') || 'marja')
-
-  const setCompanyId = useCallback((id: number) => {
-    setCompanyIdState(id)
-    const url = new URL(window.location.href)
-    url.searchParams.set('company', String(id))
-    window.history.replaceState({}, '', url.toString())
-  }, [])
+  const selectedCompanyId = useAccountingStore((s) => s.selectedCompanyId)
+  const setSelectedCompanyId = useAccountingStore((s) => s.setSelectedCompanyId)
 
   const handleTabChange = useCallback((tab: string) => {
     setActiveTab(tab)
@@ -69,7 +62,12 @@ export default function Controlling() {
     queryFn: () => api.get<{ success: boolean; companies: { id: number; company: string }[] }>('/controlling/bab/api/companies'),
   })
   const companies: { id: number; company: string }[] = companiesData?.companies || []
-  if (companyId === 0 && companies.length > 0) setCompanyId(companies[0].id)
+  // Controlling is per-company (BAB is per legal entity). Use the shared tenant company when it's a
+  // valid BAB company; otherwise fall back to the first BAB company without overwriting the shared
+  // choice (which may be "Toate" or a non-BAB company set from another accounting page).
+  const companyId = (selectedCompanyId != null && companies.some((c) => c.id === selectedCompanyId))
+    ? selectedCompanyId
+    : (companies[0]?.id ?? 0)
 
   // Periods
   const { data: periodsData, isLoading: periodsLoading } = useQuery({
@@ -212,7 +210,7 @@ export default function Controlling() {
           <Button variant="outline" size="sm" onClick={() => setShowEur(!showEur)}>
             {showEur ? 'EUR → LEI' : 'LEI → EUR'}
           </Button>
-          <Select value={String(companyId)} onValueChange={(v) => setCompanyId(Number(v))}>
+          <Select value={String(companyId)} onValueChange={(v) => setSelectedCompanyId(Number(v))}>
             <SelectTrigger className="w-56">
               <SelectValue placeholder="Selectează compania" />
             </SelectTrigger>
@@ -390,7 +388,7 @@ export default function Controlling() {
         <TabsContent value="configurare" className="mt-4">
           <Card>
             <CardContent className="p-4">
-              <ConfigTable companyId={companyId} setCompanyId={setCompanyId} companies={companies} configRows={configRows} queryClient={queryClient} />
+              <ConfigTable companyId={companyId} setCompanyId={setSelectedCompanyId} companies={companies} configRows={configRows} queryClient={queryClient} />
             </CardContent>
           </Card>
         </TabsContent>
