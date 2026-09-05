@@ -286,6 +286,18 @@ def create_schema_misc(conn, cursor):
                 ('payment_status', 'paid', 'Paid', '#198754', 0.7, 2, TRUE)
         ''')
 
+    # Ensure the 'Bugetata' (budgeted, post-allocation) invoice_status exists on already-seeded
+    # DBs. Invoices become 'Bugetata' when a user saves their allocations (see
+    # invoice_service.budgeted_status_after_allocation); the Procesare worklist / EuroFib export
+    # key off this value. Idempotent — additive only, won't disturb existing options.
+    cursor.execute('''
+        INSERT INTO dropdown_options (dropdown_type, value, label, color, opacity, sort_order, is_active)
+        SELECT 'invoice_status', 'Bugetata', 'Bugetata', '#0dcaf0', 0.20, 2, TRUE
+        WHERE NOT EXISTS (
+            SELECT 1 FROM dropdown_options WHERE dropdown_type = 'invoice_status' AND value = 'Bugetata'
+        )
+    ''')
+
     # Theme settings table - global theme configuration for Jarvis
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS theme_settings (
