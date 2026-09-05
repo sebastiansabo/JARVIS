@@ -152,19 +152,14 @@ export const suppliersApi = {
     api.put<{ success: boolean; id?: number; replicated?: number }>(
       `/api/suppliers/${id}/konto?company_id=${companyId}`,
       replicateAll ? { ...fields, replicate_all: true } : fields),
-  /** EuroFib MEDLINE CSV download — one supplier's invoices (or all budgeted invoices for the
-   * period when invoiceIds is omitted), grouped/ordered per build_csv. */
-  exportCsv: (companyId: number, startDate: string, endDate: string, invoiceIds?: number[]) =>
+  /** EuroFib MEDLINE single-file download (CSV or XLSX) — one supplier's invoices, an explicit
+   * invoiceIds set, or all budgeted invoices for the period when invoiceIds is omitted;
+   * grouped/ordered per build_csv. */
+  exportCsv: (companyId: number, startDate: string, endDate: string, invoiceIds?: number[], format: 'csv' | 'xlsx' = 'csv') =>
     _downloadPost(
       '/api/suppliers/export',
-      { company_id: companyId, start_date: startDate, end_date: endDate, invoice_ids: invoiceIds },
-      `eurofib_${companyId}_${startDate}_${endDate}.csv`),
-  /** ZIP download — one EuroFib MEDLINE CSV per supplier, for all budgeted invoices in the period. */
-  exportAllZip: (companyId: number, startDate: string, endDate: string) =>
-    _downloadPost(
-      '/api/suppliers/export-all',
-      { company_id: companyId, start_date: startDate, end_date: endDate },
-      `eurofib_${companyId}_${startDate}_${endDate}.zip`),
+      { company_id: companyId, start_date: startDate, end_date: endDate, invoice_ids: invoiceIds, format },
+      `eurofib_${companyId}_${startDate}_${endDate}.${format}`),
   /** Revert exported invoices back to 'Bugetata' (send to In lucru). */
   unprocess: (invoiceIds: number[]) =>
     api.post<{ success: boolean; reverted: number }>('/api/suppliers/unprocess', { invoice_ids: invoiceIds }),

@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { DateField } from '@/components/ui/date-field'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
@@ -309,6 +310,14 @@ export default function Procesare() {
     })
   }
 
+  // General export scope: checked rows across all suppliers, or everything shown if none checked.
+  const shownInvoiceIds = useMemo(
+    () => supplierGroups.flatMap((g) => g.invoices.map((inv) => inv.id)),
+    [supplierGroups],
+  )
+  const selectedShownCount = shownInvoiceIds.filter((id) => selectedInvoiceIds.has(id)).length
+  const exportCount = selectedShownCount > 0 ? selectedShownCount : shownInvoiceIds.length
+
   const exportSupplierMut = useMutation({
     mutationFn: async (group: SupplierGroup) => {
       if (companyId === null) throw new Error('Nicio companie selectată')
@@ -337,10 +346,14 @@ export default function Procesare() {
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Acțiunea a eșuat'),
   })
 
-  const exportAllMut = useMutation({
-    mutationFn: async () => {
+  // General export: a single CSV/XLSX of the checked invoices across all suppliers, or all shown
+  // invoices when none are checked.
+  const exportGeneralMut = useMutation({
+    mutationFn: async (format: 'csv' | 'xlsx') => {
       if (companyId === null) throw new Error('Nicio companie selectată')
-      await suppliersApi.exportAllZip(companyId, startDate, endDate)
+      const selected = shownInvoiceIds.filter((id) => selectedInvoiceIds.has(id))
+      const invoiceIds = selected.length > 0 ? selected : shownInvoiceIds
+      await suppliersApi.exportCsv(companyId, startDate, endDate, invoiceIds, format)
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] })
@@ -456,16 +469,27 @@ export default function Procesare() {
                 />
               )}
               {!isProcessedView && (
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="ml-auto h-8 w-8"
-                  title="Export toate (ZIP)"
-                  onClick={() => exportAllMut.mutate()}
-                  disabled={exportAllMut.isPending || supplierGroups.length === 0}
-                >
-                  <Download className="h-4 w-4" />
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="ml-auto h-8 gap-1"
+                      title={selectedShownCount > 0 ? `Export selecție (${exportCount})` : 'Export toate'}
+                      disabled={exportGeneralMut.isPending || shownInvoiceIds.length === 0}
+                    >
+                      <Download className="h-4 w-4" />
+                      <span className="text-xs">
+                        {selectedShownCount > 0 ? `Export selecție (${exportCount})` : 'Export toate'}
+                      </span>
+                      <ChevronDown className="h-3 w-3 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => exportGeneralMut.mutate('csv')}>CSV</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => exportGeneralMut.mutate('xlsx')}>Excel (XLSX)</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           )}
