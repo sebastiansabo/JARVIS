@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Pencil, ChevronDown, ChevronRight, Download, RotateCcw, RefreshCw } from 'lucide-react'
@@ -13,12 +13,12 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { AccountingTenantSelector } from '@/components/shared/AccountingTenantSelector'
+import { useAccountingStore } from '@/stores/accountingStore'
 import { DateField } from '@/components/ui/date-field'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
-import { useAuthStore } from '@/stores/authStore'
 import { organizationApi } from '@/api/organization'
 import { suppliersApi, type MasterSupplier, type BudgetedInvoice, type KontoConfig, type EfacturaPartner } from '@/api/suppliers'
 import type { CompanyWithBrands } from '@/types/organization'
@@ -186,26 +186,13 @@ function companyLabel(c: CompanyWithBrands): string {
 
 export default function Procesare() {
   const qc = useQueryClient()
-  const user = useAuthStore((s) => s.user)
   const [tab, setTab] = useState<'worklist' | 'master'>('worklist')
   const [search, setSearch] = useState('')
 
-  // Company gating — a specific company is always required (persisted to URL as ?company=<id>)
-  const [companyId, setCompanyIdState] = useState<number | null>(() => {
-    const raw = new URLSearchParams(window.location.search).get('company')
-    if (raw) {
-      const n = Number(raw)
-      if (!Number.isNaN(n)) return n
-    }
-    return null
-  })
-
-  const setCompanyId = useCallback((value: number) => {
-    setCompanyIdState(value)
-    const url = new URL(window.location.href)
-    url.searchParams.set('company', String(value))
-    window.history.replaceState({}, '', url.toString())
-  }, [])
+  // Company gating — the acting company comes from the shared accounting tenant switcher
+  // (accountingStore, persisted across accounting pages). null = "Toate companiile"; Procesare
+  // is per-company (konto + export), so it prompts to pick one when none is selected.
+  const companyId = useAccountingStore((s) => s.selectedCompanyId)
 
   const { data: companiesData } = useQuery({
     queryKey: ['companies-config'],
@@ -214,17 +201,6 @@ export default function Procesare() {
   })
   const companies = companiesData || []
   const selectedCompany = companies.find((c) => c.id === companyId) || null
-
-  // Resolve the default company once the list loads: URL param → user's own company → first in list.
-  useEffect(() => {
-    if (companies.length === 0) return
-    if (companyId !== null && companies.some((c) => c.id === companyId)) return
-    if (user?.company_id && companies.some((c) => c.id === user.company_id)) {
-      setCompanyId(user.company_id)
-      return
-    }
-    setCompanyId(companies[0].id)
-  }, [companies, companyId, user, setCompanyId])
 
   // Worklist period filter — presets mirror FoiParcurs/ReportsTab; 'custom' uses DateField range.
   const [preset, setPreset] = useState<PeriodPreset>('30d')
@@ -413,20 +389,7 @@ export default function Procesare() {
         breadcrumbs={[{ label: 'Accounting' }, { label: 'Procesare' }]}
         actions={
           <>
-            <Select
-              value={companyId !== null ? String(companyId) : undefined}
-              onValueChange={(v) => setCompanyId(Number(v))}
-              disabled={companies.length === 0}
-            >
-              <SelectTrigger className="w-64">
-                <SelectValue placeholder="Se încarcă companiile…" />
-              </SelectTrigger>
-              <SelectContent>
-                {companies.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>{companyLabel(c)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <AccountingTenantSelector className="w-64" />
             <Input
               placeholder="Search suppliers…"
               value={search}
@@ -448,7 +411,7 @@ export default function Procesare() {
         }
       />
       {companyId === null ? (
-        <div className="py-12 text-center text-sm text-muted-foreground">Se încarcă companiile…</div>
+        <div className="py-12 text-center text-sm text-muted-foreground">Selectează o companie pentru a vedea furnizorii și worklist-ul.</div>
       ) : (
       <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
         <div className="flex flex-wrap items-center justify-between gap-2">
