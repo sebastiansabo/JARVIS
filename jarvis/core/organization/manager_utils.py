@@ -107,7 +107,35 @@ def get_managed_employee_ids(manager_user_id, node_id=None):
         """, (manager_user_id, manager_user_id))
         tree_ids = [r['user_id'] for r in cursor.fetchall()]
 
-        result = list(set(l0_ids + tree_ids))
+        # 3) Division responsable (Divisions overlay): members of the division's
+        # department nodes + descendants.
+        div_ids = []
+        try:
+            cursor.execute("""
+                WITH RECURSIVE my_division_nodes AS (
+                    SELECT dd.node_id AS id
+                    FROM hr_division_responsables dr
+                    JOIN hr_division_departments dd ON dd.division_id = dr.division_id
+                    WHERE dr.user_id = %s
+                ),
+                descendants AS (
+                    SELECT id FROM my_division_nodes
+                    UNION ALL
+                    SELECT sn.id FROM sincron_org_nodes sn JOIN descendants d ON sn.parent_id = d.id
+                )
+                SELECT DISTINCT se.mapped_jarvis_user_id AS user_id
+                FROM descendants d
+                JOIN sincron_org_members m ON m.node_id = d.id AND m.role = 'member'
+                JOIN sincron_employees se
+                  ON se.sincron_employee_id = m.sincron_employee_id AND se.company_name = m.company_name
+                WHERE se.mapped_jarvis_user_id IS NOT NULL AND se.is_active = TRUE
+                  AND se.mapped_jarvis_user_id <> %s
+            """, (manager_user_id, manager_user_id))
+            div_ids = [r['user_id'] for r in cursor.fetchall()]
+        except Exception:
+            conn.rollback()
+
+        result = list(set(l0_ids + tree_ids + div_ids))
         hidden = hidden_ghost_ids(manager_user_id)
         if hidden:
             result = [uid for uid in result if uid not in hidden]
@@ -217,7 +245,92 @@ def get_direct_manager(user_id):
             return None
         if row:
             return {'id': row['id'], 'name': row['name'], 'email': row['email']}
+        # Fallback (Divisions overlay): no Sincron manager above them — use the
+        # responsable of the nearest division containing one of their nodes (or an
+        # ancestor). See docs/superpowers/specs/2026-09-07-hr-divisions-design.md.
+        try:
+            cursor.execute("""
+                WITH RECURSIVE my_nodes AS (
+                    SELECT som.node_id AS id
+                    FROM sincron_org_members som
+                    JOIN sincron_employees se
+                      ON se.sincron_employee_id = som.sincron_employee_id
+                     AND se.company_name = som.company_name
+                    WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
+                ),
+                ancestors AS (
+                    SELECT n.id, n.parent_id, 0 AS depth
+                    FROM sincron_org_nodes n JOIN my_nodes mn ON mn.id = n.id
+                    UNION ALL
+                    SELECT p.id, p.parent_id, a.depth + 1
+                    FROM sincron_org_nodes p JOIN ancestors a ON p.id = a.parent_id
+                )
+                SELECT u.id, u.name, u.email
+                FROM ancestors a
+                JOIN hr_division_departments dd ON dd.node_id = a.id
+                JOIN hr_division_responsables dr ON dr.division_id = dd.division_id
+                JOIN users u ON u.id = dr.user_id AND u.is_active = TRUE
+                WHERE dr.user_id <> %s
+                ORDER BY a.depth ASC, u.id ASC
+                LIMIT 1
+            """, (user_id, user_id))
+            drow = cursor.fetchone()
+        except Exception:
+            conn.rollback()
+            return None
+        if drow:
+            return {'id': drow['id'], 'name': drow['name'], 'email': drow['email']}
         return None
+    finally:
+        release_db(conn)
+
+
+def get_division_responsable_ids(user_id):
+    """All active responsable user ids of the NEAREST division containing one of
+    the user's nodes (or an ancestor), excluding the user. [] if none.
+
+    Lets any division responsable approve a bilet, not just the primary
+    get_direct_manager pick. Divisions overlay only — returns [] for users whose
+    nearest manager comes from the Sincron tree.
+    """
+    conn = get_db()
+    try:
+        cursor = get_cursor(conn)
+        try:
+            cursor.execute("""
+                WITH RECURSIVE my_nodes AS (
+                    SELECT som.node_id AS id
+                    FROM sincron_org_members som
+                    JOIN sincron_employees se
+                      ON se.sincron_employee_id = som.sincron_employee_id
+                     AND se.company_name = som.company_name
+                    WHERE se.mapped_jarvis_user_id = %s AND se.is_active = TRUE
+                ),
+                ancestors AS (
+                    SELECT n.id, n.parent_id, 0 AS depth
+                    FROM sincron_org_nodes n JOIN my_nodes mn ON mn.id = n.id
+                    UNION ALL
+                    SELECT p.id, p.parent_id, a.depth + 1
+                    FROM sincron_org_nodes p JOIN ancestors a ON p.id = a.parent_id
+                ),
+                nearest AS (
+                    SELECT dd.division_id
+                    FROM ancestors a
+                    JOIN hr_division_departments dd ON dd.node_id = a.id
+                    ORDER BY a.depth ASC
+                    LIMIT 1
+                )
+                SELECT dr.user_id
+                FROM nearest
+                JOIN hr_division_responsables dr ON dr.division_id = nearest.division_id
+                JOIN users u ON u.id = dr.user_id AND u.is_active = TRUE
+                WHERE dr.user_id <> %s
+                ORDER BY dr.user_id
+            """, (user_id, user_id))
+            return [r['user_id'] for r in cursor.fetchall()]
+        except Exception:
+            conn.rollback()
+            return []
     finally:
         release_db(conn)
 
@@ -240,7 +353,14 @@ def is_manager(user_id):
         """, (user_id,))
         if cursor.fetchone():
             return True
-        # (b) L0 (unchanged)
+        # (b) Division responsable (Divisions overlay)
+        try:
+            cursor.execute("SELECT 1 FROM hr_division_responsables WHERE user_id = %s LIMIT 1", (user_id,))
+            if cursor.fetchone():
+                return True
+        except Exception:
+            conn.rollback()
+        # (c) L0 (unchanged)
         try:
             cursor.execute("SELECT 1 FROM company_responsables WHERE user_id = %s LIMIT 1", (user_id,))
             return cursor.fetchone() is not None
