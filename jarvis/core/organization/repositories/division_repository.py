@@ -82,14 +82,15 @@ class DivisionRepository(BaseRepository):
         """)
 
     def available_departments(self):
-        """All Sincron nodes for the picker, grouped-friendly (company + level),
-        flagged with the division that already owns each node (if any)."""
+        """All Sincron nodes for the picker, as a tree (parent_id) so the UI can
+        show descendants of a selected node as implicitly included. Flagged with
+        the division that already owns each node (if any)."""
         return self.query_all("""
-            SELECT n.id AS node_id, n.name, n.level, n.node_type,
-                   n.company_id, c.company,
+            SELECT n.id AS node_id, n.parent_id, n.name, n.level, n.node_type,
+                   n.display_order, n.company_id, c.company,
                    dd.division_id AS taken_by_division_id
             FROM sincron_org_nodes n
             LEFT JOIN companies c ON c.id = n.company_id
             LEFT JOIN hr_division_departments dd ON dd.node_id = n.id
-            ORDER BY c.company NULLS LAST, n.level, n.name
+            ORDER BY c.company NULLS LAST, n.level, COALESCE(n.display_order, 0), n.name
         """)
