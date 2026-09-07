@@ -643,3 +643,101 @@ def api_get_cascade_responsables(node_id):
 def api_get_user_org_path(user_id):
     """Get a user's organization path(s) from their organigram assignments."""
     return jsonify(_node_repo.get_user_org_path(user_id))
+
+
+# ─────────────────────────── HR Divisions ───────────────────────────
+# Cross-company grouping of Sincron departments with responsable(s). The
+# division responsable is a fallback manager for members with no Sincron
+# manager. See docs/superpowers/specs/2026-09-07-hr-divisions-design.md.
+from .repositories.division_repository import DivisionRepository
+
+_division_repo = DivisionRepository()
+
+
+def _is_duplicate_name(e):
+    s = str(e).lower()
+    return 'unique' in s or 'duplicate' in s
+
+
+@org_bp.route('/api/divisions', methods=['GET'])
+@_structure_view_required
+def api_list_divisions():
+    try:
+        return jsonify({'success': True, 'data': _division_repo.list_divisions()})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@org_bp.route('/api/divisions/available-departments', methods=['GET'])
+@_structure_view_required
+def api_division_available_departments():
+    try:
+        return jsonify({'success': True, 'data': _division_repo.available_departments()})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@org_bp.route('/api/divisions', methods=['POST'])
+@_structure_edit_required
+def api_create_division():
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'error': 'Numele este obligatoriu'}), 400
+    try:
+        did = _division_repo.create(name)
+        return jsonify({'success': True, 'data': {'id': did}}), 201
+    except Exception as e:
+        if _is_duplicate_name(e):
+            return jsonify({'success': False, 'error': 'O divizie cu acest nume există deja'}), 409
+        return safe_error_response(e)
+
+
+@org_bp.route('/api/divisions/<int:division_id>', methods=['PATCH'])
+@_structure_edit_required
+def api_rename_division(division_id):
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'error': 'Numele este obligatoriu'}), 400
+    try:
+        _division_repo.rename(division_id, name)
+        return jsonify({'success': True})
+    except Exception as e:
+        if _is_duplicate_name(e):
+            return jsonify({'success': False, 'error': 'O divizie cu acest nume există deja'}), 409
+        return safe_error_response(e)
+
+
+@org_bp.route('/api/divisions/<int:division_id>', methods=['DELETE'])
+@_structure_edit_required
+def api_delete_division(division_id):
+    try:
+        _division_repo.delete(division_id)
+        return jsonify({'success': True})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@org_bp.route('/api/divisions/<int:division_id>/departments', methods=['PUT'])
+@_structure_edit_required
+def api_set_division_departments(division_id):
+    data = request.get_json(silent=True) or {}
+    node_ids = data.get('node_ids') or []
+    try:
+        _division_repo.set_departments(division_id, node_ids)
+        return jsonify({'success': True})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@org_bp.route('/api/divisions/<int:division_id>/responsables', methods=['PUT'])
+@_structure_edit_required
+def api_set_division_responsables(division_id):
+    data = request.get_json(silent=True) or {}
+    user_ids = data.get('user_ids') or []
+    try:
+        _division_repo.set_responsables(division_id, user_ids)
+        return jsonify({'success': True})
+    except Exception as e:
+        return safe_error_response(e)
