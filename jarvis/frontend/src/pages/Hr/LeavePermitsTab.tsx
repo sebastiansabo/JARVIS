@@ -56,6 +56,9 @@ function deciderText(s: ConnecteamSubmission): string {
   if (s.assigned_approvers && s.assigned_approvers.length > 0) {
     return `Trimis la: ${s.assigned_approvers.join(', ')}`
   }
+  // Submitted for approval but no approver was ever resolved (e.g. the employee
+  // has no direct manager in the Sincron organigram) — flag it, don't hide it.
+  if (s.status && s.status !== 'new') return 'Fără aprobator'
   return ''
 }
 
@@ -480,7 +483,7 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                         <TableCell className="whitespace-nowrap text-xs">
                           {s.approved_by
                             ? s.approved_by
-                            : (s.pending_approvers?.length || s.assigned_approvers?.length)
+                            : deciderText(s)
                               ? <span className="text-muted-foreground">{deciderText(s)}</span>
                               : '-'}
                         </TableCell>
