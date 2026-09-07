@@ -44,6 +44,18 @@ const STATUS_DISPLAY: Record<string, { variant: string; label: string }> = {
   cancelled: { variant: 'ignored', label: 'Anulat' },
 }
 
+/**
+ * "Decis de" text: the decider's name once approved/rejected, otherwise who a
+ * still-pending bilet is waiting on ("În așteptare: …"), otherwise empty.
+ */
+function deciderText(s: ConnecteamSubmission): string {
+  if (s.approved_by) return s.approved_by
+  if (s.pending_approvers && s.pending_approvers.length > 0) {
+    return `În așteptare: ${s.pending_approvers.join(', ')}`
+  }
+  return ''
+}
+
 /** Days remaining before an item in Trash is auto-purged (0 = purges today). */
 function trashDaysLeft(deletedAt?: string | null): number {
   if (!deletedAt) return TRASH_RETENTION_DAYS
@@ -242,7 +254,7 @@ export default function LeavePermitsTab({ search }: { search: string }) {
             s.leave_end_time?.slice(0, 5) || '',
             s.leave_hours != null ? s.leave_hours : '',
             s.leave_reason || '',
-            s.approved_by || '',
+            deciderText(s),
             STATUS_DISPLAY[s.status]?.label ?? s.status ?? '',
             s.source === 'jarvis' ? 'JARVIS' : 'Connecteam',
           ])
@@ -462,7 +474,13 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                             {s.is_correction && <Badge className="shrink-0 text-[9px] border-transparent bg-destructive/15 text-destructive">Corecție</Badge>}
                           </div>
                         </TableCell>
-                        <TableCell className="whitespace-nowrap text-xs">{s.approved_by || '-'}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">
+                          {s.approved_by
+                            ? s.approved_by
+                            : s.pending_approvers?.length
+                              ? <span className="text-muted-foreground">{deciderText(s)}</span>
+                              : '-'}
+                        </TableCell>
                         <TableCell>
                           {(() => {
                             const d = STATUS_DISPLAY[s.status] ?? { variant: s.status, label: s.status }
