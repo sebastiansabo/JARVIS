@@ -954,6 +954,16 @@ class FormService:
                 stakeholder_ids = picked
             else:
                 stakeholder_ids = self._build_stakeholder_ids(approver_user_id, answers)
+                # Divisions overlay: when the approver came from a division
+                # fallback, let ANY of that division's responsables approve.
+                if approver_user_id and form.get('slug') == self.LEAVE_FORM_SLUG:
+                    try:
+                        from core.organization.manager_utils import get_division_responsable_ids
+                        div_ids = get_division_responsable_ids(requested_by)
+                        if approver_user_id in div_ids:
+                            stakeholder_ids = list(dict.fromkeys(div_ids + stakeholder_ids))
+                    except Exception:
+                        pass
 
             context = {
                 'title': title,
