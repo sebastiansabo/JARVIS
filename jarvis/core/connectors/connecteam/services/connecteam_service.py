@@ -94,6 +94,41 @@ def _pending_approver_names(request_id, submission_id=None):
         return []
 
 
+def _assigned_approver_names(request_id, submission_id=None):
+    """Names of the approver(s) a request was routed to, read from the request's
+    context_snapshot so they remain available regardless of decision status.
+
+    Lets the UI show who an auto-approved bilet was *sent to* (the manager who
+    never acted) — used only when there is no decider and nothing still pending."""
+    try:
+        from core.approvals.repositories import RequestRepository
+        repo = RequestRepository()
+        if not request_id and submission_id:
+            request_id = repo.get_pending_for_entity('form_submission', submission_id)
+        if not request_id:
+            return []
+        req = repo.get_by_id(request_id)
+        ctx = (req or {}).get('context_snapshot') or {}
+        ids = list(ctx.get('stakeholder_approver_ids') or [])
+        if not ids and ctx.get('approver_user_id'):
+            ids = [ctx['approver_user_id']]
+        ids = [int(i) for i in ids if i]
+        if not ids:
+            return []
+        from database import get_db, get_cursor, release_db
+        conn = get_db()
+        try:
+            cur = get_cursor(conn)
+            placeholders = ','.join(['%s'] * len(ids))
+            cur.execute(f'SELECT name FROM users WHERE id IN ({placeholders})', ids)
+            return [(r['name'] if isinstance(r, dict) else r[0]) for r in cur.fetchall()]
+        finally:
+            release_db(conn)
+    except Exception as e:
+        logger.warning('Assigned approver lookup failed for request %s: %s', request_id, e)
+        return []
+
+
 def _name_to_fake_ct_id(name: str) -> int:
     """Generate a deterministic fake Connecteam user ID from a name."""
     h = hashlib.md5(name.strip().upper().encode()).hexdigest()
@@ -440,6 +475,12 @@ class ConnecteamService:
                     _pending_approver_names(request_id, r['id'])
                     if status not in ('approved', 'rejected') else []
                 )
+                # Who the bilet was routed to, for rows with no decider and nothing
+                # pending (e.g. auto-approved) — surfaces the manager who never acted.
+                assigned_approvers = (
+                    _assigned_approver_names(request_id, r['id'])
+                    if not approved_by and not pending_approvers else []
+                )
 
                 results.append({
                     'id': r['id'],
@@ -461,6 +502,7 @@ class ConnecteamService:
                     'leave_destination': answers.get('f_bi_destination'),
                     'approved_by': approved_by,
                     'pending_approvers': pending_approvers,
+                    'assigned_approvers': assigned_approvers,
                     'status': r.get('status', 'new'),
                     'event_type': 'jarvis_form',
                     'entry_num': None,
@@ -627,6 +669,12 @@ class ConnecteamService:
                     _pending_approver_names(request_id, r['id'])
                     if status not in ('approved', 'rejected') else []
                 )
+                # Who the bilet was routed to, for rows with no decider and nothing
+                # pending (e.g. auto-approved) — surfaces the manager who never acted.
+                assigned_approvers = (
+                    _assigned_approver_names(request_id, r['id'])
+                    if not approved_by and not pending_approvers else []
+                )
 
                 results.append({
                     'id': r['id'],
@@ -646,6 +694,7 @@ class ConnecteamService:
                     'leave_destination': answers.get('f_bi_destination'),
                     'approved_by': approved_by,
                     'pending_approvers': pending_approvers,
+                    'assigned_approvers': assigned_approvers,
                     'status': r.get('status', 'new'),
                     'event_type': 'jarvis_form',
                     'entry_num': None,
