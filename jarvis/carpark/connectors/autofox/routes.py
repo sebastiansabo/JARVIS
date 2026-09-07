@@ -61,13 +61,24 @@ def _client_ip() -> str:
 
 
 def _authorize(connector) -> bool:
+    """Hard authentication gate = the shared bearer token only.
+
+    The IP allowlist is deliberately NOT enforced here (see `_ip_allowed`):
+    `_client_ip()` trusts X-Forwarded-For, which the caller can spoof, and
+    JARVIS runs with no trusted-proxy (ProxyFix) config — so an IP check
+    would be false assurance, not a real boundary.
+    """
     if not connector or connector.get('status') == 'disabled':
         return False
     expected = _json(connector.get('credentials')).get('inbound_token') or ''
     if not expected:
         return False
-    if not hmac.compare_digest(expected, _presented_token()):
-        return False
+    return hmac.compare_digest(expected, _presented_token())
+
+
+def _ip_allowed(connector) -> bool:
+    """Advisory only: True if no allowlist is set or the best-effort client IP
+    is in it. Spoofable — used for logging/visibility, never to reject."""
     allowed = _json(connector.get('config')).get('allowed_ips') or []
     return not allowed or _client_ip() in allowed
 
@@ -87,6 +98,9 @@ def webhook():
         return jsonify({'success': False, 'error': 'Unauthorized'}), 401
 
     cfg = _json(connector.get('config'))
+    ip_ok = _ip_allowed(connector)
+    if not ip_ok:
+        logger.warning('AutoFox delivery from non-allowlisted IP %s (advisory, not blocked)', _client_ip())
     raw_blobs, payload = [], None
     if request.files:
         raw_blobs = [f.read() for f in request.files.getlist('files') + request.files.getlist('file')
@@ -102,7 +116,7 @@ def webhook():
         raw_blobs = raw_blobs[:MAX_IMAGES_PER_DELIVERY]
 
     raw_excerpt = json.dumps(payload, default=str)[:RAW_LOG_LIMIT]
-    log_details = {'ip': _client_ip(), 'vin': vin, 'image_refs': len(images),
+    log_details = {'ip': _client_ip(), 'ip_allowed': ip_ok, 'vin': vin, 'image_refs': len(images),
                    'multipart_files': len(raw_blobs), 'raw': raw_excerpt}
 
     try:
