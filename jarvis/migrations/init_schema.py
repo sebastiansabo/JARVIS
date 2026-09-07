@@ -19,6 +19,7 @@ from .domains.schema_forms import create_schema_forms
 from .domains.schema_digest import create_schema_digest
 from .domains.schema_carpark import create_schema_carpark
 from .domains.schema_sincron import create_schema_sincron
+from .domains.schema_divisions import create_schema_divisions
 from .domains.schema_connecteam import create_schema_connecteam
 from .domains.schema_holidays import create_schema_holidays
 from .domains.schema_incremental import create_schema_incremental
@@ -57,6 +58,7 @@ def create_schema(conn, cursor):
     create_schema_digest(conn, cursor)
     create_schema_carpark(conn, cursor)
     create_schema_sincron(conn, cursor)
+    create_schema_divisions(conn, cursor)
     create_schema_connecteam(conn, cursor)
     create_schema_holidays(conn, cursor)
     create_schema_telemetry(conn, cursor)
