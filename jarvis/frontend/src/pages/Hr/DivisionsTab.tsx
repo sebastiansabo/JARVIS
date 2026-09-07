@@ -32,6 +32,8 @@ interface AvailableDepartment {
   node_type: string
   company_id: number
   company: string
+  parent_id: number | null
+  display_order: number | null
   taken_by_division_id: number | null
 }
 interface EmployeeOption { id: number; name: string }
@@ -325,26 +327,59 @@ function EditDivisionDialog({
 }) {
   const [name, setName] = useState('')
   const [userIds, setUserIds] = useState<number[]>([])
-  const [nodeIds, setNodeIds] = useState<number[]>([])
+  // Only the top-most nodes the user actually ticks. The backend resolves each
+  // one plus all its descendants, so descendants are never sent explicitly.
+  const [explicitlySelected, setExplicitlySelected] = useState<Set<number>>(new Set())
 
   // Prefill each time a new division is opened for editing.
   useEffect(() => {
     if (!division) return
     setName(division.name)
     setUserIds(division.responsables.map((r) => r.id))
-    setNodeIds(division.departments.map((d) => d.node_id))
+    setExplicitlySelected(new Set(division.departments.map((d) => d.node_id)))
   }, [division])
 
-  // Departments grouped by company (in the backend's company/level/name order).
-  const grouped = useMemo(() => {
-    const map = new Map<string, AvailableDepartment[]>()
+  // Per-company trees, flattened into ordered rows carrying their tree depth and
+  // the set of ancestor node_ids (used to compute implied selection).
+  const groupedRows = useMemo(() => {
+    // Bucket by company, preserving the backend's ordering.
+    const byCompany = new Map<string, AvailableDepartment[]>()
     for (const dep of availableDepartments) {
       const key = dep.company || 'Fără companie'
-      const list = map.get(key) || []
+      const list = byCompany.get(key) || []
       list.push(dep)
-      map.set(key, list)
+      byCompany.set(key, list)
     }
-    return Array.from(map.entries())
+
+    return Array.from(byCompany.entries()).map(([company, deps]) => {
+      const present = new Set(deps.map((d) => d.node_id))
+      const childrenOf = new Map<number, AvailableDepartment[]>()
+      const roots: AvailableDepartment[] = []
+      for (const dep of deps) {
+        // A node is a root when it has no parent, or its parent isn't in this
+        // company's returned set (defensive against partial data).
+        if (dep.parent_id != null && present.has(dep.parent_id)) {
+          const list = childrenOf.get(dep.parent_id) || []
+          list.push(dep)
+          childrenOf.set(dep.parent_id, list)
+        } else {
+          roots.push(dep)
+        }
+      }
+      const sortFn = (a: AvailableDepartment, b: AvailableDepartment) =>
+        (a.display_order ?? 0) - (b.display_order ?? 0) || a.name.localeCompare(b.name)
+
+      const rows: { dep: AvailableDepartment; depth: number; ancestors: number[] }[] = []
+      const walk = (list: AvailableDepartment[], depth: number, ancestors: number[]) => {
+        for (const dep of [...list].sort(sortFn)) {
+          rows.push({ dep, depth, ancestors })
+          const kids = childrenOf.get(dep.node_id)
+          if (kids?.length) walk(kids, depth + 1, [...ancestors, dep.node_id])
+        }
+      }
+      walk(roots, 0, [])
+      return { company, rows }
+    })
   }, [availableDepartments])
 
   const employeeOptions = useMemo(
@@ -353,7 +388,12 @@ function EditDivisionDialog({
   )
 
   const toggleNode = (nodeId: number, checked: boolean) => {
-    setNodeIds((prev) => (checked ? [...prev, nodeId] : prev.filter((n) => n !== nodeId)))
+    setExplicitlySelected((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(nodeId)
+      else next.delete(nodeId)
+      return next
+    })
   }
 
   if (!division) return null
@@ -395,38 +435,47 @@ function EditDivisionDialog({
           {/* Departments */}
           <div className="space-y-1.5">
             <Label className="text-xs">Departamente</Label>
+            <p className="text-[11px] text-muted-foreground">
+              Bifează nodul cel mai de sus — subdepartamentele sunt incluse automat.
+            </p>
             <div className="rounded-md border max-h-64 overflow-y-auto">
-              {grouped.length === 0 ? (
+              {groupedRows.length === 0 ? (
                 <p className="px-3 py-4 text-center text-xs text-muted-foreground">
                   Niciun departament disponibil.
                 </p>
               ) : (
-                grouped.map(([company, deps]) => (
+                groupedRows.map(({ company, rows }) => (
                   <div key={company}>
-                    <div className="sticky top-0 z-10 bg-muted/60 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <div className="sticky top-0 z-10 bg-popover border-b px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       {company}
                     </div>
-                    {deps.map((dep) => {
+                    {rows.map(({ dep, depth, ancestors }) => {
                       const takenByOther =
                         dep.taken_by_division_id != null && dep.taken_by_division_id !== division.id
-                      const checked = nodeIds.includes(dep.node_id)
+                      const isExplicit = explicitlySelected.has(dep.node_id)
+                      const impliedIncluded = ancestors.some((a) => explicitlySelected.has(a))
+                      const checked = isExplicit || impliedIncluded
+                      const disabled = impliedIncluded || takenByOther
                       return (
                         <label
                           key={dep.node_id}
                           className={cn(
                             'flex items-center gap-2 border-t border-muted/40 px-2 py-1.5 text-sm',
-                            takenByOther
-                              ? 'cursor-not-allowed opacity-50'
+                            disabled
+                              ? 'cursor-not-allowed opacity-60'
                               : 'cursor-pointer hover:bg-accent/50',
                           )}
-                          style={{ paddingLeft: `${8 + Math.max(0, dep.level - 1) * 14}px` }}
+                          style={{ paddingLeft: `${8 + depth * 18}px` }}
                         >
                           <Checkbox
                             checked={checked}
-                            disabled={takenByOther}
-                            onCheckedChange={(v) => toggleNode(dep.node_id, v === true)}
+                            disabled={disabled}
+                            onCheckedChange={(v) => { if (!disabled) toggleNode(dep.node_id, v === true) }}
                           />
                           <span>{dep.name}</span>
+                          {impliedIncluded && !isExplicit && (
+                            <span className="text-xs text-muted-foreground">(inclus)</span>
+                          )}
                           {takenByOther && (
                             <span className="text-xs text-muted-foreground">— altă divizie</span>
                           )}
@@ -444,7 +493,13 @@ function EditDivisionDialog({
           <Button variant="ghost" onClick={onClose} disabled={saving}>Anulează</Button>
           <Button
             disabled={saving || !name.trim()}
-            onClick={() => onSave({ id: division.id, name: name.trim(), nameChanged, userIds, nodeIds })}
+            onClick={() => onSave({
+              id: division.id,
+              name: name.trim(),
+              nameChanged,
+              userIds,
+              nodeIds: Array.from(explicitlySelected),
+            })}
           >
             {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
             Salvează
