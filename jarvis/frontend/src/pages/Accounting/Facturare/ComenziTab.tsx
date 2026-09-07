@@ -163,23 +163,34 @@ function UserSearchInput({ value, onChange }: { value: string; onChange: (v: str
 // fiscal / VAT" field is mirrored server-side into both cui + nr_reg (the
 // latter prints as the invoice buyer VAT).
 
-function QuickAddClientDialog({ open, onOpenChange, onCreated }: {
+function QuickAddClientDialog({ open, onOpenChange, onCreated, supplier }: {
   open: boolean; onOpenChange: (v: boolean) => void
   onCreated: (client: { id: number; display_name: string }) => void
+  // Selected supplier from the New Contract dialog. Its eurofib_klient_id keys
+  // the client's Konto Debit (crm_clients.eurofib_konto_debit is a per-supplier
+  // JSONB map), so the Konto field is only offered when a supplier is chosen.
+  supplier: Company | null
 }) {
   const [name, setName] = useState('')
   const [vat, setVat] = useState('')
   const [country, setCountry] = useState('Romania')
   const [street, setStreet] = useState('')
   const [city, setCity] = useState('')
+  const [kontoDebit, setKontoDebit] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const reset = () => { setName(''); setVat(''); setCountry('Romania'); setStreet(''); setCity('') }
+  const klientId = supplier?.eurofib_klient_id ?? null
+
+  const reset = () => { setName(''); setVat(''); setCountry('Romania'); setStreet(''); setCity(''); setKontoDebit('') }
 
   const handleSave = async () => {
     if (!name.trim()) { toast.error('Nume client obligatoriu'); return }
     setSaving(true)
     try {
+      // Konto Debit is stored per supplier: eurofib_konto_debit[klientId] = konto.
+      const kontoMap = (klientId && kontoDebit.trim())
+        ? { [String(klientId)]: parseInt(kontoDebit.trim(), 10) }
+        : undefined
       const res = await fetch('/api/crm/clients', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -188,6 +199,7 @@ function QuickAddClientDialog({ open, onOpenChange, onCreated }: {
           country: country.trim() || undefined,
           street: street.trim() || undefined,
           city: city.trim() || undefined,
+          eurofib_konto_debit: kontoMap,
         }),
       })
       const data = await res.json()
@@ -212,6 +224,15 @@ function QuickAddClientDialog({ open, onOpenChange, onCreated }: {
           <div><Label>Țară *</Label><Input value={country} onChange={e => setCountry(e.target.value)} placeholder="Romania" /></div>
           <div><Label>Stradă</Label><Input value={street} onChange={e => setStreet(e.target.value)} placeholder="ex: Rue des Freres Peugeot, nr. 7" /></div>
           <div><Label>Oraș</Label><Input value={city} onChange={e => setCity(e.target.value)} placeholder="cod poștal + localitate (ex: 68127 Sainte Croix En Plaine)" /></div>
+          {klientId ? (
+            <div>
+              <Label>Konto Debit Client <span className="text-muted-foreground font-normal">({supplier?.company})</span></Label>
+              <Input value={kontoDebit} onChange={e => setKontoDebit(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="ex: 41214286" inputMode="numeric" className="font-mono" />
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">Selectează un furnizor în contract pentru a seta Konto Debit la creare.</p>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Anulează</Button>
@@ -411,6 +432,7 @@ function CreateContractDialog({ open, onOpenChange, companies, onCreated }: {
     <QuickAddClientDialog
       open={showAddClient}
       onOpenChange={setShowAddClient}
+      supplier={companies.find(c => String(c.id) === supplierId) || null}
       onCreated={c => { setCustomerId(String(c.id)); setCustomerName(c.display_name); setCustomerResults([]); setCustomerSearch('') }}
     />
     </>
