@@ -308,6 +308,43 @@ class ClientRepository(BaseRepository):
         'driver_license_number',
     }
 
+    def create(self, data):
+        """Insert a new crm_clients row from a whitelisted dict.
+
+        Fiscal id is mirrored into BOTH `cui` and `nr_reg`: Facturare's invoice
+        buyer reads the VAT from `nr_reg` (routes_orders.py), while CRM search
+        and the detail view read `cui`. Defaults client_type='company' and
+        country='Romania' when omitted. Returns the created row, or None if
+        display_name is blank.
+        """
+        fields = {k: (None if v == '' else v) for k, v in data.items() if k in self._EDITABLE}
+        display_name = (fields.get('display_name') or '').strip()
+        if not display_name:
+            return None
+        fields['display_name'] = display_name
+        fields['name_normalized'] = ' '.join(display_name.lower().split())
+        fields.setdefault('client_type', 'company')
+        if not fields.get('country'):
+            fields['country'] = 'Romania'
+        # Mirror VAT into both columns so it prints as the invoice buyer VAT.
+        vat = fields.get('cui') or fields.get('nr_reg')
+        if vat:
+            fields['cui'] = vat
+            fields['nr_reg'] = vat
+        from psycopg2.extras import Json
+        for k, v in fields.items():
+            if isinstance(v, (dict, list)):
+                fields[k] = Json(v)
+        cols = ', '.join(fields)
+        placeholders = ', '.join(['%s'] * len(fields))
+        row = self.execute(
+            f'INSERT INTO crm_clients ({cols}, created_at, updated_at) '
+            f'VALUES ({placeholders}, NOW(), NOW()) RETURNING id',
+            tuple(fields.values()),
+            returning=True,
+        )
+        return self.get_by_id(row['id']) if row else None
+
     def update(self, client_id, data):
         fields = {k: (None if v == '' else v) for k, v in data.items() if k in self._EDITABLE}
         if not fields:
