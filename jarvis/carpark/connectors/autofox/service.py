@@ -6,8 +6,11 @@ VIN and a list of image references across the common key spellings and the
 raw payload is always logged so the first real delivery reveals the schema.
 """
 import hashlib
+import ipaddress
 import logging
+import socket
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
 
@@ -105,8 +108,41 @@ def extract_delivery(payload: Any) -> Tuple[Optional[str], List[Dict[str, Any]]]
     return vin, images[:MAX_IMAGES_PER_DELIVERY]
 
 
+_ALLOWED_SCHEMES = ('http', 'https')
+
+
+def _validate_url(url: str) -> None:
+    """SSRF guard: only http(s) to a publicly-routable host.
+
+    AutoFox supplies the image URLs in its push payload, so without this a
+    crafted (or replayed) delivery could make JARVIS fetch internal targets —
+    the cloud metadata endpoint (169.254.169.254), RFC1918 hosts, or
+    localhost. We resolve the host and reject any address that is private,
+    loopback, link-local, reserved, multicast or unspecified.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in _ALLOWED_SCHEMES:
+        raise AutofoxIngestError(f'URL scheme not allowed: {url}', 400)
+    host = (parsed.hostname or '').rstrip('.').lower()
+    if not host:
+        raise AutofoxIngestError(f'URL has no host: {url}', 400)
+    try:
+        infos = socket.getaddrinfo(host, parsed.port or None)
+    except socket.gaierror as e:
+        raise AutofoxIngestError(f'Cannot resolve host {host}: {e}', 400)
+    for *_unused, sockaddr in infos:
+        ip = ipaddress.ip_address(sockaddr[0])
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            raise AutofoxIngestError(f'Blocked non-public host {host} ({ip})', 400)
+
+
 def _download(url: str) -> bytes:
-    r = requests.get(url, timeout=DOWNLOAD_TIMEOUT, stream=True)
+    _validate_url(url)
+    # allow_redirects=False so a public URL cannot 302 into the internal network
+    r = requests.get(url, timeout=DOWNLOAD_TIMEOUT, stream=True, allow_redirects=False)
+    if r.is_redirect or 300 <= r.status_code < 400:
+        raise AutofoxIngestError(f'Redirect not allowed: {url}', 400)
     r.raise_for_status()
     buf = bytearray()
     for chunk in r.iter_content(64 * 1024):
