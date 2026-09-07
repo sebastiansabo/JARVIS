@@ -60,6 +60,44 @@ def test_extract_missing():
     assert extract_delivery({'foo': 'bar'}) == (None, [])
 
 
+# ── SSRF guard ──
+
+@pytest.mark.parametrize('bad', [
+    'http://127.0.0.1/a.jpg',            # loopback
+    'http://169.254.169.254/latest/meta-data/',  # cloud metadata (link-local)
+    'http://10.0.0.5/a.jpg',             # RFC1918
+    'http://192.168.1.1/a.jpg',          # RFC1918
+    'http://[::1]/a.jpg',                # loopback v6
+    'ftp://8.8.8.8/a.jpg',               # disallowed scheme
+    'file:///etc/passwd',                # disallowed scheme / no host
+])
+def test_validate_url_blocks_internal_and_bad_schemes(bad):
+    with pytest.raises(ax_service.AutofoxIngestError):
+        ax_service._validate_url(bad)
+
+
+def test_validate_url_allows_public_ip():
+    # literal public IP resolves locally (no DNS/network) and must pass
+    ax_service._validate_url('https://8.8.8.8/a.jpg')
+
+
+def test_download_rejects_redirect(monkeypatch):
+    class _Resp:
+        is_redirect = True
+        status_code = 302
+
+        def raise_for_status(self):  # pragma: no cover - not reached
+            pass
+
+        def iter_content(self, n):  # pragma: no cover - not reached
+            return iter(())
+
+    monkeypatch.setattr(ax_service, '_validate_url', lambda u: None)
+    monkeypatch.setattr(ax_service.requests, 'get', lambda *a, **k: _Resp())
+    with pytest.raises(ax_service.AutofoxIngestError):
+        ax_service._download('https://public.example/redir.jpg')
+
+
 # ── webhook ──
 
 def test_webhook_rejects_bad_token(client, connector):
@@ -67,10 +105,17 @@ def test_webhook_rejects_bad_token(client, connector):
     assert r.status_code == 401
 
 
-def test_webhook_rejects_ip_not_allowed(client, connector):
+def test_webhook_ip_allowlist_is_advisory(client, connector, monkeypatch):
+    # A valid token from a non-allowlisted IP must NOT be rejected (XFF is
+    # spoofable); the delivery proceeds and the mismatch is logged advisory.
     connector[0]['config'] = {'allowed_ips': ['10.0.0.1']}
-    r = client.post('/autofox/webhook', json={'vin': 'X'}, headers={'Authorization': f'Bearer {TOKEN}'})
-    assert r.status_code == 401
+    monkeypatch.setattr(ax_service.spaces_service, 'is_enabled', lambda: True)
+    monkeypatch.setattr(ax_routes._service._vehicles, 'get_by_vin', lambda v: {'id': 42, 'vin': v})
+    monkeypatch.setattr(ax_routes._service._photos, 'get_by_vehicle', lambda vid, t=None: [])
+    r = client.post('/autofox/webhook', json={'vin': 'WBA1234567890ABCD', 'images': []},
+                    headers={'Authorization': f'Bearer {TOKEN}'})
+    assert r.status_code == 200
+    assert connector[1][-1]['details']['ip_allowed'] is False
 
 
 def test_webhook_unknown_vin_404(client, connector, monkeypatch):
