@@ -677,6 +677,15 @@ def api_division_available_departments():
         return safe_error_response(e)
 
 
+@org_bp.route('/api/divisions/assignable-users', methods=['GET'])
+@_structure_view_required
+def api_division_assignable_users():
+    try:
+        return jsonify({'success': True, 'data': _division_repo.assignable_users()})
+    except Exception as e:
+        return safe_error_response(e)
+
+
 @org_bp.route('/api/divisions', methods=['POST'])
 @_structure_edit_required
 def api_create_division():

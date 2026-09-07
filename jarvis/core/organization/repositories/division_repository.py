@@ -69,6 +69,18 @@ class DivisionRepository(BaseRepository):
                 )
         self.execute_many(_cb)
 
+    def assignable_users(self):
+        """Active JARVIS users (id = users.id) for the responsable picker.
+        Unambiguous source so responsable ids are real users.id values."""
+        return self.query_all("""
+            SELECT id, name
+            FROM users
+            WHERE COALESCE(is_active, TRUE) = TRUE
+              AND COALESCE(is_ghost, FALSE) = FALSE
+              AND name IS NOT NULL
+            ORDER BY name
+        """)
+
     def available_departments(self):
         """All Sincron nodes for the picker, grouped-friendly (company + level),
         flagged with the division that already owns each node (if any)."""

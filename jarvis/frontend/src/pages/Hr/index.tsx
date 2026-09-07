@@ -22,6 +22,7 @@ const EmployeeProfile = lazy(() => import('./EmployeeProfile'))
 const OrganigramTab = lazy(() => import('./OrganigramTab'))
 const SincronOrganigramView = lazy(() => import('./SincronOrganigramView'))
 const SincronOrgBuilder = lazy(() => import('./SincronOrgBuilder'))
+const DivisionsTab = lazy(() => import('./DivisionsTab'))
 const EmployeesTab = lazy(() => import('./EmployeesTab'))
 const Employee360 = lazy(() => import('./Employee360'))
 const LeavePermitsTab = lazy(() => import('./LeavePermitsTab'))
@@ -108,7 +109,7 @@ export default function Hr() {
   const showFilters = true
   const [bonusAddTrigger, setBonusAddTrigger] = useState(0)
   const [search, setSearch] = useState('')
-  const [orgView, setOrgView] = useState<'structure' | 'sincron'>('structure')
+  const [orgView, setOrgView] = useState<'structure' | 'sincron' | 'divisions'>('structure')
   const [sincronEditMode, setSincronEditMode] = useState(false)
   const isAdmin = user?.can_access_settings ?? false
   const canExport = perms?.['hr.bonuses.export'] ?? false
@@ -204,10 +205,11 @@ export default function Hr() {
           }
         />
         <div className="flex items-center gap-2">
-          <Tabs value={orgView} onValueChange={(v) => setOrgView(v as 'structure' | 'sincron')}>
+          <Tabs value={orgView} onValueChange={(v) => setOrgView(v as 'structure' | 'sincron' | 'divisions')}>
             <TabsList>
               <TabsTrigger value="structure">Structure</TabsTrigger>
               <TabsTrigger value="sincron">Sincron</TabsTrigger>
+              <TabsTrigger value="divisions">Divizii</TabsTrigger>
             </TabsList>
           </Tabs>
           {orgView === 'sincron' && isAdmin && (
@@ -232,6 +234,8 @@ export default function Hr() {
           <Suspense fallback={<TabLoader />}>
             {orgView === 'structure' ? (
               <OrganigramTab search={search} />
+            ) : orgView === 'divisions' ? (
+              <DivisionsTab search={search} />
             ) : sincronEditMode ? (
               <SincronOrgBuilder />
             ) : (
