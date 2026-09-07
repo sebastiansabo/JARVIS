@@ -44,9 +44,13 @@ const STATUS_DISPLAY: Record<string, { variant: string; label: string }> = {
   cancelled: { variant: 'ignored', label: 'Anulat' },
 }
 
+/** Shown (in red) when a submitted bilet has no approver on record at all. */
+const NO_APPROVER_LABEL = 'Fără aprobator'
+
 /**
  * "Decis de" text: the decider's name once approved/rejected, otherwise who a
- * still-pending bilet is waiting on ("În așteptare: …"), otherwise empty.
+ * still-pending bilet is waiting on ("În așteptare: …"), otherwise the routed
+ * approver ("Trimis la: …"), otherwise NO_APPROVER_LABEL, otherwise empty.
  */
 function deciderText(s: ConnecteamSubmission): string {
   if (s.approved_by) return s.approved_by
@@ -58,7 +62,7 @@ function deciderText(s: ConnecteamSubmission): string {
   }
   // Submitted for approval but no approver was ever resolved (e.g. the employee
   // has no direct manager in the Sincron organigram) — flag it, don't hide it.
-  if (s.status && s.status !== 'new') return 'Fără aprobator'
+  if (s.status && s.status !== 'new') return NO_APPROVER_LABEL
   return ''
 }
 
@@ -481,11 +485,18 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                           </div>
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-xs">
-                          {s.approved_by
-                            ? s.approved_by
-                            : deciderText(s)
-                              ? <span className="text-muted-foreground">{deciderText(s)}</span>
-                              : '-'}
+                          {(() => {
+                            if (s.approved_by) return s.approved_by
+                            const txt = deciderText(s)
+                            if (!txt) return '-'
+                            return (
+                              <span className={txt === NO_APPROVER_LABEL
+                                ? 'font-medium text-red-600 dark:text-red-400'
+                                : 'text-muted-foreground'}>
+                                {txt}
+                              </span>
+                            )
+                          })()}
                         </TableCell>
                         <TableCell>
                           {(() => {
