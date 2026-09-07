@@ -53,6 +53,9 @@ function deciderText(s: ConnecteamSubmission): string {
   if (s.pending_approvers && s.pending_approvers.length > 0) {
     return `În așteptare: ${s.pending_approvers.join(', ')}`
   }
+  if (s.assigned_approvers && s.assigned_approvers.length > 0) {
+    return `Trimis la: ${s.assigned_approvers.join(', ')}`
+  }
   return ''
 }
 
@@ -477,7 +480,7 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                         <TableCell className="whitespace-nowrap text-xs">
                           {s.approved_by
                             ? s.approved_by
-                            : s.pending_approvers?.length
+                            : (s.pending_approvers?.length || s.assigned_approvers?.length)
                               ? <span className="text-muted-foreground">{deciderText(s)}</span>
                               : '-'}
                         </TableCell>
