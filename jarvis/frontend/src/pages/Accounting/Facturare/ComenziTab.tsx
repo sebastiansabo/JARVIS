@@ -157,6 +157,73 @@ function UserSearchInput({ value, onChange }: { value: string; onChange: (v: str
   )
 }
 
+// ── Quick Add Client Dialog ─────────────────────────────────────
+// Inline CRM-client creation so a customer that isn't in the CRM yet can be
+// added and invoiced without leaving the New Contract flow. The single "Cod
+// fiscal / VAT" field is mirrored server-side into both cui + nr_reg (the
+// latter prints as the invoice buyer VAT).
+
+function QuickAddClientDialog({ open, onOpenChange, onCreated }: {
+  open: boolean; onOpenChange: (v: boolean) => void
+  onCreated: (client: { id: number; display_name: string }) => void
+}) {
+  const [name, setName] = useState('')
+  const [vat, setVat] = useState('')
+  const [country, setCountry] = useState('Romania')
+  const [street, setStreet] = useState('')
+  const [city, setCity] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const reset = () => { setName(''); setVat(''); setCountry('Romania'); setStreet(''); setCity('') }
+
+  const handleSave = async () => {
+    if (!name.trim()) { toast.error('Nume client obligatoriu'); return }
+    setSaving(true)
+    try {
+      const res = await fetch('/api/crm/clients', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          display_name: name.trim(),
+          cui: vat.trim() || undefined,
+          country: country.trim() || undefined,
+          street: street.trim() || undefined,
+          city: city.trim() || undefined,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed')
+      toast.success(`Client "${data.client.display_name}" creat`)
+      onCreated(data.client)
+      onOpenChange(false); reset()
+    } catch (err: any) { toast.error(err.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Client nou</DialogTitle>
+          <DialogDescription>Adaugă un client nou în CRM pentru facturare.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div><Label>Nume *</Label><Input value={name} onChange={e => setName(e.target.value)} placeholder="ex: AIGLE FRANCE" /></div>
+          <div><Label>Cod fiscal / VAT</Label><Input value={vat} onChange={e => setVat(e.target.value)} placeholder="ex: RO12345678 / FR54508577707" /></div>
+          <div><Label>Țară *</Label><Input value={country} onChange={e => setCountry(e.target.value)} placeholder="Romania" /></div>
+          <div><Label>Stradă</Label><Input value={street} onChange={e => setStreet(e.target.value)} placeholder="ex: Rue des Freres Peugeot, nr. 7" /></div>
+          <div><Label>Oraș</Label><Input value={city} onChange={e => setCity(e.target.value)} placeholder="cod poștal + localitate (ex: 68127 Sainte Croix En Plaine)" /></div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Anulează</Button>
+          <Button onClick={handleSave} disabled={saving}>
+            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Salvează client
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Create Contract Dialog ──────────────────────────────────────
 
 function CreateContractDialog({ open, onOpenChange, companies, onCreated }: {
@@ -176,6 +243,7 @@ function CreateContractDialog({ open, onOpenChange, companies, onCreated }: {
   const [clientKonto, setClientKonto] = useState<{ status: 'unknown' | 'ok' | 'missing'; value: string }>({ status: 'unknown', value: '' })
   const [kontoInput, setKontoInput] = useState('')
   const [savingKonto, setSavingKonto] = useState(false)
+  const [showAddClient, setShowAddClient] = useState(false)
 
   // Check client konto when customer + supplier are selected
   useEffect(() => {
@@ -259,6 +327,7 @@ function CreateContractDialog({ open, onOpenChange, companies, onCreated }: {
   }
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
@@ -283,6 +352,9 @@ function CreateContractDialog({ open, onOpenChange, companies, onCreated }: {
                 onKeyDown={e => e.key === 'Enter' && searchCrm()} className="flex-1" />
               <Button variant="outline" size="icon" onClick={searchCrm} disabled={searching}>
                 {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              </Button>
+              <Button variant="outline" size="icon" onClick={() => setShowAddClient(true)} title="Adaugă client nou">
+                <Plus className="h-4 w-4" />
               </Button>
             </div>
             {customerResults.length > 0 && (
@@ -336,6 +408,12 @@ function CreateContractDialog({ open, onOpenChange, companies, onCreated }: {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <QuickAddClientDialog
+      open={showAddClient}
+      onOpenChange={setShowAddClient}
+      onCreated={c => { setCustomerId(String(c.id)); setCustomerName(c.display_name); setCustomerResults([]); setCustomerSearch('') }}
+    />
+    </>
   )
 }
 
