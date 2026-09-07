@@ -308,8 +308,11 @@ class ClientRepository(BaseRepository):
         'driver_license_number',
     }
 
-    def create(self, data):
-        """Insert a new crm_clients row from a whitelisted dict.
+    def create_from_form(self, data):
+        """Insert a new crm_clients row from a whitelisted dict (CRM quick-add).
+
+        Distinct from create() above (positional, used by import/test-drive) to
+        avoid a method-name collision that would shadow it.
 
         Fiscal id is mirrored into BOTH `cui` and `nr_reg`: Facturare's invoice
         buyer reads the VAT from `nr_reg` (routes_orders.py), while CRM search

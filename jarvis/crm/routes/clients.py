@@ -75,7 +75,7 @@ def api_client_create():
     if not getattr(current_user, 'can_edit_crm', False):
         return jsonify({'success': False, 'error': 'Edit permission denied'}), 403
     data = request.get_json(silent=True) or {}
-    result = _client_repo.create(data)
+    result = _client_repo.create_from_form(data)
     if not result:
         return jsonify({'success': False, 'error': 'Nume client obligatoriu'}), 400
     return jsonify({'success': True, 'client': result}), 201
