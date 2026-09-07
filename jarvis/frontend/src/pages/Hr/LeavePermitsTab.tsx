@@ -26,6 +26,24 @@ const VIEW_TABS: { key: LeaveView; label: string }[] = [
   { key: 'trashed', label: 'Coș' },
 ]
 
+/**
+ * Maps a bilet's raw backend status to a human-readable Romanian label plus a
+ * StatusBadge colour variant. Covers every value the form_submissions status
+ * CHECK constraint allows, so nothing leaks the raw internal string (e.g. the
+ * old "error" badge, which was really `rejected`). `variant` must be a key
+ * StatusBadge knows about, otherwise it falls back to yellow.
+ */
+const STATUS_DISPLAY: Record<string, { variant: string; label: string }> = {
+  new: { variant: 'pending', label: 'Nou' },
+  pending_approval: { variant: 'pending', label: 'În aprobare' },
+  read: { variant: 'pending', label: 'În aprobare' },
+  flagged: { variant: 'in_progress', label: 'Semnalat' },
+  approved: { variant: 'approved', label: 'Aprobat' },
+  rejected: { variant: 'deleted', label: 'Respins' },
+  cancellation_pending: { variant: 'in_progress', label: 'Anulare în așteptare' },
+  cancelled: { variant: 'ignored', label: 'Anulat' },
+}
+
 /** Days remaining before an item in Trash is auto-purged (0 = purges today). */
 function trashDaysLeft(deletedAt?: string | null): number {
   if (!deletedAt) return TRASH_RETENTION_DAYS
@@ -211,7 +229,7 @@ export default function LeavePermitsTab({ search }: { search: string }) {
     setExporting(true)
     try {
       const XLSX = await import('xlsx')
-      const header = ['Nume', 'Companie', 'Data', 'Început', 'Sfârșit', 'Ore', 'Motiv', 'Aprobat de', 'Status', 'Sursă']
+      const header = ['Nume', 'Companie', 'Data', 'Început', 'Sfârșit', 'Ore', 'Motiv', 'Decis de', 'Status', 'Sursă']
       const rows: (string | number)[][] = [header]
       // Flat rows, ordered by employee to match the on-screen grouping.
       for (const [employeeName, { submissions }] of grouped) {
@@ -225,7 +243,7 @@ export default function LeavePermitsTab({ search }: { search: string }) {
             s.leave_hours != null ? s.leave_hours : '',
             s.leave_reason || '',
             s.approved_by || '',
-            s.status || '',
+            STATUS_DISPLAY[s.status]?.label ?? s.status ?? '',
             s.source === 'jarvis' ? 'JARVIS' : 'Connecteam',
           ])
         }
@@ -375,7 +393,7 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                 <TableHead>End</TableHead>
                 <TableHead>Hours</TableHead>
                 <TableHead>Reason</TableHead>
-                <TableHead>Approved By</TableHead>
+                <TableHead>Decis de</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Source</TableHead>
                 <TableHead className="w-8" />
@@ -446,14 +464,10 @@ export default function LeavePermitsTab({ search }: { search: string }) {
                         </TableCell>
                         <TableCell className="whitespace-nowrap text-xs">{s.approved_by || '-'}</TableCell>
                         <TableCell>
-                          <StatusBadge
-                            status={
-                              s.status === 'approved' ? 'active' :
-                              s.status === 'rejected' ? 'error' :
-                              s.status === 'converted' ? 'info' :
-                              s.status
-                            }
-                          />
+                          {(() => {
+                            const d = STATUS_DISPLAY[s.status] ?? { variant: s.status, label: s.status }
+                            return <StatusBadge status={d.variant} label={d.label} />
+                          })()}
                         </TableCell>
                         <TableCell>
                           <span className={`text-xs px-1.5 py-0.5 rounded-full ${
