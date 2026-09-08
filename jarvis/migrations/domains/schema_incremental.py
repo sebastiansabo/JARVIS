@@ -2204,6 +2204,33 @@ def _create_carpark_incremental(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_carpark_transfers_from ON carpark_transfers(from_company_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_carpark_transfers_vehicle ON carpark_transfers(vehicle_id)')
 
+    # ── Autovit two-way sync (Task 6): per-vehicle/per-account listing state ──
+    # Tracks the push side of the Autovit sync: one row per (vehicle, account)
+    # pair recording the remote advert id/url, last known status, and the
+    # last sync/error, so the push job can upsert idempotently instead of
+    # re-creating adverts on every run. connectors(id) is created by
+    # schema_core.create_schema_core, which always runs before
+    # create_schema_incremental (see migrations/init_schema.py), so no extra
+    # existence guard is needed beyond the carpark_vehicles one already
+    # gating this function.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_autovit_listings (
+            id SERIAL PRIMARY KEY,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            account_id INTEGER NOT NULL REFERENCES connectors(id) ON DELETE CASCADE,
+            external_advert_id TEXT,
+            external_url TEXT,
+            status TEXT NOT NULL DEFAULT 'draft',
+            last_sync TIMESTAMP,
+            last_error TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (vehicle_id, account_id)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_carpark_autovit_listings_vehicle ON carpark_autovit_listings(vehicle_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_carpark_autovit_listings_account ON carpark_autovit_listings(account_id)')
+
 
 def _create_schema_incremental_continued(conn, cursor):
     """Continuation of create_schema_incremental — non-carpark migrations."""
