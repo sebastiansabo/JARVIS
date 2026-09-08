@@ -158,6 +158,78 @@ def test_photos_multiple_only_first_is_primary():
         assert calls[1].kwargs["is_primary"] is False
 
 
+# ── Bulk import-all (Task 4) ──
+#
+# POST /accounts/<id>/import-all paginates every "active" page via
+# client.get_adverts(page=, status='active'), upserts each advert by VIN
+# (same taxonomy.advert_to_vehicle + MERGE_FIELDS rules as import_advert),
+# and returns an aggregate summary. Per-advert failures must not abort the
+# batch — they're collected into `errors` and the loop continues.
+
+def test_import_all_paginates_and_summarizes(client):
+    page1 = {"results": [ADVERT, {"params": {"make": "audi", "model": "a4"}}],
+             "total_pages": 2, "current_page": 1}
+    page2 = {"results": [{**ADVERT, "params": {**ADVERT["params"],
+                          "vin": "WAUZZZ8K0AA000002", "make": "audi", "model": "a4"}}],
+             "total_pages": 2, "current_page": 2}
+    with patch.object(r, "_build_client") as bc, \
+         patch.object(r._repo, "get", return_value={"id": 1, "connector_type": "autovit",
+                                                    "config": {}, "credentials": {}}), \
+         patch.object(r._repo, "add_sync_log") as log, \
+         patch.object(r._vehicle_repo, "get_by_vin", return_value=None), \
+         patch.object(r._vehicle_repo, "create", side_effect=lambda d: {"id": 1}), \
+         patch.object(r, "_maybe_import_photos", return_value=0):
+        bc.return_value.get_adverts.side_effect = [page1, page2]
+        resp = client.post('/autovit/api/accounts/1/import-all')
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body['success'] is True
+        assert body['imported'] == 2
+        assert body['updated'] == 0
+        assert body['skipped_no_vin'] == 1
+        assert body['photo_added'] == 0
+        assert body['errors'] == []
+        # both pages were fetched (loop paginates until page > total_pages)
+        assert bc.return_value.get_adverts.call_count == 2
+        log.assert_called_once()
+
+
+def test_import_all_collects_per_advert_errors_and_continues(client):
+    """A single advert blowing up (e.g. vehicle_repo.create raising) must not
+    abort the batch — it's recorded in `errors` and the remaining adverts in
+    the page still get processed."""
+    good_advert = {**ADVERT, "id": "2"}
+    bad_advert = {**ADVERT, "id": "1",
+                  "params": {**ADVERT["params"], "vin": "WAUZZZ8K0AA000099"}}
+    page1 = {"results": [bad_advert, good_advert], "total_pages": 1, "current_page": 1}
+
+    def create_side_effect(d):
+        if d.get("vin") == "WAUZZZ8K0AA000099":
+            raise RuntimeError("db exploded")
+        return {"id": 5}
+
+    with patch.object(r, "_build_client") as bc, \
+         patch.object(r._repo, "get", return_value={"id": 1, "connector_type": "autovit",
+                                                    "config": {}, "credentials": {}}), \
+         patch.object(r._repo, "add_sync_log"), \
+         patch.object(r._vehicle_repo, "get_by_vin", return_value=None), \
+         patch.object(r._vehicle_repo, "create", side_effect=create_side_effect), \
+         patch.object(r, "_maybe_import_photos", return_value=0):
+        bc.return_value.get_advert.side_effect = lambda aid: (
+            bad_advert if aid == "1" else good_advert)
+        bc.return_value.get_adverts.return_value = page1
+        resp = client.post('/autovit/api/accounts/1/import-all')
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body['success'] is True
+        assert body['imported'] == 1
+        assert len(body['errors']) == 1
+        assert body['errors'][0]['advert_id'] == "1"
+        assert 'db exploded' in body['errors'][0]['error']
+
+
 def test_import_succeeds_when_photo_import_raises(client):
     """Photos are a best-effort side effect: a photo-layer DB error must NOT
     turn an already-successful vehicle upsert into a 500. import_advert should
