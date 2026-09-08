@@ -223,6 +223,7 @@ function ConnectionSettings({
 function AdvertsSection({ accountId }: { accountId: number }) {
   const [page, setPage] = useState(1)
   const [importingId, setImportingId] = useState<string | null>(null)
+  const queryClient = useQueryClient()
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['autovit', 'adverts', accountId, page],
@@ -247,6 +248,27 @@ function AdvertsSection({ accountId }: { accountId: number }) {
     },
   })
 
+  const importAllMut = useMutation({
+    mutationFn: () => autovitApi.importAll(accountId),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['autovit', 'adverts'] })
+      if (res.success) {
+        const errCount = res.errors?.length ?? 0
+        toast.success(
+          `Import all done — ${res.imported} imported, ${res.updated} updated, ` +
+            `${res.skipped_no_vin} skipped (no VIN), ${res.photo_added} photos added` +
+            (errCount ? `, ${errCount} error(s)` : ''),
+        )
+      } else {
+        toast.error(res.error || 'Import all failed')
+      }
+    },
+    onError: (err: unknown) => {
+      const apiErr = err as { data?: { error?: string } }
+      toast.error(apiErr?.data?.error || 'Import all failed')
+    },
+  })
+
   const adverts = data?.results ?? []
   const totalElements = data?.total_elements ?? 0
   const totalPages = data?.total_pages ?? 1
@@ -261,10 +283,20 @@ function AdvertsSection({ accountId }: { accountId: number }) {
             {totalElements} active adverts on Autovit.ro
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isLoading}>
-          <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => importAllMut.mutate()} disabled={importAllMut.isPending}>
+            {importAllMut.isPending ? (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="mr-1.5 h-3.5 w-3.5" />
+            )}
+            Import all
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isLoading}>
+            <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {isLoading && !data ? (
