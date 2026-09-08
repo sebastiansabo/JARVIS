@@ -18,13 +18,16 @@ from flask import request, jsonify, current_app
 from . import autofox_bp
 from .service import (AutofoxIngestService, AutofoxIngestError, extract_delivery,
                       CONNECTOR_TYPE, MAX_IMAGES_PER_DELIVERY)
+from .client import AutofoxClient
 from core.connectors.repositories.connector_repository import ConnectorRepository
+from core.services import spaces_service
 from core.utils.api_helpers import api_login_required
 
 logger = logging.getLogger('jarvis.autofox.routes')
 
 _repo = ConnectorRepository()
 _service = AutofoxIngestService()
+_client = AutofoxClient()
 
 _TOKEN_HEADERS = ('X-Autofox-Token', 'X-API-Key', 'X-Api-Key')
 RAW_LOG_LIMIT = 8000
@@ -220,3 +223,83 @@ def get_logs():
         return jsonify({'success': True, 'logs': []})
     limit = min(int(request.args.get('limit', 20)), 100)
     return jsonify({'success': True, 'logs': _repo.get_sync_logs(c['id'], limit)})
+
+
+# ── Sync-from-AutoFox pull (per-vehicle photo picker; session auth) ──
+
+@autofox_bp.route('/api/photos', methods=['GET'])
+@api_login_required
+def api_photos():
+    """List AutoFox processed photos for a VIN, each flagged already-imported."""
+    vin = (request.args.get('vin') or '').strip().upper()
+    if not vin:
+        return jsonify({'success': False, 'error': 'vin is required'}), 400
+    try:
+        photos = _client.list_conversions_by_vin(vin)
+    except AutofoxIngestError as e:
+        return jsonify({'success': False, 'error': e.message}), e.status
+    vehicle = _service._vehicles.get_by_vin(vin)
+    imported = _service.imported_conversion_ids(vehicle['id']) if vehicle else set()
+    for p in photos:
+        p['already_imported'] = p['conversion_id'] in imported
+    return jsonify({
+        'success': True, 'vin': vin,
+        'matched_vehicle': bool(vehicle),
+        'vehicle_id': vehicle['id'] if vehicle else None,
+        'photos': photos,
+    })
+
+
+@autofox_bp.route('/api/import', methods=['POST'])
+@api_login_required
+def api_import():
+    """Download + store the chosen AutoFox conversions for a VIN."""
+    data = request.get_json(silent=True) or {}
+    vin = (data.get('vin') or '').strip().upper()
+    ids = [str(i) for i in (data.get('conversion_ids') or [])]
+    if not vin or not ids:
+        return jsonify({'success': False, 'error': 'vin and conversion_ids are required'}), 400
+    if not spaces_service.is_enabled():
+        return jsonify({'success': False, 'error': 'Storage not configured'}), 503
+    vehicle = _service._vehicles.get_by_vin(vin)
+    if not vehicle:
+        return jsonify({'success': False, 'error': f'No vehicle with VIN {vin}'}), 404
+    vehicle_id = vehicle['id']
+
+    try:
+        available = {c['conversion_id']: c for c in _client.list_conversions_by_vin(vin)}
+    except AutofoxIngestError as e:
+        return jsonify({'success': False, 'error': e.message}), e.status
+
+    already = _service.imported_conversion_ids(vehicle_id)
+    had_photos = bool(_service._photos.get_by_vehicle(vehicle_id))
+    created, skipped, errors = 0, 0, []
+    for cid in ids:
+        if cid in already:
+            skipped += 1
+            continue
+        conv = available.get(cid)
+        if not conv:
+            errors.append(f'{cid}: not found for VIN {vin}')
+            continue
+        try:
+            raw = _client.download(conv['url'])
+            _service.store_photo_bytes(vehicle_id, raw, cid,
+                                       make_primary=(not had_photos and created == 0))
+            created += 1
+        except AutofoxIngestError as e:
+            errors.append(f'{cid}: {e.message}')
+        except Exception as e:  # noqa: BLE001
+            logger.exception('AutoFox import failed (vin=%s cid=%s)', vin, cid)
+            errors.append(f'{cid}: {e}')
+
+    connector = _connector()
+    if connector:
+        status = 'success' if not errors else ('partial' if created else 'error')
+        _repo.add_sync_log(connector['id'], 'autofox_pull_import', status,
+                           invoices_found=len(ids), invoices_imported=created,
+                           details={'vin': vin, 'vehicle_id': vehicle_id,
+                                    'requested': len(ids), 'created': created,
+                                    'skipped_duplicates': skipped, 'errors': errors})
+    return jsonify({'success': True, 'vin': vin, 'vehicle_id': vehicle_id,
+                    'created': created, 'skipped_duplicates': skipped, 'errors': errors}), 200
