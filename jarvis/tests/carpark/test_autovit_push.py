@@ -36,10 +36,15 @@ Invocation:
         python -m pytest jarvis/tests/carpark/test_autovit_push.py -v
 """
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
+
+from flask import Flask
 
 from carpark.repositories.autovit_listing_repository import AutovitListingRepository
 from carpark.connectors.autovit.client import AutovitClient
+from carpark.connectors.autovit import routes as r
+from carpark.connectors.autovit import autovit_bp
+import core.utils.api_helpers as api_helpers_mod
 from database import get_db, get_cursor, release_db
 
 from .conftest import REAL_DB_AVAILABLE
@@ -250,3 +255,196 @@ def test_upload_photos_returns_none_when_no_images():
         out = c.upload_photos([])
         req.assert_not_called()
         assert out is None
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Task 8: publish / unpublish routes. Same mock-based idiom as
+# test_autovit_pull.py: a minimal Flask app registers autovit_bp so
+# `request.get_json()` resolves inside a real request context (Blueprint has
+# no `test_request_context` of its own), and `current_user` is monkeypatched
+# onto core.utils.api_helpers (where @api_login_required reads it).
+#
+# Deviation from the task-8 brief's Step-1 sample test: the brief calls
+# `r.autovit_bp.test_request_context(...)` + `r.publish(1)` directly, which
+# doesn't work for the same reasons documented at the top of
+# test_autovit_pull.py (no such method on Blueprint; would 401 anyway). This
+# uses the app/test_client fixtures instead, per the task-8 brief's own
+# "AUTH IN TESTS" instruction to reuse that idiom.
+# ─────────────────────────────────────────────────────────────────────────
+
+VEHICLE = {"id": 7, "vin": "TMBJK7NS0K8000001", "brand": "Skoda", "model": "Kodiaq",
+           "year_of_manufacture": 2019, "mileage_km": 9, "fuel_type": "diesel",
+           "current_price": 100, "listing_title": "t"}
+ACCOUNT = {"id": 1, "connector_type": "autovit",
+           "config": {"city_id": 1, "region_id": 1}, "credentials": {}}
+
+
+class FakeUser:
+    def __init__(self, id=1):
+        self.id = id
+        self.is_authenticated = True
+
+
+@pytest.fixture
+def app():
+    app = Flask(__name__)
+    app.register_blueprint(autovit_bp)
+    app.config['TESTING'] = True
+    return app
+
+
+@pytest.fixture
+def client(app):
+    return app.test_client()
+
+
+@pytest.fixture(autouse=True)
+def authenticated_user(monkeypatch):
+    """@api_login_required reads current_user from core.utils.api_helpers'
+    namespace — must be patched there for the handler to run past the auth
+    gate. publish/unpublish don't read current_user themselves (unlike
+    import_advert), so routes' own namespace doesn't need patching."""
+    monkeypatch.setattr(api_helpers_mod, 'current_user', FakeUser())
+
+
+def test_publish_account_not_found_returns_404(client):
+    with patch.object(r._repo, "get", return_value=None):
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+        assert resp.status_code == 404
+        assert resp.get_json()['success'] is False
+
+
+def test_publish_vehicle_not_found_returns_404(client):
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=None):
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 999})
+        assert resp.status_code == 404
+
+
+def test_publish_dry_run_returns_payload_without_network(client):
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client") as bc:
+        resp = client.post('/autovit/api/accounts/1/publish',
+                            json={"vehicle_id": 7, "dry_run": True})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["dry_run"] is True
+        assert data["advert"]["params"]["make"] == "skoda"
+        bc.assert_not_called()
+
+
+def test_publish_missing_required_fields_returns_400(client):
+    incomplete_vehicle = {"id": 7, "brand": "Skoda"}  # no vin/model/year/mileage/fuel/price
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=incomplete_vehicle), \
+         patch.object(r, "_build_client") as bc:
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert data["success"] is False
+        assert "params.vin" in data["missing"]
+        bc.assert_not_called()
+
+
+def test_publish_creates_new_listing_and_upserts(client):
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client") as bc, \
+         patch.object(r._listing_repo, "get", return_value=None), \
+         patch.object(r._listing_repo, "upsert") as upsert:
+        bc.return_value.create_advert.return_value = {"id": "999", "url": "http://x/999"}
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["success"] is True
+        assert data["external_id"] == "999"
+        bc.return_value.create_advert.assert_called_once()
+        bc.return_value.update_advert.assert_not_called()
+        upsert.assert_called_once_with(7, 1, external_advert_id="999",
+                                       external_url="http://x/999",
+                                       status="active", last_error=None)
+
+
+def test_publish_updates_existing_listing_via_update_advert(client):
+    existing = {"external_advert_id": "555", "external_url": "http://x/555"}
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client") as bc, \
+         patch.object(r._listing_repo, "get", return_value=existing), \
+         patch.object(r._listing_repo, "upsert") as upsert:
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+
+        assert resp.status_code == 200
+        bc.return_value.update_advert.assert_called_once_with("555", ANY)
+        bc.return_value.create_advert.assert_not_called()
+        upsert.assert_called_once_with(7, 1, external_advert_id="555",
+                                       external_url="http://x/555",
+                                       status="active", last_error=None)
+
+
+def test_publish_draft_sets_status_disabled_before_create(client):
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client") as bc, \
+         patch.object(r._listing_repo, "get", return_value=None), \
+         patch.object(r._listing_repo, "upsert") as upsert:
+        bc.return_value.create_advert.return_value = {"id": "1", "url": "http://x"}
+        resp = client.post('/autovit/api/accounts/1/publish',
+                            json={"vehicle_id": 7, "draft": True})
+
+        assert resp.status_code == 200
+        sent_advert = bc.return_value.create_advert.call_args.args[0]
+        assert sent_advert["status"] == "disabled"
+        assert upsert.call_args.kwargs["status"] == "draft"
+
+
+def test_publish_error_sets_listing_error_and_returns_502(client):
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client") as bc, \
+         patch.object(r._listing_repo, "get", return_value=None), \
+         patch.object(r._listing_repo, "set_error") as set_error:
+        bc.return_value.create_advert.side_effect = RuntimeError("autovit rejected")
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+
+        assert resp.status_code == 502
+        data = resp.get_json()
+        assert data["success"] is False
+        assert "autovit rejected" in data["error"]
+        set_error.assert_called_once_with(7, 1, "autovit rejected")
+
+
+def test_unpublish_success(client):
+    listing = {"external_advert_id": "555"}
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._listing_repo, "get", return_value=listing), \
+         patch.object(r, "_build_client") as bc, \
+         patch.object(r._listing_repo, "upsert") as upsert:
+        resp = client.post('/autovit/api/accounts/1/unpublish', json={"vehicle_id": 7})
+
+        assert resp.status_code == 200
+        assert resp.get_json()["success"] is True
+        bc.return_value.deactivate_advert.assert_called_once_with("555")
+        upsert.assert_called_once_with(7, 1, status='inactive')
+
+
+def test_unpublish_no_listing_returns_404(client):
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._listing_repo, "get", return_value=None):
+        resp = client.post('/autovit/api/accounts/1/unpublish', json={"vehicle_id": 7})
+        assert resp.status_code == 404
+
+
+def test_unpublish_error_returns_502(client):
+    listing = {"external_advert_id": "555"}
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._listing_repo, "get", return_value=listing), \
+         patch.object(r, "_build_client") as bc:
+        bc.return_value.deactivate_advert.side_effect = RuntimeError("boom")
+        resp = client.post('/autovit/api/accounts/1/unpublish', json={"vehicle_id": 7})
+
+        assert resp.status_code == 502
+        assert resp.get_json()["success"] is False
