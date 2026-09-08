@@ -97,6 +97,26 @@ export const autovitApi = {
       error?: string
     }>(`${BASE}/accounts/${accountId}/import-all`, {}),
 
+  publish: (accountId: number, vehicleId: number, options?: { dryRun?: boolean; draft?: boolean }) =>
+    api.post<{
+      success: boolean
+      dry_run?: boolean
+      advert?: Record<string, unknown>
+      external_id?: string
+      external_url?: string
+      error?: string
+      missing?: string[]
+    }>(`${BASE}/accounts/${accountId}/publish`, {
+      vehicle_id: vehicleId,
+      dry_run: options?.dryRun,
+      draft: options?.draft,
+    }),
+
+  unpublish: (accountId: number, vehicleId: number) =>
+    api.post<{ success: boolean; error?: string }>(`${BASE}/accounts/${accountId}/unpublish`, {
+      vehicle_id: vehicleId,
+    }),
+
   getStatus: async () => {
     const res = await api.get<{ success: boolean; data: AutovitStatus }>(`${BASE}/status`)
     return res.data
