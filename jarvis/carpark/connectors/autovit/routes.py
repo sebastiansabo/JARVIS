@@ -336,21 +336,40 @@ def import_all(account_id):
 
     Paginates through client.get_adverts(status='active') until every page
     has been consumed, upserting each advert by VIN (same "Autovit wins"
-    merge rules as import_advert). A failure on one advert (missing data,
-    a repository error, ...) is recorded in `errors` and does NOT abort the
-    rest of the batch — the loop always continues to the next advert/page.
+    merge rules as import_advert). Fault-tolerant by design — progress is
+    never lost:
+      - A client-build failure returns 502 before any pagination.
+      - A single-advert failure is recorded in `errors` and the batch
+        continues to the next advert.
+      - A page-fetch failure is recorded in `errors` and stops pagination,
+        but the accumulated summary from prior pages is still returned (200).
+    The sync-log status is 'success' when there were no errors, else
+    'partial'.
     """
     connector = _repo.get(account_id)
     if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
         return jsonify({'success': False, 'error': 'Account not found'}), 404
 
-    client = _build_client(connector)
+    try:
+        client = _build_client(connector)
+    except Exception as e:
+        logger.exception('Autovit import-all: failed to build client for account %s', account_id)
+        return jsonify({'success': False, 'error': str(e)}), 502
+
     uid = getattr(current_user, 'id', None)
     summary = {'imported': 0, 'updated': 0, 'skipped_no_vin': 0, 'photo_added': 0, 'errors': []}
 
     page, total_pages = 1, 1
     while page <= total_pages:
-        data = client.get_adverts(page=page, status='active')
+        try:
+            data = client.get_adverts(page=page, status='active')
+        except Exception as e:
+            # A page-fetch failure must not lose the progress already made: record
+            # it and stop paginating, returning the accumulated summary below.
+            logger.warning('Autovit import-all: page %s fetch failed: %s', page, e)
+            summary['errors'].append({'advert_id': None,
+                                      'error': f'page {page} fetch failed: {e}'})
+            break
         total_pages = data.get('total_pages', 1) or 1
         for ad in data.get('results', []):
             try:
@@ -380,7 +399,8 @@ def import_all(account_id):
                 summary['errors'].append({'advert_id': ad.get('id'), 'error': str(e)})
         page += 1
 
-    _repo.add_sync_log(account_id, 'import', 'success',
+    status = 'success' if not summary['errors'] else 'partial'
+    _repo.add_sync_log(account_id, 'import', status,
                        invoices_found=summary['imported'] + summary['updated'],
                        invoices_imported=summary['imported'], details=summary)
     return jsonify({'success': True, **summary})
