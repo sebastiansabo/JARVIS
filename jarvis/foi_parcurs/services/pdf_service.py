@@ -75,8 +75,15 @@ def _company_legal(company: dict) -> dict:
     }
 
 
-def _build_prestator_intro(company: dict, phone: str) -> str:
-    """Full Prestator paragraph for the contract's company + brand phone."""
+def _build_prestator_intro(company: dict, phone: str, standalone: bool = False) -> str:
+    """Prestator paragraph for the company + brand phone.
+
+    On the legal contract (`standalone=False`) it ends with the party
+    designation `…reprezentata de <administrator>, administrator, denumita in
+    continuare "Prestator", si:` — the Beneficiar party follows it. On the
+    standalone monthly Foaie de Parcurs (`standalone=True`) there is no second
+    party, so the representative + "Prestator, si:" tail is dropped and the
+    paragraph ends as a clean identifying sentence."""
     lg = _company_legal(company)
     parts = [f'S.C. {lg["name"]}']
     if lg['sediu']:
@@ -94,6 +101,8 @@ def _build_prestator_intro(company: dict, phone: str) -> str:
         parts.append(cont)
     if (phone or '').strip():
         parts.append(f'telefon: {phone.strip()}')
+    if standalone:
+        return ', '.join(parts) + '.'
     if lg['administrator']:
         parts.append(f'reprezentata de {lg["administrator"]}, administrator')
     return ', '.join(parts) + ', denumita in continuare "Prestator", si:'

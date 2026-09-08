@@ -110,7 +110,7 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
                     phone = get_dealer_config(company_name, veh.get('brand') or '').get('phone', '')
                 except Exception:
                     logger.warning('dealer_config lookup failed', exc_info=True)
-                prestator = _build_prestator_intro(company_row, phone)
+                prestator = _build_prestator_intro(company_row, phone, standalone=True)
         except Exception:
             logger.warning('Prestator lookup failed for company_id=%s', company_id, exc_info=True)
 
@@ -146,9 +146,17 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
         # Test Drive regardless of km — redistributing a gap can grow it past
         # td_max — and only an internal session reads "Deplasare în interes de
         # serviciu". (Internal fillers are never created by gap redistribution.)
-        is_td = not bool(c.get('is_internal'))
+        # A gap-event fill (source='gap-event') is a documented promo drive: its
+        # scop reads as participation in an event whose name is stored in
+        # `itinerary`, and it is NOT counted as a Test Drive.
+        is_event = (c.get('source') == 'gap-event')
+        is_td = not bool(c.get('is_internal')) and not is_event
         project = project_by_id.get(c.get('id'), '')
-        if is_td:
+        if is_event:
+            ev = (c.get('itinerary') or '').strip()
+            traseu = (f'Deplasare în interes de serviciu — participare la {ev}, '
+                      'în scop de promovare')
+        elif is_td:
             traseu = f'Test Drive {model_label}'
         elif not project:
             # Comodat with no promo project → deterministic Settings route
@@ -180,7 +188,6 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
             'driver': (c.get('client_name') or c.get('advisor_name') or '').strip(),
             'itinerary': (c.get('itinerary') or '').strip(),
             'traseu': traseu,
-            'fuel_consumed': float(c.get('fuel_consumed_liters') or 0),
         })
 
     # Range + Total over the month's full odometer span (incl. internal drives
@@ -189,7 +196,6 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
     km_end = km_month_max
     total_km = max(0, km_end - km_start)
     clients = len({t['driver'] for t in trips if t['driver']})
-    consum_efectiv = round(sum(t['fuel_consumed'] for t in trips), 2)
 
     return {
         'company': {'id': company_id, 'name': company_name, 'prestator': prestator},
@@ -204,7 +210,7 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
         'period': {'year': year, 'month': month, 'label': f'{_MONTHS_RO[month]} {year}' if 1 <= month <= 12 else f'{month}/{year}'},
         'trips': trips,
         'totals': {'km': total_km, 'km_start': km_start, 'km_end': km_end,
-                   'sessions': len(trips), 'clients': clients, 'consum_efectiv': consum_efectiv},
+                   'sessions': len(trips), 'clients': clients},
     }
 
 
@@ -357,7 +363,7 @@ def _rows_with_gaps(trips: list, km_min=None, km_max=None) -> list:
 
 # ── HTML skeleton (locked numbers) + Playwright render ──
 
-def _fuel_section_html(unit: str, norma, entries: list, km, consum_efectiv=None) -> str:
+def _fuel_section_html(unit: str, norma, entries: list, km) -> str:
     """One consumption section — Combustibil (l) or Energie (kWh) — as HTML.
     A hybrid renders both; every entry carries its receipt value (lei)."""
     e = html.escape
@@ -377,12 +383,15 @@ def _fuel_section_html(unit: str, norma, entries: list, km, consum_efectiv=None)
     cost = round(sum(float(a.get('lei', 0) or 0) for a in entries), 2)
     pret = round(cost / total, 2) if total else None
     consum_normat = round(float(norma) * km / 100, 2) if norma else None
+    # Consum efectiv = total fuel actually put in (Σ alimentări), the monthly
+    # proxy for real consumption; the per-session fuel_consumed_liters column is
+    # not tracked by this flow so it can't drive it.
+    consum_efectiv = total
     kv = [
         f'<tr><td class="k">Normă consum</td><td>{norma if norma is not None else "—"} {unit}/100 km</td></tr>',
         f'<tr><td class="k">Consum normat</td><td>{consum_normat if consum_normat is not None else "—"} {unit}</td></tr>',
+        f'<tr><td class="k">Consum efectiv</td><td>{consum_efectiv:g} {unit}</td></tr>',
     ]
-    if consum_efectiv is not None:
-        kv.append(f'<tr><td class="k">Consum efectiv</td><td>{consum_efectiv:g} {unit}</td></tr>')
     kv.append(f'<tr><td class="k">Cost total {title.lower()}</td><td>{cost:g} lei</td></tr>')
     kv.append(f'<tr><td class="k">Preț mediu</td><td>{pret if pret is not None else "—"} lei/{unit}</td></tr>')
     return f"""<div class="fuel-section"><div class="fuel-title">{title}</div>
@@ -397,7 +406,7 @@ def _fuel_section_html(unit: str, norma, entries: list, km, consum_efectiv=None)
 </div></div>"""
 
 
-def _xlsx_fuel_section(ws, start_row, unit, norma, entries, km, consum_efectiv, head, fill, bold):
+def _xlsx_fuel_section(ws, start_row, unit, norma, entries, km, head, fill, bold):
     """Write one Combustibil (l) / Energie (kWh) section to the worksheet; returns
     the next free row so a hybrid can stack both sections."""
     from openpyxl.styles import Alignment
@@ -408,13 +417,14 @@ def _xlsx_fuel_section(ws, start_row, unit, norma, entries, km, consum_efectiv, 
     cost = round(sum(float(a.get('lei', 0) or 0) for a in entries), 2)
     total = round(sum(float(a.get('liters', 0) or 0) for a in entries), 2)
     pret = round(cost / total, 2) if total else None
+    # Consum efectiv = total alimentat (see _fuel_section_html).
+    consum_efectiv = total
     row = start_row
     ws.cell(row=row, column=1, value=title).font = bold
     ws.cell(row=row + 1, column=1, value=f'Normă consum ({unit}/100km)'); ws.cell(row=row + 1, column=2, value=float(norma) if norma else None)
     ws.cell(row=row + 2, column=1, value=f'Consum normat ({unit})'); ws.cell(row=row + 2, column=2, value=consum_normat)
     row += 3
-    if consum_efectiv is not None:
-        ws.cell(row=row, column=1, value=f'Consum efectiv ({unit})'); ws.cell(row=row, column=2, value=consum_efectiv); row += 1
+    ws.cell(row=row, column=1, value=f'Consum efectiv ({unit})'); ws.cell(row=row, column=2, value=consum_efectiv); row += 1
     ws.cell(row=row, column=1, value=f'Cost total {title.lower()} (lei)'); ws.cell(row=row, column=2, value=cost); row += 1
     ws.cell(row=row, column=1, value=f'Preț mediu (lei/{unit})'); ws.cell(row=row, column=2, value=pret); row += 2
     for col, h in enumerate([f'Data {op}', 'Bon fiscal', 'kWh' if is_e else 'Litri', 'Valoare (lei)'], start=1):
@@ -482,9 +492,9 @@ def _skeleton_html(data: dict, prose: dict) -> str:
         uses_tank = True  # unknown fuel_type → treat as a fuel car
     sections = []
     if uses_tank:
-        sections.append(_fuel_section_html('l', fuel.get('norma'), fuel_entries, tot['km'], tot.get('consum_efectiv', 0)))
+        sections.append(_fuel_section_html('l', fuel.get('norma'), fuel_entries, tot['km']))
     if uses_batt:
-        sections.append(_fuel_section_html('kWh', fuel.get('norma_energie'), energy_entries, tot['km'], None))
+        sections.append(_fuel_section_html('kWh', fuel.get('norma_energie'), energy_entries, tot['km']))
     fuel_block = '\n'.join(sections)
 
     # Signatures — Întocmit = generating user's stored signature (image);
@@ -615,7 +625,19 @@ def _insert_gap_fill(vin, year, month, ctx, item, user_name) -> int:
     client = (item.get('client_name') or '').strip()
     date = (item.get('date') or '').strip()
     dep = f'{date} 10:00:00' if date else None
+    # An event can span an interval (Început → Sfârșit); `end_date` becomes the
+    # return so the sheet shows Plecare = start, Sosire = end. Absent → same-day.
+    end_date = (item.get('end_date') or '').strip()
+    ret = f'{end_date} 18:00:00' if end_date else None
     route_type = 'TD'  # Comodat deprecated (2026-09): gap-fill sessions are always TD
+    # An "Eveniment" fill attributes the gap km to a promo event instead of a
+    # client: it carries no client/signature/license — just the event name,
+    # stored in `itinerary` and tagged `source='gap-event'` so aggregate_month
+    # renders it as a "participare la {event}" promo trip.
+    event_name = (item.get('event_name') or '').strip()
+    is_event = bool(event_name)
+    source = 'gap-event' if is_event else 'gap-fill'
+    itinerary = event_name  # '' for a client-extra fill
     # Optional "client extra" documentation — advisor (consilier), the signed
     # client signature and the driver-license photo/number/expiry.
     advisor = (item.get('advisor_name') or user_name or 'Redistribuire')
@@ -630,20 +652,22 @@ def _insert_gap_fill(vin, year, month, ctx, item, user_name) -> int:
               km_start, km_end, distance_km, registration_number,
               fuel_tank_capacity_liters, fuel_gauge_start_level, fuel_gauge_end_level,
               fuel_start_liters, fuel_end_liters, fuel_consumed_liters,
-              status, advisor_name, client_name, itinerary, departure_datetime, source,
+              status, advisor_name, client_name, itinerary, departure_datetime, return_datetime, source,
               client_signature, driver_license_photo, driver_license_number, driver_license_expiry)
            VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s,%s,'1','1',0,0,0,
-                   'COMPLETED',%s,%s,'',%s,'gap-fill',%s,%s,%s,%s)
+                   'COMPLETED',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT (contract_id) DO UPDATE SET
              km_start=EXCLUDED.km_start, km_end=EXCLUDED.km_end,
              distance_km=EXCLUDED.distance_km, client_name=EXCLUDED.client_name,
-             departure_datetime=EXCLUDED.departure_datetime, route_type=EXCLUDED.route_type,
+             itinerary=EXCLUDED.itinerary, source=EXCLUDED.source,
+             departure_datetime=EXCLUDED.departure_datetime, return_datetime=EXCLUDED.return_datetime,
+             route_type=EXCLUDED.route_type,
              advisor_name=EXCLUDED.advisor_name, client_signature=EXCLUDED.client_signature,
              driver_license_photo=EXCLUDED.driver_license_photo,
              driver_license_number=EXCLUDED.driver_license_number,
              driver_license_expiry=EXCLUDED.driver_license_expiry''',
         (cid, vin, company_id, year, month, route_type, ks, ke, dist, reg, tank,
-         advisor, client, dep, client_sig, dl_photo, dl_number, dl_expiry),
+         advisor, client, itinerary, dep, ret, source, client_sig, dl_photo, dl_number, dl_expiry),
     )
     return 1
 
@@ -964,9 +988,9 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
 
     row = r + 3
     if uses_tank:
-        row = _xlsx_fuel_section(ws, row, 'l', norma, fuel_entries, tot['km'], tot.get('consum_efectiv', 0), head, fill, bold)
+        row = _xlsx_fuel_section(ws, row, 'l', norma, fuel_entries, tot['km'], head, fill, bold)
     if uses_batt:
-        row = _xlsx_fuel_section(ws, row, 'kWh', norma_energie, energy_entries, tot['km'], None, head, fill, bold)
+        row = _xlsx_fuel_section(ws, row, 'kWh', norma_energie, energy_entries, tot['km'], head, fill, bold)
 
     widths = [20, 20, 42, 22, 12, 12, 12]
     for i, w in enumerate(widths, start=1):
