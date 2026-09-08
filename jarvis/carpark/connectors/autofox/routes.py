@@ -160,6 +160,9 @@ def _safe(connector) -> dict:
         'token_preview': (tok[:4] + '…' + tok[-4:]) if tok else '',
         'allowed_ips': cfg.get('allowed_ips') or [],
         'replace_existing': bool(cfg.get('replace_existing')),
+        # AutoFox pull (photo sync) API access
+        'has_login_token': bool(creds.get('login_token')),
+        'api_base_url': cfg.get('api_base_url') or '',
         'last_sync': connector.get('last_sync'),
         'last_error': connector.get('last_error'),
     }
@@ -177,17 +180,24 @@ def get_config():
 @autofox_bp.route('/api/config', methods=['POST'])
 @api_login_required
 def save_config():
-    """Body: {rotate_token?: bool, allowed_ips?: [..], replace_existing?: bool, enabled?: bool}
-    Returns the full token ONLY when it is (re)generated — copy it to AutoFox then."""
+    """Body: {rotate_token?, allowed_ips?, replace_existing?, enabled?,
+    login_token?, api_base_url?}. `login_token` is the AutoFox pull API
+    credential (stored in credentials, never returned). The inbound webhook
+    token is returned in full ONLY when (re)generated."""
     data = request.get_json(silent=True) or {}
     c = _connector()
     new_token = None
     if not c:
         new_token = secrets.token_urlsafe(32)
+        creds0 = {'inbound_token': new_token}
+        if (data.get('login_token') or '').strip():
+            creds0['login_token'] = data['login_token'].strip()
+        cfg0 = {'allowed_ips': data.get('allowed_ips') or [],
+                'replace_existing': bool(data.get('replace_existing'))}
+        if (data.get('api_base_url') or '').strip():
+            cfg0['api_base_url'] = data['api_base_url'].strip()
         cid = _repo.save(CONNECTOR_TYPE, 'AutoFox', status='disconnected',
-                         config={'allowed_ips': data.get('allowed_ips') or [],
-                                 'replace_existing': bool(data.get('replace_existing'))},
-                         credentials={'inbound_token': new_token})
+                         config=cfg0, credentials=creds0)
         c = _repo.get(cid)
     else:
         cfg = _json(c.get('config'))
@@ -196,6 +206,10 @@ def save_config():
             cfg['allowed_ips'] = [ip.strip() for ip in (data['allowed_ips'] or []) if ip.strip()]
         if 'replace_existing' in data:
             cfg['replace_existing'] = bool(data['replace_existing'])
+        if (data.get('login_token') or '').strip():
+            creds['login_token'] = data['login_token'].strip()
+        if 'api_base_url' in data:
+            cfg['api_base_url'] = (data['api_base_url'] or '').strip()
         if data.get('rotate_token'):
             new_token = secrets.token_urlsafe(32)
             creds['inbound_token'] = new_token

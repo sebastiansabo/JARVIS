@@ -10,6 +10,8 @@ export interface AutofoxConnector {
   token_preview: string
   allowed_ips: string[]
   replace_existing: boolean
+  has_login_token: boolean
+  api_base_url: string
   last_sync: string | null
   last_error: string | null
 }
@@ -46,6 +48,8 @@ export interface AutofoxSavePayload {
   allowed_ips?: string[]
   replace_existing?: boolean
   enabled?: boolean
+  login_token?: string
+  api_base_url?: string
 }
 
 // ── Sync-from-AutoFox (per-vehicle photo pull) ──
