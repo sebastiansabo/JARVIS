@@ -59,3 +59,41 @@ def test_merge_fields_excludes_internal():
     assert "acquisition_price" not in tx.MERGE_FIELDS
     assert "purchase_price_net" not in tx.MERGE_FIELDS
     assert "brand" in tx.MERGE_FIELDS and "current_price" in tx.MERGE_FIELDS
+
+
+def _advert(**param_overrides):
+    """SAMPLE clone with params overridden (values of None delete the key)."""
+    params = dict(SAMPLE["params"])
+    for k, val in param_overrides.items():
+        if val is None:
+            params.pop(k, None)
+        else:
+            params[k] = val
+    return {**SAMPLE, "params": params}
+
+
+def test_brand_uses_canonical_labels():
+    # Acronym / hyphenated makes must map to the app's canonical brand names,
+    # not naive title-case (which would give "Bmw", "Mercedes Benz").
+    assert tx.advert_to_vehicle(_advert(make="bmw"))["brand"] == "BMW"
+    assert tx.advert_to_vehicle(_advert(make="mercedes-benz"))["brand"] == "Mercedes-Benz"
+    assert tx.advert_to_vehicle(_advert(make="mg"))["brand"] == "MG"
+    assert tx.advert_to_vehicle(_advert(make="mini"))["brand"] == "MINI"
+    assert tx.advert_to_vehicle(_advert(make="land-rover"))["brand"] == "Land Rover"
+
+
+def test_brand_falls_back_to_slug_label_for_unknown_make():
+    # A make not in AUTOVIT_BRANDS still gets a reasonable title-cased label.
+    assert tx.advert_to_vehicle(_advert(make="acmecars"))["brand"] == "Acmecars"
+
+
+def test_co2_zero_is_preserved():
+    # co2_emissions=0 is real (EVs) and must NOT be dropped by a truthy check.
+    v = tx.advert_to_vehicle(_advert(co2_emissions=0))
+    assert "co2_emissions" in v
+    assert v["co2_emissions"] == 0
+
+
+def test_co2_missing_is_absent():
+    v = tx.advert_to_vehicle(_advert(co2_emissions=None))
+    assert "co2_emissions" not in v
