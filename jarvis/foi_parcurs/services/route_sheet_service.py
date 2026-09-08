@@ -11,12 +11,14 @@ import os
 import re
 import json
 import html
+import uuid
 import logging
 from datetime import datetime
 
 from ..repositories.foi_parcurs_repository import FoiParcursRepository
 from ..repositories.vehicle_repository import FPVehicleRepository
 from .pdf_service import _build_prestator_intro, _PRESTATOR_FALLBACK
+from core.services import spaces_service
 
 logger = logging.getLogger(__name__)
 
@@ -828,9 +830,28 @@ def list_stored(company_id: int | None, year: int, month: int) -> list:
     """Metadata for every stored sheet in a period (badge + modal prefill)."""
     return _store.query_all(
         'SELECT vin, session_count, total_km, norma_combustibil, norma_energie, alimentari, evenimente, '
-        'scop_overrides, generated_by_name, generated_at '
+        'scop_overrides, attachments, generated_by_name, generated_at '
         'FROM fp_route_sheets WHERE (%s IS NULL OR company_id=%s) AND year=%s AND month=%s',
         (company_id, company_id, year, month),
+    )
+
+
+_UPSERT_JSON_COLS = ('scop_overrides', 'attachments')
+
+
+def _upsert_sheet_json(vin: str, year: int, month: int, column: str, value) -> None:
+    """Upsert one JSONB column on the sheet row, creating it if absent (a sheet
+    needn't be generated yet). `column` is code-controlled (whitelisted)."""
+    from psycopg2.extras import Json
+    if column not in _UPSERT_JSON_COLS:
+        raise ValueError(f'refusing to upsert unknown column {column!r}')
+    ref = _fp_repo.query_one('SELECT company_id FROM foi_de_parcurs WHERE vin=%s LIMIT 1', (vin,)) or {}
+    _store.execute(
+        f'''INSERT INTO fp_route_sheets (vin, company_id, year, month, {column}, updated_at)
+            VALUES (%s,%s,%s,%s,%s,NOW())
+            ON CONFLICT (vin, year, month) DO UPDATE SET
+              {column}=EXCLUDED.{column}, updated_at=NOW()''',
+        (vin, ref.get('company_id'), year, month, Json(value)),
     )
 
 
@@ -847,7 +868,6 @@ def _scop_overrides(vin: str, year: int, month: int) -> dict:
 def set_scop_override(vin: str, year: int, month: int, session_id, text: str) -> dict:
     """Upsert one session's Locul/Scopul override. Empty text clears it. Creates
     the sheet row if absent (a sheet needn't be generated yet). Returns the map."""
-    from psycopg2.extras import Json
     sid = str(session_id)
     text = (text or '').strip()
     current = _scop_overrides(vin, year, month)
@@ -855,17 +875,109 @@ def set_scop_override(vin: str, year: int, month: int, session_id, text: str) ->
         current[sid] = text
     else:
         current.pop(sid, None)
-    company_id = None
-    ref = _fp_repo.query_one('SELECT company_id FROM foi_de_parcurs WHERE vin=%s LIMIT 1', (vin,)) or {}
-    company_id = ref.get('company_id')
-    _store.execute(
-        '''INSERT INTO fp_route_sheets (vin, company_id, year, month, scop_overrides, updated_at)
-           VALUES (%s,%s,%s,%s,%s,NOW())
-           ON CONFLICT (vin, year, month) DO UPDATE SET
-             scop_overrides=EXCLUDED.scop_overrides, updated_at=NOW()''',
-        (vin, company_id, year, month, Json(current)),
-    )
+    _upsert_sheet_json(vin, year, month, 'scop_overrides', current)
     return current
+
+
+# ── Related-file attachments (DO Spaces) ──────────────────────────────────
+
+def _safe_name(name: str) -> str:
+    """Filesystem/zip-safe basename, capped."""
+    return (re.sub(r'[^A-Za-z0-9._-]+', '_', (name or '').strip()) or 'fisier')[:120]
+
+
+def _attachment_key(vin: str, year: int, month: int, filename: str) -> str:
+    """Private Spaces key for a foaie's related file — under the app's
+    `private/foi-parcurs/` namespace (same bucket + /api/media proxy as the rest;
+    see media route's _ALLOWED_PREFIXES). Objects are private, never CDN-served."""
+    vin_safe = re.sub(r'[^A-Za-z0-9]', '', vin or '') or 'VIN'
+    return f'private/foi-parcurs/route-sheets/{vin_safe}/{year}-{month:02d}/{uuid.uuid4().hex}_{_safe_name(filename)}'
+
+
+def vin_exists(vin: str) -> bool:
+    """True when the VIN corresponds to a real car in the system (has sessions) —
+    guards write endpoints against arbitrary/spoofed VINs."""
+    return bool(_fp_repo.query_one('SELECT 1 FROM foi_de_parcurs WHERE vin=%s LIMIT 1', (vin,)))
+
+
+def list_attachments(vin: str, year: int, month: int) -> list:
+    """Foaie-level related files ([{key, filename, content_type, size, ...}])."""
+    row = _store.query_one(
+        'SELECT attachments FROM fp_route_sheets WHERE vin=%s AND year=%s AND month=%s',
+        (vin, year, month),
+    )
+    a = (row or {}).get('attachments') or []
+    return a if isinstance(a, list) else []
+
+
+def add_attachment(vin: str, year: int, month: int, data: bytes, filename: str,
+                   content_type: str, user_name=None) -> dict:
+    """Upload one related file to Spaces and record it on the sheet. Returns the
+    stored record."""
+    key = _attachment_key(vin, year, month, filename)
+    spaces_service.upload(data, key, content_type or 'application/octet-stream')
+    rec = {'key': key, 'filename': _safe_name(filename),
+           'content_type': content_type or 'application/octet-stream',
+           'size': len(data or b''), 'uploaded_by': user_name or ''}
+    current = list_attachments(vin, year, month)
+    current.append(rec)
+    _upsert_sheet_json(vin, year, month, 'attachments', current)
+    return rec
+
+
+def remove_attachment(vin: str, year: int, month: int, key: str) -> list:
+    """Drop one related file from the sheet + Spaces. Returns the remaining list.
+
+    IDOR guard: only a key actually recorded on THIS sheet is ever deleted from
+    Spaces — an unknown/foreign key is a no-op, so a caller can't delete
+    arbitrary cloud objects by supplying someone else's key."""
+    current = list_attachments(vin, year, month)
+    if not any(a.get('key') == key for a in current):
+        return current
+    remaining = [a for a in current if a.get('key') != key]
+    try:
+        spaces_service.delete(key)
+    except Exception:
+        logger.warning('Spaces delete failed for %s', key, exc_info=True)
+    _upsert_sheet_json(vin, year, month, 'attachments', remaining)
+    return remaining
+
+
+def upload_receipt(vin: str, year: int, month: int, data: bytes, filename: str,
+                   content_type: str) -> dict:
+    """Upload one Alimentare receipt (bon) to Spaces; returns the file record the
+    caller attaches to the alimentare line (persisted with the sheet on Generate)."""
+    key = _attachment_key(vin, year, month, filename)
+    spaces_service.upload(data, key, content_type or 'application/octet-stream')
+    return {'key': key, 'filename': _safe_name(filename),
+            'content_type': content_type or 'application/octet-stream'}
+
+
+def iter_attachment_files(vin: str, year: int, month: int):
+    """(arcname, bytes) for every stored file around a foaie — Alimentare receipts
+    under bonuri/ and foaie-level files under fisiere/ — for the per-car ZIP.
+    Missing/failed keys are skipped (best-effort)."""
+    out = []
+    stored = _store.query_one(
+        'SELECT alimentari FROM fp_route_sheets WHERE vin=%s AND year=%s AND month=%s',
+        (vin, year, month),
+    ) or {}
+    for i, a in enumerate((stored.get('alimentari') or []), 1):
+        rec = a.get('receipt') if isinstance(a, dict) else None
+        if rec and rec.get('key'):
+            try:
+                data, _ = spaces_service.fetch(rec['key'])
+                out.append((f'bonuri/{i:02d}_{_safe_name(rec.get("filename") or "bon")}', data))
+            except Exception:
+                logger.warning('receipt fetch failed for %s', rec.get('key'), exc_info=True)
+    for a in list_attachments(vin, year, month):
+        if a.get('key'):
+            try:
+                data, _ = spaces_service.fetch(a['key'])
+                out.append((f'fisiere/{_safe_name(a.get("filename") or "fisier")}', data))
+            except Exception:
+                logger.warning('attachment fetch failed for %s', a.get('key'), exc_info=True)
+    return out
 
 
 def _save_sheet(data: dict, pdf_bytes: bytes, prose: dict, user_id, user_name) -> None:

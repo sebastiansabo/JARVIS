@@ -3,10 +3,28 @@
 sheets for a period. Regenerating overwrites the stored copy."""
 from flask import Response
 from ._shared import foi_parcurs_bp, jsonify, request, login_required, current_user, logger
+from core.roles.decorators import v2_permission_required
 from ..services.route_sheet_service import (
     generate_and_store, render_xlsx, list_stored, redistribute_gap, absorb_gap, retile_gap,
-    set_scop_override,
+    set_scop_override, add_attachment, remove_attachment, upload_receipt, vin_exists,
 )
+
+_MAX_UPLOAD = 10 * 1024 * 1024  # 10 MB
+
+
+def _sniff_ct(data: bytes):
+    """Real content type from magic bytes — never trust the client-supplied MIME.
+    Returns an allowed type ('application/pdf' | 'image/png' | 'image/jpeg' |
+    'image/webp') or None."""
+    if data[:5] == b'%PDF-':
+        return 'application/pdf'
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return 'image/png'
+    if data[:3] == b'\xff\xd8\xff':
+        return 'image/jpeg'
+    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return 'image/webp'
+    return None
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/pdf', methods=['POST'])
@@ -138,6 +156,61 @@ def api_retile_gap():
         logger.exception('Gap retile failed for %s %s-%s', vin, year, month)
         return jsonify({'success': False, 'error': str(e)[:200]}), 500
     return jsonify({'success': True, **result})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/upload', methods=['POST'])
+@login_required
+@v2_permission_required('test_drive', 'contracts', 'correct')
+def api_route_sheet_upload():
+    """Upload one related file (image/PDF) to a monthly sheet. `kind='receipt'`
+    returns the file record for an Alimentare line (persisted on Generate);
+    otherwise it's stored immediately as a foaie-level attachment. Gated by
+    test_drive.contracts.correct (same as other foaie edits)."""
+    f = request.files.get('file')
+    vin = (request.form.get('vin') or '').strip()
+    year, month = request.form.get('year', type=int), request.form.get('month', type=int)
+    kind = (request.form.get('kind') or 'attachment').strip()
+    if not f or not vin or not year or not month:
+        return jsonify({'success': False, 'error': 'file, vin, year, month sunt obligatorii'}), 400
+    if not vin_exists(vin):
+        return jsonify({'success': False, 'error': 'Vehicul necunoscut.'}), 404
+    data = f.read()
+    if not data:
+        return jsonify({'success': False, 'error': 'Fișier gol.'}), 400
+    if len(data) > _MAX_UPLOAD:
+        return jsonify({'success': False, 'error': 'Fișier prea mare (max 10MB).'}), 400
+    # Trust the file's real bytes, not the client-declared Content-Type.
+    ct = _sniff_ct(data)
+    if ct is None:
+        return jsonify({'success': False, 'error': 'Doar imagini (PNG/JPG/WEBP) sau PDF.'}), 400
+    try:
+        if kind == 'receipt':
+            rec = upload_receipt(vin, year, month, data, f.filename or 'bon', ct)
+        else:
+            rec = add_attachment(vin, year, month, data, f.filename or 'fisier', ct,
+                                 user_name=(getattr(current_user, 'name', None) or getattr(current_user, 'email', None)))
+    except Exception as e:
+        logger.exception('route-sheet upload failed for %s %s-%s', vin, year, month)
+        return jsonify({'success': False, 'error': str(e)[:200]}), 500
+    return jsonify({'success': True, 'file': rec})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/attachment', methods=['DELETE'])
+@login_required
+@v2_permission_required('test_drive', 'contracts', 'correct')
+def api_route_sheet_attachment_delete():
+    """Remove one foaie-level attachment (from the sheet + Spaces)."""
+    data = request.get_json(silent=True) or {}
+    vin = (data.get('vin') or '').strip()
+    year, month, key = data.get('year'), data.get('month'), (data.get('key') or '').strip()
+    if not vin or not year or not month or not key:
+        return jsonify({'success': False, 'error': 'vin, year, month, key sunt obligatorii'}), 400
+    try:
+        remaining = remove_attachment(vin, int(year), int(month), key)
+    except Exception as e:
+        logger.exception('attachment delete failed for %s', key)
+        return jsonify({'success': False, 'error': str(e)[:200]}), 500
+    return jsonify({'success': True, 'attachments': remaining})
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/scop', methods=['POST'])

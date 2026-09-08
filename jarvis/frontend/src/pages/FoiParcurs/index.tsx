@@ -36,6 +36,7 @@ import {
   Clock,
   History,
   ArrowLeftRight,
+  Paperclip,
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -85,7 +86,7 @@ import SignatureCanvas from '@/components/shared/SignatureCanvas'
 import { DriverLicenseSection } from './CreateClientPanel'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { useAuthStore } from '@/stores/authStore'
-import { foiParcursApi, type StoredRouteSheet, type RouteSheetAlimentare, type RouteSheetEvent, type SessionImportResult } from '@/api/foiParcurs'
+import { foiParcursApi, type StoredRouteSheet, type RouteSheetAlimentare, type RouteSheetEvent, type RouteSheetFile, type SessionImportResult } from '@/api/foiParcurs'
 import { hrApi } from '@/api/hr'
 import {
   fuelUnit,
@@ -1551,8 +1552,22 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
 }
 
 // ── Foaie de Parcurs — collect Normă/Alimentări, generate (AI), preview, download ──
-type AlimRow = { date: string; bon: string; liters: string; lei: string; unit: 'l' | 'kWh' }
+type AlimRow = { date: string; bon: string; liters: string; lei: string; unit: 'l' | 'kWh'; receipt?: RouteSheetFile | null }
 type EventRow = { name: string; start: string; end: string }
+
+/** Button that opens a file picker (image/PDF) and calls back with the file. */
+function FileButton({ onPick, label, disabled }: { onPick: (f: File) => void; label: string; disabled?: boolean }) {
+  const ref = useRef<HTMLInputElement>(null)
+  return (
+    <>
+      <input ref={ref} type="file" accept="image/png,image/jpeg,image/webp,application/pdf" className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onPick(f); if (ref.current) ref.current.value = '' }} />
+      <Button type="button" variant="outline" size="sm" className="h-7" disabled={disabled} onClick={() => ref.current?.click()}>
+        <Paperclip className="mr-1 h-3.5 w-3.5" /> {label}
+      </Button>
+    </>
+  )
+}
 
 function RouteSheetPreviewDialog({ vin, year, month, stored, vehicleNorma, vehicleNormaEnergie, vehicleFuelType, onClose }: {
   vin: string | null; year: number; month: number; stored: StoredRouteSheet | null
@@ -1567,6 +1582,9 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, vehicleNorma, vehic
   const [normaEnergie, setNormaEnergie] = useState('')
   const [alim, setAlim] = useState<AlimRow[]>([])
   const [events, setEvents] = useState<EventRow[]>([])
+  const [attachments, setAttachments] = useState<RouteSheetFile[]>([])
+  const [busyReceipt, setBusyReceipt] = useState<number | null>(null)
+  const [busyAttach, setBusyAttach] = useState(false)
 
   // Period bounds for "Din evenimente" (HR calendar events that fall in the month).
   const periodMin = `${year}-${String(month).padStart(2, '0')}-01`
@@ -1584,8 +1602,8 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, vehicleNorma, vehic
     setLoading(true); setError('')
     try {
       const alimentari: RouteSheetAlimentare[] = alim
-        .filter((a) => a.date || a.bon || a.liters || a.lei)
-        .map((a) => ({ date: a.date, bon: a.bon, liters: Number(a.liters || 0), lei: Number(a.lei || 0), unit: a.unit }))
+        .filter((a) => a.date || a.bon || a.liters || a.lei || a.receipt)
+        .map((a) => ({ date: a.date, bon: a.bon, liters: Number(a.liters || 0), lei: Number(a.lei || 0), unit: a.unit, receipt: a.receipt ?? null }))
       const evPayload: RouteSheetEvent[] = events
         .filter((e) => e.name.trim())
         .map((e) => ({ name: e.name.trim(), start: e.start, end: e.end || e.start }))
@@ -1614,9 +1632,10 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, vehicleNorma, vehic
     )
     setAlim(
       Array.isArray(stored?.alimentari)
-        ? stored!.alimentari!.map((a) => ({ date: a.date || '', bon: a.bon || '', liters: String(a.liters ?? ''), lei: String(a.lei ?? ''), unit: a.unit === 'kWh' ? 'kWh' : 'l' as 'l' | 'kWh' }))
+        ? stored!.alimentari!.map((a) => ({ date: a.date || '', bon: a.bon || '', liters: String(a.liters ?? ''), lei: String(a.lei ?? ''), unit: a.unit === 'kWh' ? 'kWh' : 'l' as 'l' | 'kWh', receipt: a.receipt ?? null }))
         : [],
     )
+    setAttachments(Array.isArray(stored?.attachments) ? stored!.attachments! : [])
     setEvents(
       Array.isArray(stored?.evenimente)
         ? stored!.evenimente!.map((e) => ({ name: e.name || '', start: e.start || '', end: e.end || e.start || '' }))
@@ -1630,8 +1649,47 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, vehicleNorma, vehic
 
   const setRow = (i: number, k: keyof AlimRow, v: string) =>
     setAlim((p) => p.map((a, idx) => (idx === i ? { ...a, [k]: v } : a)))
-  const addRow = (unit: 'l' | 'kWh') => setAlim((p) => [...p, { date: periodMin, bon: '', liters: '', lei: '', unit }])
+  const addRow = (unit: 'l' | 'kWh') => setAlim((p) => [...p, { date: periodMin, bon: '', liters: '', lei: '', unit, receipt: null }])
   const removeRow = (i: number) => setAlim((p) => p.filter((_, idx) => idx !== i))
+  const setReceipt = (i: number, receipt: RouteSheetFile | null) =>
+    setAlim((p) => p.map((a, idx) => (idx === i ? { ...a, receipt } : a)))
+
+  // Upload a bon (image/PDF) for one Alimentare line → stored in Spaces, key kept
+  // on the row and persisted with the sheet on Generate.
+  const uploadReceipt = async (i: number, file: File) => {
+    if (!vin) return
+    setBusyReceipt(i)
+    try {
+      const res = await foiParcursApi.uploadRouteSheetFile(vin, year, month, 'receipt', file)
+      setReceipt(i, res.file)
+    } catch (e: any) {
+      toast.error(e?.data?.error || e?.message || 'Încărcarea a eșuat')
+    } finally {
+      setBusyReceipt(null)
+    }
+  }
+  // Foaie-level related files — stored immediately (independent of Generate).
+  const uploadAttachment = async (file: File) => {
+    if (!vin) return
+    setBusyAttach(true)
+    try {
+      const res = await foiParcursApi.uploadRouteSheetFile(vin, year, month, 'attachment', file)
+      setAttachments((p) => [...p, res.file])
+    } catch (e: any) {
+      toast.error(e?.data?.error || e?.message || 'Încărcarea a eșuat')
+    } finally {
+      setBusyAttach(false)
+    }
+  }
+  const removeAttachment = async (key: string) => {
+    if (!vin) return
+    try {
+      const res = await foiParcursApi.deleteRouteSheetAttachment(vin, year, month, key)
+      setAttachments(res.attachments ?? [])
+    } catch (e: any) {
+      toast.error(e?.data?.error || e?.message || 'Ștergerea a eșuat')
+    }
+  }
   // Entries carry their original index so the two sections can edit the shared list.
   const fuelEntries = alim.map((a, i) => ({ a, i })).filter((x) => x.a.unit !== 'kWh')
   const energyEntries = alim.map((a, i) => ({ a, i })).filter((x) => x.a.unit === 'kWh')
@@ -1652,14 +1710,33 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, vehicleNorma, vehic
           </div>
           {entries.length === 0 && <p className="text-xs text-muted-foreground">{isE ? 'Nicio încărcare. Adaugă bonurile de energie.' : 'Nicio alimentare. Adaugă bonurile de combustibil.'}</p>}
           {entries.map(({ a, i }) => (
-            <div key={i} className="flex items-center gap-1.5">
-              <Input type="date" className="h-8 w-[118px] shrink-0 text-xs" value={a.date} onChange={(e) => setRow(i, 'date', e.target.value)} />
-              <Input className="h-8 flex-1 min-w-0 text-xs" placeholder="Bon" value={a.bon} onChange={(e) => setRow(i, 'bon', e.target.value)} />
-              <Input type="number" step="0.01" className="h-8 w-20 shrink-0 text-xs" placeholder={isE ? 'kWh' : 'Litri'} value={a.liters} onChange={(e) => setRow(i, 'liters', e.target.value)} />
-              <Input type="number" step="0.01" className="h-8 w-20 shrink-0 text-xs" placeholder="Lei" value={a.lei} onChange={(e) => setRow(i, 'lei', e.target.value)} />
-              <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeRow(i)}>
-                <XIcon className="h-3.5 w-3.5" />
-              </Button>
+            <div key={i} className="space-y-1">
+              <div className="flex items-center gap-1.5">
+                <Input type="date" className="h-8 w-[118px] shrink-0 text-xs" value={a.date} onChange={(e) => setRow(i, 'date', e.target.value)} />
+                <Input className="h-8 flex-1 min-w-0 text-xs" placeholder="Bon" value={a.bon} onChange={(e) => setRow(i, 'bon', e.target.value)} />
+                <Input type="number" step="0.01" className="h-8 w-20 shrink-0 text-xs" placeholder={isE ? 'kWh' : 'Litri'} value={a.liters} onChange={(e) => setRow(i, 'liters', e.target.value)} />
+                <Input type="number" step="0.01" className="h-8 w-20 shrink-0 text-xs" placeholder="Lei" value={a.lei} onChange={(e) => setRow(i, 'lei', e.target.value)} />
+                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeRow(i)}>
+                  <XIcon className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div className="flex items-center gap-1.5 pl-0.5">
+                {busyReceipt === i ? (
+                  <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Se încarcă…</span>
+                ) : a.receipt ? (
+                  <>
+                    <a href={foiParcursApi.mediaUrl(a.receipt.key)} target="_blank" rel="noopener"
+                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline truncate max-w-[220px]">
+                      <Paperclip className="h-3.5 w-3.5 shrink-0" /> {a.receipt.filename}
+                    </a>
+                    <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setReceipt(i, null)} title="Elimină bonul">
+                      <XIcon className="h-3 w-3" />
+                    </Button>
+                  </>
+                ) : (
+                  <FileButton label="Atașează bon" onPick={(f) => uploadReceipt(i, f)} disabled={!vin} />
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -1730,6 +1807,29 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, vehicleNorma, vehic
                     <span className="text-xs text-muted-foreground">–</span>
                     <Input type="date" className="h-8 flex-1 text-xs" title="Sfârșit" min={e.start || undefined} value={e.end} onChange={(ev) => setEventRow(i, 'end', ev.target.value)} />
                   </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Fișiere atașate — any related files (contract scans, anexe, etc.).
+                Stored immediately; included in the per-car "download all" ZIP. */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Fișiere atașate</Label>
+                {busyAttach
+                  ? <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Se încarcă…</span>
+                  : <FileButton label="Adaugă fișier" onPick={uploadAttachment} disabled={!vin} />}
+              </div>
+              {attachments.length === 0 && <p className="text-xs text-muted-foreground">Fără fișiere. Adaugă documente legate de această foaie (imagini/PDF).</p>}
+              {attachments.map((f) => (
+                <div key={f.key} className="flex items-center gap-1.5">
+                  <a href={foiParcursApi.mediaUrl(f.key)} target="_blank" rel="noopener"
+                    className="inline-flex flex-1 min-w-0 items-center gap-1 text-xs text-primary hover:underline">
+                    <Paperclip className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{f.filename}</span>
+                  </a>
+                  <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => removeAttachment(f.key)} title="Șterge fișierul">
+                    <XIcon className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               ))}
             </div>
