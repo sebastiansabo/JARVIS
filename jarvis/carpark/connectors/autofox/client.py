@@ -173,18 +173,41 @@ class AutofoxClient:
 
     def download(self, url: str) -> bytes:
         """Fetch image bytes for a permanent conversion URL (Bearer, or the
-        account's image_access_id for tokenless access). SSRF-guarded + capped."""
-        _validate_url(url)
+        account's image_access_id for tokenless access).
+
+        SSRF-guarded and size-capped. Redirects are followed manually and
+        EVERY hop is re-validated with `_validate_url`, so a redirect from a
+        public URL to an internal host (cloud metadata, RFC1918) is blocked
+        rather than silently followed by requests.
+        """
         creds, _ = self._creds_cfg()
         access_id = creds.get('image_access_id')
         params = {'image_access_id': access_id} if access_id else None
-        try:
-            r = self._session.get(url, headers=self._auth_headers(), params=params,
-                                  stream=True, timeout=DOWNLOAD_TIMEOUT)
-            if r.status_code == 401:
+        current = url
+        reauthed = False
+        r = None
+        for _hop in range(5):
+            _validate_url(current)  # re-checked on redirect targets too
+            try:
+                r = self._session.get(current, headers=self._auth_headers(), params=params,
+                                      stream=True, timeout=DOWNLOAD_TIMEOUT, allow_redirects=False)
+            except requests.RequestException as e:
+                raise AutofoxIngestError(f'AutoFox image download failed: {e}', 502)
+            if r.status_code == 401 and not reauthed:
                 self._token = None
-                r = self._session.get(url, headers=self._auth_headers(), params=params,
-                                      stream=True, timeout=DOWNLOAD_TIMEOUT)
+                reauthed = True
+                continue  # retry same URL with a fresh token
+            if r.is_redirect or 300 <= r.status_code < 400:
+                loc = r.headers.get('Location')
+                if not loc:
+                    raise AutofoxIngestError('AutoFox download: redirect without Location', 502)
+                current = requests.compat.urljoin(current, loc)
+                params = None  # only the original AutoFox URL takes image_access_id
+                continue
+            break
+        else:
+            raise AutofoxIngestError('AutoFox download: too many redirects', 502)
+        try:
             r.raise_for_status()
         except requests.RequestException as e:
             raise AutofoxIngestError(f'AutoFox image download failed: {e}', 502)
