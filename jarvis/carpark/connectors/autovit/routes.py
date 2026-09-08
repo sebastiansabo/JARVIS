@@ -327,3 +327,60 @@ def import_advert(account_id):
 
     return jsonify({'success': True, 'action': action, 'vehicle': {'id': vid},
                      'photo_added': photo_added}), 200
+
+
+@autovit_bp.route('/api/accounts/<int:account_id>/import-all', methods=['POST'])
+@api_login_required
+def import_all(account_id):
+    """Bulk-import every active advert for an account into the vehicle catalog.
+
+    Paginates through client.get_adverts(status='active') until every page
+    has been consumed, upserting each advert by VIN (same "Autovit wins"
+    merge rules as import_advert). A failure on one advert (missing data,
+    a repository error, ...) is recorded in `errors` and does NOT abort the
+    rest of the batch — the loop always continues to the next advert/page.
+    """
+    connector = _repo.get(account_id)
+    if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
+        return jsonify({'success': False, 'error': 'Account not found'}), 404
+
+    client = _build_client(connector)
+    uid = getattr(current_user, 'id', None)
+    summary = {'imported': 0, 'updated': 0, 'skipped_no_vin': 0, 'photo_added': 0, 'errors': []}
+
+    page, total_pages = 1, 1
+    while page <= total_pages:
+        data = client.get_adverts(page=page, status='active')
+        total_pages = data.get('total_pages', 1) or 1
+        for ad in data.get('results', []):
+            try:
+                full = client.get_advert(str(ad.get('id'))) if ad.get('id') else ad
+                vehicle_data = taxonomy.advert_to_vehicle(full)
+                if not vehicle_data.get('vin') or not vehicle_data.get('brand') or not vehicle_data.get('model'):
+                    summary['skipped_no_vin'] += 1
+                    continue
+
+                existing = _vehicle_repo.get_by_vin(vehicle_data['vin'])
+                if existing:
+                    merged = {k: val for k, val in vehicle_data.items() if k in taxonomy.MERGE_FIELDS}
+                    _vehicle_repo.update(existing['id'], merged, updated_by=uid)
+                    vid = existing['id']
+                    summary['updated'] += 1
+                else:
+                    if uid:
+                        vehicle_data['created_by'] = uid
+                        vehicle_data['updated_by'] = uid
+                    created = _vehicle_repo.create(vehicle_data)
+                    vid = created['id']
+                    summary['imported'] += 1
+
+                summary['photo_added'] += _maybe_import_photos(client, full, vid)
+            except Exception as e:
+                logger.warning('Autovit import-all: advert %s failed: %s', ad.get('id'), e)
+                summary['errors'].append({'advert_id': ad.get('id'), 'error': str(e)})
+        page += 1
+
+    _repo.add_sync_log(account_id, 'import', 'success',
+                       invoices_found=summary['imported'] + summary['updated'],
+                       invoices_imported=summary['imported'], details=summary)
+    return jsonify({'success': True, **summary})
