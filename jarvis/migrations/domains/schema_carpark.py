@@ -246,11 +246,25 @@ def create_schema_carpark(conn, cursor):
             photo_type VARCHAR(30) NOT NULL DEFAULT 'gallery',
             caption TEXT,
             file_size INTEGER,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TIMESTAMP
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcp_vehicle ON carpark_vehicle_photos(vehicle_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcp_type ON carpark_vehicle_photos(photo_type)')
+
+    # Soft-delete marker: photos are hidden immediately, then purged after 24h.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'carpark_vehicle_photos' AND column_name = 'deleted_at'
+            ) THEN
+                ALTER TABLE carpark_vehicle_photos ADD COLUMN deleted_at TIMESTAMP;
+            END IF;
+        END $$
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcp_deleted ON carpark_vehicle_photos(deleted_at)')
 
     # ── Cost Lines (parent grouping for costs) ──
     cursor.execute('''

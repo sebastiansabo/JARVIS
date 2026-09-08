@@ -316,10 +316,28 @@ def reorder_photos(vehicle_id):
 @login_required
 @carpark_edit_required
 def delete_photo(photo_id):
-    """Delete a single photo."""
-    if _photo_repo.delete(photo_id):
+    """Soft-delete a single photo (hidden now, purged permanently after 24h)."""
+    if _photo_repo.soft_delete([photo_id]):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Photo not found'}), 404
+
+
+@carpark_bp.route('/vehicles/<int:vehicle_id>/photos/bulk-delete', methods=['POST'])
+@login_required
+@carpark_edit_required
+def bulk_delete_photos(vehicle_id):
+    """Soft-delete the selected photos for a vehicle (purged after 24h)."""
+    # SECURITY: Verify vehicle belongs to user's company
+    _, err = _verify_vehicle_ownership(vehicle_id)
+    if err:
+        return err
+
+    data = request.get_json(silent=True) or {}
+    ids = [int(i) for i in (data.get('photo_ids') or []) if str(i).isdigit()]
+    if not ids:
+        return jsonify({'success': False, 'error': 'photo_ids required'}), 400
+    count = _photo_repo.soft_delete(ids, vehicle_id=vehicle_id)
+    return jsonify({'success': True, 'deleted': count})
 
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/photos', methods=['DELETE'])
