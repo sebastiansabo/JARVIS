@@ -17,6 +17,7 @@ from core.utils.api_helpers import api_login_required
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.vehicle_photo_repository import VehiclePhotoRepository
 from carpark.repositories.autovit_listing_repository import AutovitListingRepository
+from carpark.routes.vehicles import carpark_edit_required
 
 logger = logging.getLogger('jarvis.autovit.routes')
 
@@ -268,7 +269,8 @@ def _maybe_import_photos(client, advert, vehicle_id) -> int:
 # ── Import Advert → Vehicle Catalog ──
 
 @autovit_bp.route('/api/accounts/<int:account_id>/import-advert', methods=['POST'])
-@api_login_required
+@login_required
+@carpark_edit_required
 def import_advert(account_id):
     """Import a single advert into the vehicle catalog.
 
@@ -332,7 +334,8 @@ def import_advert(account_id):
 
 
 @autovit_bp.route('/api/accounts/<int:account_id>/import-all', methods=['POST'])
-@api_login_required
+@login_required
+@carpark_edit_required
 def import_all(account_id):
     """Bulk-import every active advert for an account into the vehicle catalog.
 
@@ -411,7 +414,8 @@ def import_all(account_id):
 # ── Push: publish / unpublish a vehicle to Autovit (Task 8) ──
 
 @autovit_bp.route('/api/accounts/<int:account_id>/publish', methods=['POST'])
-@api_login_required
+@login_required
+@carpark_edit_required
 def publish(account_id):
     """Publish (create or update) a vehicle's advert on Autovit.
 
@@ -460,7 +464,8 @@ def publish(account_id):
 
 
 @autovit_bp.route('/api/accounts/<int:account_id>/unpublish', methods=['POST'])
-@api_login_required
+@login_required
+@carpark_edit_required
 def unpublish(account_id):
     """Deactivate a vehicle's advert on Autovit (unpublish without deleting)."""
     connector = _repo.get(account_id)

@@ -44,7 +44,7 @@ from carpark.repositories.autovit_listing_repository import AutovitListingReposi
 from carpark.connectors.autovit.client import AutovitClient
 from carpark.connectors.autovit import routes as r
 from carpark.connectors.autovit import autovit_bp
-import core.utils.api_helpers as api_helpers_mod
+import carpark.routes.vehicles as vehicles_mod
 from database import get_db, get_cursor, release_db
 
 from .conftest import REAL_DB_AVAILABLE
@@ -261,14 +261,17 @@ def test_upload_photos_returns_none_when_no_images():
 # Task 8: publish / unpublish routes. Same mock-based idiom as
 # test_autovit_pull.py: a minimal Flask app registers autovit_bp so
 # `request.get_json()` resolves inside a real request context (Blueprint has
-# no `test_request_context` of its own), and `current_user` is monkeypatched
-# onto core.utils.api_helpers (where @api_login_required reads it).
+# no `test_request_context` of its own), `LOGIN_DISABLED=True` makes
+# flask_login's `@login_required` a no-op, and `current_user` is
+# monkeypatched onto carpark.routes.vehicles (where @carpark_edit_required —
+# the mutating-route auth+permission gate, replacing the former bare
+# `@api_login_required` — reads it).
 #
 # Deviation from the task-8 brief's Step-1 sample test: the brief calls
 # `r.autovit_bp.test_request_context(...)` + `r.publish(1)` directly, which
 # doesn't work for the same reasons documented at the top of
-# test_autovit_pull.py (no such method on Blueprint; would 401 anyway). This
-# uses the app/test_client fixtures instead, per the task-8 brief's own
+# test_autovit_pull.py (no such method on Blueprint; would reject anyway).
+# This uses the app/test_client fixtures instead, per the task-8 brief's own
 # "AUTH IN TESTS" instruction to reuse that idiom.
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -280,9 +283,11 @@ ACCOUNT = {"id": 1, "connector_type": "autovit",
 
 
 class FakeUser:
-    def __init__(self, id=1):
+    def __init__(self, id=1, can_access_carpark=True, can_edit_carpark=True):
         self.id = id
         self.is_authenticated = True
+        self.can_access_carpark = can_access_carpark
+        self.can_edit_carpark = can_edit_carpark
 
 
 @pytest.fixture
@@ -290,6 +295,7 @@ def app():
     app = Flask(__name__)
     app.register_blueprint(autovit_bp)
     app.config['TESTING'] = True
+    app.config['LOGIN_DISABLED'] = True
     return app
 
 
@@ -298,13 +304,36 @@ def client(app):
     return app.test_client()
 
 
+def _set_user(monkeypatch, user):
+    """@carpark_edit_required reads current_user from carpark.routes.vehicles'
+    namespace (where it's defined) — must be patched there for the handler
+    to run past the auth+permission gate. publish/unpublish don't read
+    current_user themselves (unlike import_advert), so the routes' own
+    module namespace doesn't need patching."""
+    monkeypatch.setattr(vehicles_mod, 'current_user', user)
+
+
 @pytest.fixture(autouse=True)
 def authenticated_user(monkeypatch):
-    """@api_login_required reads current_user from core.utils.api_helpers'
-    namespace — must be patched there for the handler to run past the auth
-    gate. publish/unpublish don't read current_user themselves (unlike
-    import_advert), so routes' own namespace doesn't need patching."""
-    monkeypatch.setattr(api_helpers_mod, 'current_user', FakeUser())
+    """Every test gets an authenticated user with carpark edit permission by
+    default; tests that need a different shape override via
+    _set_user(monkeypatch, FakeUser(...))."""
+    _set_user(monkeypatch, FakeUser())
+
+
+def test_publish_requires_edit_permission(client, monkeypatch):
+    """An authenticated user without can_edit_carpark must be rejected —
+    publish pushes the vehicle catalog live to the Autovit marketplace and
+    must not be reachable by a viewer with no CarPark edit permission."""
+    _set_user(monkeypatch, FakeUser(can_edit_carpark=False))
+    resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+    assert resp.status_code == 403
+
+
+def test_unpublish_requires_edit_permission(client, monkeypatch):
+    _set_user(monkeypatch, FakeUser(can_edit_carpark=False))
+    resp = client.post('/autovit/api/accounts/1/unpublish', json={"vehicle_id": 7})
+    assert resp.status_code == 403
 
 
 def test_publish_account_not_found_returns_404(client):

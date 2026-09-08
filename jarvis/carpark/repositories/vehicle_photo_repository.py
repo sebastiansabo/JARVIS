@@ -15,10 +15,13 @@ class VehiclePhotoRepository(BaseRepository):
     """Data access for carpark_vehicle_photos (Autovit import fallback)."""
 
     def count(self, vehicle_id: int) -> int:
-        """Total photo rows for a vehicle (used to decide whether the
-        Autovit import fallback should seed any photos at all)."""
+        """Count of non-soft-deleted photo rows for a vehicle (used to decide
+        whether the Autovit import fallback should seed any photos at all).
+        Excludes deleted_at rows so a vehicle whose photos were all
+        soft-deleted is correctly treated as having zero photos."""
         row = self.query_one(
-            'SELECT COUNT(*) AS n FROM carpark_vehicle_photos WHERE vehicle_id=%s',
+            'SELECT COUNT(*) AS n FROM carpark_vehicle_photos '
+            'WHERE vehicle_id=%s AND deleted_at IS NULL',
             (vehicle_id,)
         )
         return int(row['n']) if row else 0
