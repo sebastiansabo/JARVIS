@@ -2187,6 +2187,7 @@ function AutofoxSection() {
   const qc = useQueryClient()
   const [ips, setIps] = useState('')
   const [ipsDirty, setIpsDirty] = useState(false)
+  const [loginToken, setLoginToken] = useState('')
   const [revealed, setRevealed] = useState<{ token: string; curl: string } | null>(null)
   const [expanded, setExpanded] = useState<number | null>(null)
 
@@ -2338,6 +2339,37 @@ function AutofoxSection() {
               onCheckedChange={(v) => saveMut.mutate({ replace_existing: v })}
               disabled={saveMut.isPending}
             />
+          </div>
+
+          {/* AutoFox pull API — login token (photo sync) */}
+          <div className="space-y-1.5">
+            <Label className="text-xs flex items-center gap-1.5">
+              <Camera className="h-3.5 w-3.5" /> AutoFox API login token (photo sync)
+              {connector?.has_login_token
+                ? <span className="font-normal text-green-600">— configured</span>
+                : <span className="font-normal text-muted-foreground">— not set</span>}
+            </Label>
+            <div className="flex items-center gap-2">
+              <Input
+                type="password"
+                value={loginToken}
+                onChange={(e) => setLoginToken(e.target.value)}
+                placeholder={connector?.has_login_token ? '•••••• (leave blank to keep)' : 'paste AutoFox login_token'}
+                className="h-8 text-sm"
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8"
+                onClick={() => { saveMut.mutate({ login_token: loginToken }); setLoginToken('') }}
+                disabled={saveMut.isPending || !loginToken.trim()}
+              >
+                <Save className="mr-1 h-3.5 w-3.5" /> Save
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Used to pull processed photos from AutoFox into a vehicle by VIN (the “Sync from AutoFox” button in CarPark).
+            </p>
           </div>
 
           {connector?.last_error && (
