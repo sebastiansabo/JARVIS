@@ -1,9 +1,9 @@
-"""AutoFox.ai connector — inbound delivery of AI-processed vehicle photos.
+"""AutoFox.ai connector — read-only pull of AI-processed vehicle photos.
 
-AutoFox pushes finished images to the customer's system (DMS/CRM) keyed on
-VIN. JARVIS exposes a token-authenticated webhook that AutoFox calls; the
-service resolves the vehicle by VIN, downloads/compresses each image, stores
-it in private Spaces and records it in carpark_vehicle_photos.
+Colleagues photograph and process cars in the AutoFox app; JARVIS pulls the
+finished images from AutoFox's REST API (see client.py), matched to a vehicle
+by VIN, and stores them in private Spaces + carpark_vehicle_photos. Driven
+on demand from the CarPark "Sincronizează din AutoFox" picker.
 """
 from flask import Blueprint
 
