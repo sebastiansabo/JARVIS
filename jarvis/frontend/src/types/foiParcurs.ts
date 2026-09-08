@@ -275,6 +275,9 @@ export interface FoiContract {
   // Internal driving-log session (QuickSession) — no customer/signature. For
   // these, `itinerary` carries the form's free-text "Comentariu" (not a route).
   is_internal?: boolean
+  // Row origin: 'td_form' | 'batch' | 'gap-fill' | 'gap-event' | 'internal' … —
+  // drives the Locul/Scopul (a 'gap-event' fill reads as "Eveniment: {name}").
+  source?: string
   // 'PLANNED' — draft session created ahead of time (Plan a Driving Session,
   // Phase 1 backend). Signature/GDPR/PDF are deferred; activated into
   // 'FILLED' when the client arrives (PUT /test-drive/{id}/activate).

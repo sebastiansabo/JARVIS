@@ -85,11 +85,10 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
                 if _period(c) == (year, month) and (c.get('td_status') or '') != 'missed']
     km_month_min = min((int(c.get('km_start') or 0) for c in in_month), default=0)
     km_month_max = max((int(c.get('km_end') or 0) for c in in_month), default=0)
-    # Excluded from the client Foaie de Parcurs listing:
-    #  • Internal (company) drives — `is_internal`; their KM shows as a gap (a
-    #    between-drive jump, or a leading/trailing boundary gap — see
-    #    _rows_with_gaps) so it stays accounted and redistributable to a client.
-    sessions = [c for c in in_month if not c.get('is_internal')]
+    # Internal (company) drives are LISTED alongside client drives — their
+    # Locul/Scopul reads from the drive's Comentariu (stored in `itinerary`).
+    # Only Ratate/no-shows are excluded (already filtered out of in_month above).
+    sessions = list(in_month)
     # chronological by drive date (departure, else created)
     sessions.sort(key=lambda c: str(c.get('departure_datetime') or c.get('created_at') or ''))
 
@@ -114,19 +113,6 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
         except Exception:
             logger.warning('Prestator lookup failed for company_id=%s', company_id, exc_info=True)
 
-    # Traseu rule input from the Settings tab: the manually-configured Comodat
-    # routes (Itinerary Routes) that label internal trips. The client/internal
-    # split now drives the scop (see below), so TD max distance no longer does.
-    comodat_routes = []
-    if company_id:
-        try:
-            rr = _fp_repo.query_all(
-                "SELECT itinerary FROM fp_routes WHERE company_id=%s AND route_type='Comodat' ORDER BY id",
-                (company_id,))
-            comodat_routes = [r['itinerary'] for r in (rr or []) if r.get('itinerary')]
-        except Exception:
-            logger.warning('comodat routes lookup failed', exc_info=True)
-
     # Tied promo project per session (already set in the driving-session module).
     project_by_id = {}
     try:
@@ -138,40 +124,27 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
         logger.warning('mkt_project lookup failed', exc_info=True)
 
     model_label = ' '.join(x for x in (veh.get('mark'), veh.get('model')) if x) or 'vehicul'
-    ci = 0  # rotates through the configured Comodat routes
     trips = []
-    for i, c in enumerate(sessions):
+    for c in sessions:
         dist = c.get('distance_km') or 0
-        # Scop reflects the SESSION TYPE, not the distance. A client session is a
-        # Test Drive regardless of km — redistributing a gap can grow it past
-        # td_max — and only an internal session reads "Deplasare în interes de
-        # serviciu". (Internal fillers are never created by gap redistribution.)
-        # A gap-event fill (source='gap-event') is a documented promo drive: its
-        # scop reads as participation in an event whose name is stored in
-        # `itinerary`, and it is NOT counted as a Test Drive.
+        # Locul / Scopul is derived from the SESSION TYPE:
+        #  • event gap-fill (source='gap-event') → "Eveniment: {name}" (name in itinerary);
+        #  • client drive → "Test Drive {model}";
+        #  • internal (company) drive → its Comentariu (itinerary) verbatim, else
+        #    a generic purpose. A manual override (scop_overrides) wins later.
         is_event = (c.get('source') == 'gap-event')
-        is_td = not bool(c.get('is_internal')) and not is_event
+        is_internal = bool(c.get('is_internal'))
+        is_td = not is_internal and not is_event
         project = project_by_id.get(c.get('id'), '')
+        comment = (c.get('itinerary') or '').strip()
         if is_event:
-            ev = (c.get('itinerary') or '').strip()
-            traseu = (f'Deplasare în interes de serviciu — participare la {ev}, '
-                      'în scop de promovare')
+            traseu = f'Eveniment: {comment}' if comment else 'Eveniment'
         elif is_td:
             traseu = f'Test Drive {model_label}'
-        elif not project:
-            # Comodat with no promo project → deterministic Settings route
-            base = 'Deplasare în interes de serviciu'
-            if comodat_routes:
-                traseu = f'{base} — {comodat_routes[ci % len(comodat_routes)]}'
-                ci += 1
-            else:
-                traseu = base
         else:
-            # Comodat tied to a promo project — deterministic fallback; the AI
-            # rephrases this into the promovare framing for the PDF.
-            traseu = f'Deplasare în interes de serviciu — participare la {project}, în scop de promovare'
+            traseu = comment or 'Deplasare în interes de serviciu'
         trips.append({
-            'id': i,
+            'id': c.get('id'),
             'date': _fmt_date(c.get('departure_datetime') or c.get('created_at')),
             'iso': _iso_date(c.get('departure_datetime') or c.get('created_at')),
             'plecare': _fmt_dt(c.get('departure_datetime')),
@@ -363,6 +336,19 @@ def _rows_with_gaps(trips: list, km_min=None, km_max=None) -> list:
 
 # ── HTML skeleton (locked numbers) + Playwright render ──
 
+def _scop_text(trip, prose_map=None, overrides=None) -> str:
+    """Final Locul/Scopul for a trip: a manual override (keyed by session id in
+    scop_overrides) wins, then the AI prose (when enabled), then the derived
+    base traseu."""
+    ov = (overrides or {}).get(str(trip.get('id')))
+    if ov and str(ov).strip():
+        return str(ov).strip()
+    ai = (prose_map or {}).get(trip.get('id'))
+    if ai and str(ai).strip():
+        return str(ai).strip()
+    return trip.get('traseu') or ''
+
+
 def _fuel_section_html(unit: str, norma, entries: list, km) -> str:
     """One consumption section — Combustibil (l) or Energie (kWh) — as HTML.
     A hybrid renders both; every entry carries its receipt value (lei)."""
@@ -443,7 +429,7 @@ def _xlsx_fuel_section(ws, start_row, unit, norma, entries, km, head, fill, bold
     return row + 2
 
 
-def _skeleton_html(data: dict, prose: dict) -> str:
+def _skeleton_html(data: dict, prose: dict, overrides: dict | None = None) -> str:
     e = html.escape
     v = data['vehicle']
     rows = []
@@ -466,7 +452,7 @@ def _skeleton_html(data: dict, prose: dict) -> str:
             '<tr>'
             f'<td class="c">{e(t.get("plecare") or "—")}</td>'
             f'<td class="c">{e(t.get("sosire") or "—")}</td>'
-            f'<td class="route">{e(prose["trips"].get(t["id"], "") or t.get("traseu") or "—")}</td>'
+            f'<td class="route">{e(_scop_text(t, prose["trips"], overrides) or "—")}</td>'
             f'<td>{e(t["driver"] or "—")}</td>'
             f'<td class="n">{t["km_start"]:,}</td>'
             f'<td class="n">{t["km_end"]:,}</td>'
@@ -557,7 +543,7 @@ table.alim {{ flex:1; margin-top:0; }}
 </table>
 <table class="trips">
   <thead><tr>
-    <th>Plecare</th><th>Sosire</th><th>Traseu / Scop</th><th>Șofer</th>
+    <th>Plecare</th><th>Sosire</th><th>Locul / Scopul</th><th>Șofer</th>
     <th>KM start</th><th>KM end</th><th>KM parcurși</th>
   </tr></thead>
   <tbody>
@@ -832,10 +818,44 @@ def list_stored(company_id: int | None, year: int, month: int) -> list:
     """Metadata for every stored sheet in a period (badge + modal prefill)."""
     return _store.query_all(
         'SELECT vin, session_count, total_km, norma_combustibil, norma_energie, alimentari, evenimente, '
-        'generated_by_name, generated_at '
+        'scop_overrides, generated_by_name, generated_at '
         'FROM fp_route_sheets WHERE (%s IS NULL OR company_id=%s) AND year=%s AND month=%s',
         (company_id, company_id, year, month),
     )
+
+
+def _scop_overrides(vin: str, year: int, month: int) -> dict:
+    """Manual per-session Locul/Scopul overrides for a sheet ({session_id: text})."""
+    row = _store.query_one(
+        'SELECT scop_overrides FROM fp_route_sheets WHERE vin=%s AND year=%s AND month=%s',
+        (vin, year, month),
+    )
+    ov = (row or {}).get('scop_overrides') or {}
+    return {str(k): v for k, v in ov.items()} if isinstance(ov, dict) else {}
+
+
+def set_scop_override(vin: str, year: int, month: int, session_id, text: str) -> dict:
+    """Upsert one session's Locul/Scopul override. Empty text clears it. Creates
+    the sheet row if absent (a sheet needn't be generated yet). Returns the map."""
+    from psycopg2.extras import Json
+    sid = str(session_id)
+    text = (text or '').strip()
+    current = _scop_overrides(vin, year, month)
+    if text:
+        current[sid] = text
+    else:
+        current.pop(sid, None)
+    company_id = None
+    ref = _fp_repo.query_one('SELECT company_id FROM foi_de_parcurs WHERE vin=%s LIMIT 1', (vin,)) or {}
+    company_id = ref.get('company_id')
+    _store.execute(
+        '''INSERT INTO fp_route_sheets (vin, company_id, year, month, scop_overrides, updated_at)
+           VALUES (%s,%s,%s,%s,%s,NOW())
+           ON CONFLICT (vin, year, month) DO UPDATE SET
+             scop_overrides=EXCLUDED.scop_overrides, updated_at=NOW()''',
+        (vin, company_id, year, month, Json(current)),
+    )
+    return current
 
 
 def _save_sheet(data: dict, pdf_bytes: bytes, prose: dict, user_id, user_name) -> None:
@@ -909,7 +929,7 @@ def generate_and_store(vin: str, year: int, month: int, user_id=None, user_name=
     data['events'] = events or []
     data['signatures'] = {'intocmit': _user_signature(user_id), 'intocmit_name': user_name or ''}
     prose = _ai_prose(data)
-    pdf_bytes = _html_to_pdf_bytes(_skeleton_html(data, prose))
+    pdf_bytes = _html_to_pdf_bytes(_skeleton_html(data, prose, _scop_overrides(vin, year, month)))
     _save_sheet(data, pdf_bytes, prose, user_id, user_name)
     return pdf_bytes
 
@@ -920,6 +940,7 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
     from openpyxl.styles import Font, PatternFill, Alignment
 
     data = aggregate_month(vin, year, month)
+    overrides = _scop_overrides(vin, year, month)
     v = data['vehicle']
     wb = Workbook()
     ws = wb.active
@@ -935,7 +956,7 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
     ws['A5'] = f"Companie: {data['company']['name'] or '—'}"
     ws['A6'] = f"Perioada: {data['period']['label']}"
 
-    headers = ['Plecare', 'Sosire', 'Traseu / Scop', 'Șofer', 'KM start', 'KM end', 'KM parcurși']
+    headers = ['Plecare', 'Sosire', 'Locul / Scopul', 'Șofer', 'KM start', 'KM end', 'KM parcurși']
     hrow = 8
     for col, h in enumerate(headers, start=1):
         cell = ws.cell(row=hrow, column=col, value=h)
@@ -954,7 +975,7 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
         t = row['trip']
         ws.cell(row=r, column=1, value=t.get('plecare') or '')
         ws.cell(row=r, column=2, value=t.get('sosire') or '')
-        ws.cell(row=r, column=3, value=t.get('traseu') or '')
+        ws.cell(row=r, column=3, value=_scop_text(t, None, overrides))
         ws.cell(row=r, column=4, value=t['driver'] or '')
         ws.cell(row=r, column=5, value=t['km_start'])
         ws.cell(row=r, column=6, value=t['km_end'])
