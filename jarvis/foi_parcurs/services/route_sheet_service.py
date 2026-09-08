@@ -349,6 +349,16 @@ def _scop_text(trip, prose_map=None, overrides=None) -> str:
     return trip.get('traseu') or ''
 
 
+def _xl_safe(v):
+    """Neutralize spreadsheet formula/CSV injection: a string cell starting with
+    a formula trigger (= + - @ or a leading control char) is prefixed with an
+    apostrophe so Excel/Sheets treat it as literal text. Non-strings (numbers)
+    pass through unchanged so numeric cells stay numeric."""
+    if isinstance(v, str) and v and v[0] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + v
+    return v
+
+
 def _fuel_section_html(unit: str, norma, entries: list, km) -> str:
     """One consumption section — Combustibil (l) or Energie (kWh) — as HTML.
     A hybrid renders both; every entry carries its receipt value (lei)."""
@@ -418,8 +428,8 @@ def _xlsx_fuel_section(ws, start_row, unit, norma, entries, km, head, fill, bold
         cell.font = head; cell.fill = fill; cell.alignment = Alignment(horizontal='center')
     row += 1
     for a in entries:
-        ws.cell(row=row, column=1, value=str(a.get('date', '') or ''))
-        ws.cell(row=row, column=2, value=str(a.get('bon', '') or ''))
+        ws.cell(row=row, column=1, value=_xl_safe(str(a.get('date', '') or '')))
+        ws.cell(row=row, column=2, value=_xl_safe(str(a.get('bon', '') or '')))
         ws.cell(row=row, column=3, value=float(a.get('liters', 0) or 0))
         ws.cell(row=row, column=4, value=float(a.get('lei', 0) or 0))
         row += 1
@@ -951,10 +961,10 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
     fill = PatternFill('solid', fgColor='1A1A2E')
 
     ws['A1'] = 'Foaie de Parcurs'; ws['A1'].font = Font(bold=True, size=14)
-    ws['A2'] = f"{v['make']} {v['model']}".strip(); ws['A3'] = f"VIN: {v['vin']}"
-    ws['A4'] = f"Nr. înmatriculare: {v['registration_number'] or '—'}  ·  Categorie: {v.get('category') or '—'}"
-    ws['A5'] = f"Companie: {data['company']['name'] or '—'}"
-    ws['A6'] = f"Perioada: {data['period']['label']}"
+    ws['A2'] = _xl_safe(f"{v['make']} {v['model']}".strip()); ws['A3'] = _xl_safe(f"VIN: {v['vin']}")
+    ws['A4'] = _xl_safe(f"Nr. înmatriculare: {v['registration_number'] or '—'}  ·  Categorie: {v.get('category') or '—'}")
+    ws['A5'] = _xl_safe(f"Companie: {data['company']['name'] or '—'}")
+    ws['A6'] = _xl_safe(f"Perioada: {data['period']['label']}")
 
     headers = ['Plecare', 'Sosire', 'Locul / Scopul', 'Șofer', 'KM start', 'KM end', 'KM parcurși']
     hrow = 8
@@ -965,7 +975,7 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
     r = hrow + 1
     for row in _rows_with_gaps(data['trips'], data['totals']['km_start'], data['totals']['km_end']):
         if row['gap']:
-            ws.cell(row=r, column=1, value=row['date'])
+            ws.cell(row=r, column=1, value=_xl_safe(row['date']))
             ws.cell(row=r, column=3, value='Gap kilometraj (nejustificat)')
             ws.cell(row=r, column=5, value=row['km_start'])
             ws.cell(row=r, column=6, value=row['km_end'])
@@ -973,10 +983,10 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
             r += 1
             continue
         t = row['trip']
-        ws.cell(row=r, column=1, value=t.get('plecare') or '')
-        ws.cell(row=r, column=2, value=t.get('sosire') or '')
-        ws.cell(row=r, column=3, value=_scop_text(t, None, overrides))
-        ws.cell(row=r, column=4, value=t['driver'] or '')
+        ws.cell(row=r, column=1, value=_xl_safe(t.get('plecare') or ''))
+        ws.cell(row=r, column=2, value=_xl_safe(t.get('sosire') or ''))
+        ws.cell(row=r, column=3, value=_xl_safe(_scop_text(t, None, overrides)))
+        ws.cell(row=r, column=4, value=_xl_safe(t['driver'] or ''))
         ws.cell(row=r, column=5, value=t['km_start'])
         ws.cell(row=r, column=6, value=t['km_end'])
         ws.cell(row=r, column=7, value=session_actual_km(t))

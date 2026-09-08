@@ -6,7 +6,7 @@ from datetime import datetime
 from flask import Response
 from ._shared import foi_parcurs_bp, jsonify, request, login_required, logger, _fp_repo
 from .pdf import _ensure_pdf_path
-from foi_parcurs.services.route_sheet_service import session_actual_km, _period
+from foi_parcurs.services.route_sheet_service import session_actual_km, _period, _xl_safe
 
 _MAX_ROWS = 100000
 
@@ -109,7 +109,7 @@ def api_export_xlsx():
         cell.alignment = Alignment(horizontal='center')
 
     for r in rows:
-        ws.append(_session_export_row(r))
+        ws.append([_xl_safe(x) for x in _session_export_row(r)])
 
     widths = [17, 17, 26, 16, 20, 24, 20, 8, 12, 12, 12, 13]
     for i, w in enumerate(widths, start=1):
