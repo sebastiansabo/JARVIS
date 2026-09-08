@@ -150,8 +150,6 @@ class AutofoxClient:
                 'is_success': 'true',
                 'page': page,
                 'per_page': PER_PAGE,
-                'sort_by': 'date_modified',
-                'sort_direction': 'desc',
             })
             rows = _extract_list(body.get('data', body))
             if not rows:
@@ -163,6 +161,8 @@ class AutofoxClient:
                     out.append(norm)
             if len(rows) < PER_PAGE:
                 break
+        # newest first (the API rejects sort_by=date_modified, so sort here)
+        out.sort(key=lambda r: r.get('date_modified') or '', reverse=True)
         return out
 
     @staticmethod
