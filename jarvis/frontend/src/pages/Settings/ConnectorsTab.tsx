@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -31,9 +31,7 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronUp,
-  Copy,
   Camera,
-  Webhook,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -2168,7 +2166,7 @@ function HolidaysSection() {
 // ════════════════════════════════════════════════
 
 // ════════════════════════════════════════════════
-// AutoFox Section (CarPark — inbound photo webhook)
+// AutoFox Section (CarPark — read-only photo pull)
 // ════════════════════════════════════════════════
 
 function parseAutofoxDetails(d: AutofoxLog['details']): Record<string, unknown> {
@@ -2185,10 +2183,7 @@ function parseAutofoxDetails(d: AutofoxLog['details']): Record<string, unknown> 
 
 function AutofoxSection() {
   const qc = useQueryClient()
-  const [ips, setIps] = useState('')
-  const [ipsDirty, setIpsDirty] = useState(false)
   const [loginToken, setLoginToken] = useState('')
-  const [revealed, setRevealed] = useState<{ token: string; curl: string } | null>(null)
   const [expanded, setExpanded] = useState<number | null>(null)
 
   const { data: cfg, isLoading } = useQuery({
@@ -2197,8 +2192,6 @@ function AutofoxSection() {
   })
   const connector = cfg?.connector
   const configured = cfg?.configured ?? false
-  const enabled = configured && connector?.status !== 'disabled'
-  const webhookUrl = connector?.webhook_url || cfg?.webhook_url || ''
 
   const { data: logs = [] } = useQuery({
     queryKey: ['autofox', 'logs'],
@@ -2207,32 +2200,15 @@ function AutofoxSection() {
     refetchInterval: 30_000,
   })
 
-  // Reflect server allowed_ips into the textarea unless the user is editing it.
-  useEffect(() => {
-    if (connector && !ipsDirty) setIps((connector.allowed_ips || []).join('\n'))
-  }, [connector, ipsDirty])
-
   const saveMut = useMutation({
     mutationFn: (data: AutofoxSavePayload) => autofoxApi.saveConfig(data),
-    onSuccess: (res) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['autofox'] })
-      if (res.token) setRevealed({ token: res.token, curl: res.curl_example || '' })
-      setIpsDirty(false)
+      setLoginToken('')
       toast.success('AutoFox settings saved')
     },
     onError: () => toast.error('Failed to save AutoFox settings'),
   })
-
-  const copy = (text: string, label: string) =>
-    navigator.clipboard.writeText(text).then(
-      () => toast.success(`${label} copied`),
-      () => toast.error('Copy failed'),
-    )
-
-  const saveIps = () => {
-    const arr = ips.split(/[\n,]/).map((s) => s.trim()).filter(Boolean)
-    saveMut.mutate({ allowed_ips: arr })
-  }
 
   if (isLoading) {
     return <div className="h-48 animate-pulse rounded-lg border bg-muted/50" />
@@ -2246,180 +2222,55 @@ function AutofoxSection() {
             <Camera className="h-5 w-5" /> AutoFox (Vehicle Photos)
           </h3>
           <p className="text-sm text-muted-foreground mt-0.5">
-            AutoFox pushes AI-processed vehicle photos to JARVIS, matched to a vehicle by VIN.
+            JARVIS pulls AI-processed photos from AutoFox into a vehicle by VIN
+            (CarPark → “Sincronizează din AutoFox”).
           </p>
         </div>
-        <StatusBadge status={enabled && connector?.status === 'connected' ? 'active' : 'inactive'} />
+        <StatusBadge status={connector?.has_login_token ? 'active' : 'inactive'} />
       </div>
 
-      {!configured ? (
-        <EmptyState
-          icon={<Webhook className="h-10 w-10" />}
-          title="Not configured"
-          description="Generate an inbound token, then give AutoFox the webhook URL + token."
-          action={
-            <Button onClick={() => saveMut.mutate({})} disabled={saveMut.isPending}>
-              {saveMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Key className="mr-1.5 h-4 w-4" />}
-              Generate Token
-            </Button>
-          }
-        />
-      ) : (
-        <div className="rounded-lg border p-4 space-y-4">
-          {/* Enable / disable */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">Connector enabled</div>
-              <p className="text-xs text-muted-foreground">When off, the webhook rejects all deliveries (401).</p>
-            </div>
-            <Switch
-              checked={enabled}
-              onCheckedChange={(v) => saveMut.mutate({ enabled: v })}
-              disabled={saveMut.isPending}
-            />
-          </div>
-
-          {/* Webhook URL */}
-          <div className="space-y-1.5">
-            <Label className="text-xs flex items-center gap-1.5"><Webhook className="h-3.5 w-3.5" /> Webhook URL (give this to AutoFox)</Label>
-            <div className="flex items-center gap-2">
-              <Input readOnly value={webhookUrl} className="h-8 font-mono text-xs" />
-              <Button size="sm" variant="outline" className="h-8" onClick={() => copy(webhookUrl, 'Webhook URL')}>
-                <Copy className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Token */}
-          <div className="space-y-1.5">
-            <Label className="text-xs flex items-center gap-1.5"><Key className="h-3.5 w-3.5" /> Inbound token</Label>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-sm text-muted-foreground">{connector?.token_preview || '— none —'}</span>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 ml-auto"
-                onClick={() => saveMut.mutate({ rotate_token: true })}
-                disabled={saveMut.isPending}
-              >
-                <RefreshCw className="mr-1 h-3.5 w-3.5" /> Rotate
-              </Button>
-            </div>
-          </div>
-
-          {/* Advisory IP allowlist */}
-          <div className="space-y-1.5">
-            <Label className="text-xs flex items-center gap-1.5">
-              Allowed IPs
-              <span className="font-normal text-muted-foreground">(advisory — logged, not enforced)</span>
-            </Label>
-            <textarea
-              value={ips}
-              onChange={(e) => { setIps(e.target.value); setIpsDirty(true) }}
-              placeholder="One IP per line. Leave empty to accept any source."
-              rows={3}
-              className="w-full rounded-lg border bg-muted px-3 py-2 text-xs font-mono outline-none resize-y"
-            />
-            <div className="flex items-center gap-2">
-              <Button size="sm" variant="outline" onClick={saveIps} disabled={saveMut.isPending || !ipsDirty}>
-                <Save className="mr-1 h-3.5 w-3.5" /> Save IPs
-              </Button>
-              <p className="text-[11px] text-muted-foreground">The bearer token is the real gate; X-Forwarded-For is spoofable.</p>
-            </div>
-          </div>
-
-          {/* Replace existing */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm font-medium">Replace existing AutoFox photos</div>
-              <p className="text-xs text-muted-foreground">On each delivery, delete prior AutoFox photos for that vehicle first.</p>
-            </div>
-            <Switch
-              checked={connector?.replace_existing ?? false}
-              onCheckedChange={(v) => saveMut.mutate({ replace_existing: v })}
-              disabled={saveMut.isPending}
-            />
-          </div>
-
-          {/* AutoFox pull API — login token (photo sync) */}
-          <div className="space-y-1.5">
-            <Label className="text-xs flex items-center gap-1.5">
-              <Camera className="h-3.5 w-3.5" /> AutoFox API login token (photo sync)
-              {connector?.has_login_token
-                ? <span className="font-normal text-green-600">— configured</span>
-                : <span className="font-normal text-muted-foreground">— not set</span>}
-            </Label>
-            <div className="flex items-center gap-2">
-              <Input
-                type="password"
-                value={loginToken}
-                onChange={(e) => setLoginToken(e.target.value)}
-                placeholder={connector?.has_login_token ? '•••••• (leave blank to keep)' : 'paste AutoFox login_token'}
-                className="h-8 text-sm"
-              />
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8"
-                onClick={() => { saveMut.mutate({ login_token: loginToken }); setLoginToken('') }}
-                disabled={saveMut.isPending || !loginToken.trim()}
-              >
-                <Save className="mr-1 h-3.5 w-3.5" /> Save
-              </Button>
-            </div>
-            <p className="text-[11px] text-muted-foreground">
-              Used to pull processed photos from AutoFox into a vehicle by VIN (the “Sync from AutoFox” button in CarPark).
-            </p>
-          </div>
-
-          {connector?.last_error && (
-            <div className="rounded border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950 p-2.5 flex items-start gap-2">
-              <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
-              <p className="text-xs text-red-700 dark:text-red-300">{connector.last_error}</p>
-            </div>
-          )}
+      <div className="rounded-lg border p-4 space-y-3">
+        <Label className="text-xs flex items-center gap-1.5">
+          <Key className="h-3.5 w-3.5" /> AutoFox API login token
+          {connector?.has_login_token
+            ? <span className="font-normal text-green-600">— configured</span>
+            : <span className="font-normal text-muted-foreground">— not set</span>}
+        </Label>
+        <div className="flex items-center gap-2">
+          <Input
+            type="password"
+            value={loginToken}
+            onChange={(e) => setLoginToken(e.target.value)}
+            placeholder={connector?.has_login_token ? '•••••• (leave blank to keep)' : 'paste AutoFox login_token'}
+            className="h-8 text-sm"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8"
+            onClick={() => saveMut.mutate({ login_token: loginToken })}
+            disabled={saveMut.isPending || !loginToken.trim()}
+          >
+            {saveMut.isPending ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Save className="mr-1 h-3.5 w-3.5" />}
+            Save
+          </Button>
         </div>
-      )}
+        <p className="text-[11px] text-muted-foreground">
+          Read-only pull credential. Set this, then use “Sincronizează din AutoFox” on a vehicle to import its photos by VIN.
+        </p>
+        {connector?.last_error && (
+          <div className="rounded border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950 p-2.5 flex items-start gap-2">
+            <XCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+            <p className="text-xs text-red-700 dark:text-red-300">{connector.last_error}</p>
+          </div>
+        )}
+      </div>
 
-      {/* One-time token reveal */}
-      {revealed && (
-        <Dialog open onOpenChange={() => setRevealed(null)}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Copy this token now</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                This is the only time the full token is shown. Give it to AutoFox together with the webhook URL.
-              </p>
-              <div className="flex items-center gap-2">
-                <Input readOnly value={revealed.token} className="font-mono text-xs" />
-                <Button size="sm" variant="outline" onClick={() => copy(revealed.token, 'Token')}>
-                  <Copy className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              {revealed.curl && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Test with curl</Label>
-                  <pre className="rounded border bg-muted p-2 text-[11px] font-mono overflow-x-auto whitespace-pre-wrap">{revealed.curl}</pre>
-                  <Button size="sm" variant="ghost" onClick={() => copy(revealed.curl, 'curl command')}>
-                    <Copy className="mr-1 h-3.5 w-3.5" /> Copy curl
-                  </Button>
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button onClick={() => setRevealed(null)}>Done</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {/* Recent deliveries */}
+      {/* Recent syncs */}
       {configured && logs.length > 0 && (
         <div className="space-y-2">
           <h4 className="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-            <History className="h-3.5 w-3.5" /> Recent Deliveries
+            <History className="h-3.5 w-3.5" /> Recent Syncs
           </h4>
           <div className="rounded-md border">
             <Table>
@@ -2428,9 +2279,8 @@ function AutofoxSection() {
                   <TableHead>Date</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>VIN</TableHead>
-                  <TableHead>Recv</TableHead>
-                  <TableHead>Stored</TableHead>
-                  <TableHead>IP</TableHead>
+                  <TableHead>Requested</TableHead>
+                  <TableHead>Imported</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -2456,10 +2306,6 @@ function AutofoxSection() {
                         <TableCell className="font-mono text-xs">{String(d.vin ?? '—')}</TableCell>
                         <TableCell className="text-sm">{log.invoices_found}</TableCell>
                         <TableCell className="text-sm">{log.invoices_imported}</TableCell>
-                        <TableCell className="font-mono text-xs">
-                          {String(d.ip ?? '—')}
-                          {d.ip_allowed === false && <span className="ml-1 text-yellow-600" title="Source IP not in allowlist (advisory)">⚠</span>}
-                        </TableCell>
                         <TableCell>
                           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setExpanded(isOpen ? null : log.id)}>
                             {isOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -2468,7 +2314,7 @@ function AutofoxSection() {
                       </TableRow>
                       {isOpen && (
                         <TableRow>
-                          <TableCell colSpan={7} className="bg-muted/30">
+                          <TableCell colSpan={6} className="bg-muted/30">
                             {log.error_message && <p className="text-xs text-red-600 mb-1">{log.error_message}</p>}
                             <pre className="text-[11px] font-mono overflow-x-auto whitespace-pre-wrap max-h-64">{JSON.stringify(d, null, 2)}</pre>
                           </TableCell>
