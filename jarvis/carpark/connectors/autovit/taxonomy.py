@@ -59,17 +59,15 @@ COLOR_MAP["bej"] = "beige"
 COLOR_MAP["grey"] = "grey"
 COLOR_MAP["beige"] = "beige"
 
-_REVERSE = {  # carpark value -> api slug, for push
-    # Exclude the *alias* keys ("gray", "bej") so the canonical identity
-    # entries ("grey"->"grey", "beige"->"beige" — the actual Autovit slugs
-    # per AUTOVIT_COLORS in frontend/src/data/autovitData.ts) win the
-    # reverse lookup instead of being shadowed by their aliases. (BUG FIX:
-    # the naive `{v: k ...}` inversion picks whichever key iterates last for
-    # a shared value; excluding "grey"/"beige" here — as an earlier draft
-    # did — instead makes push emit the legacy alias "gray"/"bej", which
-    # Autovit does not accept.)
-    "color": {v: k for k, v in COLOR_MAP.items() if k not in ("gray", "bej")},
-}
+# carpark color value -> Autovit api slug (push). Only grey/beige differ from
+# identity: per LIVE Autovit data the real color param slugs are "gray"/"bej"
+# (NOT "grey"/"beige"), so push must emit those. PULL (advert_to_vehicle) does
+# the inverse via COLOR_MAP: api "gray"->carpark "grey", api "bej"->"beige".
+# The two explicit overrides below are order-independent (they run after the
+# comprehension), so which key iterates last in COLOR_MAP is irrelevant.
+_REVERSE = {"color": {v: k for k, v in COLOR_MAP.items()}}
+_REVERSE["color"]["grey"] = "gray"
+_REVERSE["color"]["beige"] = "bej"
 
 # Non-equipment core params we map explicitly; everything else that is a 0/1
 # flag becomes an equipment entry.
@@ -280,6 +278,9 @@ def validate_for_publish(advert: Dict[str, Any]) -> List[str]:
         missing.append("category_id")
     p = advert.get("params", {}) or {}
     for req in REQUIRED_PARAMS:
-        if not p.get(req):
+        val = p.get(req)
+        # A real 0 (e.g. mileage=0 on a new car) or a present price dict is
+        # valid — only an absent key, None, or "" counts as missing.
+        if val is None or val == "":
             missing.append(f"params.{req}")
     return missing
