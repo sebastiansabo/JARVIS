@@ -115,10 +115,10 @@ def test_extract_list_variants():
 
 def test_client_normalise_prefers_retouched():
     n = ax_client.AutofoxClient._normalise(
-        {'id': 5, 'file_converted': 'https://c/a.jpg', 'file_retouched': 'https://c/b.jpg',
+        {'id': 5, 'file_converted': 'c/a.jpg', 'file_retouched': 'c/b.jpg',
          'retouch_state': 'done'}, 'VIN')
-    assert n['conversion_id'] == '5' and n['url'].endswith('b.jpg') and n['vin'] == 'VIN'
-    assert ax_client.AutofoxClient._normalise({'id': 5}, 'VIN') is None  # no url
+    assert n['conversion_id'] == '5' and n['path'].endswith('b.jpg') and n['vin'] == 'VIN'
+    assert ax_client.AutofoxClient._normalise({'id': 5}, 'VIN') is None  # no file path
 
 
 def test_client_login_and_list():
@@ -207,6 +207,22 @@ def test_client_download_ok():
 
     c._session = _Sess()
     assert c.download('https://8.8.8.8/img.jpg') == b'abcd'
+
+
+def test_client_absolute_url():
+    c = _client_with_token()  # config {} → base defaults to api.autofox.ai
+    assert c.absolute_url('media/x.jpg') == 'https://api.autofox.ai/media/x.jpg'
+    assert c.absolute_url('/media/x.jpg') == 'https://api.autofox.ai/media/x.jpg'
+    assert c.absolute_url('https://cdn/x.jpg') == 'https://cdn/x.jpg'
+
+
+def test_image_proxy_streams_and_rejects_bad_path(client, connector, as_admin, monkeypatch):
+    monkeypatch.setattr(ax_routes._client, 'absolute_url', lambda p: 'https://api.autofox.ai/' + p)
+    monkeypatch.setattr(ax_routes._client, 'download', lambda url: b'\xff\xd8imgdata')
+    r = client.get('/autofox/api/image?path=media/vehicle-images/1/x.jpg')
+    assert r.status_code == 200 and r.data == b'\xff\xd8imgdata' and r.mimetype == 'image/jpeg'
+    assert client.get('/autofox/api/image?path=http://evil/x').status_code == 400
+    assert client.get('/autofox/api/image?path=../secret').status_code == 400
 
 
 def test_photos_route_flags_already_imported(client, connector, as_admin, monkeypatch):

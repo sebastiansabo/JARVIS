@@ -83,6 +83,16 @@ class AutofoxClient:
         _, cfg = self._creds_cfg()
         return (cfg.get('api_base_url') or DEFAULT_BASE_URL).rstrip('/')
 
+    def absolute_url(self, path: str) -> str:
+        """Resolve a (possibly relative) AutoFox media path to an absolute URL.
+
+        The API returns ``file_converted``/``file_retouched`` as paths relative
+        to the base host (e.g. ``media/vehicle-images/…`), so they must be
+        prefixed before download/display."""
+        if path.startswith(('http://', 'https://')):
+            return path
+        return f"{self._base_url()}/{path.lstrip('/')}"
+
     # ── auth ──
 
     def login(self) -> str:
@@ -149,6 +159,7 @@ class AutofoxClient:
             for row in rows:
                 norm = self._normalise(row, vin)
                 if norm:
+                    norm['url'] = self.absolute_url(norm['path'])
                     out.append(norm)
             if len(rows) < PER_PAGE:
                 break
@@ -157,13 +168,14 @@ class AutofoxClient:
     @staticmethod
     def _normalise(row: dict, vin: str) -> Optional[Dict[str, Any]]:
         cid = row.get('id')
-        # prefer the retouched (final) render, else the converted one
-        url = row.get('file_retouched') or row.get('file_converted') or row.get('file')
-        if cid is None or not url:
+        # prefer the retouched (final) render, else the converted one; the API
+        # returns these as paths relative to the base host
+        path = row.get('file_retouched') or row.get('file_converted') or row.get('file')
+        if cid is None or not path:
             return None
         return {
             'conversion_id': str(cid),
-            'url': url,
+            'path': path,
             'retouch_state': row.get('retouch_state'),
             'date_modified': row.get('date_modified'),
             'vin': row.get('vin') or vin,
