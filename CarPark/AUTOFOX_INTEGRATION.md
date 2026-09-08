@@ -1,5 +1,12 @@
 # AutoFox → JARVIS photo integration
 
+> **UPDATE 2026-09-08 — the inbound webhook has been RETIRED.** The integration
+> is the read-only **pull** model (see the "Sync from AutoFox — BUILT" section
+> below): JARVIS pulls processed photos from AutoFox's REST API by VIN. The
+> `POST /autofox/webhook` endpoint and its token/allowlist/replace-existing
+> settings no longer exist; the AutoFox settings panel now only holds the API
+> **login token**. The push-webhook sections below are kept for history only.
+
 ## Status (2026-09-07)
 - AutoFox subscription paid. AutoFox (Customer Care) asked for "details/credentials so we can set up the connection with your CRM" → AutoFox **pushes** to JARVIS; JARVIS hosts the endpoint.
 - Inbound webhook connector built, hardened and tested (17 tests green): `jarvis/carpark/connectors/autofox/` (`service.py`, `routes.py`), registered in `app.py`, tests `jarvis/tests/carpark/test_autofox_webhook.py`.
