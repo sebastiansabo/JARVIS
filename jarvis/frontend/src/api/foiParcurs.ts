@@ -34,7 +34,12 @@ export interface RouteSheetAlimentare {
 
 export interface GapFillContract {
   date: string
-  client_name: string
+  // A client-extra fill carries a client_name; an "Eveniment" fill carries an
+  // event_name instead (no client / signature / license).
+  client_name?: string
+  event_name?: string
+  // Optional interval end (event only) → the session's return/Sosire date.
+  end_date?: string
   km_start: number
   km_end: number
   // Optional "client extra" documentation captured in the redistribute dialog.

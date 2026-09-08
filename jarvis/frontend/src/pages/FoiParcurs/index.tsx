@@ -101,6 +101,8 @@ import { sessionStatus, type SessionStatusKey } from './sessionStatus'
 import { clientCell } from './sessionParty'
 import { sessionActualKm, sessionEstimatedKm } from './distance'
 import { sessionAnomalies, driveDate } from './anomalies'
+import { buildEventGapContract, periodFromISODate } from './gapEvent'
+import { PersonPicker } from './PersonPicker'
 import CorrectSessionDialog, { type CorrectionPayload } from './CorrectSessionDialog'
 import ExtendSessionDialog from './ExtendSessionDialog'
 import InternalStartDialog from './InternalStartDialog'
@@ -746,7 +748,10 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
 
                 return (
                   <React.Fragment key={sheet.vin}>
-                    <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => toggle(sheet.vin)}>
+                    <TableRow
+                      className={`cursor-pointer ${isOpen ? 'bg-primary/10 hover:bg-primary/15 border-l-2 border-l-primary' : 'hover:bg-muted/50'}`}
+                      onClick={() => toggle(sheet.vin)}
+                    >
                       <TableCell className="py-2">
                         {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       </TableCell>
@@ -1063,7 +1068,7 @@ function ExtraClientCard({ idx, c, canRemove, onChange, onRemove }: {
       <div className="grid grid-cols-[1fr_90px] gap-2">
         <div className="space-y-1.5">
           <Label className="text-xs">Nume client (șofer) *</Label>
-          <Input className="h-8" placeholder="Nume client" value={c.client_name} onChange={(e) => onChange({ client_name: e.target.value })} />
+          <PersonPicker value={c.client_name} onChange={(v) => onChange({ client_name: v })} placeholder="Caută client sau șofer" className="h-8" />
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">KM *</Label>
@@ -1112,17 +1117,43 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
   const sessions = data?.sessions ?? []
   const upperIdx = gap ? sessions.findIndex((s) => s.id === gap.before.id) : -1
   const lowerIdx = gap ? sessions.findIndex((s) => s.id === gap.after.id) : -1
-  const [mode, setMode] = useState<'absorb' | 'extra'>('absorb')
+  const [mode, setMode] = useState<'absorb' | 'extra' | 'event'>('absorb')
   const [win, setWin] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
   const [segs, setSegs] = useState<Seg[]>([])
   const [date, setDate] = useState('')
   const [clients, setClients] = useState<ExtraClient[]>([])
+  // "Eveniment" tab: attribute the whole gap to a promo event (no client docs).
+  // The event spans an interval Început → Sfârșit (Plecare → Sosire on the sheet),
+  // both clamped between the two bounding sessions.
+  const [eventName, setEventName] = useState('')
+  const [eventStart, setEventStart] = useState('')
+  const [eventEnd, setEventEnd] = useState('')
+  const [eventDriver, setEventDriver] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const isoDay = (s: string) => (s ? new Date(s).toISOString().slice(0, 10) : '')
   const dFrom = gap ? isoDay(gap.dateFrom) : ''
   const dTo = gap ? isoDay(gap.dateTo) : ''
+
+  // The foaie period a gap belongs to — derived from the resolution date (which
+  // is clamped between the two bounding sessions), falling back to the gap
+  // window then the table filter. Keeps saving from breaking when the table is
+  // on "Toate lunile" (month prop = 0, which the backend rejects).
+  const periodFor = (iso: string) =>
+    periodFromISODate(iso) ?? periodFromISODate(dTo || dFrom) ?? { year, month }
+
+  // HR-calendar events overlapping this month — offered as quick-pick names in
+  // the Eveniment tab (free text is also allowed).
+  const periodMin = `${year}-${String(month).padStart(2, '0')}-01`
+  const periodMax = `${year}-${String(month).padStart(2, '0')}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
+  const { data: hrEvents } = useQuery({
+    queryKey: ['hr-events-for-gap'],
+    queryFn: () => hrApi.getEvents(),
+    enabled: !!gap,
+    staleTime: 60_000,
+  })
+  const periodEvents = (hrEvents ?? []).filter((e) => e.start_date <= periodMax && e.end_date >= periodMin)
 
   // Fresh distribution for a window [start,end]: each session at its original
   // distance, with the whole in-window gap placed on the immediate upper neighbour.
@@ -1145,6 +1176,10 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
     setSegs(buildSegs(upperIdx, lowerIdx))
     setDate(dTo || dFrom)
     setClients([emptyExtraClient(gap.distance, user?.name ?? '')])
+    setEventName('')
+    setEventStart(dFrom || dTo)
+    setEventEnd(dTo || dFrom)
+    setEventDriver(user?.name ?? '')
     setError('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.gap?.id])
@@ -1181,14 +1216,16 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
   const canSaveAbsorb = !!gap && segs.length >= 2
   const canSaveExtra = !!gap && extraSum === gapDist &&
     clients.every((c) => c.client_name.trim() && c.client_signature && num(c.km) > 0)
-  const canSave = mode === 'absorb' ? canSaveAbsorb : canSaveExtra
+  const canSaveEvent = !!gap && !!eventName.trim() && !!eventStart && !!eventEnd && eventStart <= eventEnd
+  const canSave = mode === 'absorb' ? canSaveAbsorb : mode === 'extra' ? canSaveExtra : canSaveEvent
 
   const saveAbsorb = async () => {
     if (!gap || !data || segs.length < 2) return
     setSaving(true); setError('')
     try {
+      const p = periodFor(dTo || dFrom)
       await foiParcursApi.retileGap({
-        vin: data.vin, year, month,
+        vin: data.vin, year: p.year, month: p.month,
         allocations: segs.map((s) => ({ id: s.id, distance: s.km })),
       })
       onClose(true)
@@ -1224,7 +1261,29 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
     })
     setSaving(true); setError('')
     try {
-      await foiParcursApi.redistributeGap(data.vin, year, month, contracts)
+      const p = periodFor(date)
+      await foiParcursApi.redistributeGap(data.vin, p.year, p.month, contracts)
+      onClose(true)
+    } catch (e: any) {
+      setError(e?.data?.error || e?.message || 'Redistribuirea a eșuat')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Attribute the whole gap to a promo event: one gap-fill session tagged
+  // source='gap-event', rendered as "participare la {event}" on the sheet. No
+  // client / signature / license — just the event name, date and consilier.
+  const saveEvent = async () => {
+    if (!gap || !data) return
+    if (!eventName.trim()) return setError('Numele evenimentului este obligatoriu.')
+    if (eventStart && eventEnd && eventStart > eventEnd) return setError('Sfârșitul trebuie să fie după început.')
+    setSaving(true); setError('')
+    try {
+      const p = periodFor(eventStart)
+      await foiParcursApi.redistributeGap(data.vin, p.year, p.month, [
+        buildEventGapContract(gap, { eventName, eventDate: eventStart, eventEnd, eventDriver }),
+      ])
       onClose(true)
     } catch (e: any) {
       setError(e?.data?.error || e?.message || 'Redistribuirea a eșuat')
@@ -1250,10 +1309,11 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
             <p className="text-sm text-muted-foreground">
               {gap.distance} km nejustificați ({gap.kmStart} → {gap.kmEnd}) · între {dFrom} și {dTo}
             </p>
-            <Tabs value={mode} onValueChange={(v) => { setMode(v as 'absorb' | 'extra'); setError('') }}>
-              <TabsList className="grid w-full grid-cols-2">
+            <Tabs value={mode} onValueChange={(v) => { setMode(v as 'absorb' | 'extra' | 'event'); setError('') }}>
+              <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="absorb">Absorb în sesiuni</TabsTrigger>
                 <TabsTrigger value="extra">Client extra</TabsTrigger>
+                <TabsTrigger value="event">Eveniment</TabsTrigger>
               </TabsList>
 
               {/* ── Absorb: distribute the gap across a window of EXISTING sessions (no new lines) ── */}
@@ -1360,13 +1420,58 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
                   Clienții acoperă gap-ul în ordine ({gap.kmStart} → {gap.kmEnd}); suma KM trebuie să fie {gap.distance}.
                 </p>
               </TabsContent>
+
+              {/* ── Eveniment: attribute the whole gap to one promo event ── */}
+              <TabsContent value="event" className="space-y-3 pt-2">
+                <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+                  Toți cei <span className="font-medium text-foreground">{gap.distance} km</span> ({gap.kmStart} → {gap.kmEnd}) se atribuie evenimentului. Pe foaia de parcurs apar ca „Deplasare în interes de serviciu — participare la {eventName.trim() || '<eveniment>'}, în scop de promovare”.
+                </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Eveniment *</Label>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button type="button" variant="outline" size="sm" className="h-7" disabled={!periodEvents.length}
+                          title={periodEvents.length ? undefined : 'Niciun eveniment în această lună'}>
+                          <Search className="mr-1 h-3.5 w-3.5" /> Din evenimente
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="max-h-[240px] overflow-y-auto">
+                        {periodEvents.map((e) => (
+                          <DropdownMenuItem key={e.id} onClick={() => setEventName(e.name)}>
+                            <span className="truncate">{e.name}</span>
+                            <span className="ml-2 text-xs text-muted-foreground">{e.start_date}{e.end_date && e.end_date !== e.start_date ? `–${e.end_date}` : ''}</span>
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  <Input className="h-8" placeholder="Nume eveniment" value={eventName} onChange={(e) => setEventName(e.target.value)} />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Început (plecare)</Label>
+                    <Input type="date" min={dFrom} max={dTo} className="h-8" value={eventStart}
+                      onChange={(e) => setEventStart(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Sfârșit (sosire)</Label>
+                    <Input type="date" min={eventStart || dFrom} max={dTo} className="h-8" value={eventEnd}
+                      onChange={(e) => setEventEnd(e.target.value)} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Șofer / consilier</Label>
+                    <PersonPicker value={eventDriver} onChange={setEventDriver} placeholder="Client sau utilizator" className="h-8" />
+                  </div>
+                </div>
+              </TabsContent>
             </Tabs>
           </>
         )}
         {error && <div className="text-sm text-red-600">{error}</div>}
         <DialogFooter>
           <Button variant="outline" onClick={() => onClose(false)} disabled={saving}>Anulează</Button>
-          <Button onClick={mode === 'absorb' ? saveAbsorb : saveExtra} disabled={saving || !canSave}>
+          <Button onClick={mode === 'absorb' ? saveAbsorb : mode === 'extra' ? saveExtra : saveEvent} disabled={saving || !canSave}>
             {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
             Salvează
           </Button>
