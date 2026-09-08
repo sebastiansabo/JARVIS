@@ -1,15 +1,11 @@
 import { api } from './client'
 
-// AutoFox → JARVIS inbound photo webhook connector (CarPark).
-// Admin-facing config/logs API; the webhook itself is called by AutoFox.
+// AutoFox → JARVIS read-only photo pull connector (CarPark).
+// Admin config sets the API login token; the per-vehicle picker pulls photos.
 
 export interface AutofoxConnector {
   id: number
   status: string
-  webhook_url: string
-  token_preview: string
-  allowed_ips: string[]
-  replace_existing: boolean
   has_login_token: boolean
   api_base_url: string
   last_sync: string | null
@@ -19,16 +15,12 @@ export interface AutofoxConnector {
 export interface AutofoxConfigResponse {
   success: boolean
   configured: boolean
-  webhook_url: string
   connector?: AutofoxConnector
 }
 
 export interface AutofoxSaveResponse {
   success: boolean
   connector: AutofoxConnector
-  // Full token + a ready-to-send curl are returned ONLY when (re)generated.
-  token?: string
-  curl_example?: string
 }
 
 export interface AutofoxLog {
@@ -38,16 +30,12 @@ export interface AutofoxLog {
   invoices_found: number
   invoices_imported: number
   error_message: string | null
-  // JSON column: {ip, ip_allowed, vin, image_refs, multipart_files, raw, created, skipped_duplicates, errors}
+  // JSON column: {vin, vehicle_id, requested, created, skipped_duplicates, errors}
   details: Record<string, unknown> | string | null
   created_at: string
 }
 
 export interface AutofoxSavePayload {
-  rotate_token?: boolean
-  allowed_ips?: string[]
-  replace_existing?: boolean
-  enabled?: boolean
   login_token?: string
   api_base_url?: string
 }
