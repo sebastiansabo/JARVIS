@@ -152,6 +152,63 @@ def test_client_login_and_list():
     assert out[1]['url'].endswith('2.jpg')
 
 
+def _client_with_token():
+    class _Repo:
+        def get_by_type(self, t):
+            return {'id': 1, 'credentials': {'login_token': 'LT'}, 'config': {}}
+    c = ax_client.AutofoxClient(repo=_Repo())
+    c._token = 'TOK'
+    return c
+
+
+def test_client_download_blocks_redirect_to_internal():
+    c = _client_with_token()
+
+    class _Redir:
+        status_code = 302
+        is_redirect = True
+        headers = {'Location': 'http://169.254.169.254/latest/meta-data/'}
+
+        def iter_content(self, n):
+            return iter(())
+
+        def raise_for_status(self):
+            pass
+
+    class _Sess:
+        def get(self, url, **kw):
+            return _Redir()
+
+    c._session = _Sess()
+    # public initial host passes, but the redirect target is link-local → blocked
+    with pytest.raises(ax_service.AutofoxIngestError):
+        c.download('https://8.8.8.8/img.jpg')
+
+
+def test_client_download_ok():
+    c = _client_with_token()
+
+    class _Ok:
+        status_code = 200
+        is_redirect = False
+        headers = {}
+
+        def iter_content(self, n):
+            yield b'ab'
+            yield b'cd'
+
+        def raise_for_status(self):
+            pass
+
+    class _Sess:
+        def get(self, url, **kw):
+            assert kw.get('allow_redirects') is False
+            return _Ok()
+
+    c._session = _Sess()
+    assert c.download('https://8.8.8.8/img.jpg') == b'abcd'
+
+
 def test_photos_route_flags_already_imported(client, connector, as_admin, monkeypatch):
     monkeypatch.setattr(ax_routes._client, 'list_conversions_by_vin',
                         lambda vin: [{'conversion_id': '11', 'url': 'https://c/1.jpg',
