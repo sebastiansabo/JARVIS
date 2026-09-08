@@ -128,6 +128,45 @@ class AutovitClient:
         resp = self._request('GET', f'/adverts/{advert_id}')
         return resp.json()
 
+    # ── Push (write) methods — Task 7 of the two-way-sync plan ──
+
+    def create_advert(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a new advert. Returns the created advert body (id, url, ...)."""
+        return self._request('POST', '/adverts', json=payload).json()
+
+    def update_advert(self, advert_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Update an existing advert in place."""
+        return self._request('PUT', f'/adverts/{advert_id}', json=payload).json()
+
+    def deactivate_advert(self, advert_id: str) -> Dict[str, Any]:
+        """Deactivate (unpublish without deleting) an advert."""
+        return self._request('POST', f'/adverts/{advert_id}/deactivate').json()
+
+    def delete_advert(self, advert_id: str) -> Dict[str, Any]:
+        """Permanently delete an advert."""
+        self._request('DELETE', f'/adverts/{advert_id}')
+        return {'success': True}
+
+    def upload_photos(self, images: list) -> Optional[list]:
+        """Upload one or more photos, returning the list of uploaded image ids
+        (or None if `images` is empty).
+
+        NOTE: the exact `/adverts/images` request/response shape is NOT
+        confirmed against the live Autovit API — it's inferred from the
+        design doc's sample (multipart upload, one POST per image, each
+        response carrying an `id`). Task 8's publish route only attaches
+        photos when this succeeds, and falls back to publishing without
+        photos + a recorded warning otherwise. Treat this as provisional
+        until verified in the supervised live test (Task 10).
+        """
+        if not images:
+            return None
+        ids = []
+        for data in images:
+            resp = self._request('POST', '/adverts/images', files={'file': data})
+            ids.append(resp.json().get('id'))
+        return ids or None
+
 
 class AutovitConnector(BaseConnector):
     """High-level connector wrapping AutovitClient for marketplace operations."""
