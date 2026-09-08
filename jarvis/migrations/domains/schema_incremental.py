@@ -3260,6 +3260,9 @@ def _create_schema_incremental_continued(conn, cursor):
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS norma_energie NUMERIC(6,2)")
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS alimentari JSONB DEFAULT '[]'")
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS evenimente JSONB DEFAULT '[]'")
+    # Per-session manual "Locul / Scopul" overrides, keyed by session id (string).
+    # Wins over the derived text (Comentariu verbatim / event name / Test Drive).
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS scop_overrides JSONB DEFAULT '{}'")
 
     # facturare per-document number registry (additive; never mutates facturare_invoices)
     cursor.execute("""

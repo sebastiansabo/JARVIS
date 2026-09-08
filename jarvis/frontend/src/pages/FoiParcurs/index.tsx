@@ -103,6 +103,7 @@ import { sessionActualKm, sessionEstimatedKm } from './distance'
 import { sessionAnomalies, driveDate } from './anomalies'
 import { buildEventGapContract, periodFromISODate } from './gapEvent'
 import { PersonPicker } from './PersonPicker'
+import { resolveScop } from './scop'
 import CorrectSessionDialog, { type CorrectionPayload } from './CorrectSessionDialog'
 import ExtendSessionDialog from './ExtendSessionDialog'
 import InternalStartDialog from './InternalStartDialog'
@@ -563,6 +564,60 @@ function KmCell({ c, canEdit }: { c: FoiContract; canEdit: boolean }) {
   )
 }
 
+/** Inline-editable "Locul / Scopul" cell. Shows the resolved text (override →
+ *  event/internal/client base); editing saves a per-session override. */
+function ScopCell({ c, vehLabel, override, canEdit, vin, year, month }: {
+  c: FoiContract; vehLabel: string; override?: string; canEdit: boolean
+  vin: string; year: number; month: number
+}) {
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState('')
+  const display = resolveScop(c, vehLabel, override)
+
+  const save = useMutation({
+    mutationFn: (t: string) => foiParcursApi.saveScop(vin, year, month, c.id, t),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['fp-route-sheets'] })
+      setEditing(false)
+      toast.success('Locul / Scopul actualizat')
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Actualizarea a eșuat'),
+  })
+
+  if (!editing) {
+    if (!canEdit) return <span className="block max-w-[240px] truncate text-sm">{display}</span>
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setText(override ?? display); setEditing(true) }}
+        className="-mx-1 inline-flex max-w-[240px] items-center gap-1 rounded px-1 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+        title="Editează Locul / Scopul"
+      >
+        <span className="truncate">{display}</span>
+        <Pencil className="h-3 w-3 shrink-0 opacity-40" />
+      </button>
+    )
+  }
+
+  const submit = () => save.mutate(text.trim())
+  return (
+    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+      <Input
+        value={text} onChange={(e) => setText(e.target.value)} autoFocus
+        onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setEditing(false) }}
+        className="h-7 w-[220px] px-1 text-sm" placeholder="Locul / Scopul"
+      />
+      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" disabled={save.isPending} onClick={submit} title="Salvează">
+        <Check className="h-3.5 w-3.5" />
+      </Button>
+      <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => setEditing(false)} title="Anulează">
+        <X className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  )
+}
+
 // ── Foi de Parcurs — one route sheet per car × month (cumulated driving
 //    sessions for that vehicle that month), scoped to the header company.
 //    Month is a filter; each row expands to its individual sessions and can
@@ -660,12 +715,11 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
       // gap and keeps Total KM correct, even though it isn't listed as a trip.
       if (c.km_start != null) e.kmMin = Math.min(e.kmMin, c.km_start)
       if (c.km_end != null) e.kmMax = Math.max(e.kmMax, c.km_end)
-      // Internal (company) drives aren't listed as trips — their KM shows as a gap
-      // (between-drive jump, or a leading/trailing gap at the month boundary).
-      if (c.is_internal) continue
+      // Internal (company) drives are now LISTED alongside client drives (their
+      // Locul/Scopul reads from the Comentariu), matching the generated foaie.
       e.sessions.push(c)
     }
-    // A car needs at least one client drive this month to get a foaie.
+    // A car needs at least one drive this month to get a foaie.
     return [...map.values()].filter((e) => e.sessions.length)
       .sort((a, b) => a.vin.localeCompare(b.vin))
   }, [contracts, filterYear, filterMonth, brand, vinMap])
@@ -831,7 +885,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                 <TableRow>
                                   <TableHead>Data</TableHead>
                                   <TableHead>Client</TableHead>
-                                  <TableHead>Traseu</TableHead>
+                                  <TableHead>Locul / Scopul</TableHead>
                                   <TableHead>Distanță parcursă</TableHead>
                                   <TableHead>Distanță estimată</TableHead>
                                   <TableHead>KM</TableHead>
@@ -883,8 +937,23 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                           </span>
                                         )}
                                       </TableCell>
-                                      <TableCell><ClientCellContent c={c} /></TableCell>
-                                      <TableCell className="max-w-[220px] truncate text-sm">{c.itinerary || '—'}</TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center gap-1.5">
+                                          <ClientCellContent c={c} />
+                                          {c.is_internal && (
+                                            <Badge variant="outline" className="shrink-0 text-[10px]">Intern</Badge>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="text-sm">
+                                        <ScopCell
+                                          c={c}
+                                          vehLabel={[veh?.mark, veh?.model].filter(Boolean).join(' ')}
+                                          override={stored?.scop_overrides?.[String(c.id)]}
+                                          canEdit={canCorrect}
+                                          vin={sheet.vin} year={filterYear} month={filterMonth}
+                                        />
+                                      </TableCell>
                                       <TableCell className="text-sm whitespace-nowrap">
                                         {sessionActualKm(c) != null ? `${sessionActualKm(c)} km` : '—'}
                                       </TableCell>

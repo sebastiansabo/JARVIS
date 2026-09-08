@@ -65,11 +65,11 @@ def agg(monkeypatch):
     monkeypatch.setattr(rss, '_veh_repo', AggFakeVeh())
 
 
-def test_gap_event_row_renders_promo_traseu(agg):
+def test_gap_event_row_renders_event_name(agg):
     data = rss.aggregate_month('VIN1', 2026, 7)
     ev = next(t for t in data['trips'] if t['km_start'] == 1050)
-    assert ev['traseu'] == ('Deplasare în interes de serviciu — participare la '
-                            'Salon Auto, în scop de promovare')
+    # Locul/Scopul for an event gap-fill is "Eveniment: {name}".
+    assert ev['traseu'] == 'Eveniment: Salon Auto'
     # An event drive is NOT a test drive (so the monthly summary counts it apart).
     assert ev['is_td'] is False
     # Șofer = the consilier, since an event drive has no client name.
