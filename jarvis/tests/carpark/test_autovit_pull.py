@@ -156,3 +156,25 @@ def test_photos_multiple_only_first_is_primary():
         assert calls[0].kwargs["is_primary"] is True
         assert calls[0].kwargs["photo_type"] == "autovit"
         assert calls[1].kwargs["is_primary"] is False
+
+
+def test_import_succeeds_when_photo_import_raises(client):
+    """Photos are a best-effort side effect: a photo-layer DB error must NOT
+    turn an already-successful vehicle upsert into a 500. import_advert should
+    still return success with photo_added == 0."""
+    created = {"id": 55, "vin": "TMBJK7NS0K8000001", "brand": "Skoda", "model": "Kodiaq"}
+    with patch.object(r, "_build_client") as bc, \
+         patch.object(r._vehicle_repo, "get_by_vin", return_value=None), \
+         patch.object(r._vehicle_repo, "create", return_value=created), \
+         patch.object(r._repo, "get", return_value={"id": 1, "connector_type": "autovit",
+                                                    "config": {}, "credentials": {}}), \
+         patch.object(r._photo_repo, "count", side_effect=RuntimeError("db down")):
+        bc.return_value.get_advert.return_value = ADVERT
+        resp = client.post('/autovit/api/accounts/1/import-advert', json={"advert_id": "1"})
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body['success'] is True
+        assert body['action'] == 'created'
+        assert body['vehicle']['id'] == 55
+        assert body['photo_added'] == 0        # photo failure swallowed

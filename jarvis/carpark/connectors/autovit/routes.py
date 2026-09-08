@@ -316,7 +316,14 @@ def import_advert(account_id):
         logger.exception('Failed to import advert %s into vehicle catalog', advert_id)
         return jsonify({'success': False, 'error': f'Failed to import advert: {e}'}), 500
 
-    photo_added = _maybe_import_photos(client, advert, vid)
+    # Best-effort photo fallback: photos are a non-critical side effect, so a
+    # photo failure must never turn an already-successful vehicle upsert into a
+    # 500. Mirrors the codebase convention for best-effort side effects.
+    try:
+        photo_added = _maybe_import_photos(client, advert, vid)
+    except Exception as e:
+        logger.warning('Autovit photo import failed for vehicle %s: %s', vid, e)
+        photo_added = 0
 
     return jsonify({'success': True, 'action': action, 'vehicle': {'id': vid},
                      'photo_added': photo_added}), 200
