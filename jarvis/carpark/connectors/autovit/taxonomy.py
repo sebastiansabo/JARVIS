@@ -3,7 +3,7 @@
 Slug maps mirror frontend/src/data/autovitData.ts. API advert `params` use
 lowercase slugs; a few differ from JARVIS canonical values (gray→grey, bej→beige).
 """
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 CARS_CATEGORY_ID = 29
 
@@ -60,7 +60,15 @@ COLOR_MAP["grey"] = "grey"
 COLOR_MAP["beige"] = "beige"
 
 _REVERSE = {  # carpark value -> api slug, for push
-    "color": {v: k for k, v in COLOR_MAP.items() if k not in ("grey", "beige")},
+    # Exclude the *alias* keys ("gray", "bej") so the canonical identity
+    # entries ("grey"->"grey", "beige"->"beige" — the actual Autovit slugs
+    # per AUTOVIT_COLORS in frontend/src/data/autovitData.ts) win the
+    # reverse lookup instead of being shadowed by their aliases. (BUG FIX:
+    # the naive `{v: k ...}` inversion picks whichever key iterates last for
+    # a shared value; excluding "grey"/"beige" here — as an earlier draft
+    # did — instead makes push emit the legacy alias "gray"/"bej", which
+    # Autovit does not accept.)
+    "color": {v: k for k, v in COLOR_MAP.items() if k not in ("gray", "bej")},
 }
 
 # Non-equipment core params we map explicitly; everything else that is a 0/1
@@ -184,3 +192,94 @@ def advert_to_vehicle(advert: Dict[str, Any]) -> Dict[str, Any]:
         v["equipment"] = equip
 
     return {k: val for k, val in v.items() if val is not None and val != ""}
+
+
+def _label_to_slug(label: str) -> str:
+    """'BMW' -> 'bmw'; 'Land Rover' -> 'land-rover'; 'Mercedes-Benz' -> 'mercedes-benz'.
+
+    Same rule as _slugify (used to build BRAND_LABELS for the pull direction);
+    kept as a separate name for the push direction so each direction reads
+    with its own vocabulary, without duplicating the slugging logic.
+    """
+    return _slugify(label)
+
+
+# Advert params that must be present (truthy) for a publish attempt to
+# Autovit to be worth sending. Not exhaustive of everything Autovit requires
+# server-side — just the fields CarPark can check locally before calling out.
+REQUIRED_PARAMS = ("make", "model", "year", "mileage", "fuel_type", "price", "vin")
+
+
+def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[str, Any]:
+    """CarPark vehicle + Autovit account config -> Autovit advert payload (push).
+
+    Inverse of advert_to_vehicle for the fields both directions share. Pure:
+    no I/O, no network calls — just dict shaping.
+    """
+    cfg = (account or {}).get("config", {}) or {}
+    params: Dict[str, Any] = {}
+    if vehicle.get("vin"):
+        params["vin"] = vehicle["vin"]
+    if vehicle.get("brand"):
+        params["make"] = _label_to_slug(vehicle["brand"])
+    if vehicle.get("model"):
+        params["model"] = _label_to_slug(vehicle["model"])
+    if vehicle.get("year_of_manufacture"):
+        params["year"] = vehicle["year_of_manufacture"]
+    if vehicle.get("mileage_km") is not None:
+        params["mileage"] = vehicle["mileage_km"]
+    if vehicle.get("fuel_type"):
+        params["fuel_type"] = vehicle["fuel_type"]
+    if vehicle.get("transmission"):
+        params["gearbox"] = vehicle["transmission"]
+    if vehicle.get("drive_type"):
+        # BUG-FIX-consistent: Autovit's param named "transmission" is drive
+        # type (4x4/FWD/RWD), not gearbox — see advert_to_vehicle above.
+        params["transmission"] = vehicle["drive_type"]
+    if vehicle.get("body_type"):
+        params["body_type"] = vehicle["body_type"]
+    if vehicle.get("color_exterior"):
+        params["color"] = _REVERSE["color"].get(vehicle["color_exterior"], vehicle["color_exterior"])
+    if vehicle.get("doors"):
+        params["door_count"] = str(vehicle["doors"])
+    if vehicle.get("engine_power_hp"):
+        params["engine_power"] = vehicle["engine_power_hp"]
+    if vehicle.get("engine_displacement_cc"):
+        params["engine_capacity"] = vehicle["engine_displacement_cc"]
+    if vehicle.get("current_price") is not None:
+        params["price"] = {"1": vehicle["current_price"],
+                           "currency": vehicle.get("price_currency", "EUR")}
+    for k, val in (vehicle.get("equipment") or {}).items():
+        if val is True:
+            params[k] = "1"
+
+    advert: Dict[str, Any] = {
+        "title": vehicle.get("listing_title")
+                 or f"{vehicle.get('brand', '')} {vehicle.get('model', '')}".strip(),
+        "description": vehicle.get("listing_description") or "",
+        "category_id": CARS_CATEGORY_ID,
+        "new_used": "new" if vehicle.get("state") == "Nou" else "used",
+        "params": params,
+    }
+    if cfg.get("city_id"):
+        advert["city_id"] = cfg["city_id"]
+    if cfg.get("region_id"):
+        advert["region_id"] = cfg["region_id"]
+    if cfg.get("contact_person") or cfg.get("phone"):
+        advert["contact"] = {"person": cfg.get("contact_person", ""),
+                             "phone_numbers": [cfg["phone"]] if cfg.get("phone") else []}
+    return advert
+
+
+def validate_for_publish(advert: Dict[str, Any]) -> List[str]:
+    """Return the list of missing required fields/params ('' if publishable)."""
+    missing: List[str] = []
+    if not advert.get("title"):
+        missing.append("title")
+    if not advert.get("category_id"):
+        missing.append("category_id")
+    p = advert.get("params", {}) or {}
+    for req in REQUIRED_PARAMS:
+        if not p.get(req):
+            missing.append(f"params.{req}")
+    return missing
