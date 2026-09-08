@@ -47,6 +47,21 @@ def _within_send_window(now=None):
     return _SEND_START_HOUR <= now.hour < _SEND_END_HOUR
 
 
+def _fmt_when(dep):
+    """'%H:%M' for a departure_datetime that may be a datetime OR an ISO string.
+    dict_from_row serializes timestamps to ISO strings in production, so calling
+    .strftime() directly raised AttributeError; parse the string first. Bucharest
+    wall-clock is stored as-is, so format the stored digits verbatim."""
+    if hasattr(dep, 'strftime'):
+        return dep.strftime('%H:%M')
+    if isinstance(dep, str) and dep:
+        try:
+            return _datetime.fromisoformat(dep).strftime('%H:%M')
+        except ValueError:
+            return ''
+    return ''
+
+
 def _fmt_return_when(ret):
     """'%d.%m %H:%M' for a return_datetime that may be a datetime OR an ISO
     string. dict_from_row serializes timestamps to ISO ('2026-08-19T17:00:00+00:00'),
@@ -137,8 +152,7 @@ def run_session_lifecycle():
             try:
                 uid = repo.get_advisor_user_id(row.get('advisor_name'))
                 if uid:
-                    dep = row.get('departure_datetime')
-                    when = dep.strftime('%H:%M') if dep else ''
+                    when = _fmt_when(row.get('departure_datetime'))
                     client = (row.get('client_name') or 'Client').strip()
                     veh = (row.get('vin') or '').strip()
                     notify_with_push(
