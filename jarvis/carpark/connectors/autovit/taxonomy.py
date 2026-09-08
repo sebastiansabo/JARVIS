@@ -3,9 +3,41 @@
 Slug maps mirror frontend/src/data/autovitData.ts. API advert `params` use
 lowercase slugs; a few differ from JARVIS canonical values (gray→grey, bej→beige).
 """
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 CARS_CATEGORY_ID = 29
+
+# Canonical brand names — mirrors AUTOVIT_BRANDS in
+# frontend/src/data/autovitData.ts. These are the exact values the rest of the
+# app stores in carpark_vehicles.brand, so advert_to_vehicle must emit them
+# verbatim rather than a naive title-cased slug (which would give "Bmw",
+# "Mercedes Benz", etc. and diverge from the picklist).
+AUTOVIT_BRANDS = [
+    "Abarth", "Acura", "Aiways", "Alfa Romeo", "Alpina", "Alpine",
+    "Aston Martin", "Audi", "Baic", "Bentley", "BMW", "Bugatti", "Buick",
+    "BYD", "Cadillac", "Caterham", "Chery", "Chevrolet", "Chrysler",
+    "Citroen", "Cupra", "Dacia", "Daewoo", "Daihatsu", "DFSK", "Dodge",
+    "DR", "DS", "Ferrari", "Fiat", "Ford", "Foton", "Genesis", "GMC",
+    "Great Wall", "Honda", "Hummer", "Hyundai", "Ineos", "Infiniti",
+    "Isuzu", "Iveco", "Jaecoo", "Jaguar", "Jeep", "Kia", "KTM", "Lada",
+    "Lamborghini", "Lancia", "Land Rover", "Leapmotor", "Lexus", "Lincoln",
+    "Lotus", "Lucid", "Lynk & Co", "Maserati", "Maxus", "Maybach", "Mazda",
+    "McLaren", "Mercedes-Benz", "MG", "MINI", "Mitsubishi", "Morgan", "NIO",
+    "Nissan", "Omoda", "Opel", "Peugeot", "Polestar", "Pontiac", "Porsche",
+    "RAM", "Renault", "Rivian", "Rolls-Royce", "Rover", "Saab", "SEAT",
+    "Seres", "Skoda", "Smart", "SsangYong", "Subaru", "Suzuki", "Tesla",
+    "Toyota", "Trabant", "Volkswagen", "Volvo", "Voyah", "Wartburg",
+    "XPeng", "Zeekr",
+]
+
+
+def _slugify(s: str) -> str:
+    """'Mercedes-Benz' -> 'mercedes-benz'; 'Land Rover' -> 'land-rover'."""
+    return str(s).strip().lower().replace(" ", "-")
+
+
+# api_slug (make) -> canonical brand label
+BRAND_LABELS = {_slugify(label): label for label in AUTOVIT_BRANDS}
 
 # api_slug -> carpark canonical value (identity unless noted)
 FUEL_MAP = {s: s for s in ("petrol", "diesel", "electric", "hybrid",
@@ -91,14 +123,15 @@ def advert_to_vehicle(advert: Dict[str, Any]) -> Dict[str, Any]:
     if p.get("vin"):
         v["vin"] = str(p["vin"]).strip().upper()
     if p.get("make"):
-        v["brand"] = slug_to_label(p["make"])
+        make_slug = str(p["make"]).strip().lower()
+        v["brand"] = BRAND_LABELS.get(make_slug) or slug_to_label(p["make"])
     if p.get("model"):
         v["model"] = slug_to_label(p["model"])
     if p.get("generation"):
         v["generation"] = str(p["generation"])
     if p.get("version"):
         v["variant"] = str(p["version"])
-    if _int(p.get("year")):
+    if _int(p.get("year")) is not None:
         v["year_of_manufacture"] = _int(p["year"])
     if _int(p.get("mileage")) is not None:
         v["mileage_km"] = _int(p["mileage"])
@@ -113,15 +146,15 @@ def advert_to_vehicle(advert: Dict[str, Any]) -> Dict[str, Any]:
         v["body_type"] = BODY_MAP[p["body_type"]]
     if p.get("color") in COLOR_MAP:
         v["color_exterior"] = COLOR_MAP[p["color"]]
-    if _int(p.get("door_count")):
+    if _int(p.get("door_count")) is not None:
         v["doors"] = _int(p["door_count"])
-    if _int(p.get("nr_seats")):
+    if _int(p.get("nr_seats")) is not None:
         v["seats"] = _int(p["nr_seats"])
-    if _int(p.get("engine_capacity")):
+    if _int(p.get("engine_capacity")) is not None:
         v["engine_displacement_cc"] = _int(p["engine_capacity"])
-    if _int(p.get("engine_power")):
+    if _int(p.get("engine_power")) is not None:
         v["engine_power_hp"] = _int(p["engine_power"])
-    if _int(p.get("co2_emissions")):
+    if _int(p.get("co2_emissions")) is not None:
         v["co2_emissions"] = _int(p["co2_emissions"])
     if price.get("1") is not None:
         try:
