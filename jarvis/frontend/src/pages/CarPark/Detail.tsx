@@ -29,6 +29,9 @@ import {
   Search,
   Unlink,
   Upload,
+  Send,
+  AlertTriangle,
+  Loader2,
 } from 'lucide-react'
 import { mediaUrl } from '@/lib/media'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -65,6 +68,8 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/stores/authStore'
 import { useCarParkStore } from '@/stores/carParkStore'
 import { carparkApi } from '@/api/carpark'
+import { autovitApi } from '@/api/autovit'
+import type { AutovitAccount } from '@/api/autovit'
 import { toast } from 'sonner'
 import { DocumenteTab } from './Detail/DocumenteTab'
 import { CronologieTab } from './Detail/CronologieTab'
@@ -1788,6 +1793,222 @@ function SheetEditor({
   )
 }
 
+// ── Autovit direct publish (account picker → dry-run preview → confirm) ────
+function advertField(params: Record<string, unknown>, key: string): string {
+  const v = params[key]
+  return v === undefined || v === null || v === '' ? '—' : String(v)
+}
+
+function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
+  const [open, setOpen] = useState(false)
+  const [accountId, setAccountId] = useState('')
+  const [step, setStep] = useState<'select' | 'preview' | 'missing' | 'success'>('select')
+  const [advert, setAdvert] = useState<Record<string, unknown> | null>(null)
+  const [missing, setMissing] = useState<string[]>([])
+  const [externalUrl, setExternalUrl] = useState<string | null>(null)
+
+  const { data: accounts = [], isLoading: accountsLoading } = useQuery({
+    queryKey: ['autovit', 'accounts'],
+    queryFn: autovitApi.getAccounts,
+    enabled: open,
+  })
+  const connectedAccounts = accounts.filter((a) => a.status === 'connected')
+
+  const reset = () => {
+    setStep('select')
+    setAccountId('')
+    setAdvert(null)
+    setMissing([])
+    setExternalUrl(null)
+  }
+
+  const previewMutation = useMutation({
+    mutationFn: () => autovitApi.publish(Number(accountId), vehicleId, { dryRun: true }),
+    onSuccess: (res) => {
+      setAdvert((res.advert as Record<string, unknown>) ?? null)
+      setStep('preview')
+    },
+    onError: (err: unknown) => {
+      const apiErr = err as { data?: { error?: string; missing?: string[] } }
+      if (apiErr?.data?.missing?.length) {
+        setMissing(apiErr.data.missing)
+        setStep('missing')
+      } else {
+        toast.error(apiErr?.data?.error || 'Previzualizarea a eșuat')
+      }
+    },
+  })
+
+  const publishMutation = useMutation({
+    mutationFn: () => autovitApi.publish(Number(accountId), vehicleId, { draft: true }),
+    onSuccess: (res) => {
+      if (res.success) {
+        setExternalUrl(res.external_url || null)
+        setStep('success')
+        toast.success('Anunț publicat pe Autovit (draft)')
+      } else {
+        toast.error(res.error || 'Publicarea a eșuat')
+      }
+    },
+    onError: (err: unknown) => {
+      const apiErr = err as { data?: { error?: string } }
+      toast.error(apiErr?.data?.error || 'Publicarea a eșuat')
+    },
+  })
+
+  const params = (advert?.params as Record<string, unknown>) || {}
+  const price = params.price as { '1'?: number; currency?: string } | undefined
+
+  return (
+    <>
+      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+        <Send className="mr-1.5 h-3.5 w-3.5" />
+        Publică pe Autovit
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={(v) => {
+          setOpen(v)
+          if (!v) reset()
+        }}
+      >
+        <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Publică pe Autovit</DialogTitle>
+            {step === 'select' && (
+              <DialogDescription>Alege contul Autovit conectat pentru publicare.</DialogDescription>
+            )}
+          </DialogHeader>
+
+          {step === 'select' && (
+            <div className="space-y-4 py-2">
+              {accountsLoading ? (
+                <Skeleton className="h-9 w-full" />
+              ) : connectedAccounts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Niciun cont Autovit conectat. Configurează unul din Setări → Connectori.
+                </p>
+              ) : (
+                <Select value={accountId} onValueChange={setAccountId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selectează contul Autovit" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {connectedAccounts.map((a: AutovitAccount) => (
+                      <SelectItem key={a.id} value={String(a.id)}>
+                        {a.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          )}
+
+          {step === 'missing' && (
+            <div className="space-y-3 py-2">
+              <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div>
+                  <p className="font-medium">Câmpuri obligatorii lipsă</p>
+                  <ul className="mt-1 list-disc pl-4 text-xs">
+                    {missing.map((m) => (
+                      <li key={m}>{m}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Completează aceste câmpuri pe fișa vehiculului, apoi încearcă din nou.
+              </p>
+            </div>
+          )}
+
+          {step === 'preview' && advert && (
+            <div className="space-y-3 py-2">
+              <dl className="grid grid-cols-2 gap-3 text-sm">
+                <Field label="Titlu" value={String(advert.title || '—')} className="col-span-2" />
+                <Field
+                  label="Preț"
+                  value={price?.['1'] ? `${Number(price['1']).toLocaleString('ro-RO')} ${price.currency || ''}` : '—'}
+                />
+                <Field label="Marcă / Model" value={`${advertField(params, 'make')} ${advertField(params, 'model')}`} />
+                <Field label="An" value={advertField(params, 'year')} />
+                <Field label="Km" value={advertField(params, 'mileage')} />
+                <Field label="Combustibil" value={advertField(params, 'fuel_type')} />
+              </dl>
+              {advert.description ? (
+                <div className="max-h-24 overflow-y-auto rounded-md border p-2 text-xs text-muted-foreground">
+                  {String(advert.description)}
+                </div>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Anunțul va fi publicat ca <strong>draft</strong> (dezactivat) — îl poți activa manual de pe Autovit.ro.
+              </p>
+            </div>
+          )}
+
+          {step === 'success' && (
+            <div className="space-y-3 py-2">
+              <p className="text-sm">Anunțul a fost publicat ca draft pe Autovit.</p>
+              {externalUrl && (
+                <a
+                  href={externalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-primary underline"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Deschide anunțul
+                </a>
+              )}
+            </div>
+          )}
+
+          <DialogFooter>
+            {step === 'select' && (
+              <>
+                <Button variant="outline" onClick={() => setOpen(false)}>
+                  Anulează
+                </Button>
+                <Button disabled={!accountId || previewMutation.isPending} onClick={() => previewMutation.mutate()}>
+                  {previewMutation.isPending ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : null}
+                  Previzualizează
+                </Button>
+              </>
+            )}
+            {step === 'missing' && (
+              <>
+                <Button variant="outline" onClick={() => setStep('select')}>
+                  Înapoi
+                </Button>
+                <Button variant="outline" onClick={() => setOpen(false)}>
+                  Închide
+                </Button>
+              </>
+            )}
+            {step === 'preview' && (
+              <>
+                <Button variant="outline" onClick={() => setStep('select')}>
+                  Înapoi
+                </Button>
+                <Button disabled={publishMutation.isPending} onClick={() => publishMutation.mutate()}>
+                  {publishMutation.isPending ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : null}
+                  Publică (draft)
+                </Button>
+              </>
+            )}
+            {step === 'success' && <Button onClick={() => setOpen(false)}>Închide</Button>}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 // ── Listings Tab ──────────────────────────────────────────
 function ListingsTab({
   vehicleId,
@@ -1865,6 +2086,19 @@ function ListingsTab({
 
   return (
     <div className="space-y-4">
+      {/* Autovit direct sync (Task 8/9 two-way sync) */}
+      {canEdit && (
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <div>
+            <h4 className="text-sm font-medium">Autovit.ro — sincronizare directă</h4>
+            <p className="text-xs text-muted-foreground">
+              Publică acest vehicul pe un cont Autovit conectat (preview înainte de publicare).
+            </p>
+          </div>
+          <AutovitPublishAction vehicleId={vehicleId} />
+        </Card>
+      )}
+
       {/* Actions bar */}
       {canEdit && (
         <div className="flex items-center gap-2">
