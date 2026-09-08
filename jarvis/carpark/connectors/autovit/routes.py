@@ -16,12 +16,14 @@ from core.connectors.repositories.connector_repository import ConnectorRepositor
 from core.utils.api_helpers import api_login_required
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.vehicle_photo_repository import VehiclePhotoRepository
+from carpark.repositories.autovit_listing_repository import AutovitListingRepository
 
 logger = logging.getLogger('jarvis.autovit.routes')
 
 _repo = ConnectorRepository()
 _vehicle_repo = VehicleRepository()
 _photo_repo = VehiclePhotoRepository()
+_listing_repo = AutovitListingRepository()
 
 CONNECTOR_TYPE = 'autovit'
 
@@ -404,3 +406,73 @@ def import_all(account_id):
                        invoices_found=summary['imported'] + summary['updated'],
                        invoices_imported=summary['imported'], details=summary)
     return jsonify({'success': True, **summary})
+
+
+# ── Push: publish / unpublish a vehicle to Autovit (Task 8) ──
+
+@autovit_bp.route('/api/accounts/<int:account_id>/publish', methods=['POST'])
+@api_login_required
+def publish(account_id):
+    """Publish (create or update) a vehicle's advert on Autovit.
+
+    `dry_run=True` assembles + validates the advert payload and returns it
+    without any network call — no client is built. `draft=True` marks the
+    advert `status='disabled'` before create, so it's uploaded but not made
+    publicly live. Photos are intentionally NOT attached here (deferred
+    until the create contract is confirmed against the live API — see
+    client.upload_photos docstring).
+    """
+    connector = _repo.get(account_id)
+    if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
+        return jsonify({'success': False, 'error': 'Account not found'}), 404
+    body = request.get_json(silent=True) or {}
+    vehicle = _vehicle_repo.get_by_id(body.get('vehicle_id'))
+    if not vehicle:
+        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+
+    advert = taxonomy.vehicle_to_advert(vehicle, connector)
+    missing = taxonomy.validate_for_publish(advert)
+    if missing:
+        return jsonify({'success': False, 'error': 'Missing required fields', 'missing': missing}), 400
+    if body.get('dry_run'):
+        return jsonify({'success': True, 'dry_run': True, 'advert': advert})
+
+    client = _build_client(connector)
+    if body.get('draft'):
+        advert['status'] = 'disabled'
+    try:
+        existing = _listing_repo.get(vehicle['id'], account_id)
+        if existing and existing.get('external_advert_id'):
+            client.update_advert(existing['external_advert_id'], advert)
+            result = {'id': existing['external_advert_id'], 'url': existing.get('external_url')}
+        else:
+            result = client.create_advert(advert)
+        _listing_repo.upsert(vehicle['id'], account_id,
+                             external_advert_id=str(result.get('id')),
+                             external_url=result.get('url'),
+                             status='draft' if body.get('draft') else 'active',
+                             last_error=None)
+        return jsonify({'success': True, 'external_id': result.get('id'), 'external_url': result.get('url')})
+    except Exception as e:
+        logger.exception('Autovit publish failed for vehicle %s', vehicle['id'])
+        _listing_repo.set_error(vehicle['id'], account_id, str(e))
+        return jsonify({'success': False, 'error': str(e)}), 502
+
+
+@autovit_bp.route('/api/accounts/<int:account_id>/unpublish', methods=['POST'])
+@api_login_required
+def unpublish(account_id):
+    """Deactivate a vehicle's advert on Autovit (unpublish without deleting)."""
+    connector = _repo.get(account_id)
+    if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
+        return jsonify({'success': False, 'error': 'Account not found'}), 404
+    body = request.get_json(silent=True) or {}
+    listing = _listing_repo.get(body.get('vehicle_id'), account_id)
+    if not listing or not listing.get('external_advert_id'):
+        return jsonify({'success': False, 'error': 'No listing to unpublish'}), 404
+    try:
+        _build_client(connector).deactivate_advert(listing['external_advert_id'])
+        _listing_repo.upsert(body['vehicle_id'], account_id, status='inactive')
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 502
