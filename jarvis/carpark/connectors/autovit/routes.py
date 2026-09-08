@@ -15,11 +15,13 @@ from .client import AutovitClient, AutovitAuthError, PRODUCTION_URL, SANDBOX_URL
 from core.connectors.repositories.connector_repository import ConnectorRepository
 from core.utils.api_helpers import api_login_required
 from carpark.repositories.vehicle_repository import VehicleRepository
+from carpark.repositories.vehicle_photo_repository import VehiclePhotoRepository
 
 logger = logging.getLogger('jarvis.autovit.routes')
 
 _repo = ConnectorRepository()
 _vehicle_repo = VehicleRepository()
+_photo_repo = VehiclePhotoRepository()
 
 CONNECTOR_TYPE = 'autovit'
 
@@ -228,6 +230,39 @@ def get_adverts(account_id):
         return jsonify({'success': False, 'error': str(e)})
 
 
+# ── Photo Fallback (import-time only) ──
+
+def _largest(size_map: dict) -> str:
+    """Pick the largest-resolution URL from an Autovit photo size map keyed
+    like {"2048x1360": url, "732x488": url} — max by width."""
+    def w(k):
+        try:
+            return int(k.split("x")[0])
+        except Exception:
+            return 0
+    return size_map[max(size_map, key=w)] if size_map else None
+
+
+def _maybe_import_photos(client, advert, vehicle_id) -> int:
+    """Seed carpark_vehicle_photos from the advert's photos, but only as a
+    fallback when the vehicle has zero existing photos — never overwrites
+    photos a user already curated in JARVIS. Stores the Autovit CDN URL
+    directly (no download/re-hosting). Returns the number of photos added.
+    """
+    if _photo_repo.count(vehicle_id) > 0:
+        return 0
+    photos = advert.get("photos") or {}
+    added = 0
+    for idx, key in enumerate(sorted(photos, key=lambda k: int(k) if str(k).isdigit() else 0)):
+        url = _largest(photos[key]) if isinstance(photos[key], dict) else photos[key]
+        if not url:
+            continue
+        _photo_repo.add(vehicle_id, url=url, sort_order=idx, is_primary=(added == 0),
+                        photo_type="autovit")
+        added += 1
+    return added
+
+
 # ── Import Advert → Vehicle Catalog ──
 
 @autovit_bp.route('/api/accounts/<int:account_id>/import-advert', methods=['POST'])
@@ -281,4 +316,7 @@ def import_advert(account_id):
         logger.exception('Failed to import advert %s into vehicle catalog', advert_id)
         return jsonify({'success': False, 'error': f'Failed to import advert: {e}'}), 500
 
-    return jsonify({'success': True, 'action': action, 'vehicle': {'id': vid}}), 200
+    photo_added = _maybe_import_photos(client, advert, vid)
+
+    return jsonify({'success': True, 'action': action, 'vehicle': {'id': vid},
+                     'photo_added': photo_added}), 200

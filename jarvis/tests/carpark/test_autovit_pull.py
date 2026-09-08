@@ -74,7 +74,8 @@ def test_import_updates_existing_only_merge_fields(client):
          patch.object(r._vehicle_repo, "get_by_vin", return_value=existing), \
          patch.object(r._vehicle_repo, "update", return_value={**existing, "id": 7}) as upd, \
          patch.object(r._repo, "get", return_value={"id": 1, "connector_type": "autovit",
-                                                    "config": {}, "credentials": {}}):
+                                                    "config": {}, "credentials": {}}), \
+         patch.object(r._photo_repo, "count", return_value=0):
         bc.return_value.get_advert.return_value = ADVERT
         resp = client.post('/autovit/api/accounts/1/import-advert', json={"advert_id": "1"})
 
@@ -82,6 +83,7 @@ def test_import_updates_existing_only_merge_fields(client):
         body = resp.get_json()
         assert body['success'] is True
         assert body['action'] == 'updated'
+        assert body['photo_added'] == 0        # ADVERT fixture has no photos key
 
         written = upd.call_args.args[1]
         assert "acquisition_price" not in written          # internal untouched
@@ -96,7 +98,8 @@ def test_import_creates_new_vehicle_when_vin_not_found(client):
          patch.object(r._vehicle_repo, "get_by_vin", return_value=None), \
          patch.object(r._vehicle_repo, "create", return_value=created) as create, \
          patch.object(r._repo, "get", return_value={"id": 1, "connector_type": "autovit",
-                                                    "config": {}, "credentials": {}}):
+                                                    "config": {}, "credentials": {}}), \
+         patch.object(r._photo_repo, "count", return_value=0):
         bc.return_value.get_advert.return_value = ADVERT
         resp = client.post('/autovit/api/accounts/1/import-advert', json={"advert_id": "1"})
 
@@ -105,8 +108,51 @@ def test_import_creates_new_vehicle_when_vin_not_found(client):
         assert body['success'] is True
         assert body['action'] == 'created'
         assert body['vehicle']['id'] == 42
+        assert body['photo_added'] == 0        # ADVERT fixture has no photos key
 
         written = create.call_args.args[0]
         assert written['vin'] == "TMBJK7NS0K8000001"
         assert written['created_by'] == 1
         assert written['updated_by'] == 1
+
+
+# ── Photo fallback (Task 3): _maybe_import_photos ──
+#
+# Autovit "photos" shape: {"<index>": {"<WxH>": "<url>", ...}, ...} — a dict
+# keyed by photo index, each value a dict of size-variant URLs keyed by
+# "WIDTHxHEIGHT". The fallback only runs when the vehicle has zero existing
+# photos (never overwrites curated photos), always picks the largest-width
+# variant per photo, and marks the first inserted photo as primary.
+
+def test_photos_added_only_when_none():
+    advert = {"photos": {"1": {"2048x1360": "https://cdn/x/big.jpg",
+                               "732x488": "https://cdn/x/small.jpg"}}}
+    with patch("carpark.connectors.autovit.routes._photo_repo") as pr:
+        pr.count.return_value = 0
+        n = r._maybe_import_photos(MagicMock(), advert, vehicle_id=7)
+        assert n == 1
+        url = pr.add.call_args.kwargs["url"]
+        assert url == "https://cdn/x/big.jpg"           # largest size
+        assert pr.add.call_args.kwargs["is_primary"] is True
+
+
+def test_photos_skipped_when_present():
+    with patch("carpark.connectors.autovit.routes._photo_repo") as pr:
+        pr.count.return_value = 3
+        assert r._maybe_import_photos(MagicMock(), {"photos": {}}, 7) == 0
+        pr.add.assert_not_called()
+
+
+def test_photos_multiple_only_first_is_primary():
+    advert = {"photos": {
+        "1": {"2048x1360": "https://cdn/x/1-big.jpg", "732x488": "https://cdn/x/1-small.jpg"},
+        "2": {"2048x1360": "https://cdn/x/2-big.jpg"},
+    }}
+    with patch("carpark.connectors.autovit.routes._photo_repo") as pr:
+        pr.count.return_value = 0
+        n = r._maybe_import_photos(MagicMock(), advert, vehicle_id=9)
+        assert n == 2
+        calls = pr.add.call_args_list
+        assert calls[0].kwargs["is_primary"] is True
+        assert calls[0].kwargs["photo_type"] == "autovit"
+        assert calls[1].kwargs["is_primary"] is False
