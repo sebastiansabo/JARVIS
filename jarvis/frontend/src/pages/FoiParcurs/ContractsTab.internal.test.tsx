@@ -3,8 +3,9 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 
-// Internal (company) drives are not listed on the client Foaie de Parcurs — their
-// KM surfaces as a gap between client drives instead.
+// Internal (company) drives are now LISTED on the Foaie de Parcurs (their
+// Locul/Scopul reads from the Comentariu), so a car whose only drive this month
+// is internal still gets a foaie.
 vi.mock('@/api/foiParcurs', () => {
   const now = new Date()
   const Y = now.getFullYear()
@@ -40,12 +41,12 @@ function wrap(ui: React.ReactNode) {
   return render(<QueryClientProvider client={qc}><MemoryRouter>{ui}</MemoryRouter></QueryClientProvider>)
 }
 
-describe('ContractsTab (Foi de Parcurs) — internal drives excluded', () => {
+describe('ContractsTab (Foi de Parcurs) — internal drives listed', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('does not list a car whose only session this month is internal', async () => {
+  it('lists a car whose only session this month is internal', async () => {
     wrap(<ContractsTab companyId={9} brand="MG Motor" documentType="sales" />)
     await waitFor(() => expect(screen.getByText('MG ZS Client')).toBeInTheDocument())
-    expect(screen.queryByText('MG3 InternalOnly')).not.toBeInTheDocument()
+    expect(screen.getByText('MG3 InternalOnly')).toBeInTheDocument()
   })
 })
