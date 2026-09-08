@@ -171,6 +171,11 @@ export const carparkApi = {
   deletePhoto: (photoId: number) =>
     api.delete<{ success: boolean }>(`/api/carpark/photos/${photoId}`),
 
+  // Soft-delete selected photos (hidden now, purged permanently after 24h).
+  bulkDeletePhotos: (vehicleId: number, photoIds: number[]) =>
+    api.post<{ success: boolean; deleted: number }>(
+      `/api/carpark/vehicles/${vehicleId}/photos/bulk-delete`, { photo_ids: photoIds }),
+
   deleteAllPhotos: (vehicleId: number) =>
     api.delete<{ success: boolean }>(`/api/carpark/vehicles/${vehicleId}/photos`),
 
