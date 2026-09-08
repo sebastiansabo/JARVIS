@@ -89,6 +89,7 @@ export interface StoredRouteSheet {
   norma_energie: number | null
   alimentari: RouteSheetAlimentare[] | null
   evenimente: RouteSheetEvent[] | null
+  scop_overrides: Record<string, string> | null
   generated_by_name: string | null
   generated_at: string
 }
@@ -602,6 +603,13 @@ export const foiParcursApi = {
   listRouteSheets: (companyId: number, year: number, month: number) =>
     api.get<{ success: boolean; sheets: StoredRouteSheet[] }>(
       `${BASE}/route-sheets${qs({ company_id: companyId || undefined, year, month })}`,
+    ),
+
+  // Save (or clear, when text is empty) a per-session Locul/Scopul override for
+  // the monthly sheet. Returns the full overrides map.
+  saveScop: (vin: string, year: number, month: number, sessionId: number, text: string) =>
+    api.post<{ success: boolean; scop_overrides: Record<string, string> }>(
+      `${BASE}/route-sheet/scop`, { vin, year, month, session_id: sessionId, text },
     ),
 
   // Redistribute an odometer gap by documenting a "client extra" — a synthetic

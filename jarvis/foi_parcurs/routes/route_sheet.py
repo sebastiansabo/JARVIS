@@ -5,6 +5,7 @@ from flask import Response
 from ._shared import foi_parcurs_bp, jsonify, request, login_required, current_user, logger
 from ..services.route_sheet_service import (
     generate_and_store, render_xlsx, list_stored, redistribute_gap, absorb_gap, retile_gap,
+    set_scop_override,
 )
 
 
@@ -137,6 +138,25 @@ def api_retile_gap():
         logger.exception('Gap retile failed for %s %s-%s', vin, year, month)
         return jsonify({'success': False, 'error': str(e)[:200]}), 500
     return jsonify({'success': True, **result})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/scop', methods=['POST'])
+@login_required
+def api_route_sheet_scop():
+    """Save (or clear, when text is empty) a per-session Locul/Scopul override for
+    a monthly sheet. Returns the full overrides map for the sheet."""
+    data = request.get_json(silent=True) or {}
+    vin = (data.get('vin') or '').strip()
+    year, month = data.get('year'), data.get('month')
+    session_id = data.get('session_id')
+    if not vin or not year or not month or session_id is None:
+        return jsonify({'success': False, 'error': 'vin, year, month, session_id sunt obligatorii'}), 400
+    try:
+        overrides = set_scop_override(vin, int(year), int(month), session_id, data.get('text') or '')
+    except Exception as e:
+        logger.exception('scop override failed for %s %s-%s', vin, year, month)
+        return jsonify({'success': False, 'error': str(e)[:200]}), 500
+    return jsonify({'success': True, 'scop_overrides': overrides})
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/route-sheets', methods=['GET'])
