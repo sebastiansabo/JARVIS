@@ -117,11 +117,44 @@ def test_vehicle_to_advert_builds_slugs_and_price():
     assert p["make"] == "skoda" and p["model"] == "kodiaq"
     assert p["gearbox"] == "automatic"
     assert p["transmission"] == "all-wheel-auto"   # drive back into param name
-    assert p["color"] == "grey"
+    assert p["color"] == "gray"   # carpark 'grey' -> Autovit api slug 'gray'
     assert p["price"]["1"] == 17000 and p["price"]["currency"] == "EUR"
     assert p["vin"] == "TMBJK7NS0K8000001"
+
+
+def test_vehicle_to_advert_color_reverse_map():
+    # PUSH: carpark canonical color -> live Autovit api slug. Only grey/beige
+    # differ from identity (grey->gray, beige->bej); everything else is 1:1.
+    def _color(c):
+        return tx.vehicle_to_advert({"color_exterior": c}, {})["params"]["color"]
+    assert _color("grey") == "gray"
+    assert _color("beige") == "bej"
+    assert _color("black") == "black"
+    assert _color("red") == "red"
+
+
+def test_advert_to_vehicle_color_pull_map():
+    # PULL: live Autovit api slug -> carpark canonical color (inverse of push).
+    assert tx.advert_to_vehicle(_advert(color="gray"))["color_exterior"] == "grey"
+    assert tx.advert_to_vehicle(_advert(color="bej"))["color_exterior"] == "beige"
+    assert tx.advert_to_vehicle(_advert(color="black"))["color_exterior"] == "black"
 
 
 def test_validate_flags_missing_required():
     missing = tx.validate_for_publish({"category_id": 29, "params": {}})
     assert "params.make" in missing and "params.price" in missing
+
+
+def test_validate_mileage_zero_is_not_missing():
+    # mileage=0 is legitimate (a new car) and must NOT be flagged missing by a
+    # naive truthy check; only absent / None / "" counts as missing.
+    advert = {
+        "title": "New Car", "category_id": 29,
+        "params": {"make": "skoda", "model": "kodiaq", "year": 2025,
+                   "mileage": 0, "fuel_type": "petrol",
+                   "price": {"1": 30000, "currency": "EUR"},
+                   "vin": "TMBJK7NS0K8000099"},
+    }
+    missing = tx.validate_for_publish(advert)
+    assert "params.mileage" not in missing
+    assert missing == []
