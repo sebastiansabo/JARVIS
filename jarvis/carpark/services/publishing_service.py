@@ -10,14 +10,16 @@ from typing import Optional, Dict, Any, List
 from carpark.repositories.publishing_repository import PublishingRepository
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.connectors.base_connector import BaseConnector
-from carpark.connectors.autovit.client import AutovitConnector
 
 logger = logging.getLogger('jarvis.carpark')
 
-# Connector registry — map platform_type to connector class
-CONNECTOR_REGISTRY: Dict[str, type] = {
-    'autovit': AutovitConnector,
-}
+# Connector registry — map platform_type to connector class.
+# 'autovit' intentionally removed (Task 8 of the two-way-sync plan): this
+# generic PublishingService/CONNECTOR_REGISTRY path was dead for Autovit
+# (never wired to a UI or job), superseded by the dedicated Autovit
+# connector blueprint (carpark/connectors/autovit/routes.py: publish/
+# unpublish, backed by AutovitListingRepository + AutovitClient directly).
+CONNECTOR_REGISTRY: Dict[str, type] = {}
 
 
 class PublishingService:
