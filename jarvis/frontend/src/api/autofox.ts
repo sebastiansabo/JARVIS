@@ -48,6 +48,34 @@ export interface AutofoxSavePayload {
   enabled?: boolean
 }
 
+// ── Sync-from-AutoFox (per-vehicle photo pull) ──
+
+export interface AutofoxSyncPhoto {
+  conversion_id: string
+  path: string
+  retouch_state: string | null
+  date_modified: string | null
+  vin: string
+  already_imported: boolean
+}
+
+export interface AutofoxPhotosResponse {
+  success: boolean
+  vin: string
+  matched_vehicle: boolean
+  vehicle_id: number | null
+  photos: AutofoxSyncPhoto[]
+}
+
+export interface AutofoxImportResponse {
+  success: boolean
+  vin: string
+  vehicle_id: number
+  created: number
+  skipped_duplicates: number
+  errors: string[]
+}
+
 const BASE = '/autofox/api'
 
 export const autofoxApi = {
@@ -62,4 +90,14 @@ export const autofoxApi = {
     })
     return res.logs
   },
+
+  // Pull: list what AutoFox has for a VIN, import selected, and a thumbnail proxy.
+  listPhotos: (vin: string) =>
+    api.get<AutofoxPhotosResponse>(`${BASE}/photos`, { vin }),
+
+  importPhotos: (vin: string, conversionIds: string[]) =>
+    api.post<AutofoxImportResponse>(`${BASE}/import`, { vin, conversion_ids: conversionIds }),
+
+  // Browser can't send our Bearer to AutoFox → load thumbnails through JARVIS.
+  imageProxyUrl: (path: string) => `${BASE}/image?path=${encodeURIComponent(path)}`,
 }
