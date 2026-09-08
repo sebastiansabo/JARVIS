@@ -87,6 +87,40 @@ def expire_reservations():
         logger.error(f'Reservation expiry job failed: {e}', exc_info=True)
 
 
+def purge_deleted_photos():
+    """Hourly: permanently delete photos soft-deleted more than 24h ago.
+
+    Removes the Spaces object then the DB row. Each photo is handled in its own
+    try/except so one failure can't abort the batch."""
+    try:
+        from carpark.repositories.photo_repository import PhotoRepository
+        from core.services import spaces_service
+
+        repo = PhotoRepository()
+        expired = repo.expired_deleted(24)
+        if not expired:
+            logger.debug('No soft-deleted photos to purge')
+            return
+
+        purged = 0
+        for photo in expired:
+            try:
+                url = photo.get('url')
+                if url and spaces_service.is_enabled():
+                    try:
+                        spaces_service.delete(url)
+                    except Exception:
+                        logger.warning('Purge: failed to delete Spaces object %s', url, exc_info=True)
+                repo.delete(photo['id'])
+                purged += 1
+            except Exception:
+                logger.warning('Purge: failed to delete photo %s', photo.get('id'), exc_info=True)
+
+        logger.info(f'Purged {purged} of {len(expired)} soft-deleted photo(s)')
+    except Exception as e:
+        logger.error(f'Photo purge job failed: {e}', exc_info=True)
+
+
 def carpark_aging_alerts():
     """Daily (08:00): notify on vehicles that have sat unsold too long.
 

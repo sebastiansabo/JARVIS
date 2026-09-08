@@ -8,8 +8,12 @@ class PhotoRepository(BaseRepository):
 
     def get_by_vehicle(self, vehicle_id: int,
                        photo_type: str = None) -> List[Dict[str, Any]]:
-        """List photos for a vehicle, optionally filtered by type."""
-        sql = 'SELECT * FROM carpark_vehicle_photos WHERE vehicle_id = %s'
+        """List photos for a vehicle, optionally filtered by type.
+
+        Soft-deleted photos (deleted_at set) are excluded — they are hidden
+        immediately on delete and purged permanently after 24h.
+        """
+        sql = 'SELECT * FROM carpark_vehicle_photos WHERE vehicle_id = %s AND deleted_at IS NULL'
         params: list = [vehicle_id]
         if photo_type:
             sql += ' AND photo_type = %s'
@@ -85,8 +89,31 @@ class PhotoRepository(BaseRepository):
             return True
         return self.execute_many(_work)
 
+    def soft_delete(self, photo_ids: List[int], vehicle_id: int = None) -> int:
+        """Mark photos deleted (hidden now, purged after 24h). Returns count.
+
+        When `vehicle_id` is given, only photos on that vehicle are affected
+        (ownership scoping for the bulk endpoint)."""
+        if not photo_ids:
+            return 0
+        sql = ('UPDATE carpark_vehicle_photos SET deleted_at = now() '
+               'WHERE id = ANY(%s) AND deleted_at IS NULL')
+        params: list = [list(photo_ids)]
+        if vehicle_id is not None:
+            sql += ' AND vehicle_id = %s'
+            params.append(vehicle_id)
+        return self.execute(sql, tuple(params))
+
+    def expired_deleted(self, hours: int = 24) -> List[Dict[str, Any]]:
+        """Soft-deleted photos older than `hours` — ready for permanent purge."""
+        return self.query_all(
+            "SELECT id, url FROM carpark_vehicle_photos "
+            "WHERE deleted_at IS NOT NULL AND deleted_at < now() - make_interval(hours => %s)",
+            (hours,)
+        )
+
     def delete(self, photo_id: int) -> bool:
-        """Delete a single photo."""
+        """Hard-delete a single photo row (used by the purge job)."""
         return self.execute(
             'DELETE FROM carpark_vehicle_photos WHERE id = %s', (photo_id,)
         ) > 0
