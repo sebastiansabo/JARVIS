@@ -41,7 +41,13 @@ Clarified with AutoFox (Raneem; they expose a **REST API**). The real workflow i
 
 ⇒ The inbound webhook (`/autofox/webhook`, shipped to staging + prod) does **not** match this model and will go unused. It stays token-gated/idle for now; **retire it when the pull sync ships**.
 
-## Planned feature — "Sync from AutoFox" (per-vehicle photo picker)
+## Sync from AutoFox — BUILT & live-verified (2026-09-08, `feature/autofox-sync`)
+
+**Confirmed contract (live):** `POST /auth/login-mobile` form `login_token` → `data.access_token` (Bearer). List `GET /vehicle-image-conversions?vin=&only_latest_per_vehicle=true&is_success=true` → `{status, data:{count,per_page,…,data:[records]}}`. Records expose `file_converted`/`file_retouched` as **relative** media paths (no `vin`/`vehicle_id` in-record) → resolved against `https://api.autofox.ai`; download needs **Bearer** (no `image_access_id`). Swagger creds were docs-only; the API uses the `login_token`.
+
+**Auth/config:** `login_token` (+ optional `api_base_url`) live in the `connectors` credential store, set via Settings → Connectors → AutoFox → "AutoFox API login token". Never in code (repo is public).
+
+**Per-vehicle picker (built):**
 
 **UX** (in the CarPark vehicle photo-upload area):
 1. A **"Sync from AutoFox"** button next to the photo uploader.
@@ -52,10 +58,11 @@ Clarified with AutoFox (Raneem; they expose a **REST API**). The real workflow i
 **Backend** (new, in `carpark/connectors/autofox/`):
 - `client.py` — outbound AutoFox REST client; credentials from the existing `connectors` store (same pattern as autovit / efactura).
 - `GET  /autofox/api/photos?vin=<VIN>` — list what AutoFox has for that VIN (thumbnail + full-image ref per photo). Session-auth.
-- `POST /autofox/api/import` `{vin, image_refs:[...]}` — download + store ONLY the chosen images.
+- `POST /autofox/api/import` `{vin, conversion_ids:[...]}` — download + store ONLY the chosen images (dedupe by conversion id; caption `autofox:<id>`).
+- `GET  /autofox/api/image?path=<relative>` — thumbnail proxy (browser can't send our Bearer; SSRF-safe path checks).
 
 **Reuse (already built):** `AutofoxIngestService.ingest(vin, images)` (download → `_compress_jpeg` → private Spaces → `carpark_vehicle_photos`), content-hash dedupe (re-sync never duplicates), SSRF `_validate_url` on every download, `connector_sync_log` for run history.
 
 **Frontend:** button + selection modal in the CarPark vehicle photo UI (`jarvis/frontend/src/pages/CarPark/…`); `autofoxApi` gains `listPhotos(vin)` + `importPhotos(vin, refs)`.
 
-**Blocked on AutoFox docs (requested):** REST base URL + endpoints to list/fetch a vehicle's processed images (ideally query **by VIN**); auth method + how we obtain our API key; whether the VIN is on each record (our match key); images as **URLs vs binary** (+ URL TTL); pagination + rate limits. Build starts when these arrive.
+**Status:** built, 26 tests green, live end-to-end confirmed (login → list → download a real JPEG). To go live: deploy + paste the `login_token` into Settings. The inbound webhook is now superseded — retire it once this is in production.
