@@ -35,6 +35,7 @@ import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { reductionPct, formatReductionPct } from './priceReduction'
 import { PricingSheet, PriceZone, computePricingModel, type PricingModel, type PricingSheetSnapshot, type SheetInputs } from './PricingSheet'
 import { econ, type EngineParams } from './pricingEngine'
+import { AutofoxSyncModal } from './AutofoxSyncModal'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -977,6 +978,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
   const displayPrice = v.promotional_price ?? v.list_price
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [autofoxOpen, setAutofoxOpen] = useState(false)
 
   // Parsed acquisition cost lines (vehicle.cost_lines JSON) + total EUR.
   const acqCostLines = parseCostLines(v.cost_lines)
@@ -1004,7 +1006,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
         <div className="space-y-2">
           <PhotoGallery photos={photos} onPhotoClick={onPhotoClick} />
           {canEdit && (
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1013,6 +1015,17 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
                 className="hidden"
                 onChange={handleFileChange}
               />
+              {v.vin && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setAutofoxOpen(true)}
+                >
+                  <Camera className="mr-1 h-3.5 w-3.5" />
+                  Sincronizează din AutoFox
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -1024,6 +1037,14 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
                 {uploadMutation.isPending ? 'Se încarcă...' : 'Încarcă poze'}
               </Button>
             </div>
+          )}
+          {canEdit && v.vin && (
+            <AutofoxSyncModal
+              open={autofoxOpen}
+              onOpenChange={setAutofoxOpen}
+              vin={v.vin}
+              vehicleId={v.id}
+            />
           )}
         </div>
 
