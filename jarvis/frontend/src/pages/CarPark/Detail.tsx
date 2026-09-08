@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   Car,
+  Check,
   LayoutGrid,
   Maximize2,
   X,
@@ -659,9 +660,13 @@ const GALLERY_MAX_WIDTH = 600 // px — the whole gallery block never exceeds th
 function PhotoGallery({
   photos,
   onPhotoClick,
+  vehicleId,
+  canEdit,
 }: {
   photos: VehiclePhoto[]
   onPhotoClick: (index: number) => void
+  vehicleId: number
+  canEdit: boolean
 }) {
   const [active, setActive] = useState(0)
   const [gridOpen, setGridOpen] = useState(false)
@@ -771,6 +776,8 @@ function PhotoGallery({
       {gridOpen && (
         <PhotoGridOverlay
           photos={photos}
+          vehicleId={vehicleId}
+          canEdit={canEdit}
           onClose={() => setGridOpen(false)}
           onSelect={(i) => { setGridOpen(false); onPhotoClick(i) }}
         />
@@ -782,13 +789,22 @@ function PhotoGallery({
 // ── Photo Grid Overlay ("Toate pozele") ────────────────────
 function PhotoGridOverlay({
   photos,
+  vehicleId,
+  canEdit,
   onClose,
   onSelect,
 }: {
   photos: VehiclePhoto[]
+  vehicleId: number
+  canEdit: boolean
   onClose: () => void
   onSelect: (index: number) => void
 }) {
+  const queryClient = useQueryClient()
+  const [selectMode, setSelectMode] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [confirming, setConfirming] = useState(false)
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
@@ -799,34 +815,97 @@ function PhotoGridOverlay({
     }
   }, [onClose])
 
+  const deleteMut = useMutation({
+    mutationFn: () => carparkApi.bulkDeletePhotos(vehicleId, Array.from(selected)),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] })
+      toast.success(`${res.deleted} poze șterse (recuperabile 24h)`)
+      setSelected(new Set())
+      setSelectMode(false)
+      setConfirming(false)
+    },
+    onError: () => toast.error('Ștergerea pozelor a eșuat'),
+  })
+
+  const allSelected = photos.length > 0 && selected.size === photos.length
+  const toggle = (photoId: number) => setSelected((prev) => {
+    const n = new Set(prev)
+    if (n.has(photoId)) n.delete(photoId)
+    else n.add(photoId)
+    return n
+  })
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(photos.map((p) => p.id)))
+  const exitSelect = () => { setSelectMode(false); setSelected(new Set()); setConfirming(false) }
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-background">
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-background/85 px-6 py-4 backdrop-blur">
-        <h2 className="text-base font-semibold">Toate pozele · {photos.length}</h2>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
-          aria-label="Închide"
-        >
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-      <div className="mx-auto grid max-w-5xl grid-cols-2 gap-2 p-6 sm:grid-cols-3">
-        {photos.map((p, i) => (
+      <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background/85 px-6 py-4 backdrop-blur">
+        <h2 className="text-base font-semibold">
+          Toate pozele · {photos.length}
+          {selectMode && (
+            <span className="ml-2 text-sm font-normal text-muted-foreground">{selected.size} selectate</span>
+          )}
+        </h2>
+        <div className="flex items-center gap-2">
+          {canEdit && selectMode && (
+            <>
+              <Button size="sm" variant="ghost" onClick={toggleAll} disabled={deleteMut.isPending || photos.length === 0}>
+                {allSelected ? 'Deselectează tot' : 'Selectează tot'}
+              </Button>
+              {confirming ? (
+                <Button size="sm" variant="destructive" onClick={() => deleteMut.mutate()}
+                        disabled={deleteMut.isPending || selected.size === 0}>
+                  <Trash2 className="mr-1 h-3.5 w-3.5" /> Confirmă ștergerea ({selected.size})
+                </Button>
+              ) : (
+                <Button size="sm" variant="destructive" onClick={() => setConfirming(true)} disabled={selected.size === 0}>
+                  <Trash2 className="mr-1 h-3.5 w-3.5" /> Șterge ({selected.size})
+                </Button>
+              )}
+              <Button size="sm" variant="outline" onClick={exitSelect} disabled={deleteMut.isPending}>Anulează</Button>
+            </>
+          )}
+          {canEdit && !selectMode && (
+            <Button size="sm" variant="outline" onClick={() => setSelectMode(true)}>Selectează</Button>
+          )}
           <button
             type="button"
-            key={p.id}
-            onClick={() => onSelect(i)}
-            className="group aspect-[3/2] overflow-hidden rounded-lg border bg-muted"
+            onClick={onClose}
+            className="rounded-md p-1.5 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            aria-label="Închide"
           >
-            <img
-              src={mediaUrl(p.thumbnail_url || p.url)}
-              alt={`Photo ${i + 1}`}
-              className="h-full w-full object-cover transition group-hover:scale-105"
-            />
+            <X className="h-5 w-5" />
           </button>
-        ))}
+        </div>
+      </div>
+      {confirming && (
+        <div className="border-b bg-destructive/10 px-6 py-2 text-sm text-destructive">
+          {selected.size} poze vor fi ascunse acum și șterse definitiv după 24h.
+        </div>
+      )}
+      <div className="mx-auto grid max-w-5xl grid-cols-2 gap-2 p-6 sm:grid-cols-3">
+        {photos.map((p, i) => {
+          const sel = selected.has(p.id)
+          return (
+            <button
+              type="button"
+              key={p.id}
+              onClick={() => (selectMode ? toggle(p.id) : onSelect(i))}
+              className={`group relative aspect-[3/2] overflow-hidden rounded-lg border-2 bg-muted ${sel ? 'border-primary' : 'border-transparent'}`}
+            >
+              <img
+                src={mediaUrl(p.thumbnail_url || p.url)}
+                alt={`Photo ${i + 1}`}
+                className="h-full w-full object-cover transition group-hover:scale-105"
+              />
+              {selectMode && (
+                <span className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 ${sel ? 'border-primary bg-primary text-primary-foreground' : 'border-white/80 bg-black/30'}`}>
+                  {sel && <Check className="h-4 w-4" />}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
@@ -1004,7 +1083,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
       {/* Photo Gallery + Identification + Quick Info */}
       <div className="grid gap-6 items-stretch xl:grid-cols-[600px_minmax(0,1fr)_400px]">
         <div className="space-y-2">
-          <PhotoGallery photos={photos} onPhotoClick={onPhotoClick} />
+          <PhotoGallery photos={photos} onPhotoClick={onPhotoClick} vehicleId={v.id} canEdit={canEdit} />
           {canEdit && (
             <div className="flex justify-end gap-2">
               <input
