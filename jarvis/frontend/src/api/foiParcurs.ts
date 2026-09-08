@@ -24,12 +24,21 @@ import type {
   SessionEvent,
 } from '../types/foiParcurs'
 
+export interface RouteSheetFile {
+  key: string
+  filename: string
+  content_type?: string
+  size?: number
+  uploaded_by?: string
+}
+
 export interface RouteSheetAlimentare {
   date: string
   bon: string
   liters: number
   lei?: number
   unit?: 'l' | 'kWh'
+  receipt?: RouteSheetFile | null   // uploaded bon (image/PDF) for this line
 }
 
 export interface GapFillContract {
@@ -90,6 +99,7 @@ export interface StoredRouteSheet {
   alimentari: RouteSheetAlimentare[] | null
   evenimente: RouteSheetEvent[] | null
   scop_overrides: Record<string, string> | null
+  attachments: RouteSheetFile[] | null
   generated_by_name: string | null
   generated_at: string
 }
@@ -604,6 +614,21 @@ export const foiParcursApi = {
     api.get<{ success: boolean; sheets: StoredRouteSheet[] }>(
       `${BASE}/route-sheets${qs({ company_id: companyId || undefined, year, month })}`,
     ),
+
+  // Upload a related file. kind='receipt' → returns the file record to attach to
+  // an Alimentare line (persisted on Generate); kind='attachment' → stored now as
+  // a foaie-level file.
+  uploadRouteSheetFile: (vin: string, year: number, month: number, kind: 'receipt' | 'attachment', file: File) => {
+    const fd = new FormData()
+    fd.append('file', file); fd.append('vin', vin); fd.append('year', String(year))
+    fd.append('month', String(month)); fd.append('kind', kind)
+    return api.post<{ success: boolean; file: RouteSheetFile }>(`${BASE}/route-sheet/upload`, fd)
+  },
+  deleteRouteSheetAttachment: (vin: string, year: number, month: number, key: string) =>
+    api.delete<{ success: boolean; attachments: RouteSheetFile[] }>(
+      `${BASE}/route-sheet/attachment`, { vin, year, month, key }),
+  // Auth-gated download URL for a stored Spaces key.
+  mediaUrl: (key: string) => `/api/media/${key.split('/').map(encodeURIComponent).join('/')}`,
 
   // Save (or clear, when text is empty) a per-session Locul/Scopul override for
   // the monthly sheet. Returns the full overrides map.
