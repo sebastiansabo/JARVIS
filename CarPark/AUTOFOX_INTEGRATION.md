@@ -32,3 +32,30 @@
 
 ## Open questions for AutoFox
 Payload schema, URLs vs multipart, URL TTL, retry policy on non-2xx, egress IPs, whether they need a VIN→stock-number lookup endpoint from JARVIS (outbound endpoint NOT built — pending confirmation they need it).
+
+---
+
+## UPDATE 2026-09-08 — integration is PULL, not push
+
+Clarified with AutoFox (Raneem; they expose a **REST API**). The real workflow is **Option 2 (AutoFox App/CRM → API)**: colleagues photograph and process cars in the **AutoFox mobile app**; processed images live on **AutoFox servers**. JARVIS's job is **read-only**: fetch those processed images and attach them to the matching CarPark vehicle **by VIN**. Photos only — no upload, no vehicle data, **no webhook**.
+
+⇒ The inbound webhook (`/autofox/webhook`, shipped to staging + prod) does **not** match this model and will go unused. It stays token-gated/idle for now; **retire it when the pull sync ships**.
+
+## Planned feature — "Sync from AutoFox" (per-vehicle photo picker)
+
+**UX** (in the CarPark vehicle photo-upload area):
+1. A **"Sync from AutoFox"** button next to the photo uploader.
+2. Click → a **modal** calls AutoFox for that vehicle's **VIN** and shows **all processed photos AutoFox has for that VIN** as a thumbnail grid.
+3. User **multi-selects** which to import — nothing is auto-added (already-imported ones flagged where detectable).
+4. Confirm → only the **selected** images download into that vehicle's gallery.
+
+**Backend** (new, in `carpark/connectors/autofox/`):
+- `client.py` — outbound AutoFox REST client; credentials from the existing `connectors` store (same pattern as autovit / efactura).
+- `GET  /autofox/api/photos?vin=<VIN>` — list what AutoFox has for that VIN (thumbnail + full-image ref per photo). Session-auth.
+- `POST /autofox/api/import` `{vin, image_refs:[...]}` — download + store ONLY the chosen images.
+
+**Reuse (already built):** `AutofoxIngestService.ingest(vin, images)` (download → `_compress_jpeg` → private Spaces → `carpark_vehicle_photos`), content-hash dedupe (re-sync never duplicates), SSRF `_validate_url` on every download, `connector_sync_log` for run history.
+
+**Frontend:** button + selection modal in the CarPark vehicle photo UI (`jarvis/frontend/src/pages/CarPark/…`); `autofoxApi` gains `listPhotos(vin)` + `importPhotos(vin, refs)`.
+
+**Blocked on AutoFox docs (requested):** REST base URL + endpoints to list/fetch a vehicle's processed images (ideally query **by VIN**); auth method + how we obtain our API key; whether the VIN is on each record (our match key); images as **URLs vs binary** (+ URL TTL); pagination + rate limits. Build starts when these arrive.
