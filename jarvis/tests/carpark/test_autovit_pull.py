@@ -11,16 +11,19 @@ is monkeypatched directly onto every module that reads it at call time.
 Deviation from the task-2 brief's sample test: the brief's snippet calls
 `r.autovit_bp.test_request_context(...)` and invokes `r.import_advert(1)`
 directly. Flask's Blueprint has no `test_request_context` method (only Flask
-app objects do), and even if it did, `@api_login_required` (core/utils/
-api_helpers.py) checks a module-level `current_user.is_authenticated` that
-would reject an anonymous context with a 401 — making the test fail for the
-wrong reason. So this file instead: (1) builds a real Flask app + test
-client, and (2) monkeypatches `current_user` to an authenticated stand-in in
-both `core.utils.api_helpers` (where `@api_login_required` reads it) and
-`carpark.connectors.autovit.routes` (where `import_advert` reads it for
-created_by/updated_by) — the same "patch every module namespace that
+app objects do), and even if it did, `@login_required`/`@carpark_edit_required`
+(the mutating-route auth+permission gate, replacing the former bare
+`@api_login_required`) check a module-level `current_user.is_authenticated`
+that would reject an anonymous context — making the test fail for the wrong
+reason. So this file instead: (1) builds a real Flask app + test client with
+`LOGIN_DISABLED=True` (makes flask_login's `@login_required` a no-op, same
+idiom as test_dispo_routes.py), and (2) monkeypatches `current_user` to an
+authenticated, fully-permissioned stand-in in every module namespace that
+reads it at call time: `carpark.routes.vehicles` (where `@carpark_edit_required`
+lives) and `carpark.connectors.autovit.routes` (where `import_advert` reads
+it for created_by/updated_by) — the same "patch every module namespace that
 imported current_user" idiom already used by test_dispo_routes.py. No
-production code (the decorator) is weakened; only the real flask_login
+production code (the decorators) is weakened; only the real flask_login
 `current_user` proxy is swapped out for the test.
 """
 from unittest.mock import MagicMock, patch
@@ -30,7 +33,7 @@ from flask import Flask
 
 from carpark.connectors.autovit import routes as r
 from carpark.connectors.autovit import autovit_bp
-import core.utils.api_helpers as api_helpers_mod
+import carpark.routes.vehicles as vehicles_mod
 
 ADVERT = {"title": "Skoda Kodiaq", "params": {
     "vin": "TMBJK7NS0K8000001", "make": "skoda", "model": "kodiaq",
@@ -39,9 +42,11 @@ ADVERT = {"title": "Skoda Kodiaq", "params": {
 
 
 class FakeUser:
-    def __init__(self, id=1):
+    def __init__(self, id=1, can_access_carpark=True, can_edit_carpark=True):
         self.id = id
         self.is_authenticated = True
+        self.can_access_carpark = can_access_carpark
+        self.can_edit_carpark = can_edit_carpark
 
 
 @pytest.fixture
@@ -49,6 +54,7 @@ def app():
     app = Flask(__name__)
     app.register_blueprint(autovit_bp)
     app.config['TESTING'] = True
+    app.config['LOGIN_DISABLED'] = True
     return app
 
 
@@ -57,14 +63,36 @@ def client(app):
     return app.test_client()
 
 
+def _set_user(monkeypatch, user):
+    """current_user is read from two different module namespaces at call
+    time: carpark.routes.vehicles (where @carpark_edit_required lives) and
+    carpark.connectors.autovit.routes (import_advert's own `from flask_login
+    import current_user`) — both must be patched together."""
+    monkeypatch.setattr(vehicles_mod, 'current_user', user)
+    monkeypatch.setattr(r, 'current_user', user)
+
+
 @pytest.fixture(autouse=True)
 def authenticated_user(monkeypatch):
-    """@api_login_required reads current_user from core.utils.api_helpers'
-    namespace; import_advert reads it from its own module namespace. Both
-    must be patched for the handler to run past the auth gate."""
-    user = FakeUser()
-    monkeypatch.setattr(api_helpers_mod, 'current_user', user)
-    monkeypatch.setattr(r, 'current_user', user)
+    """Every test gets an authenticated user with carpark edit permission by
+    default; tests that need a different shape override via
+    _set_user(monkeypatch, FakeUser(...))."""
+    _set_user(monkeypatch, FakeUser())
+
+
+def test_import_advert_requires_edit_permission(client, monkeypatch):
+    """An authenticated user without can_edit_carpark must be rejected — the
+    Autovit import routes bulk-mutate the vehicle catalog and must not be
+    reachable by a viewer with no CarPark edit permission."""
+    _set_user(monkeypatch, FakeUser(can_edit_carpark=False))
+    resp = client.post('/autovit/api/accounts/1/import-advert', json={"advert_id": "1"})
+    assert resp.status_code == 403
+
+
+def test_import_all_requires_edit_permission(client, monkeypatch):
+    _set_user(monkeypatch, FakeUser(can_edit_carpark=False))
+    resp = client.post('/autovit/api/accounts/1/import-all')
+    assert resp.status_code == 403
 
 
 def test_import_updates_existing_only_merge_fields(client):
