@@ -230,6 +230,53 @@ def test_import_all_collects_per_advert_errors_and_continues(client):
         assert 'db exploded' in body['errors'][0]['error']
 
 
+def test_import_all_page_fetch_failure_returns_partial_progress(client):
+    """A page-fetch failure mid-pagination must NOT 500 and must NOT lose the
+    progress already made on earlier pages: page 1 imports succeed, the page-2
+    fetch error is recorded in `errors` (advert_id=None), pagination stops, and
+    the accumulated summary is returned with 200/success=True."""
+    page1 = {"results": [ADVERT], "total_pages": 2, "current_page": 1}
+    with patch.object(r, "_build_client") as bc, \
+         patch.object(r._repo, "get", return_value={"id": 1, "connector_type": "autovit",
+                                                    "config": {}, "credentials": {}}), \
+         patch.object(r._repo, "add_sync_log") as log, \
+         patch.object(r._vehicle_repo, "get_by_vin", return_value=None), \
+         patch.object(r._vehicle_repo, "create", side_effect=lambda d: {"id": 1}), \
+         patch.object(r, "_maybe_import_photos", return_value=0):
+        bc.return_value.get_adverts.side_effect = [page1, RuntimeError("boom")]
+        resp = client.post('/autovit/api/accounts/1/import-all')
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body['success'] is True
+        assert body['imported'] == 1                      # page 1's success survived
+        assert len(body['errors']) == 1
+        assert body['errors'][0]['advert_id'] is None
+        assert 'page 2 fetch failed' in body['errors'][0]['error']
+        assert 'boom' in body['errors'][0]['error']
+        # both pages were attempted, then pagination stopped
+        assert bc.return_value.get_adverts.call_count == 2
+        # sync log still written, marked 'partial' because errors were collected
+        log.assert_called_once()
+        assert log.call_args.args[2] == 'partial'
+
+
+def test_import_all_client_build_failure_returns_502(client):
+    """If the client can't even be built (bad creds, ...), fail fast with 502
+    before any pagination — no sync log, no partial summary."""
+    with patch.object(r, "_build_client", side_effect=RuntimeError("bad creds")) as bc, \
+         patch.object(r._repo, "get", return_value={"id": 1, "connector_type": "autovit",
+                                                    "config": {}, "credentials": {}}), \
+         patch.object(r._repo, "add_sync_log") as log:
+        resp = client.post('/autovit/api/accounts/1/import-all')
+
+        assert resp.status_code == 502
+        body = resp.get_json()
+        assert body['success'] is False
+        assert 'bad creds' in body['error']
+        log.assert_not_called()
+
+
 def test_import_succeeds_when_photo_import_raises(client):
     """Photos are a best-effort side effect: a photo-layer DB error must NOT
     turn an already-successful vehicle upsert into a 500. import_advert should
