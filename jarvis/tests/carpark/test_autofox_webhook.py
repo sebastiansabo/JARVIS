@@ -136,6 +136,7 @@ def test_client_login_and_list():
 
         def get(self, url, params=None, headers=None, timeout=None, stream=False):
             seen['headers'] = headers
+            seen['params'] = params
             return _FakeResp(200, {'status': 1, 'data': [
                 {'id': 11, 'vin': 'WBAX', 'file_converted': 'https://c/1.jpg',
                  'file_retouched': 'https://c/1r.jpg', 'retouch_state': 'done'},
@@ -147,6 +148,9 @@ def test_client_login_and_list():
     out = c.list_conversions_by_vin('wbax')
     assert seen['login'] == {'login_token': 'LT'}
     assert seen['headers']['Authorization'] == 'Bearer TOK'
+    # AutoFox rejects sort_by=date_modified (422) → must not be sent
+    assert 'sort_by' not in seen['params'] and 'sort_direction' not in seen['params']
+    assert seen['params']['vin'] == 'wbax'
     assert [p['conversion_id'] for p in out] == ['11', '12']
     assert out[0]['url'].endswith('1r.jpg')  # retouched preferred
     assert out[1]['url'].endswith('2.jpg')
