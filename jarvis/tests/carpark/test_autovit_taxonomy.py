@@ -97,3 +97,31 @@ def test_co2_zero_is_preserved():
 def test_co2_missing_is_absent():
     v = tx.advert_to_vehicle(_advert(co2_emissions=None))
     assert "co2_emissions" not in v
+
+
+def test_vehicle_to_advert_builds_slugs_and_price():
+    vehicle = {"vin": "TMBJK7NS0K8000001", "brand": "Skoda", "model": "Kodiaq",
+               "year_of_manufacture": 2019, "mileage_km": 90000,
+               "fuel_type": "diesel", "transmission": "automatic",
+               "drive_type": "all-wheel-auto", "body_type": "suv",
+               "color_exterior": "grey", "doors": 5, "engine_power_hp": 190,
+               "engine_displacement_cc": 1968, "current_price": 17000,
+               "price_currency": "EUR", "state": "Rulat",
+               "listing_title": "Skoda Kodiaq", "listing_description": "d"}
+    account = {"config": {"city_id": 52953, "region_id": 2,
+                          "contact_person": "ATW", "phone": "0371521912"}}
+    ad = tx.vehicle_to_advert(vehicle, account)
+    assert ad["category_id"] == 29
+    assert ad["new_used"] == "used"
+    p = ad["params"]
+    assert p["make"] == "skoda" and p["model"] == "kodiaq"
+    assert p["gearbox"] == "automatic"
+    assert p["transmission"] == "all-wheel-auto"   # drive back into param name
+    assert p["color"] == "grey"
+    assert p["price"]["1"] == 17000 and p["price"]["currency"] == "EUR"
+    assert p["vin"] == "TMBJK7NS0K8000001"
+
+
+def test_validate_flags_missing_required():
+    missing = tx.validate_for_publish({"category_id": 29, "params": {}})
+    assert "params.make" in missing and "params.price" in missing
