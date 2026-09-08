@@ -226,3 +226,35 @@ class AutofoxIngestService:
             'received': len(blobs), 'created': len(created),
             'skipped_duplicates': skipped, 'errors': errors,
         }
+
+    # ── pull import (Sync-from-AutoFox picker) ──
+
+    def imported_conversion_ids(self, vehicle_id: int) -> set:
+        """AutoFox conversion ids already imported for this vehicle.
+
+        Each pulled photo is tagged ``caption = autofox:<conversion_id>`` so a
+        re-sync can skip what is already present (the API guide's dedup key).
+        (Webhook photos use the plain caption ``autofox`` and are ignored here.)
+        """
+        ids = set()
+        for p in self._photos.get_by_vehicle(vehicle_id):
+            cap = p.get('caption') or ''
+            if cap.startswith('autofox:'):
+                ids.add(cap.split(':', 1)[1])
+        return ids
+
+    def store_photo_bytes(self, vehicle_id: int, raw: bytes, conversion_id: str,
+                          make_primary: bool = False) -> Dict[str, Any]:
+        """Compress + store one pulled image, tagged with its conversion id."""
+        from carpark.routes.photos import _compress_jpeg, _InvalidImage  # lazy: circular import
+        try:
+            data = _compress_jpeg(raw)
+        except _InvalidImage as e:
+            raise AutofoxIngestError(e.message, 422)
+        key = f'private/carpark/{vehicle_id}/autofox_{hashlib.sha256(data).hexdigest()[:16]}.jpg'
+        spaces_service.upload(data, key, 'image/jpeg')
+        return self._photos.create(
+            vehicle_id=vehicle_id, url=key, photo_type='gallery',
+            is_primary=make_primary, file_size=len(data),
+            caption=f'autofox:{conversion_id}',
+        )

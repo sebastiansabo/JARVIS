@@ -81,6 +81,110 @@ def test_validate_url_allows_public_ip():
     ax_service._validate_url('https://8.8.8.8/a.jpg')
 
 
+# ── pull client + Sync-from-AutoFox routes ──
+
+from carpark.connectors.autofox import client as ax_client
+
+
+class _FakeResp:
+    def __init__(self, status=200, payload=None):
+        self.status_code = status
+        self._payload = payload
+
+    def json(self):
+        return self._payload
+
+
+@pytest.fixture
+def as_admin(monkeypatch):
+    import core.utils.api_helpers as h
+
+    class _U:
+        is_authenticated = True
+
+    monkeypatch.setattr(h, 'current_user', _U())
+
+
+def test_extract_list_variants():
+    ex = ax_client._extract_list
+    assert ex([{'a': 1}]) == [{'a': 1}]
+    assert ex({'data': [{'a': 1}]}) == [{'a': 1}]
+    assert ex({'data': {'items': [{'a': 1}]}}) == [{'a': 1}]
+    assert ex({'x': 1}) == []
+
+
+def test_client_normalise_prefers_retouched():
+    n = ax_client.AutofoxClient._normalise(
+        {'id': 5, 'file_converted': 'https://c/a.jpg', 'file_retouched': 'https://c/b.jpg',
+         'retouch_state': 'done'}, 'VIN')
+    assert n['conversion_id'] == '5' and n['url'].endswith('b.jpg') and n['vin'] == 'VIN'
+    assert ax_client.AutofoxClient._normalise({'id': 5}, 'VIN') is None  # no url
+
+
+def test_client_login_and_list():
+    class _Repo:
+        def get_by_type(self, t):
+            return {'id': 1, 'credentials': {'login_token': 'LT'}, 'config': {}}
+
+    c = ax_client.AutofoxClient(repo=_Repo())
+    seen = {}
+
+    class _Sess:
+        def post(self, url, data=None, timeout=None):
+            seen['login'] = data
+            return _FakeResp(200, {'status': 1, 'data': {'access_token': 'TOK'}})
+
+        def get(self, url, params=None, headers=None, timeout=None, stream=False):
+            seen['headers'] = headers
+            return _FakeResp(200, {'status': 1, 'data': [
+                {'id': 11, 'vin': 'WBAX', 'file_converted': 'https://c/1.jpg',
+                 'file_retouched': 'https://c/1r.jpg', 'retouch_state': 'done'},
+                {'id': 12, 'vin': 'WBAX', 'file_converted': 'https://c/2.jpg',
+                 'retouch_state': 'retouch_not_needed'},
+            ]})
+
+    c._session = _Sess()
+    out = c.list_conversions_by_vin('wbax')
+    assert seen['login'] == {'login_token': 'LT'}
+    assert seen['headers']['Authorization'] == 'Bearer TOK'
+    assert [p['conversion_id'] for p in out] == ['11', '12']
+    assert out[0]['url'].endswith('1r.jpg')  # retouched preferred
+    assert out[1]['url'].endswith('2.jpg')
+
+
+def test_photos_route_flags_already_imported(client, connector, as_admin, monkeypatch):
+    monkeypatch.setattr(ax_routes._client, 'list_conversions_by_vin',
+                        lambda vin: [{'conversion_id': '11', 'url': 'https://c/1.jpg',
+                                      'retouch_state': 'done', 'date_modified': 'x', 'vin': vin}])
+    monkeypatch.setattr(ax_routes._service._vehicles, 'get_by_vin', lambda v: {'id': 42, 'vin': v})
+    monkeypatch.setattr(ax_routes._service, 'imported_conversion_ids', lambda vid: {'11'})
+    r = client.get('/autofox/api/photos?vin=WBA1234567890ABCD')
+    assert r.status_code == 200, r.data
+    j = r.get_json()
+    assert j['matched_vehicle'] is True and j['vehicle_id'] == 42
+    assert j['photos'][0]['already_imported'] is True
+
+
+def test_import_route_downloads_and_dedups(client, connector, as_admin, monkeypatch):
+    monkeypatch.setattr(ax_service.spaces_service, 'is_enabled', lambda: True)
+    monkeypatch.setattr(ax_routes._service._vehicles, 'get_by_vin', lambda v: {'id': 42, 'vin': v})
+    monkeypatch.setattr(ax_routes._client, 'list_conversions_by_vin',
+                        lambda vin: [{'conversion_id': '11', 'url': 'https://c/1.jpg'},
+                                     {'conversion_id': '12', 'url': 'https://c/2.jpg'}])
+    monkeypatch.setattr(ax_routes._service, 'imported_conversion_ids', lambda vid: {'12'})
+    monkeypatch.setattr(ax_routes._service._photos, 'get_by_vehicle', lambda vid, t=None: [])
+    monkeypatch.setattr(ax_routes._client, 'download', lambda url: b'imgbytes')
+    stored = []
+    monkeypatch.setattr(ax_routes._service, 'store_photo_bytes',
+                        lambda vid, raw, cid, make_primary=False: stored.append(cid) or {'id': 1})
+    r = client.post('/autofox/api/import',
+                    json={'vin': 'WBA1234567890ABCD', 'conversion_ids': ['11', '12']})
+    assert r.status_code == 200, r.data
+    j = r.get_json()
+    assert j['created'] == 1 and j['skipped_duplicates'] == 1
+    assert stored == ['11']  # 12 was already imported → skipped
+
+
 def test_download_rejects_redirect(monkeypatch):
     class _Resp:
         is_redirect = True
