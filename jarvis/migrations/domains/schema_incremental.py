@@ -3263,6 +3263,8 @@ def _create_schema_incremental_continued(conn, cursor):
     # Per-session manual "Locul / Scopul" overrides, keyed by session id (string).
     # Wins over the derived text (Comentariu verbatim / event name / Test Drive).
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS scop_overrides JSONB DEFAULT '{}'")
+    # Foaie-level related files (Spaces keys): [{key, filename, content_type, size, uploaded_at, uploaded_by}].
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'")
 
     # facturare per-document number registry (additive; never mutates facturare_invoices)
     cursor.execute("""

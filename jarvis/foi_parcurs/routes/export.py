@@ -6,7 +6,9 @@ from datetime import datetime
 from flask import Response
 from ._shared import foi_parcurs_bp, jsonify, request, login_required, logger, _fp_repo
 from .pdf import _ensure_pdf_path
-from foi_parcurs.services.route_sheet_service import session_actual_km, _period, _xl_safe
+from foi_parcurs.services.route_sheet_service import (
+    session_actual_km, _period, _xl_safe, iter_attachment_files,
+)
 
 _MAX_ROWS = 100000
 
@@ -200,11 +202,21 @@ def api_route_sheet_contracts_zip():
                 logger.warning('Skipping contract %s in per-car zip (PDF failed)', r.get('id'), exc_info=True)
                 continue
             safe = re.sub(r'[^A-Za-z0-9._-]+', '_', str(r.get('contract_id') or r.get('id')))
-            zf.writestr(f'foaie-parcurs-{safe}.pdf', pdf_bytes)
+            zf.writestr(f'contracte/foaie-parcurs-{safe}.pdf', pdf_bytes)
             included += 1
 
+        # Related files around the foaie for this car/month — Alimentare receipts
+        # (bonuri/) + foaie-level attachments (fisiere/). Only for a specific month.
+        if month:
+            try:
+                for arcname, data in iter_attachment_files(vin, year, month):
+                    zf.writestr(arcname, data)
+                    included += 1
+            except Exception:
+                logger.warning('attachment files failed for %s %s-%s', vin, year, month, exc_info=True)
+
     if included == 0:
-        return jsonify({'success': False, 'error': 'Niciun contract de exportat pentru această mașină în perioada selectată.'}), 404
+        return jsonify({'success': False, 'error': 'Nimic de exportat pentru această mașină în perioada selectată.'}), 404
 
     vin_safe = re.sub(r'[^A-Za-z0-9._-]+', '_', vin)
     period = f'{year}-{month:02d}' if month else str(year)
