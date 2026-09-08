@@ -242,12 +242,32 @@ def api_photos():
     imported = _service.imported_conversion_ids(vehicle['id']) if vehicle else set()
     for p in photos:
         p['already_imported'] = p['conversion_id'] in imported
+        p.pop('url', None)  # browser loads via the /api/image proxy using `path`
     return jsonify({
         'success': True, 'vin': vin,
         'matched_vehicle': bool(vehicle),
         'vehicle_id': vehicle['id'] if vehicle else None,
         'photos': photos,
     })
+
+
+@autofox_bp.route('/api/image', methods=['GET'])
+@api_login_required
+def api_image():
+    """Thumbnail proxy: AutoFox media needs our Bearer token, which the browser
+    can't send. Fetch server-side and stream back. SSRF-safe: `path` must be a
+    relative AutoFox media path (no scheme, no traversal); the client pins it to
+    the configured AutoFox host and re-validates."""
+    path = (request.args.get('path') or '').strip()
+    if not path or '://' in path or '..' in path:
+        return jsonify({'success': False, 'error': 'invalid path'}), 400
+    try:
+        raw = _client.download(_client.absolute_url(path))
+    except AutofoxIngestError as e:
+        return jsonify({'success': False, 'error': e.message}), e.status
+    mime = 'image/png' if path.lower().endswith('.png') else 'image/jpeg'
+    return current_app.response_class(raw, mimetype=mime,
+                                      headers={'Cache-Control': 'private, max-age=300'})
 
 
 @autofox_bp.route('/api/import', methods=['POST'])
