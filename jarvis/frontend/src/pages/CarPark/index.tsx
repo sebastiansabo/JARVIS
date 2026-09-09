@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Plus,
   SlidersHorizontal,
@@ -8,7 +8,11 @@ import {
   ArrowUpDown,
   Eye,
   ImageIcon,
+  Loader2,
+  UploadCloud,
 } from 'lucide-react'
+import { toast } from 'sonner'
+import { shopifyApi } from '@/api/shopify'
 import { mediaUrl } from '@/lib/media'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchInput } from '@/components/shared/SearchInput'
@@ -140,6 +144,19 @@ export default function CarPark() {
   const isSmall = isMobile || isTablet
   const user = useAuthStore((s) => s.user)
   const canEdit = user?.can_edit_carpark ?? false
+  const queryClient = useQueryClient()
+
+  const publishBulkMutation = useMutation({
+    mutationFn: () => shopifyApi.publishBulk(),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'status'] })
+      toast.success(`${res.published} publicate`)
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { data?: { error?: string } })?.data?.error || 'Publicare eșuată'
+      toast.error(msg)
+    },
+  })
 
   const [searchParams, setSearchParams] = useSearchParams()
   const [showFilters, setShowFilters] = useState(false)
@@ -385,6 +402,21 @@ export default function CarPark() {
                 ))}
               </SelectContent>
             </Select>
+            {canEdit && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => publishBulkMutation.mutate()}
+                disabled={publishBulkMutation.isPending}
+              >
+                {publishBulkMutation.isPending ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <UploadCloud className="mr-1 h-4 w-4" />
+                )}
+                <span className="hidden lg:inline">Publică eligibile pe Shopify</span>
+              </Button>
+            )}
             {canEdit && (
               <Button size="sm" asChild>
                 <Link to="/app/carpark/new">
