@@ -454,7 +454,7 @@ function withGaps(sessions: FoiContract[], kmMin?: number, kmMax?: number): Deta
     const n = neighbor(first)
     rows.push({
       gap: true, id: `gap-lead-${first.id}`, date: first.created_at,
-      dateFrom: first.created_at, dateTo: first.created_at,
+      dateFrom: driveDate(first), dateTo: driveDate(first),
       kmStart: kmMin, kmEnd: first.km_start ?? 0, distance: (first.km_start ?? 0) - kmMin,
       before: n, after: n,
     })
@@ -466,7 +466,10 @@ function withGaps(sessions: FoiContract[], kmMin?: number, kmMax?: number): Deta
     if (prevEnd != null && start > prevEnd && prevSession) {
       rows.push({
         gap: true, id: `gap-${c.id}`, date: c.created_at,
-        dateFrom: prevSession.created_at ?? c.created_at, dateTo: c.created_at,
+        // Window follows the DRIVE dates (departure), not created_at, so a gap
+        // between corrected sessions offers the real interval (e.g. a bounding
+        // TD moved to 03.08 lets the client-extra date start there).
+        dateFrom: driveDate(prevSession), dateTo: driveDate(c),
         kmStart: prevEnd, kmEnd: start, distance: start - prevEnd,
         before: neighbor(prevSession), after: neighbor(c),
       })
@@ -478,7 +481,7 @@ function withGaps(sessions: FoiContract[], kmMin?: number, kmMax?: number): Deta
     const n = neighbor(prevSession)
     rows.push({
       gap: true, id: `gap-trail-${prevSession.id}`, date: prevSession.created_at,
-      dateFrom: prevSession.created_at, dateTo: prevSession.created_at,
+      dateFrom: driveDate(prevSession), dateTo: driveDate(prevSession),
       kmStart: prevEnd, kmEnd: kmMax, distance: kmMax - prevEnd,
       before: n, after: n,
     })
@@ -1239,7 +1242,9 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
       setMode('absorb')
       setWin({ start: upperIdx, end: lowerIdx })
       setSegs(buildSegs(upperIdx, lowerIdx))
-      setClients([emptyExtraClient(user?.name ?? '', dTo || dFrom, { km: String(gap.distance) })])
+      // Default the first client to the FULL gap interval (dFrom → dTo) so a single
+      // client covering the whole gap is pre-filled; the user narrows if needed.
+      setClients([emptyExtraClient(user?.name ?? '', dFrom || dTo, { km: String(gap.distance), date_to: dTo || dFrom })])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetKey])
