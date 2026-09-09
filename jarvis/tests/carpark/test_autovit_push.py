@@ -199,7 +199,7 @@ def test_create_advert_posts_and_returns_id():
         req.return_value.json.return_value = {"id": "7060", "url": "http://a"}
         out = c.create_advert({"title": "x"})
         req.assert_called_once()
-        assert req.call_args.args[0] == "POST" and req.call_args.args[1] == "/adverts"
+        assert req.call_args.args[0] == "POST" and req.call_args.args[1] == "/account/adverts"
         assert req.call_args.kwargs == {"json": {"title": "x"}}
         assert out["id"] == "7060"
 
@@ -210,7 +210,7 @@ def test_update_advert_puts_to_advert_path_and_returns_body():
         req.return_value.json.return_value = {"id": "7060", "status": "active"}
         out = c.update_advert("7060", {"title": "y"})
         req.assert_called_once()
-        assert req.call_args.args[0] == "PUT" and req.call_args.args[1] == "/adverts/7060"
+        assert req.call_args.args[0] == "PUT" and req.call_args.args[1] == "/account/adverts/7060"
         assert req.call_args.kwargs == {"json": {"title": "y"}}
         assert out["status"] == "active"
 
@@ -220,7 +220,7 @@ def test_deactivate_advert_posts_to_deactivate_path():
     with patch.object(c, "_request") as req:
         req.return_value.json.return_value = {"id": "7060", "status": "disabled"}
         out = c.deactivate_advert("7060")
-        req.assert_called_once_with("POST", "/adverts/7060/deactivate")
+        req.assert_called_once_with("POST", "/account/adverts/7060/deactivate", json={})
         assert out["status"] == "disabled"
 
 
@@ -228,33 +228,32 @@ def test_delete_advert_deletes_and_reports_success():
     c = _client()
     with patch.object(c, "_request") as req:
         out = c.delete_advert("7060")
-        req.assert_called_once_with("DELETE", "/adverts/7060")
+        req.assert_called_once_with("DELETE", "/account/adverts/7060")
         assert out == {"success": True}
 
 
-def test_upload_photos_posts_each_image_and_returns_ids():
+def test_create_image_collection_posts_numeric_keyed_and_returns_id():
     c = _client()
     with patch.object(c, "_request") as req:
-        resp1, resp2 = MagicMock(), MagicMock()
-        resp1.json.return_value = {"id": "img1"}
-        resp2.json.return_value = {"id": "img2"}
-        req.side_effect = [resp1, resp2]
+        req.return_value.ok = True
+        req.return_value.json.return_value = {"id": "821"}
 
-        out = c.upload_photos([b"photo-bytes-1", b"photo-bytes-2"])
+        out = c.create_image_collection(["http://img/1.jpg", "http://img/2.jpg"])
 
-        assert req.call_count == 2
-        for call in req.call_args_list:
-            assert call.args[0] == "POST" and call.args[1] == "/adverts/images"
-            assert "files" in call.kwargs
-        assert out == ["img1", "img2"]
+        req.assert_called_once()
+        assert req.call_args.args == ("POST", "/imageCollections")
+        # Autovit expects images keyed by number, not a flat list.
+        assert req.call_args.kwargs["json"] == {
+            "images": {"1": {"source": "http://img/1.jpg"},
+                       "2": {"source": "http://img/2.jpg"}}}
+        assert out == "821"
 
 
-def test_upload_photos_returns_none_when_no_images():
+def test_create_image_collection_returns_none_when_no_images():
     c = _client()
     with patch.object(c, "_request") as req:
-        out = c.upload_photos([])
+        assert c.create_image_collection([]) is None
         req.assert_not_called()
-        assert out is None
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -277,6 +276,7 @@ def test_upload_photos_returns_none_when_no_images():
 
 VEHICLE = {"id": 7, "vin": "TMBJK7NS0K8000001", "brand": "Skoda", "model": "Kodiaq",
            "year_of_manufacture": 2019, "mileage_km": 9, "fuel_type": "diesel",
+           "body_type": "suv", "color_exterior": "grey",
            "current_price": 100, "listing_title": "t"}
 ACCOUNT = {"id": 1, "connector_type": "autovit",
            "config": {"city_id": 1, "region_id": 1}, "credentials": {}}
@@ -365,7 +365,7 @@ def test_publish_dry_run_returns_payload_without_network(client):
 
 
 def test_publish_missing_required_fields_returns_400(client):
-    incomplete_vehicle = {"id": 7, "brand": "Skoda"}  # no vin/model/year/mileage/fuel/price
+    incomplete_vehicle = {"id": 7, "brand": "Skoda"}  # no model/year/mileage/fuel/price/body_type/color
     with patch.object(r._repo, "get", return_value=ACCOUNT), \
          patch.object(r._vehicle_repo, "get_by_id", return_value=incomplete_vehicle), \
          patch.object(r, "_build_client") as bc:
@@ -373,7 +373,7 @@ def test_publish_missing_required_fields_returns_400(client):
         assert resp.status_code == 400
         data = resp.get_json()
         assert data["success"] is False
-        assert "params.vin" in data["missing"]
+        assert "params.price" in data["missing"]
         bc.assert_not_called()
 
 
@@ -414,20 +414,24 @@ def test_publish_updates_existing_listing_via_update_advert(client):
                                        status="active", last_error=None)
 
 
-def test_publish_draft_sets_status_disabled_before_create(client):
+def test_publish_creates_as_unpaid_draft_without_forcing_status(client):
+    # Autovit creates every new advert in `unpaid` status (a private draft, not
+    # visible on the marketplace) on its own — so we do NOT inject a bogus
+    # `status` into the create payload, and the listing row records the real
+    # status the API returns.
     with patch.object(r._repo, "get", return_value=ACCOUNT), \
          patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
          patch.object(r, "_build_client") as bc, \
          patch.object(r._listing_repo, "get", return_value=None), \
          patch.object(r._listing_repo, "upsert") as upsert:
-        bc.return_value.create_advert.return_value = {"id": "1", "url": "http://x"}
+        bc.return_value.create_advert.return_value = {"id": "1", "url": "http://x", "status": "unpaid"}
         resp = client.post('/autovit/api/accounts/1/publish',
                             json={"vehicle_id": 7, "draft": True})
 
         assert resp.status_code == 200
         sent_advert = bc.return_value.create_advert.call_args.args[0]
-        assert sent_advert["status"] == "disabled"
-        assert upsert.call_args.kwargs["status"] == "draft"
+        assert "status" not in sent_advert
+        assert upsert.call_args.kwargs["status"] == "unpaid"
 
 
 def test_publish_error_sets_listing_error_and_returns_502(client):

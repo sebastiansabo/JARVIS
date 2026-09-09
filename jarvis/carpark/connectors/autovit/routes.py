@@ -413,6 +413,32 @@ def import_all(account_id):
 
 # ── Push: publish / unpublish a vehicle to Autovit (Task 8) ──
 
+def _fill_location_contact(client, advert):
+    """Backfill region/city/district/coordinates + contact on the advert from the
+    account's own existing adverts when the connector config didn't provide them
+    (Autovit requires location + contact on create). Best-effort — leaves the
+    advert unchanged on any error."""
+    need_loc = not (advert.get('region_id') and advert.get('city_id')) or 'coordinates' not in advert
+    need_contact = not advert.get('contact')
+    if not (need_loc or need_contact):
+        return
+    try:
+        results = (client.get_adverts(page=1) or {}).get('results') or []
+        if not results:
+            return
+        src = client.get_advert(str(results[0].get('id')))
+    except Exception:
+        return
+    if need_loc:
+        for k in ('region_id', 'city_id', 'district_id', 'coordinates'):
+            if src.get(k) is not None and advert.get(k) is None:
+                advert[k] = src[k]
+    if need_contact:
+        c = src.get('contact') or {}
+        advert['contact'] = {'person': c.get('person', ''),
+                             'phones': c.get('phones') or c.get('phone_numbers') or []}
+
+
 @autovit_bp.route('/api/accounts/<int:account_id>/publish', methods=['POST'])
 @login_required
 @carpark_edit_required
@@ -442,21 +468,41 @@ def publish(account_id):
         return jsonify({'success': True, 'dry_run': True, 'advert': advert})
 
     client = _build_client(connector)
-    if body.get('draft'):
-        advert['status'] = 'disabled'
+    # Backfill location + contact from the account's own adverts if the config
+    # didn't carry them (Autovit requires them on create).
+    _fill_location_contact(client, advert)
+    # Best-effort photos: build an Autovit image collection from the vehicle's
+    # photos. Non-fatal — an advert is created fine without photos (as an unpaid
+    # draft), so a photo failure must never block the publish.
+    try:
+        photo_urls = _photo_repo.urls(vehicle['id'])
+        icid = client.create_image_collection(photo_urls) if photo_urls else None
+        if icid:
+            advert['image_collection_id'] = icid
+    except Exception as e:
+        logger.warning('Autovit image collection failed for vehicle %s: %s', vehicle['id'], e)
+
     try:
         existing = _listing_repo.get(vehicle['id'], account_id)
         if existing and existing.get('external_advert_id'):
             client.update_advert(existing['external_advert_id'], advert)
-            result = {'id': existing['external_advert_id'], 'url': existing.get('external_url')}
+            ext_id = existing['external_advert_id']
+            ext_url = existing.get('external_url')
+            ext_status = 'active'
         else:
-            result = client.create_advert(advert)
+            # New adverts are created in Autovit's `unpaid` status — a private
+            # draft, not visible on the marketplace until paid/activated.
+            result = client.create_advert(advert) or {}
+            ext_id = result.get('id')
+            ext_url = result.get('url')
+            ext_status = result.get('status') or 'active'
         _listing_repo.upsert(vehicle['id'], account_id,
-                             external_advert_id=str(result.get('id')),
-                             external_url=result.get('url'),
-                             status='draft' if body.get('draft') else 'active',
+                             external_advert_id=str(ext_id),
+                             external_url=ext_url,
+                             status=ext_status,
                              last_error=None)
-        return jsonify({'success': True, 'external_id': result.get('id'), 'external_url': result.get('url')})
+        return jsonify({'success': True, 'external_id': ext_id,
+                        'external_url': ext_url, 'status': ext_status})
     except Exception as e:
         logger.exception('Autovit publish failed for vehicle %s', vehicle['id'])
         _listing_repo.set_error(vehicle['id'], account_id, str(e))

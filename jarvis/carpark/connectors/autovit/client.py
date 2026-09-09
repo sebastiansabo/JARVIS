@@ -79,6 +79,9 @@ class AutovitClient:
         headers = kwargs.pop('headers', {})
         headers['Authorization'] = f'Bearer {token}'
         headers.setdefault('Accept', 'application/json')
+        # Autovit's account (password-grant) write endpoints require the dealer
+        # account email in the User-Agent header.
+        headers.setdefault('User-Agent', self.username)
         if method.upper() in ('POST', 'PUT'):
             headers.setdefault('Content-Type', 'application/json')
 
@@ -128,44 +131,58 @@ class AutovitClient:
         resp = self._request('GET', f'/adverts/{advert_id}')
         return resp.json()
 
-    # ── Push (write) methods — Task 7 of the two-way-sync plan ──
+    # ── Push (write) methods — Autovit "account" API (password grant) ──
+    #
+    # IMPORTANT: password-grant (dealer) clients MUST use the /account/adverts
+    # endpoints. The bare /adverts endpoints need the partner-only
+    # `advertsWrite` permission and return 403 "You are not allowed to post
+    # adverts here" for dealer keys. Verified live 2026-09-09: POST
+    # /account/adverts -> 201 (status "unpaid" draft); DELETE
+    # /account/adverts/{id} -> 204. All write calls carry User-Agent=email
+    # (set in _request).
 
     def create_advert(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Create a new advert. Returns the created advert body (id, url, ...)."""
-        return self._request('POST', '/adverts', json=payload).json()
+        """Create a new advert (dealer/account endpoint). Returns {id, url, status, ...}.
+
+        Created adverts start in `unpaid` status (a private draft, not visible
+        on the marketplace) until paid/activated — safe to create without
+        immediately publishing.
+        """
+        return self._request('POST', '/account/adverts', json=payload).json()
 
     def update_advert(self, advert_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Update an existing advert in place."""
-        return self._request('PUT', f'/adverts/{advert_id}', json=payload).json()
+        return self._request('PUT', f'/account/adverts/{advert_id}', json=payload).json()
 
     def deactivate_advert(self, advert_id: str) -> Dict[str, Any]:
-        """Deactivate (unpublish without deleting) an advert."""
-        return self._request('POST', f'/adverts/{advert_id}/deactivate').json()
+        """Deactivate (unpublish without deleting) an active advert."""
+        return self._request('POST', f'/account/adverts/{advert_id}/deactivate', json={}).json()
 
     def delete_advert(self, advert_id: str) -> Dict[str, Any]:
-        """Permanently delete an advert."""
-        self._request('DELETE', f'/adverts/{advert_id}')
+        """Permanently delete an advert (account endpoint; 204 No Content)."""
+        self._request('DELETE', f'/account/adverts/{advert_id}')
         return {'success': True}
 
-    def upload_photos(self, images: list) -> Optional[list]:
-        """Upload one or more photos, returning the list of uploaded image ids
-        (or None if `images` is empty).
+    def get_account_advert(self, advert_id: str) -> Dict[str, Any]:
+        """Get one of THIS account's adverts — works for unpaid/draft adverts too,
+        unlike the public GET /adverts/{id} (which 404s for drafts)."""
+        return self._request('GET', f'/account/adverts/{advert_id}').json()
 
-        NOTE: the exact `/adverts/images` request/response shape is NOT
-        confirmed against the live Autovit API — it's inferred from the
-        design doc's sample (multipart upload, one POST per image, each
-        response carrying an `id`). Task 8's publish route only attaches
-        photos when this succeeds, and falls back to publishing without
-        photos + a recorded warning otherwise. Treat this as provisional
-        until verified in the supervised live test (Task 10).
+    def create_image_collection(self, image_urls: list) -> Optional[str]:
+        """Create an Autovit image collection from public image URLs; returns its
+        id for use as `image_collection_id` on an advert (or None if no URLs).
+
+        Photos are optional for advert creation, so callers should treat a
+        failure here as non-fatal. Autovit expects images keyed by number:
+        ``{"images": {"1": {"source": url}, ...}}``.
         """
+        if not image_urls:
+            return None
+        images = {str(i + 1): {'source': u} for i, u in enumerate(image_urls) if u}
         if not images:
             return None
-        ids = []
-        for data in images:
-            resp = self._request('POST', '/adverts/images', files={'file': data})
-            ids.append(resp.json().get('id'))
-        return ids or None
+        resp = self._request('POST', '/imageCollections', json={'images': images})
+        return str(resp.json().get('id')) if resp.ok else None
 
 
 class AutovitConnector(BaseConnector):
