@@ -120,6 +120,11 @@ def test_vehicle_to_advert_builds_slugs_and_price():
     assert p["color"] == "gray"   # carpark 'grey' -> Autovit api slug 'gray'
     assert p["price"]["1"] == 17000 and p["price"]["currency"] == "EUR"
     assert p["vin"] == "TMBJK7NS0K8000001"
+    # Autovit contact uses `phones` (array), not `phone_numbers`; default business
+    assert ad["contact"] == {"person": "ATW", "phones": ["0371521912"]}
+    assert ad["advertiser_type"] == "business"
+    # create-only required param for cars
+    assert p["is_imported_car"] == "0"
 
 
 def test_vehicle_to_advert_color_reverse_map():
@@ -151,7 +156,8 @@ def test_validate_mileage_zero_is_not_missing():
     advert = {
         "title": "New Car", "category_id": 29,
         "params": {"make": "skoda", "model": "kodiaq", "year": 2025,
-                   "mileage": 0, "fuel_type": "petrol",
+                   "mileage": 0, "fuel_type": "petrol", "body_type": "suv",
+                   "color": "grey",
                    "price": {"1": 30000, "currency": "EUR"},
                    "vin": "TMBJK7NS0K8000099"},
     }

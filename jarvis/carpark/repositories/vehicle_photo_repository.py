@@ -26,6 +26,16 @@ class VehiclePhotoRepository(BaseRepository):
         )
         return int(row['n']) if row else 0
 
+    def urls(self, vehicle_id: int) -> list:
+        """Public photo URLs for a vehicle, ordered — used to build an Autovit
+        image collection when publishing (push). Excludes soft-deleted rows."""
+        rows = self.query_all(
+            'SELECT url FROM carpark_vehicle_photos '
+            'WHERE vehicle_id=%s AND deleted_at IS NULL ORDER BY sort_order, id',
+            (vehicle_id,)
+        )
+        return [r['url'] for r in rows if r.get('url')]
+
     def add(self, vehicle_id: int, url: str, thumbnail_url: str = None,
             sort_order: int = 0, is_primary: bool = False,
             photo_type: str = 'gallery') -> Dict[str, Any]:
