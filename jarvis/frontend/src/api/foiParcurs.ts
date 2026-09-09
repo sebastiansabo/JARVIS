@@ -34,6 +34,10 @@ export interface RouteSheetAlimentare {
 
 export interface GapFillContract {
   date: string
+  // Return date for a multi-day drive → persisted as the session's
+  // return_datetime ("sosire" on the route sheet). Omitted/equal to `date`
+  // for a same-day trip (return_datetime stays NULL).
+  date_to?: string
   client_name: string
   km_start: number
   km_end: number
