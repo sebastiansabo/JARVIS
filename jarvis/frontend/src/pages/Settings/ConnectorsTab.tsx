@@ -32,6 +32,7 @@ import {
   ChevronDown,
   ChevronUp,
   Camera,
+  Store,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -60,9 +61,11 @@ import { efacturaApi } from '@/api/efactura'
 import { biostarApi } from '@/api/biostar'
 import { sincronApi } from '@/api/sincron'
 import { autovitApi } from '@/api/autovit'
+import { shopifyApi } from '@/api/shopify'
 import { connecteamApi } from '@/api/connecteam'
 import { autofoxApi, type AutofoxSavePayload, type AutofoxLog } from '@/api/autofox'
 import type { AutovitAccount } from '@/api/autovit'
+import type { ShopifyAccount } from '@/api/shopify'
 import type { SincronSyncRun } from '@/api/sincron'
 import type { BioStarSyncRun } from '@/types/biostar'
 import type { CompanyConnection } from '@/types/efactura'
@@ -1854,6 +1857,246 @@ function AutovitSection() {
 }
 
 // ════════════════════════════════════════════════
+// Shopify Section
+// ════════════════════════════════════════════════
+
+function ShopifySection() {
+  const qc = useQueryClient()
+  const navigate = useNavigate()
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [form, setForm] = useState({ store_domain: '', client_id: '', client_secret: '' })
+  const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [showSecret, setShowSecret] = useState(false)
+
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['shopify', 'accounts'],
+    queryFn: shopifyApi.getAccounts,
+  })
+
+  const account = accounts[0]
+
+  const saveMut = useMutation({
+    mutationFn: () =>
+      shopifyApi.saveAccount({
+        ...(editingId ? { id: editingId } : {}),
+        store_domain: form.store_domain,
+        client_id: form.client_id,
+        ...(form.client_secret ? { client_secret: form.client_secret } : {}),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['shopify'] })
+      setShowForm(false)
+      setEditingId(null)
+      resetForm()
+      toast.success(editingId ? 'Store updated' : 'Store connected')
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { data?: { error?: string } })?.data?.error || 'Failed to save store'
+      toast.error(msg)
+    },
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => shopifyApi.deleteAccount(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['shopify'] })
+      setDeleteId(null)
+      toast.success('Store disconnected')
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { data?: { error?: string } })?.data?.error || 'Failed to disconnect store'
+      toast.error(msg)
+    },
+  })
+
+  const testMut = useMutation({
+    mutationFn: () => shopifyApi.testConnection(),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['shopify'] })
+      if (res.success && res.data) {
+        toast.success(`Connected to ${res.data.name} (${res.data.currencyCode})`)
+      } else {
+        toast.error(res.error || 'Connection failed')
+      }
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { data?: { error?: string } })?.data?.error || 'Connection test failed'
+      toast.error(msg)
+    },
+  })
+
+  const resetForm = () => {
+    setForm({ store_domain: '', client_id: '', client_secret: '' })
+    setShowSecret(false)
+  }
+
+  const handleAdd = () => {
+    setEditingId(null)
+    resetForm()
+    setShowForm(true)
+  }
+
+  const handleEdit = (acc: ShopifyAccount) => {
+    setEditingId(acc.id)
+    setForm({ store_domain: acc.store_domain, client_id: acc.client_id, client_secret: '' })
+    setShowForm(true)
+  }
+
+  const statusColor =
+    account?.status === 'connected'
+      ? 'text-green-600 dark:text-green-400'
+      : account?.status === 'error'
+        ? 'text-red-600 dark:text-red-400'
+        : 'text-muted-foreground'
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Store className="h-5 w-5" />
+          <h3 className="text-base font-semibold">Shopify</h3>
+        </div>
+        <StatusBadge
+          status={account?.status === 'connected' ? 'active' : 'inactive'}
+          label={account?.status === 'connected' ? 'Connected' : 'Not connected'}
+        />
+      </div>
+
+      {!account ? (
+        <div className="rounded-lg border p-4">
+          <EmptyState
+            icon={<Store className="h-10 w-10" />}
+            title="No Shopify store connected"
+            description="Connect your Shopify store to publish vehicles as products."
+            action={<Button onClick={handleAdd}><Plus className="mr-1 h-4 w-4" /> Connect Store</Button>}
+          />
+        </div>
+      ) : (
+        <div className="rounded-lg border p-4 space-y-3">
+          <div className="flex items-start justify-between">
+            <div>
+              <h4 className="font-medium text-sm">{account.store_domain}</h4>
+              <p className="text-xs text-muted-foreground">Client ID: {account.client_id}</p>
+              <p className="text-xs text-muted-foreground">Secret: {account.credential_fields.client_secret}</p>
+            </div>
+            <span className={`text-xs font-medium capitalize ${statusColor}`}>
+              {account.status === 'connected' ? (
+                <span className="flex items-center gap-1"><CheckCircle className="h-3.5 w-3.5" /> Connected</span>
+              ) : account.status === 'error' ? (
+                <span className="flex items-center gap-1"><XCircle className="h-3.5 w-3.5" /> Error</span>
+              ) : (
+                <span className="flex items-center gap-1"><Plug className="h-3.5 w-3.5" /> Disconnected</span>
+              )}
+            </span>
+          </div>
+
+          {account.last_error && (
+            <p className="text-xs text-red-500 truncate" title={account.last_error}>
+              {account.last_error}
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => testMut.mutate()} disabled={testMut.isPending}>
+              {testMut.isPending ? (
+                <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+              ) : (
+                <Plug className="mr-1 h-3 w-3" />
+              )}
+              Test connection
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => handleEdit(account)}>
+              <Pencil className="mr-1 h-3 w-3" /> Edit
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => navigate('shopify/taxonomy')}>
+              <ExternalLink className="mr-1 h-3 w-3" /> Taxonomy mapping
+            </Button>
+            <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600" onClick={() => setDeleteId(account.id)}>
+              <Trash2 className="mr-1 h-3 w-3" /> Delete
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Add/Edit dialog */}
+      <Dialog
+        open={showForm}
+        onOpenChange={(open) => {
+          setShowForm(open)
+          if (!open) {
+            setEditingId(null)
+            resetForm()
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingId ? 'Edit Shopify Store' : 'Connect Shopify Store'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Store domain</Label>
+              <Input
+                placeholder="e.g. my-store.myshopify.com"
+                value={form.store_domain}
+                onChange={(e) => setForm({ ...form, store_domain: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Client ID</Label>
+              <Input
+                placeholder="Admin API client ID"
+                value={form.client_id}
+                onChange={(e) => setForm({ ...form, client_id: e.target.value })}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Client Secret</Label>
+              <div className="relative">
+                <Input
+                  type={showSecret ? 'text' : 'password'}
+                  placeholder={editingId ? '••••••• (leave blank to keep)' : ''}
+                  value={form.client_secret}
+                  onChange={(e) => setForm({ ...form, client_secret: e.target.value })}
+                />
+                <button
+                  type="button"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowSecret(!showSecret)}
+                >
+                  {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
+            <Button
+              onClick={() => saveMut.mutate()}
+              disabled={saveMut.isPending || !form.store_domain || !form.client_id || (!editingId && !form.client_secret)}
+            >
+              {saveMut.isPending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+              {editingId ? 'Update' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ConfirmDialog
+        open={deleteId !== null}
+        onOpenChange={(open) => { if (!open) setDeleteId(null) }}
+        title="Disconnect Shopify Store"
+        description="Are you sure you want to disconnect this Shopify store? This cannot be undone."
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={() => { if (deleteId) deleteMut.mutate(deleteId) }}
+      />
+    </div>
+  )
+}
+
+// ════════════════════════════════════════════════
 // Connecteam Section (Excel Import)
 // ════════════════════════════════════════════════
 
@@ -2346,6 +2589,7 @@ export default function ConnectorsTab() {
       <AutovitSection />
       <hr className="border-border" />
       <AutofoxSection />
+      <ShopifySection />
       <hr className="border-border" />
       <PushNotificationSection />
       <hr className="border-border" />

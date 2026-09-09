@@ -75,6 +75,7 @@ import { DocumenteTab } from './Detail/DocumenteTab'
 import { CronologieTab } from './Detail/CronologieTab'
 import { VanzareTab } from './Detail/VanzareTab'
 import { StatusStepper } from './Detail/StatusStepper'
+import { ShopifyPublishControl } from './Detail/ShopifyPublishControl'
 import { safeStatusTransitions } from './Dispo/statusTransitions'
 import {
   STATUS_LABELS,
@@ -369,6 +370,7 @@ export default function CarParkDetail() {
         ]}
         actions={
           <div className="flex items-center gap-2">
+            <ShopifyPublishControl vehicleId={id} canEdit={canEdit} />
             {canEdit && nextStatuses.length > 0 && (
               <Button
                 variant="outline"
