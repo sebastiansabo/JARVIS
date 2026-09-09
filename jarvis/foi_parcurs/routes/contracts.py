@@ -1,5 +1,6 @@
 """Routes for foi de parcurs contract generation workflow."""
 
+import os
 import re
 import time
 import uuid
@@ -266,6 +267,30 @@ def _parse_dt(v):
     return dt.replace(tzinfo=None) if dt.tzinfo else dt
 
 
+def _invalidate_cached_pdfs(contract_id, contract=None):
+    """Drop the cached legal/custom PDF for a session so the next download
+    regenerates it from the current (corrected) data. The download endpoint
+    (_ensure_pdf_path) serves the on-disk file at pdf_legal_path/pdf_custom_path
+    whenever it exists and never regenerates — so after a correction those
+    columns must be cleared, else the Legal contract keeps printing the old
+    date/km. Best-effort: a cleanup failure must never fail the correction."""
+    try:
+        row = contract if contract is not None else (_fp_repo.get_contract_by_id(contract_id) or {})
+        for field in ('pdf_legal_path', 'pdf_custom_path'):
+            path = row.get(field)
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    logger.warning('Could not remove stale %s for contract %s', field, contract_id, exc_info=True)
+        _fp_repo.execute(
+            'UPDATE foi_de_parcurs SET pdf_legal_path = NULL, pdf_custom_path = NULL WHERE id = %s',
+            (contract_id,),
+        )
+    except Exception:
+        logger.warning('PDF-cache invalidation failed for contract %s', contract_id, exc_info=True)
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/correct', methods=['PUT'])
 @login_required
 @v2_permission_required('test_drive', 'contracts', 'correct')
@@ -337,6 +362,9 @@ def api_correct_contract(id):
                         'error': 'return_datetime cannot be before departure_datetime'}), 400
 
     updated = _fp_repo.correct_session(id, fields, getattr(current_user, 'email', None))
+    # The correction changed data printed on the Legal/Custom PDF — drop the
+    # cached copy (using the pre-correction row's paths) so it regenerates.
+    _invalidate_cached_pdfs(id, contract)
     log_history(id, 'correct')
     # If the correction moved the window so the car is currently out (departure
     # passed, return in the future), revive a MISSED / late-PLANNED session to
@@ -451,6 +479,8 @@ def api_adjust_reading(id):
     written_ids = _fp_repo.adjust_boundary_readings(updates, getattr(current_user, 'email', None))
     for uid in written_ids:
         log_history(uid, 'correct')
+        # km changed on this row → its cached Legal/Custom PDF is now stale.
+        _invalidate_cached_pdfs(uid, contract if uid == id else None)
     logger.info('foi-parcurs reading adjusted by %s: %s',
                 getattr(current_user, 'email', '?'), updates)
 

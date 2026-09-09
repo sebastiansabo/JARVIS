@@ -81,6 +81,9 @@ def _chain():
 def _stub_side_effects(monkeypatch):
     monkeypatch.setattr(contracts_mod, 'log_history', lambda *a, **k: None)
     monkeypatch.setattr(contracts_mod._fp_repo, 'get_odometer_readings', lambda vin: _chain())
+    # PDF-cache invalidation issues an UPDATE per written row; keep it off the DB
+    # by default (the invalidation test overrides this with a capturing stub).
+    monkeypatch.setattr(contracts_mod._fp_repo, 'execute', lambda *a, **k: 1)
     # Default vehicle: odometer already at the chain top so no floor advance fires
     # unless a test raises the end above it.
     monkeypatch.setattr(contracts_mod._vehicle_repo, 'get_by_vin', lambda vin: {'id': 7, 'odometer_km': 170})
@@ -223,6 +226,20 @@ def test_reading_earliest_session_start_edit_allowed(client, monkeypatch):
     resp = client.put('/api/foi-parcurs/contracts/1/reading', json={'km_start': 100}, headers=_hdr('admin'))
     assert resp.status_code == 200, resp.get_json()
     assert {u['id'] for u in cap['updates']} == {1}
+
+
+def test_reading_invalidates_cached_pdfs_for_each_written_row(client, monkeypatch):
+    """A boundary edit that moves the shared reading writes TWO rows; the cached
+    Legal/Custom PDF of each must be dropped so both regenerate with the new km."""
+    _stub_read(monkeypatch, _contract())
+    _capture_writes(monkeypatch)  # writes ids 1 and 20 (contiguous end move)
+    execs = []
+    monkeypatch.setattr(contracts_mod._fp_repo, 'execute',
+                        lambda sql, params=None, **k: execs.append((sql, params)))
+    resp = client.put('/api/foi-parcurs/contracts/1/reading', json={'km_end': 160}, headers=_hdr('admin'))
+    assert resp.status_code == 200, resp.get_json()
+    invalidated = {p[0] for (s, p) in execs if 'pdf_legal_path' in s and 'NULL' in s.upper()}
+    assert invalidated == {1, 20}, f'expected both rows invalidated, got {invalidated}'
 
 
 def test_reading_advances_vehicle_odometer_when_top_rises(client, monkeypatch):

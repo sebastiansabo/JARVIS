@@ -628,7 +628,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [previewVin, setPreviewVin] = useState<string | null>(null)
-  const [redistribute, setRedistribute] = useState<{ vin: string; gap: GapRow; sessions: WinSession[] } | null>(null)
+  const [redistribute, setRedistribute] = useState<{ vin: string; gap: GapRow | null; sessions: WinSession[]; boundary?: 'start' | 'end' } | null>(null)
   const [correcting, setCorrecting] = useState<FoiContract | null>(null)
   const user = useAuthStore((s) => s.user)
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
@@ -872,6 +872,22 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                   <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel
                                 </a>
                               </DropdownMenuItem>
+                              {/* Document driver(s) at an uncovered month start/end — opens
+                                  the Rezolvă gap modal in boundary mode (no gap row needed). */}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                disabled={sheet.sessions.length === 0}
+                                onClick={() => setRedistribute({
+                                  vin: sheet.vin, gap: null, boundary: 'end',
+                                  sessions: [...sheet.sessions]
+                                    .sort((a, b) => (a.km_start ?? 0) - (b.km_start ?? 0) || (a.km_end ?? 0) - (b.km_end ?? 0))
+                                    .map((s) => ({
+                                      id: s.id, kmStart: s.km_start ?? 0, kmEnd: s.km_end ?? 0,
+                                      driver: s.client_name || s.advisor_name || '—',
+                                    })),
+                                })}>
+                                <UserPlus className="mr-2 h-4 w-4" /> Rezolvă / adaugă km
+                              </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
@@ -1049,13 +1065,19 @@ type WinSession = { id: number; kmStart: number; kmEnd: number; driver: string }
 // its original distance (can't shrink below — the gap only ever adds km).
 type Seg = { id: number; driver: string; km: number; min: number }
 type ExtraClient = {
-  client_name: string; advisor_name: string; km: string
+  client_name: string; advisor_name: string
+  km: string                     // distance — gap "Client extra" (auto-tiled)
+  km_start: string; km_end: string  // explicit odometer — month-boundary mode
+  date_from: string; date_to: string  // drive interval (date_to = return date)
   client_signature: string; license_photo: string | null
   license_number: string; license_expiry: string
 }
-const emptyExtraClient = (km: number, advisor: string): ExtraClient => ({
-  client_name: '', advisor_name: advisor, km: km ? String(km) : '',
+// `day` seeds both interval ends (a same-day trip); `seed` overrides km fields.
+const emptyExtraClient = (advisor: string, day: string, seed: Partial<ExtraClient> = {}): ExtraClient => ({
+  client_name: '', advisor_name: advisor, km: '', km_start: '', km_end: '',
+  date_from: day, date_to: day,
   client_signature: '', license_photo: null, license_number: '', license_expiry: '',
+  ...seed,
 })
 
 // A single horizontal bar for the whole gap; drag the dividers between segments
@@ -1121,9 +1143,12 @@ function GapSplitBar({ segs, gapDist, onChange }: {
   )
 }
 
-function ExtraClientCard({ idx, c, canRemove, onChange, onRemove }: {
+function ExtraClientCard({ idx, c, canRemove, onChange, onRemove, kmMode, dateMin, dateMax, multiDay }: {
   idx: number; c: ExtraClient; canRemove: boolean
   onChange: (patch: Partial<ExtraClient>) => void; onRemove: () => void
+  // 'distance' → single KM field (gap tiling); 'odometer' → explicit km_start/km_end (boundary).
+  kmMode: 'distance' | 'odometer'
+  dateMin: string; dateMax: string; multiDay: boolean
 }) {
   return (
     <div className="rounded-md border p-3 space-y-3">
@@ -1135,16 +1160,50 @@ function ExtraClientCard({ idx, c, canRemove, onChange, onRemove }: {
           </Button>
         )}
       </div>
-      <div className="grid grid-cols-[1fr_90px] gap-2">
-        <div className="space-y-1.5">
-          <Label className="text-xs">Nume client (șofer) *</Label>
-          <PersonPicker value={c.client_name} onChange={(v) => onChange({ client_name: v })} placeholder="Caută client sau șofer" className="h-8" />
+      <div className="space-y-1.5">
+        <Label className="text-xs">Nume client (șofer) *</Label>
+        <PersonPicker value={c.client_name} onChange={(v) => onChange({ client_name: v })} placeholder="Caută client sau șofer" className="h-8" />
+      </div>
+      {/* Drive interval: a single "Data" for a same-day window, or De la → Până la
+          (the return date) when the window spans more than one day. */}
+      {multiDay ? (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs">De la *</Label>
+            <Input type="date" min={dateMin} max={c.date_to || dateMax} className="h-8"
+              value={c.date_from}
+              onChange={(e) => onChange({ date_from: e.target.value, ...(c.date_to && c.date_to < e.target.value ? { date_to: e.target.value } : {}) })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Până la *</Label>
+            <Input type="date" min={c.date_from || dateMin} max={dateMax} className="h-8"
+              value={c.date_to} onChange={(e) => onChange({ date_to: e.target.value })} />
+          </div>
         </div>
+      ) : (
         <div className="space-y-1.5">
+          <Label className="text-xs">Data *</Label>
+          <Input type="date" min={dateMin} max={dateMax} className="h-8 w-[160px]"
+            value={c.date_from} onChange={(e) => onChange({ date_from: e.target.value, date_to: e.target.value })} />
+        </div>
+      )}
+      {kmMode === 'odometer' ? (
+        <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-1.5">
+            <Label className="text-xs">KM plecare *</Label>
+            <Input type="number" className="h-8" value={c.km_start} onChange={(e) => onChange({ km_start: e.target.value })} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">KM sosire *</Label>
+            <Input type="number" className="h-8" value={c.km_end} onChange={(e) => onChange({ km_end: e.target.value })} />
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-1.5 w-[110px]">
           <Label className="text-xs">KM *</Label>
           <Input type="number" min={1} className="h-8" value={c.km} onChange={(e) => onChange({ km: e.target.value })} />
         </div>
-      </div>
+      )}
       <div className="space-y-1.5">
         <Label className="text-xs">Consilier</Label>
         <Input className="h-8" placeholder="Nume consilier" value={c.advisor_name} onChange={(e) => onChange({ advisor_name: e.target.value })} />
@@ -1176,21 +1235,25 @@ function ExtraClientCard({ idx, c, canRemove, onChange, onRemove }: {
 }
 
 function GapRedistributeDialog({ data, year, month, onClose }: {
-  data: { vin: string; gap: GapRow; sessions: WinSession[] } | null
+  // `gap` present → resolve a detected odometer gap. `boundary` present (with
+  // gap null) → document driver(s) at the uncovered month start/end (no gap row
+  // triggered it), anchored to the first/last session, with explicit odometers.
+  data: { vin: string; gap: GapRow | null; sessions: WinSession[]; boundary?: 'start' | 'end' } | null
   year: number
   month: number
   onClose: (changed: boolean) => void
 }) {
   const user = useAuthStore((s) => s.user)
-  const gap = data?.gap
+  const gap = data?.gap ?? null
+  const isBoundary = !!data?.boundary
   const gapDist = gap?.distance ?? 0
   const sessions = data?.sessions ?? []
   const upperIdx = gap ? sessions.findIndex((s) => s.id === gap.before.id) : -1
   const lowerIdx = gap ? sessions.findIndex((s) => s.id === gap.after.id) : -1
   const [mode, setMode] = useState<'absorb' | 'extra' | 'event'>('absorb')
+  const [bside, setBside] = useState<'start' | 'end'>('end')
   const [win, setWin] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
   const [segs, setSegs] = useState<Seg[]>([])
-  const [date, setDate] = useState('')
   const [clients, setClients] = useState<ExtraClient[]>([])
   // "Eveniment" tab: attribute the whole gap to a promo event (no client docs).
   // The event spans an interval Început → Sfârșit (Plecare → Sosire on the sheet),
@@ -1205,6 +1268,19 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
   const isoDay = (s: string) => (s ? new Date(s).toISOString().slice(0, 10) : '')
   const dFrom = gap ? isoDay(gap.dateFrom) : ''
   const dTo = gap ? isoDay(gap.dateTo) : ''
+
+  // Month bounds — the selectable date range when documenting a boundary drive.
+  const mm = String(month).padStart(2, '0')
+  const monthStart = `${year}-${mm}-01`
+  const monthEnd = `${year}-${mm}-${String(new Date(year, month, 0).getDate()).padStart(2, '0')}`
+  // Odometer anchors for boundary mode (sessions arrive KM-sorted).
+  const anchorEnd = sessions.length ? sessions[sessions.length - 1].kmEnd : null   // append after
+  const anchorStart = sessions.length ? sessions[0].kmStart : null                 // prepend before
+  // The date window offered per client: the gap span, or the whole month at a boundary.
+  const dateMin = isBoundary ? monthStart : dFrom
+  const dateMax = isBoundary ? monthEnd : dTo
+  const multiDay = !!dateMin && !!dateMax && dateMin !== dateMax
+  const kmMode: 'distance' | 'odometer' = isBoundary ? 'odometer' : 'distance'
 
   // The foaie period a gap belongs to — derived from the resolution date (which
   // is clamped between the two bounding sessions), falling back to the gap
@@ -1239,20 +1315,36 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
     })
   }
 
+  // One boundary client, anchored to the adjacent session (append→km_start pinned,
+  // prepend→km_end pinned); dated the month edge, widen-able into an interval.
+  const seedBoundaryClients = (side: 'start' | 'end') => {
+    const anchor = side === 'end' ? anchorEnd : anchorStart
+    setClients([emptyExtraClient(user?.name ?? '', side === 'end' ? monthEnd : monthStart,
+      side === 'end' ? { km_start: anchor != null ? String(anchor) : '' }
+                     : { km_end: anchor != null ? String(anchor) : '' })])
+  }
+
+  const resetKey = data ? (data.boundary ? `b-${data.boundary}-${data.vin}` : `g-${data.gap?.id}`) : ''
   useEffect(() => {
+    if (!data) return
+    setError('')
+    if (data.boundary) {
+      setMode('extra')
+      setBside(data.boundary)
+      seedBoundaryClients(data.boundary)
+      return
+    }
     if (!gap || upperIdx < 0 || lowerIdx < 0) return
     setMode('absorb')
     setWin({ start: upperIdx, end: lowerIdx })
     setSegs(buildSegs(upperIdx, lowerIdx))
-    setDate(dTo || dFrom)
-    setClients([emptyExtraClient(gap.distance, user?.name ?? '')])
+    setClients([emptyExtraClient(user?.name ?? '', dTo || dFrom, { km: String(gap.distance) })])
     setEventName('')
     setEventStart(dFrom || dTo)
     setEventEnd(dTo || dFrom)
     setEventDriver(user?.name ?? '')
-    setError('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data?.gap?.id])
+  }, [resetKey])
 
   const setWindow = (start: number, end: number) => { setWin({ start, end }); setSegs(buildSegs(start, end)) }
   // Add ANY session (need not be adjacent): the window grows to cover it and
@@ -1263,9 +1355,18 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
   // Back to the starting point: just the two neighbours, whole gap on the upper one.
   const resetAbsorb = () => setWindow(upperIdx, lowerIdx)
 
+  const switchBoundary = (side: 'start' | 'end') => { setBside(side); seedBoundaryClients(side); setError('') }
+
   const setClient = (i: number, patch: Partial<ExtraClient>) =>
     setClients((p) => p.map((c, idx) => (idx === i ? { ...c, ...patch } : c)))
-  const addClient = () => setClients((p) => (p.length >= 3 ? p : [...p, emptyExtraClient(0, user?.name ?? '')]))
+  const addClient = () => setClients((p) => {
+    if (p.length >= 3) return p
+    if (isBoundary && bside === 'end') // chain the next slice onto the previous end
+      return [...p, emptyExtraClient(user?.name ?? '', monthEnd, { km_start: p[p.length - 1]?.km_end || '' })]
+    if (isBoundary && bside === 'start')
+      return [...p, emptyExtraClient(user?.name ?? '', monthStart, { km_end: p[p.length - 1]?.km_start || '' })]
+    return [...p, emptyExtraClient(user?.name ?? '', dTo || dFrom)]
+  })
   const removeClient = (i: number) => setClients((p) => p.filter((_, idx) => idx !== i))
 
   const num = (s: string) => Number(s || 0)
@@ -1283,11 +1384,44 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
     for (const s of segs) { ranges.push({ from: cur, to: cur + s.km }); cur += s.km }
   }
 
+  // Boundary chain: contiguous KM across the 1–3 documented clients, connecting
+  // to the anchor session (append starts at its end / prepend ends at its start).
+  const boundaryChainError = (): string | null => {
+    const arr = clients.map((c) => ({ ks: num(c.km_start), ke: num(c.km_end) }))
+    if (!arr.length) return 'Adaugă cel puțin un client.'
+    if (bside === 'end') {
+      if (anchorEnd == null) return 'Nu există o sesiune de ancorat în această lună.'
+      if (arr[0].ks !== anchorEnd) return `Primul client trebuie să înceapă la ${anchorEnd} km (sfârșitul ultimei sesiuni).`
+    } else {
+      if (anchorStart == null) return 'Nu există o sesiune de ancorat în această lună.'
+      if (arr[arr.length - 1].ke !== anchorStart) return `Ultimul client trebuie să se termine la ${anchorStart} km (începutul primei sesiuni).`
+    }
+    for (let i = 1; i < arr.length; i++) if (arr[i].ks !== arr[i - 1].ke) return 'Kilometrajul trebuie să fie continuu între clienți.'
+    return null
+  }
+
+  const clientsDocumented = clients.every((c) => c.client_name.trim() && c.client_signature && c.date_from)
   const canSaveAbsorb = !!gap && segs.length >= 2
-  const canSaveExtra = !!gap && extraSum === gapDist &&
-    clients.every((c) => c.client_name.trim() && c.client_signature && num(c.km) > 0)
+  const canSaveExtra = !!gap && extraSum === gapDist && clientsDocumented && clients.every((c) => num(c.km) > 0)
   const canSaveEvent = !!gap && !!eventName.trim() && !!eventStart && !!eventEnd && eventStart <= eventEnd
-  const canSave = mode === 'absorb' ? canSaveAbsorb : mode === 'extra' ? canSaveExtra : canSaveEvent
+  const canSaveBoundary = isBoundary && clientsDocumented &&
+    clients.every((c) => num(c.km_end) > num(c.km_start)) && boundaryChainError() === null
+  const canSave = isBoundary ? canSaveBoundary
+    : mode === 'absorb' ? canSaveAbsorb : mode === 'extra' ? canSaveExtra : canSaveEvent
+
+  // Interval → { date: departure, end_date?: return } (end_date only when it
+  // spans days; reuses the event feature's return_datetime plumbing).
+  const dateFields = (c: ExtraClient) => ({
+    date: c.date_from,
+    end_date: c.date_to && c.date_to !== c.date_from ? c.date_to : undefined,
+  })
+  const docFields = (c: ExtraClient) => ({
+    advisor_name: c.advisor_name.trim() || undefined,
+    client_signature: c.client_signature,
+    driver_license_photo: c.license_photo || undefined,
+    driver_license_number: c.license_number.trim() || undefined,
+    driver_license_expiry: c.license_expiry.trim() || undefined,
+  })
 
   const saveAbsorb = async () => {
     if (!gap || !data || segs.length < 2) return
@@ -1311,31 +1445,53 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
     for (const c of clients) {
       if (!c.client_name.trim()) return setError('Fiecare client trebuie să aibă un nume.')
       if (num(c.km) <= 0) return setError('Fiecare client trebuie să aibă KM > 0.')
+      if (!c.date_from) return setError('Fiecare client trebuie să aibă o dată.')
       if (!c.client_signature) return setError('Fiecare client trebuie să semneze.')
     }
     if (extraSum !== gapDist) return setError(`Suma KM (${extraSum}) trebuie să fie ${gapDist} km.`)
     let cursor = gap.kmStart
     const contracts = clients.map((c) => {
       const km = num(c.km)
-      const item = {
-        date, client_name: c.client_name.trim(),
-        km_start: cursor, km_end: cursor + km,
-        advisor_name: c.advisor_name.trim() || undefined,
-        client_signature: c.client_signature,
-        driver_license_photo: c.license_photo || undefined,
-        driver_license_number: c.license_number.trim() || undefined,
-        driver_license_expiry: c.license_expiry.trim() || undefined,
-      }
+      const item = { ...dateFields(c), client_name: c.client_name.trim(), km_start: cursor, km_end: cursor + km, ...docFields(c) }
       cursor += km
       return item
     })
     setSaving(true); setError('')
     try {
-      const p = periodFor(date)
+      const p = periodFor(clients[0]?.date_from || dTo || dFrom)
       await foiParcursApi.redistributeGap(data.vin, p.year, p.month, contracts)
       onClose(true)
     } catch (e: any) {
       setError(e?.data?.error || e?.message || 'Redistribuirea a eșuat')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Boundary: document driver(s) at the uncovered month start/end via explicit
+  // odometer (contiguity-checked, anchored to the first/last session). Reuses the
+  // redistribute_gap endpoint — each client becomes a documented gap-fill session.
+  const saveBoundary = async () => {
+    if (!data) return
+    for (const c of clients) {
+      if (!c.client_name.trim()) return setError('Fiecare client trebuie să aibă un nume.')
+      if (!c.date_from) return setError('Fiecare client trebuie să aibă o dată.')
+      if (!(num(c.km_end) > num(c.km_start))) return setError('KM sosire trebuie să fie mai mare decât KM plecare.')
+      if (!c.client_signature) return setError('Fiecare client trebuie să semneze.')
+    }
+    const chainErr = boundaryChainError()
+    if (chainErr) return setError(chainErr)
+    const contracts = clients.map((c) => ({
+      ...dateFields(c), client_name: c.client_name.trim(),
+      km_start: num(c.km_start), km_end: num(c.km_end), ...docFields(c),
+    }))
+    setSaving(true); setError('')
+    try {
+      const p = periodFor(clients[0]?.date_from || monthEnd)
+      await foiParcursApi.redistributeGap(data.vin, p.year, p.month, contracts)
+      onClose(true)
+    } catch (e: any) {
+      setError(e?.data?.error || e?.message || 'Adăugarea a eșuat')
     } finally {
       setSaving(false)
     }
@@ -1368,13 +1524,56 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
     </div>
   )
 
+  // Shared "up to 3 documented drivers" editor — used by gap Client extra and by
+  // the month-boundary flow (kmMode switches the KM inputs; dates are per client).
+  // A render FUNCTION, not a nested component: rendering `<Component/>` defined
+  // inline would remount the inputs (and drop focus) on every keystroke.
+  const renderClientExtraList = (hint: React.ReactNode) => (
+    <>
+      {clients.map((c, i) => (
+        <ExtraClientCard
+          key={i} idx={i} c={c} canRemove={clients.length > 1}
+          onChange={(patch) => setClient(i, patch)} onRemove={() => removeClient(i)}
+          kmMode={kmMode} dateMin={dateMin} dateMax={dateMax} multiDay={multiDay}
+        />
+      ))}
+      {clients.length < 3 && (
+        <Button type="button" variant="outline" size="sm" className="h-7" onClick={addClient}>
+          <Plus className="mr-1 h-3.5 w-3.5" /> Adaugă client
+        </Button>
+      )}
+      <p className="text-[11px] text-muted-foreground">{hint}</p>
+    </>
+  )
+
   return (
     <Dialog open={!!data} onOpenChange={(o) => { if (!o) onClose(false) }}>
       <DialogContent className="w-[95vw] max-w-[1080px] sm:max-w-[1080px] max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Rezolvă gap</DialogTitle>
+          <DialogTitle>{isBoundary ? 'Adaugă km lipsă (început/sfârșit de lună)' : 'Rezolvă gap'}</DialogTitle>
         </DialogHeader>
-        {gap && (
+
+        {/* ── Boundary: document driver(s) at the uncovered month start/end ── */}
+        {isBoundary && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" variant={bside === 'start' ? 'default' : 'outline'} size="sm" className="h-8"
+                onClick={() => switchBoundary('start')}>Început de lună</Button>
+              <Button type="button" variant={bside === 'end' ? 'default' : 'outline'} size="sm" className="h-8"
+                onClick={() => switchBoundary('end')}>Sfârșit de lună</Button>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              {sessions.length === 0
+                ? 'Nu există sesiuni în această lună de ancorat.'
+                : bside === 'end'
+                  ? <>Continuă odometrul de la <b>{anchorEnd} km</b> (sfârșitul ultimei sesiuni) în sus.</>
+                  : <>Se oprește la <b>{anchorStart} km</b> (începutul primei sesiuni); introdu KM de plecare mai jos.</>}
+            </p>
+            {renderClientExtraList(<>Clienții acoperă km-ii în ordine, {bside === 'end' ? 'pornind de la' : 'terminând la'} ancora sesiunii; kilometrajul trebuie să fie continuu.</>)}
+          </div>
+        )}
+
+        {gap && !isBoundary && (
           <>
             <p className="text-sm text-muted-foreground">
               {gap.distance} km nejustificați ({gap.kmStart} → {gap.kmEnd}) · între {dFrom} și {dTo}
@@ -1468,27 +1667,10 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
 
               {/* ── Client extra: up to 3 documented drivers tiling the gap ── */}
               <TabsContent value="extra" className="space-y-3 pt-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Data</Label>
-                    <Input type="date" min={dFrom} max={dTo} className="h-8 w-[160px]" value={date} onChange={(e) => setDate(e.target.value)} />
-                  </div>
+                <div className="flex items-center justify-end gap-3">
                   <Tally sum={extraSum} />
                 </div>
-                {clients.map((c, i) => (
-                  <ExtraClientCard
-                    key={i} idx={i} c={c} canRemove={clients.length > 1}
-                    onChange={(patch) => setClient(i, patch)} onRemove={() => removeClient(i)}
-                  />
-                ))}
-                {clients.length < 3 && (
-                  <Button type="button" variant="outline" size="sm" className="h-7" onClick={addClient}>
-                    <Plus className="mr-1 h-3.5 w-3.5" /> Adaugă client
-                  </Button>
-                )}
-                <p className="text-[11px] text-muted-foreground">
-                  Clienții acoperă gap-ul în ordine ({gap.kmStart} → {gap.kmEnd}); suma KM trebuie să fie {gap.distance}.
-                </p>
+                {renderClientExtraList(<>Clienții acoperă gap-ul în ordine ({gap.kmStart} → {gap.kmEnd}); suma KM trebuie să fie {gap.distance}.</>)}
               </TabsContent>
 
               {/* ── Eveniment: attribute the whole gap to one promo event ── */}
@@ -1541,7 +1723,7 @@ function GapRedistributeDialog({ data, year, month, onClose }: {
         {error && <div className="text-sm text-red-600">{error}</div>}
         <DialogFooter>
           <Button variant="outline" onClick={() => onClose(false)} disabled={saving}>Anulează</Button>
-          <Button onClick={mode === 'absorb' ? saveAbsorb : mode === 'extra' ? saveExtra : saveEvent} disabled={saving || !canSave}>
+          <Button onClick={isBoundary ? saveBoundary : mode === 'absorb' ? saveAbsorb : mode === 'extra' ? saveExtra : saveEvent} disabled={saving || !canSave}>
             {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
             Salvează
           </Button>
