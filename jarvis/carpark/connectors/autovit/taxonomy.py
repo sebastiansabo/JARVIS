@@ -205,7 +205,7 @@ def _label_to_slug(label: str) -> str:
 # Advert params that must be present (truthy) for a publish attempt to
 # Autovit to be worth sending. Not exhaustive of everything Autovit requires
 # server-side — just the fields CarPark can check locally before calling out.
-REQUIRED_PARAMS = ("make", "model", "year", "mileage", "fuel_type", "price", "vin")
+REQUIRED_PARAMS = ("make", "model", "year", "mileage", "fuel_type", "price", "body_type", "color")
 
 
 def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[str, Any]:
@@ -250,6 +250,10 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[
     for k, val in (vehicle.get("equipment") or {}).items():
         if val is True:
             params[k] = "1"
+    # Create-only conditional param Autovit requires for cars: not in the
+    # category "required" list, but POST /account/adverts rejects its absence
+    # ("params.is_imported_car ... obligatoriu"). Verified live 2026-09-09.
+    params.setdefault("is_imported_car", "0")
 
     advert: Dict[str, Any] = {
         "title": vehicle.get("listing_title")
@@ -257,15 +261,19 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[
         "description": vehicle.get("listing_description") or "",
         "category_id": CARS_CATEGORY_ID,
         "new_used": "new" if vehicle.get("state") == "Nou" else "used",
+        "advertiser_type": cfg.get("advertiser_type", "business"),
         "params": params,
     }
-    if cfg.get("city_id"):
-        advert["city_id"] = cfg["city_id"]
-    if cfg.get("region_id"):
-        advert["region_id"] = cfg["region_id"]
-    if cfg.get("contact_person") or cfg.get("phone"):
-        advert["contact"] = {"person": cfg.get("contact_person", ""),
-                             "phone_numbers": [cfg["phone"]] if cfg.get("phone") else []}
+    # Location + contact come from the account config; the publish route fills
+    # these from the account's own existing adverts when not explicitly set.
+    for key in ("region_id", "city_id", "district_id", "coordinates"):
+        if cfg.get(key) is not None:
+            advert[key] = cfg[key]
+    person = cfg.get("contact_person")
+    phones = cfg.get("phones") or ([cfg["phone"]] if cfg.get("phone") else [])
+    if person or phones:
+        # Autovit expects `contact.phones` (array), not `phone_numbers`.
+        advert["contact"] = {"person": person or "", "phones": phones}
     return advert
 
 
