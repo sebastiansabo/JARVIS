@@ -237,6 +237,26 @@ def test_redistribute_advisor_falls_back_to_user(fake_repos):
     assert params[-3] is None    # driver_license_photo
 
 
+def test_redistribute_client_extra_interval_persists_return(fake_repos):
+    """A multi-day client extra carries end_date → the row's return_datetime is
+    stamped 18:00 (departure stays 10:00 on `date`), so the route sheet's
+    'sosire' shows the real return date. Reuses the event feature's plumbing."""
+    item = {'date': '2026-07-14', 'end_date': '2026-07-18',
+            'client_name': 'Ion', 'km_start': 1050, 'km_end': 1080}
+    rss.redistribute_gap('VIN1', 2026, 7, [item], user_name='U')
+    _, params = fake_repos.executed[0]
+    assert '2026-07-14 10:00:00' in params   # departure
+    assert '2026-07-18 18:00:00' in params   # return (from end_date)
+
+
+def test_redistribute_client_extra_no_end_date_leaves_return_null(fake_repos):
+    item = {'date': '2026-07-14', 'client_name': 'Ion', 'km_start': 1050, 'km_end': 1080}
+    rss.redistribute_gap('VIN1', 2026, 7, [item], user_name='U')
+    _, params = fake_repos.executed[0]
+    assert '2026-07-14 10:00:00' in params
+    assert '2026-07-14 18:00:00' not in params   # no end_date → return_datetime NULL
+
+
 # ── route wiring ───────────────────────────────────────────────────────────
 
 @pytest.fixture

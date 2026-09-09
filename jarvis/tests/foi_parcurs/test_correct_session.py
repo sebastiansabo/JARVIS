@@ -76,6 +76,9 @@ def _stub_side_effects(monkeypatch):
     # per-test.
     monkeypatch.setattr(contracts_mod._fp_repo, 'revive_to_active_if_window_open', lambda id: None)
     monkeypatch.setattr(contracts_mod, 'log_history', lambda *a, **k: None)
+    # PDF-cache invalidation issues an UPDATE; keep it off the DB by default
+    # (the invalidation test overrides this with a capturing stub).
+    monkeypatch.setattr(contracts_mod._fp_repo, 'execute', lambda *a, **k: 1)
 
 
 def test_correct_requires_authentication(client):
@@ -185,3 +188,21 @@ def test_correct_dates_happy_path(client, monkeypatch):
                       headers=_hdr('admin'))
     assert resp.status_code == 200
     assert captured == {'departure_datetime': '2026-08-06T09:00', 'return_datetime': '2026-08-06T11:00'}
+
+
+def test_correct_invalidates_cached_pdfs(client, monkeypatch):
+    """After a correction the cached legal/custom PDFs are dropped so the next
+    download regenerates from the corrected data — otherwise the Legal contract
+    keeps printing the pre-correction date/km from the stale on-disk file."""
+    monkeypatch.setattr(contracts_mod._fp_repo, 'get_contract_by_id', lambda id: _contract())
+    monkeypatch.setattr(contracts_mod._fp_repo, 'correct_session',
+                        lambda cid, fields, modified_by=None: _contract())
+    execs = []
+    monkeypatch.setattr(contracts_mod._fp_repo, 'execute',
+                        lambda sql, params=None, **k: execs.append((sql, params)))
+    resp = client.put('/api/foi-parcurs/contracts/1/correct',
+                      json={'departure_datetime': '2026-08-03T08:00'}, headers=_hdr('admin'))
+    assert resp.status_code == 200
+    inval = [(s, p) for (s, p) in execs if 'pdf_legal_path' in s and 'NULL' in s.upper()]
+    assert inval, f'expected a PDF-cache invalidation UPDATE, got {execs}'
+    assert inval[0][1] == (1,)
