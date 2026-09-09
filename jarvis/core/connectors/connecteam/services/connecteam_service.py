@@ -47,9 +47,18 @@ def _hm_to_minutes(val):
 
 
 def _leave_hours(answers):
-    """Leave duration in hours. Preferred: computed from the start/end times, so
-    it is robust to the display-formatted duration field ("1 h", "50 min").
-    Falls back to a legacy numeric f_bi_hours (older/Connecteam submissions)."""
+    """Leave duration in NET work-hours.
+
+    The canonical JARVIS flow stores the authoritative net duration in
+    f_bi_duration_hours and bakes the lunch break into f_bi_end_time (08:00 + 8h
+    work + 1h lunch = 17:00). Recomputing from the raw start/end span would
+    re-add the lunch and overstate a full day as 9h — so the stored net duration
+    wins when present. Legacy/Connecteam rows carry no net duration (and no lunch
+    baked into the end time), so they fall back to the span, then to a legacy
+    numeric f_bi_hours."""
+    dur = _safe_float(answers.get('f_bi_duration_hours'))
+    if dur is not None:
+        return dur
     s = _hm_to_minutes(answers.get('f_bi_start_time'))
     e = _hm_to_minutes(answers.get('f_bi_end_time'))
     if s is not None and e is not None and e > s:
