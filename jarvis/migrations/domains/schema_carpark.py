@@ -618,6 +618,23 @@ def create_schema_carpark(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vl_platform ON carpark_vehicle_listings(platform_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vl_status ON carpark_vehicle_listings(status)')
 
+    # --- Shopify connector: CarPark<->Shopify taxonomy value mapping ---
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_shopify_taxonomy_map (
+            id                    SERIAL PRIMARY KEY,
+            dimension             VARCHAR(40) NOT NULL,
+            source_value          TEXT        NOT NULL,
+            target_gid            TEXT,
+            target_label          TEXT,
+            shopify_attribute_gid TEXT,
+            is_active             BOOLEAN DEFAULT TRUE,
+            updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_by            INTEGER,
+            UNIQUE(dimension, source_value)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cstm_dimension ON carpark_shopify_taxonomy_map(dimension)')
+
     # ── Pricing History ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS carpark_pricing_history (

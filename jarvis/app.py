@@ -171,6 +171,8 @@ def _register_blueprints(flask_app: Flask):
 
     from carpark.connectors.autofox import autofox_bp
     flask_app.register_blueprint(autofox_bp)
+    from carpark.connectors.shopify import shopify_bp
+    flask_app.register_blueprint(shopify_bp)
 
     from core.checkin import checkin_bp
     flask_app.register_blueprint(checkin_bp)
