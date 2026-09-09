@@ -50,6 +50,34 @@ def test_export_format_defaults_to_csv_for_unknown_or_blank():
         assert (mime, ext, builder) == ('text/csv', 'csv', build_csv)
 
 
+# ── _to_invoice_config_pairs: valuta = invoice due date (data scadență), fallback invoice_date ──
+
+def _fake_effective_konto(*a, **k):
+    return {'konto': {'konto_debit': '628701', 'konto_credit': '40102793', 'klient': '140',
+                      'steuercode': '621', 'belegart': 'JC'}}
+
+
+def test_pairs_use_due_date_for_valuta_when_present(monkeypatch):
+    import core.suppliers.routes as r
+    monkeypatch.setattr(r._repo, 'get_effective_konto', _fake_effective_konto)
+    rows = [{'supplier': 'MEDLINE', 'supplier_id': 44, 'invoice_number': 'N1',
+             'invoice_date': '2026-08-31', 'due_date': '2026-09-30',
+             'net_value': 100, 'invoice_value': 119, 'subtract_vat': True}]
+    pairs = r._to_invoice_config_pairs(rows, 11, [])
+    assert pairs[0][0]['due_date'] == '2026-09-30'
+
+
+def test_pairs_fall_back_to_invoice_date_without_due_date(monkeypatch):
+    import core.suppliers.routes as r
+    monkeypatch.setattr(r._repo, 'get_effective_konto', _fake_effective_konto)
+    for due in (None, ''):
+        rows = [{'supplier': 'X', 'supplier_id': 1, 'invoice_number': 'N2',
+                 'invoice_date': '2026-08-31', 'due_date': due,
+                 'net_value': 100, 'invoice_value': 119, 'subtract_vat': True}]
+        pairs = r._to_invoice_config_pairs(rows, 11, [])
+        assert pairs[0][0]['due_date'] == '2026-08-31'
+
+
 # ── _resolve_amounts: net/gross for EuroFib, incl. whole-value (no-VAT) invoices ──
 
 def test_resolve_amounts_vat_invoice_uses_net_and_gross():
