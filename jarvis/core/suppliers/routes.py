@@ -86,9 +86,10 @@ def _to_invoice_config_pairs(rows, company_id, skipped):
             'supplier_id': row.get('supplier_id'),
             'invoice_number': row.get('invoice_number'),
             'invoice_date': row.get('invoice_date'),
-            # `invoices` has no due_date column (only efactura_invoices does) — fall back to
-            # invoice_date as the "valuta" value date until a real due_date is plumbed through.
-            'due_date': row.get('invoice_date'),
+            # `valuta` = invoice due date (data scadență), sourced from the linked e-Factura
+            # (efactura_invoices.due_date via list_budgeted_invoices). Parsed/manual invoices with
+            # no e-Factura link have no due date → fall back to invoice_date.
+            'due_date': row.get('due_date') or row.get('invoice_date'),
             'net_amount': net,
             'vat_amount': vat,
             'gross_amount': gross,

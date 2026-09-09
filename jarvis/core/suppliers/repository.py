@@ -282,6 +282,7 @@ class SupplierMasterRepository(BaseRepository):
             SELECT i.id, i.supplier, i.invoice_number, i.invoice_date, i.net_value,
                    i.invoice_value, i.value_ron, i.value_eur, i.currency, i.status,
                    i.subtract_vat,
+                   MAX(ef.due_date) AS due_date,
                    i.line_items->0->>'description' AS line_description,
                    MIN(s.id) AS supplier_id
             FROM invoices i
@@ -294,6 +295,8 @@ class SupplierMasterRepository(BaseRepository):
                 )
             )
             JOIN supplier_konto_config kc ON kc.supplier_id = s.id AND kc.company_id = %s
+            -- e-Factura source carries the due date (data scadență) → valuta; null for parsed/manual
+            LEFT JOIN efactura_invoices ef ON ef.jarvis_invoice_id = i.id
             WHERE lower(i.status) = lower(%s)
               AND i.deleted_at IS NULL
               AND i.invoice_date BETWEEN %s AND %s
