@@ -615,6 +615,11 @@ def _insert_gap_fill(vin, year, month, ctx, item, user_name) -> int:
     client = (item.get('client_name') or '').strip()
     date = (item.get('date') or '').strip()
     dep = f'{date} 10:00:00' if date else None
+    # Multi-day client extra: `date_to` is the return date → stamp return_datetime
+    # 18:00 (after the 10:00 departure) so the route sheet's 'sosire' shows it.
+    # Absent → NULL, and 'sosire' falls back to the departure date (same-day trip).
+    date_to = (item.get('date_to') or '').strip()
+    ret = f'{date_to} 18:00:00' if date_to else None
     route_type = 'TD'  # Comodat deprecated (2026-09): gap-fill sessions are always TD
     # Optional "client extra" documentation — advisor (consilier), the signed
     # client signature and the driver-license photo/number/expiry.
@@ -630,20 +635,21 @@ def _insert_gap_fill(vin, year, month, ctx, item, user_name) -> int:
               km_start, km_end, distance_km, registration_number,
               fuel_tank_capacity_liters, fuel_gauge_start_level, fuel_gauge_end_level,
               fuel_start_liters, fuel_end_liters, fuel_consumed_liters,
-              status, advisor_name, client_name, itinerary, departure_datetime, source,
+              status, advisor_name, client_name, itinerary, departure_datetime, return_datetime, source,
               client_signature, driver_license_photo, driver_license_number, driver_license_expiry)
            VALUES (%s,%s,%s,%s,%s,%s,0,%s,%s,%s,%s,%s,'1','1',0,0,0,
-                   'COMPLETED',%s,%s,'',%s,'gap-fill',%s,%s,%s,%s)
+                   'COMPLETED',%s,%s,'',%s,%s,'gap-fill',%s,%s,%s,%s)
            ON CONFLICT (contract_id) DO UPDATE SET
              km_start=EXCLUDED.km_start, km_end=EXCLUDED.km_end,
              distance_km=EXCLUDED.distance_km, client_name=EXCLUDED.client_name,
-             departure_datetime=EXCLUDED.departure_datetime, route_type=EXCLUDED.route_type,
+             departure_datetime=EXCLUDED.departure_datetime, return_datetime=EXCLUDED.return_datetime,
+             route_type=EXCLUDED.route_type,
              advisor_name=EXCLUDED.advisor_name, client_signature=EXCLUDED.client_signature,
              driver_license_photo=EXCLUDED.driver_license_photo,
              driver_license_number=EXCLUDED.driver_license_number,
              driver_license_expiry=EXCLUDED.driver_license_expiry''',
         (cid, vin, company_id, year, month, route_type, ks, ke, dist, reg, tank,
-         advisor, client, dep, client_sig, dl_photo, dl_number, dl_expiry),
+         advisor, client, dep, ret, client_sig, dl_photo, dl_number, dl_expiry),
     )
     return 1
 

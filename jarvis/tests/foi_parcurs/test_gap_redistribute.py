@@ -237,6 +237,31 @@ def test_redistribute_advisor_falls_back_to_user(fake_repos):
     assert params[-3] is None    # driver_license_photo
 
 
+# ── date interval: date_to → return_datetime (multi-day client extra) ────────
+
+def test_redistribute_persists_return_datetime(fake_repos):
+    """A multi-day client extra carries date_to → the row's return_datetime is
+    stamped 18:00 on date_to (departure stays 10:00 on `date`), so the route
+    sheet's 'sosire' column shows the real return date."""
+    item = {'date': '2026-07-14', 'date_to': '2026-07-18',
+            'client_name': 'Ion', 'km_start': 1050, 'km_end': 1080}
+    rss.redistribute_gap('VIN1', 2026, 7, [item], user_name='U')
+    _, params = fake_repos.executed[0]
+    # departure_datetime at index 13, return_datetime immediately after at 14
+    assert params[13] == '2026-07-14 10:00:00'
+    assert params[14] == '2026-07-18 18:00:00'
+
+
+def test_redistribute_no_date_to_leaves_return_null(fake_repos):
+    """A single-day client extra (no date_to) leaves return_datetime NULL — the
+    route sheet then falls back to the departure date for 'sosire'."""
+    item = {'date': '2026-07-14', 'client_name': 'Ion', 'km_start': 1050, 'km_end': 1080}
+    rss.redistribute_gap('VIN1', 2026, 7, [item], user_name='U')
+    _, params = fake_repos.executed[0]
+    assert params[13] == '2026-07-14 10:00:00'
+    assert params[14] is None
+
+
 # ── route wiring ───────────────────────────────────────────────────────────
 
 @pytest.fixture
