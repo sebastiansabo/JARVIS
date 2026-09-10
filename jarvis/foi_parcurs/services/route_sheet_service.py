@@ -179,6 +179,7 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
             'make': veh.get('mark') or '',
             'model': veh.get('model') or '',
             'fuel_type': veh.get('fuel_type') or '',
+            'brand': veh.get('brand') or '',
             'category': veh.get('category') or '',
             'registration_number': veh.get('registration_number') or (sessions[0].get('registration_number') if sessions else '') or '',
         },
@@ -385,10 +386,21 @@ def _fuel_section_html(unit: str, norma, entries: list, km) -> str:
     # proxy for real consumption; the per-session fuel_consumed_liters column is
     # not tracked by this flow so it can't drive it.
     consum_efectiv = total
+    # Deviație = how far the fuel actually bought strays from the normed
+    # consumption for the km driven. Threshold ±10% per vehicle-month; beyond it
+    # the row turns red (possible over-fuelling / anomaly).
+    dev_pct = round((consum_efectiv - consum_normat) / consum_normat * 100, 1) if consum_normat else None
+    if dev_pct is None:
+        dev_html = '—'
+    else:
+        _color = '#1a7f37' if abs(dev_pct) <= 10 else '#b3261e'
+        _weight = '400' if abs(dev_pct) <= 10 else '700'
+        dev_html = f'<span style="color:{_color};font-weight:{_weight}">{dev_pct:+g}%</span> (prag ≤ ±10%)'
     kv = [
         f'<tr><td class="k">Normă consum</td><td>{norma if norma is not None else "—"} {unit}/100 km</td></tr>',
         f'<tr><td class="k">Consum normat</td><td>{consum_normat if consum_normat is not None else "—"} {unit}</td></tr>',
         f'<tr><td class="k">Consum efectiv</td><td>{consum_efectiv:g} {unit}</td></tr>',
+        f'<tr><td class="k">Deviație (cumpărat vs normat)</td><td>{dev_html}</td></tr>',
     ]
     kv.append(f'<tr><td class="k">Cost total {title.lower()}</td><td>{cost:g} lei</td></tr>')
     kv.append(f'<tr><td class="k">Preț mediu</td><td>{pret if pret is not None else "—"} lei/{unit}</td></tr>')
@@ -423,6 +435,14 @@ def _xlsx_fuel_section(ws, start_row, unit, norma, entries, km, head, fill, bold
     ws.cell(row=row + 2, column=1, value=f'Consum normat ({unit})'); ws.cell(row=row + 2, column=2, value=consum_normat)
     row += 3
     ws.cell(row=row, column=1, value=f'Consum efectiv ({unit})'); ws.cell(row=row, column=2, value=consum_efectiv); row += 1
+    # Deviație cumpărat vs normat (prag ±10%); red when exceeded.
+    dev_pct = round((consum_efectiv - consum_normat) / consum_normat * 100, 1) if consum_normat else None
+    ws.cell(row=row, column=1, value='Deviație cumpărat vs normat (%)')
+    _dev_cell = ws.cell(row=row, column=2, value=dev_pct)
+    if dev_pct is not None and abs(dev_pct) > 10:
+        from openpyxl.styles import Font as _Font
+        _dev_cell.font = _Font(bold=True, color='B3261E')
+    row += 1
     ws.cell(row=row, column=1, value=f'Cost total {title.lower()} (lei)'); ws.cell(row=row, column=2, value=cost); row += 1
     ws.cell(row=row, column=1, value=f'Preț mediu (lei/{unit})'); ws.cell(row=row, column=2, value=pret); row += 2
     for col, h in enumerate([f'Data {op}', 'Bon fiscal', 'kWh' if is_e else 'Litri', 'Valoare (lei)'], start=1):
@@ -551,7 +571,9 @@ table.alim {{ flex:1; margin-top:0; }}
       <td class="k">Nr. înmatriculare</td><td>{e(v['registration_number'] or '—')}</td></tr>
   <tr><td class="k">Vehicul</td><td>{e((v['make'] + ' ' + v['model']).strip() or '—')}</td>
       <td class="k">VIN</td><td>{e(v['vin'])}</td></tr>
-  <tr><td class="k">Categorie</td><td colspan="3">{e(v.get('category') or '—')}</td></tr>
+  <tr><td class="k">Categorie</td><td>{e(v.get('category') or '—')}</td>
+      <td class="k">Combustibil</td><td>{e(v.get('fuel_type') or '—')}</td></tr>
+  <tr><td class="k">Brand / Departament</td><td colspan="3">{e(v.get('brand') or '—')}</td></tr>
 </table>
 <table class="trips">
   <thead><tr>
@@ -1074,8 +1096,8 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
 
     ws['A1'] = 'Foaie de Parcurs'; ws['A1'].font = Font(bold=True, size=14)
     ws['A2'] = _xl_safe(f"{v['make']} {v['model']}".strip()); ws['A3'] = _xl_safe(f"VIN: {v['vin']}")
-    ws['A4'] = _xl_safe(f"Nr. înmatriculare: {v['registration_number'] or '—'}  ·  Categorie: {v.get('category') or '—'}")
-    ws['A5'] = _xl_safe(f"Companie: {data['company']['name'] or '—'}")
+    ws['A4'] = _xl_safe(f"Nr. înmatriculare: {v['registration_number'] or '—'}  ·  Categorie: {v.get('category') or '—'}  ·  Combustibil: {v.get('fuel_type') or '—'}")
+    ws['A5'] = _xl_safe(f"Companie: {data['company']['name'] or '—'}  ·  Brand / Departament: {v.get('brand') or '—'}")
     ws['A6'] = _xl_safe(f"Perioada: {data['period']['label']}")
 
     headers = ['Plecare', 'Sosire', 'Locul / Scopul', 'Șofer', 'KM start', 'KM end', 'KM parcurși']
