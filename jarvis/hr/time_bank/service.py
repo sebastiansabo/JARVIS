@@ -11,10 +11,11 @@ logger = logging.getLogger('jarvis.hr.time_bank.service')
 AUTO_APPROVED_TYPES = ('T0', 'marketing_event', 'co_conversion', 'connecteam',
                        'leave_permit', 'leave_permit_reversal',
                        'leave_permit_event', 'leave_permit_event_reversal')
-# Leave debits skip the pooled insufficient-balance guard: personal leave may go
-# negative by design, and event leave is capped against the EVENT pool upstream
-# (form_service) — not the pooled balance the guard would check.
-_SKIP_BALANCE_CHECK_TYPES = ('connecteam', 'leave_permit', 'leave_permit_event')
+# Debits that skip the pooled insufficient-balance guard: personal leave may go
+# negative by design (`leave_permit`), and `connecteam` imports run before T0 is
+# set. Event-pool debits are NOT skipped — they are capped at the event balance
+# (see `debit`) so the hard-capped event pool can never go negative.
+_SKIP_BALANCE_CHECK_TYPES = ('connecteam', 'leave_permit')
 
 
 class TimeBankService:
@@ -76,14 +77,31 @@ class TimeBankService:
 
         status = 'approved' if tx_type in AUTO_APPROVED_TYPES else 'pending'
 
-        # Only check balance for auto-approved debits (pending ones don't affect balance yet)
-        # Skip balance check for system imports (connecteam) — T0 may not be set yet
-        if status == 'approved' and tx_type not in _SKIP_BALANCE_CHECK_TYPES:
-            balance = self._available_for(user_id, tx_type)
-            if balance < amount:
-                raise ValueError(
-                    f'Insufficient balance: {balance}h available, {amount}h requested'
-                )
+        # Balance guards apply only to auto-approved debits (pending ones don't move
+        # the balance until approved — see `approve`).
+        if status == 'approved':
+            if tx_type in EVENT_TX_TYPES:
+                # The event pool is a hard-capped perk and must never go negative.
+                # Submission-time validation (form_service) checks the cap, but the
+                # pool can drop between submit and this auto-approved debit, so cap
+                # here as the last line of defence. We charge what's available rather
+                # than raising, because the approval is already committed upstream
+                # (entity_form.handle_approved) and swallows debit errors.
+                avail = self.repo.get_event_balance(user_id)
+                if avail <= 0:
+                    logger.warning('Event debit skipped — pool empty: user=%s type=%s requested=%sh',
+                                   user_id, tx_type, amount)
+                    return None
+                if amount > avail:
+                    logger.warning('Event debit capped %sh→%sh (pool limit): user=%s type=%s',
+                                   amount, avail, user_id, tx_type)
+                    amount = avail
+            elif tx_type not in _SKIP_BALANCE_CHECK_TYPES:
+                balance = self.repo.get_balance(user_id)
+                if balance < amount:
+                    raise ValueError(
+                        f'Insufficient balance: {balance}h available, {amount}h requested'
+                    )
 
         row = self.repo.insert_transaction(
             user_id=user_id,
