@@ -42,7 +42,9 @@ def _rows():
          'itinerary': 'centru', 'client_name': 'Ion', 'advisor_name': 'Ana'},
         {**base, 'id': 202, 'is_internal': True, 'departure_datetime': '2026-08-06T10:00:00', 'created_at': '2026-08-06T10:00:00',
          'km_start': 130, 'km_end': 180, 'distance_km': 50, 'source': 'internal',
-         'itinerary': 'Service Brașov', 'client_name': '', 'advisor_name': 'Vasile Mecanic'},
+         # Stray client_name on an internal log — the driver shown must still be
+         # the advisor (driving user), matching the UI's Client column.
+         'itinerary': 'Service Brașov', 'client_name': 'Seba', 'advisor_name': 'Vasile Mecanic'},
         {**base, 'id': 203, 'is_internal': True, 'departure_datetime': '2026-08-07T10:00:00', 'created_at': '2026-08-07T10:00:00',
          'km_start': 180, 'km_end': 200, 'distance_km': 20, 'source': 'internal',
          'itinerary': '', 'client_name': '', 'advisor_name': 'Gheo'},
@@ -72,6 +74,13 @@ def test_internal_drive_uses_comment_verbatim(agg):
     assert t['traseu'] == 'Service Brașov'
     assert t['is_td'] is False
     assert t['driver'] == 'Vasile Mecanic'
+
+
+def test_internal_driver_is_advisor_not_stray_client_name(agg):
+    # id 202 is internal with a stray client_name 'Seba'; the Șofer shown on the
+    # route sheet must be the driving user (advisor_name), not 'Seba' — matching
+    # the UI's Client column (clientCell).
+    assert _by_km(rss.aggregate_month('V', 2026, 8), 130)['driver'] == 'Vasile Mecanic'
 
 
 def test_internal_drive_without_comment_falls_back(agg):
