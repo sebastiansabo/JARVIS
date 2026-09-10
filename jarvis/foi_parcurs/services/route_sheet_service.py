@@ -393,9 +393,12 @@ def _fuel_section_html(unit: str, norma, entries: list, km) -> str:
     if dev_pct is None:
         dev_html = '—'
     else:
-        _color = '#1a7f37' if abs(dev_pct) <= 10 else '#b3261e'
-        _weight = '400' if abs(dev_pct) <= 10 else '700'
-        dev_html = f'<span style="color:{_color};font-weight:{_weight}">{dev_pct:+g}%</span> (prag ≤ ±10%)'
+        # Alert (red) only on OVER-consumption — bought >10% MORE than normed
+        # (possible over-fuelling). Buying less than normed is fine → stays green.
+        _over = dev_pct > 10
+        _color = '#b3261e' if _over else '#1a7f37'
+        _weight = '700' if _over else '400'
+        dev_html = f'<span style="color:{_color};font-weight:{_weight}">{dev_pct:+g}%</span> (prag ≤ +10%)'
     kv = [
         f'<tr><td class="k">Normă consum</td><td>{norma if norma is not None else "—"} {unit}/100 km</td></tr>',
         f'<tr><td class="k">Consum normat</td><td>{consum_normat if consum_normat is not None else "—"} {unit}</td></tr>',
@@ -435,11 +438,11 @@ def _xlsx_fuel_section(ws, start_row, unit, norma, entries, km, head, fill, bold
     ws.cell(row=row + 2, column=1, value=f'Consum normat ({unit})'); ws.cell(row=row + 2, column=2, value=consum_normat)
     row += 3
     ws.cell(row=row, column=1, value=f'Consum efectiv ({unit})'); ws.cell(row=row, column=2, value=consum_efectiv); row += 1
-    # Deviație cumpărat vs normat (prag ±10%); red when exceeded.
+    # Deviație cumpărat vs normat; red ALERT only on over-consumption (>+10%).
     dev_pct = round((consum_efectiv - consum_normat) / consum_normat * 100, 1) if consum_normat else None
     ws.cell(row=row, column=1, value='Deviație cumpărat vs normat (%)')
     _dev_cell = ws.cell(row=row, column=2, value=dev_pct)
-    if dev_pct is not None and abs(dev_pct) > 10:
+    if dev_pct is not None and dev_pct > 10:
         from openpyxl.styles import Font as _Font
         _dev_cell.font = _Font(bold=True, color='B3261E')
     row += 1
