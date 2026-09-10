@@ -186,6 +186,18 @@ export default function InternalSessionForm({
     if (v?.odometer_km != null) setKmStart(String(v.odometer_km))
   }
 
+  // A departure in the future can't be a live drive — a car that hasn't left
+  // yet isn't "în desfășurare". Such a session must be PLANNED, so we force the
+  // "Planifică" mode (and lock out "Începe acum") whenever the picked departure
+  // is ahead of now. Mirrors the backend guard in api_submit_test_drive.
+  const departureIsFuture = useMemo(
+    () => !!departure && new Date(departure).getTime() > Date.now(),
+    [departure],
+  )
+  useEffect(() => {
+    if (departureIsFuture && !planning) setPlanning(true)
+  }, [departureIsFuture]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const validationError = quickSessionError({ vin, driver, departure, ret, kmStart }, { planning })
   const fieldErr = (key: string) => attempted && validationError === key
 
@@ -297,22 +309,34 @@ export default function InternalSessionForm({
             {[
               { v: false, label: 'Începe acum' },
               { v: true, label: 'Planifică' },
-            ].map(({ v, label }) => (
-              <button
-                key={String(v)}
-                type="button"
-                data-testid={v ? 'internal-mode-plan' : 'internal-mode-now'}
-                aria-pressed={planning === v}
-                onClick={() => setPlanning(v)}
-                className={cn(
-                  'flex-1 rounded-md py-1.5 text-xs font-medium transition-colors',
-                  planning === v ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {label}
-              </button>
-            ))}
+            ].map(({ v, label }) => {
+              // "Începe acum" is a live handover — it makes no sense for a future
+              // departure, so lock it out when the date is ahead of now.
+              const disabled = v === false && departureIsFuture
+              return (
+                <button
+                  key={String(v)}
+                  type="button"
+                  disabled={disabled}
+                  data-testid={v ? 'internal-mode-plan' : 'internal-mode-now'}
+                  aria-pressed={planning === v}
+                  onClick={() => setPlanning(v)}
+                  className={cn(
+                    'flex-1 rounded-md py-1.5 text-xs font-medium transition-colors',
+                    planning === v ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground',
+                    disabled && 'opacity-40 cursor-not-allowed hover:text-muted-foreground',
+                  )}
+                >
+                  {label}
+                </button>
+              )
+            })}
           </div>
+          {departureIsFuture && (
+            <p className="text-xs text-muted-foreground">
+              Data plecării este în viitor — sesiunea se planifică (se pornește la plecare).
+            </p>
+          )}
 
           <div className="space-y-1.5">
             <Label className="text-xs">Companie</Label>
