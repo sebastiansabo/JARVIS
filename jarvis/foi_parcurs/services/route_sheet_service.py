@@ -160,7 +160,12 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
             'is_td': is_td,
             'project': project,
             'route_type': c.get('route_type') or '',
-            'driver': (c.get('client_name') or c.get('advisor_name') or '').strip(),
+            # An internal log's driver is the driving user (advisor_name), matching
+            # the UI's Client column (clientCell). Preferring client_name surfaced a
+            # stray internal client_name instead of the real driver (e.g. "Seba"
+            # instead of the advisor). TD/event rows keep client_name→advisor_name.
+            'driver': ((c.get('advisor_name') if is_internal
+                        else (c.get('client_name') or c.get('advisor_name'))) or '').strip(),
             'itinerary': (c.get('itinerary') or '').strip(),
             'traseu': traseu,
         })
