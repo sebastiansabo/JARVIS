@@ -36,15 +36,19 @@ def _fmt_dt(v):
         return s
 
 
-def _session_export_row(r: dict) -> list:
+def _session_export_row(r: dict, veh_map: dict) -> list:
     """One flat-export row. Distanță = actual odometer delta (km_end − km_start),
-    never the entered estimate (distance_km)."""
+    never the entered estimate (distance_km). `veh_map` supplies the car's
+    brand + fuel_type by VIN (the list query doesn't join fp_vehicles)."""
+    veh = veh_map.get((r.get('vin') or '').strip(), {})
     return [
         _fmt_dt(r.get('departure_datetime')),
         _fmt_dt(r.get('return_datetime')),
         r.get('company_name') or '',
         r.get('registration_number') or '',
         r.get('vin') or '',
+        veh.get('brand') or '',
+        veh.get('fuel_type') or '',
         r.get('client_name') or '',
         r.get('advisor_name') or '',
         r.get('route_type') or '',
@@ -53,6 +57,18 @@ def _session_export_row(r: dict) -> list:
         _num(r.get('km_end')),
         _num(session_actual_km(r)),
     ]
+
+
+def _vehicle_meta_by_vin(rows: list) -> dict:
+    """Map VIN -> {brand, fuel_type} for the rows, in one query. The session-list
+    query (get_contracts) doesn't join fp_vehicles, so these are fetched here."""
+    vins = sorted({(r.get('vin') or '').strip() for r in rows if r.get('vin')})
+    if not vins:
+        return {}
+    recs = _fp_repo.query_all(
+        'SELECT vin, brand, fuel_type FROM fp_vehicles WHERE vin = ANY(%s)', (vins,)
+    ) or []
+    return {rec['vin']: rec for rec in recs}
 
 
 def _filters_from_request():
@@ -94,12 +110,14 @@ def api_export_xlsx():
 
     filters = _filters_from_request()
     rows = _fetch_rows(filters)
+    veh_map = _vehicle_meta_by_vin(rows)
 
     wb = Workbook()
     ws = wb.active
     ws.title = 'Sesiuni'
     headers = [
         'Data plecare', 'Data retur', 'Companie', 'Nr. înmatriculare', 'VIN',
+        'Brand / Departament', 'Combustibil',
         'Client', 'Consilier', 'Tip', 'Status', 'KM plecare', 'KM sosire', 'Distanță (km)',
     ]
     ws.append(headers)
@@ -111,9 +129,9 @@ def api_export_xlsx():
         cell.alignment = Alignment(horizontal='center')
 
     for r in rows:
-        ws.append([_xl_safe(x) for x in _session_export_row(r)])
+        ws.append([_xl_safe(x) for x in _session_export_row(r, veh_map)])
 
-    widths = [17, 17, 26, 16, 20, 24, 20, 8, 12, 12, 12, 13]
+    widths = [17, 17, 26, 16, 20, 22, 13, 24, 20, 8, 12, 12, 12, 13]
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
     ws.freeze_panes = 'A2'

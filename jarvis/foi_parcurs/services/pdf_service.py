@@ -507,10 +507,23 @@ def generate_legal_pdf(contract: dict) -> str:
     # ---- Company & Vehicle ----
     story.append(Paragraph('Date Companie și Vehicul', section_style))
 
+    # Brand + fuel for the vehicle block. Denormalized on most reads; the ZIP
+    # export rows (get_contracts) don't join fp_vehicles, so fall back to a vin
+    # lookup (mirrors generate_service_contract_pdf).
+    _brand = contract.get('vehicle_brand')
+    _fuel = contract.get('vehicle_fuel_type')
+    if (not _brand or not _fuel) and contract.get('vin'):
+        from ..repositories.vehicle_repository import FPVehicleRepository
+        _veh = FPVehicleRepository().get_by_vin(contract['vin']) or {}
+        _brand = _brand or _veh.get('brand')
+        _fuel = _fuel or _veh.get('fuel_type')
+
     cv_data = [
         [Paragraph('Companie', label_style), Paragraph(str(contract.get('company_name') or '—'), value_style)],
         [Paragraph('VIN', label_style), Paragraph(str(contract.get('vin') or '—'), value_style)],
         [Paragraph('Nr. înmatriculare', label_style), Paragraph(str(contract.get('registration_number') or '—'), value_style)],
+        [Paragraph('Brand / Departament', label_style), Paragraph(str(_brand or '—'), value_style)],
+        [Paragraph('Combustibil', label_style), Paragraph(str(_fuel or '—'), value_style)],
     ]
     cv_table = Table(cv_data, colWidths=[45 * mm, W - 45 * mm])
     cv_table.setStyle(TableStyle([

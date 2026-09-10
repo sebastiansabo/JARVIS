@@ -38,3 +38,19 @@ def test_ai_prose_feeds_actual_km_not_estimate():
     src = inspect.getsource(rss._ai_prose)
     assert "'km_parcursi': session_actual_km(t)" in src
     assert "'km_parcursi': t['distance_km']" not in src
+
+
+def test_route_sheet_header_shows_brand_and_fuel():
+    data = {
+        'company': {'id': 1, 'name': 'Autoworld PLUS S.R.L.', 'prestator': ''},
+        'vehicle': {'vin': 'VF1X', 'make': 'MG', 'model': 'HS', 'fuel_type': 'Hybrid',
+                    'brand': 'MG Motor', 'category': 'M1', 'registration_number': 'CJ63ATW'},
+        'period': {'year': 2026, 'month': 9, 'label': 'Septembrie 2026'},
+        'trips': [],
+        'totals': {'km': 0, 'km_start': 0, 'km_end': 0, 'sessions': 0, 'clients': 0},
+        'fuel': {}, 'signatures': {},
+    }
+    html = rss._skeleton_html(data, {'summary': '', 'trips': {}})
+    assert 'Brand / Departament' in html and 'MG Motor' in html
+    assert 'Combustibil' in html and 'Hybrid' in html
+    assert 'M1' in html  # Categorie still present alongside the new fields
