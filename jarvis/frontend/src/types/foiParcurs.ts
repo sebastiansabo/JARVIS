@@ -1,19 +1,22 @@
 // ── Fuel Type ──
-export type FuelType = 'Benzina' | 'Diesel' | 'Electric' | 'Hybrid'
+export type FuelType = 'Benzina' | 'Diesel' | 'Electric' | 'Hybrid' | 'Plug-in Hybrid'
 
 export const FUEL_TYPE_OPTIONS: { value: FuelType; label: string }[] = [
   { value: 'Benzina', label: 'Benzina' },
   { value: 'Diesel', label: 'Diesel' },
   { value: 'Electric', label: 'Electric' },
   { value: 'Hybrid', label: 'Hybrid' },
+  { value: 'Plug-in Hybrid', label: 'Plug-in Hybrid' },
 ]
 
-// Which capacity fields apply to a given fuel type
+// Which capacity fields apply to a given fuel type. A plain Hybrid (HEV) has no
+// plug — only a Plug-in Hybrid (PHEV) is charged, so only it uses the battery.
 export function usesFuelTank(fuelType?: FuelType | string): boolean {
-  return fuelType === 'Benzina' || fuelType === 'Diesel' || fuelType === 'Hybrid'
+  return fuelType === 'Benzina' || fuelType === 'Diesel'
+    || fuelType === 'Hybrid' || fuelType === 'Plug-in Hybrid'
 }
 export function usesBattery(fuelType?: FuelType | string): boolean {
-  return fuelType === 'Electric' || fuelType === 'Hybrid'
+  return fuelType === 'Electric' || fuelType === 'Plug-in Hybrid'
 }
 
 // ── Vehicle (Stock) ──
