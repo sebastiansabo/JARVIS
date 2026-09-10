@@ -66,6 +66,15 @@ def test_deviation_over_threshold_is_red():
     assert '#b3261e' in html  # red, over threshold
 
 
+def test_deviation_under_consumption_not_red():
+    # Bought LESS than normed (normat=10, bought 7 → -30%): economical, not an
+    # alert — stays green even though |dev| > 10%.
+    html = rss._fuel_section_html('l', 10.0, [{'liters': 7.0, 'lei': 60}], 100)
+    assert '-30%' in html
+    assert '#b3261e' not in html   # no red alert for under-consumption
+    assert '#1a7f37' in html       # green
+
+
 def test_deviation_dash_when_no_norma():
     html = rss._fuel_section_html('l', None, [{'liters': 12.0, 'lei': 100}], 100)
     assert 'Deviație (cumpărat vs normat)</td><td>—' in html
@@ -131,4 +140,19 @@ def test_xlsx_deviation_cell_red_when_over_threshold():
         if str(ws.cell(row=r, column=1).value or '').startswith('Deviație'):
             found = ws.cell(row=r, column=2)
     assert found is not None and found.value == 20.0
-    assert (found.font.color.rgb or '').endswith('B3261E')  # red for >10%
+    assert (found.font.color.rgb or '').endswith('B3261E')  # red for >+10%
+
+
+def test_xlsx_deviation_under_consumption_not_red():
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    wb = Workbook(); ws = wb.active
+    bold = Font(bold=True); fill = PatternFill('solid', fgColor='1A1A2E')
+    # normat=10, bought 7 → -30% → no red alert.
+    rss._xlsx_fuel_section(ws, 1, 'l', 10.0, [{'liters': 7.0, 'lei': 60}], 100, bold, fill, bold)
+    found = None
+    for r in range(1, ws.max_row + 1):
+        if str(ws.cell(row=r, column=1).value or '').startswith('Deviație'):
+            found = ws.cell(row=r, column=2)
+    assert found is not None and found.value == -30.0
+    assert not found.font.bold   # red alert is bold; under-consumption stays default
