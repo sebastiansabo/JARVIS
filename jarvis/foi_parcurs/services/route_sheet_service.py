@@ -508,10 +508,13 @@ def _skeleton_html(data: dict, prose: dict, overrides: dict | None = None) -> st
     uses_batt = ft in ('Electric', 'Hybrid')
     if not uses_tank and not uses_batt:
         uses_tank = True  # unknown fuel_type → treat as a fuel car
+    # Skip a section with nothing to show — no alimentări/încărcări AND no norm
+    # configured (e.g. a hybrid that never charged shouldn't render an empty
+    # Energie block). A configured norm alone still shows the section.
     sections = []
-    if uses_tank:
+    if uses_tank and (fuel_entries or fuel.get('norma')):
         sections.append(_fuel_section_html('l', fuel.get('norma'), fuel_entries, tot['km']))
-    if uses_batt:
+    if uses_batt and (energy_entries or fuel.get('norma_energie')):
         sections.append(_fuel_section_html('kWh', fuel.get('norma_energie'), energy_entries, tot['km']))
     fuel_block = '\n'.join(sections)
 
@@ -1151,10 +1154,11 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
     fuel_entries = [a for a in alimentari if (a.get('unit') or 'l') != 'kWh']
     energy_entries = [a for a in alimentari if a.get('unit') == 'kWh']
 
+    # Skip an empty section — no entries AND no norm (mirrors _skeleton_html).
     row = r + 3
-    if uses_tank:
+    if uses_tank and (fuel_entries or norma):
         row = _xlsx_fuel_section(ws, row, 'l', norma, fuel_entries, tot['km'], head, fill, bold)
-    if uses_batt:
+    if uses_batt and (energy_entries or norma_energie):
         row = _xlsx_fuel_section(ws, row, 'kWh', norma_energie, energy_entries, tot['km'], head, fill, bold)
 
     widths = [20, 20, 42, 22, 12, 12, 12]
