@@ -23,6 +23,31 @@ from marketing.repositories.event_repo import ProjectEventRepository
 # existing stored numbers still validate.
 _PHONE_RE = re.compile(r'^(\+\d{7,15}|07\d{8}|004\d{10})$')
 
+def _departure_is_future(value) -> bool:
+    """True when `value` (an ISO datetime the TD forms send, e.g.
+    '2026-09-11T09:28') is later than the current Bucharest wall-clock time.
+
+    TD datetimes are stored and compared as Bucharest wall-clock (never tz
+    converted — see tasks/foi_parcurs_sessions._fmt_return_when), so we drop any
+    tz suffix and compare against the Bucharest clock. Fails *closed* to the
+    normal (non-future) path on any parse/tz error so a bad value can't silently
+    re-route a live submit."""
+    if not value:
+        return False
+    try:
+        dep = datetime.fromisoformat(str(value))
+    except (ValueError, TypeError):
+        return False
+    if dep.tzinfo is not None:
+        dep = dep.replace(tzinfo=None)
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo('Europe/Bucharest')).replace(tzinfo=None)
+    except Exception:
+        now = datetime.now()
+    return dep > now
+
+
 _contact_repo = ContactRepository()
 _event_bridge_repo = ProjectEventRepository()
 _cc_repo = ContractConfigRepository()
@@ -143,6 +168,15 @@ def api_submit_test_drive():
     is_draft = data.get('status') == 'PLANNED'
     is_internal = bool(data.get('is_internal'))
     document_type = _normalize_doctype(data.get('document_type'))
+
+    # A future-dated internal "start now" is a contradiction — a drive that
+    # hasn't departed yet can't already be "în desfășurare". Coerce it to a
+    # PLANNED draft (odometer deferred to start), matching the user's intent and
+    # the customer plan-ahead flow. This also backstops the mobile QuickSession,
+    # which has no such client-side guard of its own.
+    if is_internal and not is_draft and _departure_is_future(data.get('departure_datetime')):
+        is_draft = True
+        data['status'] = 'PLANNED'
 
     # `itinerary` is intentionally NOT required — the mobile Test Drive form
     # dropped the Traseu/Itinerariu field. It's still stored when provided

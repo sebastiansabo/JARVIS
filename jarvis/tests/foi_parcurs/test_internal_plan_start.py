@@ -84,9 +84,45 @@ def test_internal_draft_creates_planned_without_odometer(client, monkeypatch):
 def test_internal_live_still_requires_odometer(client):
     # A live (non-draft) internal session still needs the km at handover.
     resp = client.post('/api/foi-parcurs/test-drive',
-                       json=_draft_payload(status=None, odometer_start=None))
+                       json=_draft_payload(status=None, odometer_start=None,
+                                           departure_datetime='2020-01-01T10:00:00'))
     assert resp.status_code == 400
     assert 'odometer_start' in resp.get_json()['error']
+
+
+# ── future-dated "start now" is a contradiction → coerced to a PLANNED draft ──
+
+def test_internal_future_start_now_coerced_to_planned(client, monkeypatch):
+    # "Începe acum" (status omitted) with a departure in the future can't be an
+    # in-progress drive — a car that hasn't left yet isn't "în desfășurare".
+    # It's coerced to a PLANNED draft, so the odometer isn't required either.
+    captured = {}
+    monkeypatch.setattr(td._fp_repo, 'create_from_td_form',
+                        lambda data: captured.update(data) or {**data, 'id': 71})
+
+    resp = client.post('/api/foi-parcurs/test-drive',
+                       json=_draft_payload(status=None, odometer_start=None,
+                                           departure_datetime='2099-01-01T10:00:00'))
+
+    assert resp.status_code == 200, resp.get_json()
+    assert captured['status'] == 'PLANNED'
+    assert captured['km_start'] == 0  # deferred to start, not required
+
+
+def test_internal_past_start_now_stays_filled(client, monkeypatch):
+    # A start-now session for a departure that already passed (e.g. backfilling
+    # a drive that happened this morning) is a legitimate live FILLED session.
+    captured = {}
+    monkeypatch.setattr(td._fp_repo, 'create_from_td_form',
+                        lambda data: captured.update(data) or {**data, 'id': 72})
+
+    resp = client.post('/api/foi-parcurs/test-drive',
+                       json=_draft_payload(status=None, odometer_start=4200,
+                                           departure_datetime='2020-01-01T10:00:00'))
+
+    assert resp.status_code == 200, resp.get_json()
+    assert captured['status'] == 'FILLED'
+    assert captured['km_start'] == 4200
 
 
 # ── start: PLANNED internal draft → FILLED, no signature/PDF ──────────────────
