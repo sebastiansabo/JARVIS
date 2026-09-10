@@ -85,19 +85,31 @@ def _skeleton(fuel, fuel_type='Hybrid'):
     return rss._skeleton_html(data, {'summary': '', 'trips': {}})
 
 
-def test_empty_energy_section_hidden_for_hybrid():
-    # Hybrid with fuel refuels but no charging + no energy norm → Energie hidden.
-    html = _skeleton({'norma': 7.5, 'norma_energie': None,
-                      'alimentari': [{'liters': 12, 'lei': 100, 'unit': 'l'}]})
-    assert 'fuel-title">Combustibil' in html      # fuel section still shown
-    assert 'fuel-title">Energie' not in html      # empty energy section hidden
-
-
-def test_energy_section_shown_when_norm_configured():
-    # An energy norm alone (no charging entries yet) keeps the section visible.
+def test_plain_hybrid_shows_fuel_only():
+    # HEV has no plug — even with an energy norm set, it gets no Energie section.
     html = _skeleton({'norma': 7.5, 'norma_energie': 17.0,
-                      'alimentari': [{'liters': 12, 'lei': 100, 'unit': 'l'}]})
+                      'alimentari': [{'liters': 12, 'lei': 100, 'unit': 'l'}]}, fuel_type='Hybrid')
+    assert 'fuel-title">Combustibil' in html
+    assert 'fuel-title">Energie' not in html
+
+
+def test_plugin_hybrid_shows_both_sections():
+    # PHEV is charged → both Combustibil and Energie sections render.
+    html = _skeleton({'norma': 7.5, 'norma_energie': 17.0,
+                      'alimentari': [{'liters': 12, 'lei': 100, 'unit': 'l'},
+                                     {'liters': 8, 'lei': 20, 'unit': 'kWh'}]},
+                     fuel_type='Plug-in Hybrid')
+    assert 'fuel-title">Combustibil' in html
     assert 'fuel-title">Energie' in html
+
+
+def test_plugin_hybrid_empty_energy_hidden():
+    # PHEV that never charged (no energy norm, no kWh entries) → Energie hidden.
+    html = _skeleton({'norma': 7.5, 'norma_energie': None,
+                      'alimentari': [{'liters': 12, 'lei': 100, 'unit': 'l'}]},
+                     fuel_type='Plug-in Hybrid')
+    assert 'fuel-title">Combustibil' in html
+    assert 'fuel-title">Energie' not in html
 
 
 def test_empty_fuel_section_hidden():

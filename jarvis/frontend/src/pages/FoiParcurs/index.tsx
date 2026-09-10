@@ -3305,6 +3305,7 @@ export function VehicleFormFields({
             <SelectItem value="Diesel">Diesel</SelectItem>
             <SelectItem value="Electric">Electric</SelectItem>
             <SelectItem value="Hybrid">Hybrid</SelectItem>
+            <SelectItem value="Plug-in Hybrid">Plug-in Hybrid</SelectItem>
           </SelectContent>
         </Select>
       </div>

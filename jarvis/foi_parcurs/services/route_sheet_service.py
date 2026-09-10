@@ -504,8 +504,8 @@ def _skeleton_html(data: dict, prose: dict, overrides: dict | None = None) -> st
     fuel_entries = [a for a in alim if (a.get('unit') or 'l') != 'kWh']
     energy_entries = [a for a in alim if a.get('unit') == 'kWh']
     ft = v.get('fuel_type') or ''
-    uses_tank = ft in ('Benzina', 'Diesel', 'Hybrid')
-    uses_batt = ft in ('Electric', 'Hybrid')
+    uses_tank = ft in ('Benzina', 'Diesel', 'Hybrid', 'Plug-in Hybrid')
+    uses_batt = ft in ('Electric', 'Plug-in Hybrid')  # plain Hybrid (HEV) = fuel only
     if not uses_tank and not uses_batt:
         uses_tank = True  # unknown fuel_type → treat as a fuel car
     # Skip a section with nothing to show — no alimentări/încărcări AND no norm
@@ -1140,8 +1140,8 @@ def render_xlsx(vin: str, year: int, month: int) -> bytes:
     # fall back to the car profile). A hybrid renders both Combustibil + Energie.
     veh = _veh_repo.get_by_vin(vin) or {}
     ft = veh.get('fuel_type') or ''
-    uses_tank = ft in ('Benzina', 'Diesel', 'Hybrid')
-    uses_batt = ft in ('Electric', 'Hybrid')
+    uses_tank = ft in ('Benzina', 'Diesel', 'Hybrid', 'Plug-in Hybrid')
+    uses_batt = ft in ('Electric', 'Plug-in Hybrid')  # plain Hybrid (HEV) = fuel only
     if not uses_tank and not uses_batt:
         uses_tank = True
     stored = _store.query_one(
