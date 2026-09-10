@@ -607,9 +607,15 @@ class BioStarRepository(BaseRepository):
 
         Absent days appear with NULL punches (roster CROSS JOIN generate_series).
         Company is the contract's mapped company (company_aliases-derived).
+
+        Period-aware: a contract whose mapped JARVIS user is now inactive/closed
+        is still exported for a window it actually worked (any badge punch inside
+        [start, end]), so a mid/after-period termination never retroactively hides
+        someone from a month they were present.
         """
         user_filter = ''
         args = [start_date, end_date]           # days generate_series
+        args += [start_date, end_date]          # period_active window (scope CTE)
         if jarvis_user_ids:
             user_filter = ' AND be.mapped_jarvis_user_id = ANY(%s)'
             args.append(jarvis_user_ids)        # scope ANY
@@ -621,6 +627,14 @@ class BioStarRepository(BaseRepository):
         return self.query_all(f'''
             WITH days AS (
                 SELECT generate_series(%s::date, %s::date, interval '1 day')::date AS day
+            ),
+            -- Contracts with any badge punch inside the report window. Used below
+            -- to keep a now-closed contract in the export for a month it actually
+            -- worked, instead of hiding it once its JARVIS user is inactive/closed.
+            period_active AS (
+                SELECT DISTINCT biostar_user_id
+                FROM biostar_punch_logs
+                WHERE event_datetime::date BETWEEN %s::date AND %s::date
             ),
             scope AS (
                 SELECT be.biostar_user_id,
@@ -644,7 +658,8 @@ class BioStarRepository(BaseRepository):
                        OR (be.user_group_name NOT ILIKE '%%plecati%%'
                            AND be.user_group_name NOT ILIKE '%%contracte inchise%%'))
                   AND (be.mapped_jarvis_user_id IS NULL
-                       OR (u.is_active = TRUE AND COALESCE(u.contract_status, 'active') != 'closed'))
+                       OR (u.is_active = TRUE AND COALESCE(u.contract_status, 'active') != 'closed')
+                       OR be.biostar_user_id IN (SELECT biostar_user_id FROM period_active))
                   {user_filter}
             ),
             deduped AS (
