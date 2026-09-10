@@ -71,6 +71,41 @@ def test_deviation_dash_when_no_norma():
     assert 'Deviație (cumpărat vs normat)</td><td>—' in html
 
 
+# ── Empty consumption sections are hidden ────────────────────────────────────
+
+def _skeleton(fuel, fuel_type='Hybrid'):
+    data = {
+        'company': {'id': 1, 'name': 'Co', 'prestator': ''},
+        'vehicle': {'vin': 'V', 'make': 'MG', 'model': 'HS', 'fuel_type': fuel_type,
+                    'brand': 'MG Motor', 'category': 'M1', 'registration_number': 'R'},
+        'period': {'year': 2026, 'month': 8, 'label': 'August 2026'},
+        'trips': [], 'totals': {'km': 100, 'km_start': 0, 'km_end': 100, 'sessions': 0, 'clients': 0},
+        'fuel': fuel, 'signatures': {},
+    }
+    return rss._skeleton_html(data, {'summary': '', 'trips': {}})
+
+
+def test_empty_energy_section_hidden_for_hybrid():
+    # Hybrid with fuel refuels but no charging + no energy norm → Energie hidden.
+    html = _skeleton({'norma': 7.5, 'norma_energie': None,
+                      'alimentari': [{'liters': 12, 'lei': 100, 'unit': 'l'}]})
+    assert 'fuel-title">Combustibil' in html      # fuel section still shown
+    assert 'fuel-title">Energie' not in html      # empty energy section hidden
+
+
+def test_energy_section_shown_when_norm_configured():
+    # An energy norm alone (no charging entries yet) keeps the section visible.
+    html = _skeleton({'norma': 7.5, 'norma_energie': 17.0,
+                      'alimentari': [{'liters': 12, 'lei': 100, 'unit': 'l'}]})
+    assert 'fuel-title">Energie' in html
+
+
+def test_empty_fuel_section_hidden():
+    # Fuel car with no norm and no refuels → no Combustibil section rendered.
+    html = _skeleton({'norma': None, 'norma_energie': None, 'alimentari': []}, fuel_type='Benzina')
+    assert 'fuel-title">Combustibil' not in html
+
+
 def test_xlsx_deviation_cell_red_when_over_threshold():
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
