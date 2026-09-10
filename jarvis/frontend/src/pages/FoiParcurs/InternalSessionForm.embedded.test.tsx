@@ -133,6 +133,32 @@ describe('InternalSessionForm embedded mode', () => {
     expect(payload).not.toHaveProperty('odometer_start')
   })
 
+  it('a future departure forces Planifică mode and disables "Începe acum"', async () => {
+    submitInternalSession.mockClear()  // shared hoisted mock — isolate this test's call history
+    submitInternalSession.mockResolvedValue({ success: true, contract: { id: 10, contract_id: 'INT-F', status: 'PLANNED' } })
+    const onDone = vi.fn()
+    wrap(<InternalSessionForm embedded onCancel={vi.fn()} onDone={onDone} />)
+    await screen.findByTestId('internal-vehicle')
+
+    fireEvent.click(screen.getByTestId('internal-vehicle'))
+    fireEvent.click(await screen.findByText(/Renault Clio/))
+    // Live mode by default → KM field present.
+    expect(await screen.findByTestId('internal-km')).toBeInTheDocument()
+
+    // Pick a departure in the future → the form must switch itself to planning:
+    // the KM field disappears (deferred) and "Începe acum" is locked out.
+    fireEvent.change(screen.getByTestId('internal-departure'), { target: { value: '2099-01-01T10:00' } })
+    fireEvent.change(screen.getByTestId('internal-return'), { target: { value: '2099-01-01T11:00' } })
+    await waitFor(() => expect(screen.queryByTestId('internal-km')).toBeNull())
+    expect(screen.getByTestId('internal-mode-now')).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('button', { name: /planifică sesiunea/i }))
+    await waitFor(() => expect(submitInternalSession).toHaveBeenCalledTimes(1))
+    const payload = submitInternalSession.mock.calls[0][0]
+    expect(payload).toMatchObject({ is_internal: true, vin: 'VF1BBB', status: 'PLANNED', departure_datetime: '2099-01-01T10:00' })
+    expect(payload).not.toHaveProperty('odometer_start')
+  })
+
   it('surfaces a backend 409 (locked_out) error inline', async () => {
     const { ApiError } = await import('@/api/client')
     submitInternalSession.mockRejectedValue(new ApiError(409, { error: 'Mașină blocată în parcul auto', locked_out: true }))
