@@ -15,6 +15,14 @@ export interface KontoConfig {
   belegart: string | null
 }
 
+/** A named EuroFib schema for a supplier×company. One is `is_active` (drives export by
+ * default); a supplier×company may hold up to 5. */
+export interface KontoPreset extends KontoConfig {
+  id: number
+  name: string
+  is_active: boolean
+}
+
 export interface MasterSupplier extends Partial<KontoConfig> {
   id: number
   name: string
@@ -61,6 +69,10 @@ export interface BudgetedInvoice {
   currency: string
   status: string
   supplier_id: number
+  /** Effective preset for this invoice (per-invoice override, else supplier active preset). */
+  konto_config_id: number | null
+  konto_name: string | null
+  konto_overridden: boolean
 }
 
 /** Trigger a browser download for a raw fetch Response that carries a file (blob) body,
@@ -152,6 +164,28 @@ export const suppliersApi = {
     api.put<{ success: boolean; id?: number; replicated?: number }>(
       `/api/suppliers/${id}/konto?company_id=${companyId}`,
       replicateAll ? { ...fields, replicate_all: true } : fields),
+  /** All EuroFib presets for a supplier×company (active first) + the max allowed. */
+  listPresets: (id: number, companyId: number) =>
+    api.get<{ success: boolean; presets: KontoPreset[]; max: number }>(
+      `/api/suppliers/${id}/konto/presets?company_id=${companyId}`),
+  createPreset: (id: number, companyId: number,
+                 body: Partial<KontoConfig> & { name: string; is_active?: boolean; replicate_all?: boolean }) =>
+    api.post<{ success: boolean; id: number }>(
+      `/api/suppliers/${id}/konto/presets?company_id=${companyId}`, body),
+  updatePreset: (id: number, companyId: number, presetId: number,
+                 body: Partial<KontoConfig> & { name?: string; is_active?: boolean; replicate_all?: boolean }) =>
+    api.put<{ success: boolean }>(
+      `/api/suppliers/${id}/konto/presets/${presetId}?company_id=${companyId}`, body),
+  activatePreset: (id: number, companyId: number, presetId: number) =>
+    api.post<{ success: boolean }>(
+      `/api/suppliers/${id}/konto/presets/${presetId}/activate?company_id=${companyId}`, {}),
+  deletePreset: (id: number, companyId: number, presetId: number) =>
+    api.delete<{ success: boolean }>(
+      `/api/suppliers/${id}/konto/presets/${presetId}?company_id=${companyId}`),
+  /** Pin (konto_config_id set) or clear (null) the EuroFib preset for a single worklist invoice. */
+  setInvoicePreset: (invoiceId: number, body: { konto_config_id: number | null; supplier_id: number; company_id: number }) =>
+    api.post<{ success: boolean; cleared?: boolean }>(
+      `/api/suppliers/invoices/${invoiceId}/konto-preset`, body),
   /** EuroFib MEDLINE single-file download (CSV or XLSX) — one supplier's invoices, an explicit
    * invoiceIds set, or all budgeted invoices for the period when invoiceIds is omitted;
    * grouped/ordered per build_csv. */

@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Pencil, ChevronDown, ChevronRight, Download, RotateCcw, RefreshCw } from 'lucide-react'
+import { Plus, Pencil, ChevronDown, ChevronRight, Download, RotateCcw, RefreshCw, Trash2, Check } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Card, CardContent } from '@/components/ui/card'
@@ -20,7 +20,7 @@ import { DateField } from '@/components/ui/date-field'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { organizationApi } from '@/api/organization'
-import { suppliersApi, type MasterSupplier, type BudgetedInvoice, type KontoConfig, type EfacturaPartner } from '@/api/suppliers'
+import { suppliersApi, type MasterSupplier, type BudgetedInvoice, type KontoConfig, type KontoPreset, type EfacturaPartner } from '@/api/suppliers'
 import type { CompanyWithBrands } from '@/types/organization'
 
 /* ── worklist grouped by supplier ── */
@@ -182,6 +182,60 @@ function ReplicateAllCheckbox({
 
 function companyLabel(c: CompanyWithBrands): string {
   return `${c.company} · ${c.vat || '—'}`
+}
+
+/** Per-invoice EuroFib schema picker in the worklist: shows the effective preset (active or a
+ * pinned override) and lets the user pin a different one, or revert to the supplier's active
+ * preset. Presets are fetched per (supplier, company) and cached, so all rows of one supplier
+ * share a single query. Read-only in the processed view. */
+function InvoicePresetPicker({
+  inv, companyId, disabled,
+}: {
+  inv: BudgetedInvoice
+  companyId: number
+  disabled?: boolean
+}) {
+  const qc = useQueryClient()
+  const { data } = useQuery({
+    queryKey: ['supplier-presets', inv.supplier_id, companyId],
+    queryFn: () => suppliersApi.listPresets(inv.supplier_id, companyId),
+    enabled: !disabled,
+  })
+  const presets = data?.presets ?? []
+  const setMut = useMutation({
+    mutationFn: (kontoConfigId: number | null) =>
+      suppliersApi.setInvoicePreset(inv.id, { konto_config_id: kontoConfigId, supplier_id: inv.supplier_id, company_id: companyId }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] }),
+    onError: () => toast.error('Nu s-a putut seta schema'),
+  })
+
+  const label = inv.konto_name ?? 'Implicit'
+  if (disabled) return <span className="text-xs text-muted-foreground">{label}</span>
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className="h-7 gap-1 text-xs font-normal" disabled={setMut.isPending}>
+          {inv.konto_overridden && <span className="h-1.5 w-1.5 rounded-full bg-primary" title="Schemă suprascrisă" />}
+          <span className="max-w-[120px] truncate">{label}</span>
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {presets.map((p) => (
+          <DropdownMenuItem key={p.id} onClick={() => setMut.mutate(p.id)}>
+            <Check className={cn('mr-1.5 h-3.5 w-3.5', p.id === inv.konto_config_id ? 'opacity-100' : 'opacity-0')} />
+            {p.name}{p.is_active ? ' · activă' : ''}
+          </DropdownMenuItem>
+        ))}
+        {inv.konto_overridden && (
+          <DropdownMenuItem onClick={() => setMut.mutate(null)} className="text-muted-foreground">
+            <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Revino la schema activă
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 export default function Procesare() {
@@ -465,7 +519,7 @@ export default function Procesare() {
                 <TableHead className="w-8" />
                 <TableHead>Furnizor / Nr. factură</TableHead><TableHead>Data</TableHead>
                 <TableHead className="text-right">Net</TableHead><TableHead className="text-right">Total</TableHead>
-                <TableHead>Monedă</TableHead><TableHead className="text-right">Acțiuni</TableHead></TableRow></TableHeader>
+                <TableHead>Monedă</TableHead><TableHead>Schemă</TableHead><TableHead className="text-right">Acțiuni</TableHead></TableRow></TableHeader>
               <TableBody>
                 {supplierGroups.map((group) => {
                   const isExpanded = expandedSuppliers.has(group.supplierId)
@@ -491,7 +545,7 @@ export default function Procesare() {
                             <Badge variant="secondary" className="font-normal">{group.invoices.length} facturi</Badge>
                           </div>
                         </TableCell>
-                        <TableCell />
+                        <TableCell colSpan={2} />
                         <TableCell className="text-right">
                           {!isProcessedView && (
                             <Button
@@ -537,6 +591,11 @@ export default function Procesare() {
                           </TableCell>
                           <TableCell className="text-right"><CurrencyDisplay value={Number(inv.invoice_value)} currency={inv.currency} /></TableCell>
                           <TableCell>{inv.currency}</TableCell>
+                          <TableCell>
+                            {companyId != null && (
+                              <InvoicePresetPicker inv={inv} companyId={companyId} disabled={isProcessedView} />
+                            )}
+                          </TableCell>
                           <TableCell />
                         </TableRow>
                       ))}
@@ -544,7 +603,7 @@ export default function Procesare() {
                   )
                 })}
                 {!invoicesLoading && supplierGroups.length === 0 && (
-                  <TableRow><TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">
+                  <TableRow><TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
                     {isProcessedView ? 'Nicio factură procesată în interval' : 'Nicio factură bugetată în interval'}
                   </TableCell></TableRow>
                 )}
@@ -671,6 +730,14 @@ export default function Procesare() {
    Konto editor — per (supplier, company)
    ═══════════════════════════════════════ */
 
+/** A local editable draft: an existing preset (id set) or a brand-new one (id null). */
+type PresetDraft = { id: number | null; name: string; is_active: boolean; konto: KontoConfig }
+
+function draftFromPreset(p: KontoPreset): PresetDraft {
+  const { id, name, is_active, ...konto } = p
+  return { id, name, is_active, konto: konto as KontoConfig }
+}
+
 function KontoEditorDialog({
   supplier,
   company,
@@ -681,7 +748,7 @@ function KontoEditorDialog({
   onOpenChange: (open: boolean) => void
 }) {
   const qc = useQueryClient()
-  const [form, setForm] = useState<KontoConfig | null>(null)
+  const [draft, setDraft] = useState<PresetDraft | null>(null)
   const [replicateAll, setReplicateAll] = useState(false)
 
   const open = !!supplier && !!company
@@ -689,57 +756,180 @@ function KontoEditorDialog({
   const companyId = company?.id ?? null
 
   const { data, isLoading } = useQuery({
-    queryKey: ['supplier-konto', supplierId, companyId],
-    queryFn: () => suppliersApi.getKonto(supplierId as number, companyId as number),
+    queryKey: ['supplier-presets', supplierId, companyId],
+    queryFn: () => suppliersApi.listPresets(supplierId as number, companyId as number),
     enabled: open,
   })
+  const presets = data?.presets ?? []
+  const maxPresets = data?.max ?? 5
+  const atLimit = presets.length >= maxPresets
 
+  // On (re)load, keep the current selection if it still exists, else select the active preset
+  // (or the first). When the supplier has no presets yet, start a fresh draft.
   useEffect(() => {
-    if (data?.konto) setForm(data.konto)
-    else if (!open) setForm(null)
-  }, [data, open])
+    if (!open) { setDraft(null); return }
+    if (!data) return
+    setDraft((prev) => {
+      if (prev && prev.id !== null) {
+        const still = presets.find((p) => p.id === prev.id)
+        if (still) return draftFromPreset(still)
+      } else if (prev && prev.id === null) {
+        return prev  // keep an in-progress new draft
+      }
+      const active = presets.find((p) => p.is_active) ?? presets[0]
+      return active ? draftFromPreset(active) : { id: null, name: 'Implicit', is_active: true, konto: { ...EMPTY_KONTO } }
+    })
+  }, [data, open]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reset the "replicate to all" choice whenever a different supplier is opened for editing.
-  useEffect(() => {
-    setReplicateAll(false)
-  }, [supplierId])
+  useEffect(() => { setReplicateAll(false) }, [supplierId])
+
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['supplier-master'] })
+    qc.invalidateQueries({ queryKey: ['supplier-presets', supplierId, companyId] })
+    qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] })
+  }
 
   const saveMut = useMutation({
-    mutationFn: () => {
-      if (!supplierId || companyId === null || !form) throw new Error('Missing data')
-      return suppliersApi.updateKonto(supplierId, companyId, form, replicateAll)
+    mutationFn: async () => {
+      if (!supplierId || companyId === null || !draft) throw new Error('Missing data')
+      const name = (draft.name || '').trim() || 'Implicit'
+      const body = { ...draft.konto, name, is_active: draft.is_active, replicate_all: replicateAll }
+      if (draft.id === null) {
+        const res = await suppliersApi.createPreset(supplierId, companyId, body)
+        return { newId: res.id as number }
+      }
+      await suppliersApi.updatePreset(supplierId, companyId, draft.id, body)
+      return { newId: draft.id }
     },
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['supplier-master'] })
-      qc.invalidateQueries({ queryKey: ['supplier-konto', supplierId, companyId] })
-      toast.success(res.replicated ? `Configurație salvată pentru ${res.replicated} companii` : 'Configurație salvată')
-      onOpenChange(false)
+    onSuccess: ({ newId }) => {
+      invalidate()
+      setDraft((prev) => (prev ? { ...prev, id: newId } : prev))
+      toast.success(replicateAll ? 'Schemă salvată pentru toate companiile' : 'Schemă salvată')
     },
-    onError: () => toast.error('Nu s-a putut salva configurația'),
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Nu s-a putut salva schema'),
   })
 
+  const activateMut = useMutation({
+    mutationFn: (presetId: number) => suppliersApi.activatePreset(supplierId as number, companyId as number, presetId),
+    onSuccess: () => { invalidate(); toast.success('Schemă activă actualizată') },
+    onError: () => toast.error('Nu s-a putut schimba schema activă'),
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: (presetId: number) => suppliersApi.deletePreset(supplierId as number, companyId as number, presetId),
+    onSuccess: (_res, presetId) => {
+      invalidate()
+      setDraft((prev) => (prev && prev.id === presetId ? null : prev))
+      toast.success('Schemă ștearsă')
+    },
+    onError: () => toast.error('Nu s-a putut șterge schema'),
+  })
+
+  const startNewDraft = () => {
+    const n = presets.length + 1
+    setDraft({ id: null, name: `Schemă ${n}`, is_active: presets.length === 0, konto: { ...EMPTY_KONTO } })
+  }
+
   const setField = (key: keyof KontoConfig, value: string) =>
-    setForm((prev) => (prev ? { ...prev, [key]: value || null } : prev))
+    setDraft((prev) => (prev ? { ...prev, konto: { ...prev.konto, [key]: value || null } } : prev))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{supplier?.name} — {company ? companyLabel(company) : ''}</DialogTitle>
-          <DialogDescription>Eurofib Company Data — pentru această companie</DialogDescription>
+          <DialogDescription>Scheme EuroFib — pentru această companie (max. {maxPresets})</DialogDescription>
         </DialogHeader>
-        {isLoading || !form ? (
+        {isLoading ? (
           <div className="py-8 text-center text-sm text-muted-foreground">Se încarcă...</div>
         ) : (
-          <div className="space-y-4">
-            <KontoFieldsGrid form={form} onChange={setField} />
-            <ReplicateAllCheckbox id="edit-replicate-all" checked={replicateAll} onCheckedChange={setReplicateAll} />
+          <div className="grid grid-cols-[220px_1fr] gap-4">
+            {/* Preset list */}
+            <div className="space-y-1.5 border-r pr-3">
+              {presets.map((p) => {
+                const isSelected = draft?.id === p.id
+                return (
+                  <div
+                    key={p.id}
+                    className={cn(
+                      'group flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm cursor-pointer',
+                      isSelected ? 'bg-accent' : 'hover:bg-accent/50')}
+                    onClick={() => setDraft(draftFromPreset(p))}
+                  >
+                    <button
+                      type="button"
+                      title={p.is_active ? 'Schema activă' : 'Setează ca activă'}
+                      onClick={(e) => { e.stopPropagation(); if (!p.is_active) activateMut.mutate(p.id) }}
+                      className={cn(
+                        'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border',
+                        p.is_active ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40')}
+                    >
+                      {p.is_active && <Check className="h-3 w-3" />}
+                    </button>
+                    <span className="flex-1 truncate">{p.name}</span>
+                    <button
+                      type="button"
+                      title="Șterge schema"
+                      onClick={(e) => { e.stopPropagation(); deleteMut.mutate(p.id) }}
+                      className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )
+              })}
+              {draft?.id === null && (
+                <div className="flex items-center gap-1.5 rounded-md bg-accent px-2 py-1.5 text-sm">
+                  <span className="h-4 w-4 shrink-0 rounded-full border border-dashed border-muted-foreground/40" />
+                  <span className="flex-1 truncate italic text-muted-foreground">{draft.name} (nouă)</span>
+                </div>
+              )}
+              <Button
+                variant="ghost" size="sm"
+                className="w-full justify-start gap-1.5 text-muted-foreground"
+                disabled={atLimit || draft?.id === null}
+                onClick={startNewDraft}
+              >
+                <Plus className="h-3.5 w-3.5" /> Adaugă schemă
+              </Button>
+              {atLimit && <p className="px-2 text-[11px] text-muted-foreground">Limită de {maxPresets} scheme atinsă.</p>}
+            </div>
+
+            {/* Editor for the selected/new preset */}
+            {draft ? (
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1">
+                    <Label className="text-xs">Nume schemă</Label>
+                    <Input
+                      className="h-8 text-sm"
+                      value={draft.name}
+                      onChange={(e) => setDraft((prev) => (prev ? { ...prev, name: e.target.value } : prev))}
+                    />
+                  </div>
+                  <label className="mt-4 flex cursor-pointer items-center gap-2 whitespace-nowrap text-sm">
+                    <Checkbox
+                      checked={draft.is_active}
+                      disabled={draft.id !== null && draft.is_active}
+                      onCheckedChange={(v) => setDraft((prev) => (prev ? { ...prev, is_active: v === true } : prev))}
+                    />
+                    Schemă activă
+                  </label>
+                </div>
+                <KontoFieldsGrid form={draft.konto} onChange={setField} />
+                <ReplicateAllCheckbox id="edit-replicate-all" checked={replicateAll} onCheckedChange={setReplicateAll} />
+              </div>
+            ) : (
+              <div className="flex items-center justify-center text-sm text-muted-foreground">
+                Selectează o schemă sau adaugă una nouă.
+              </div>
+            )}
           </div>
         )}
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Anulează</Button>
-          <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !form}>
-            {saveMut.isPending ? 'Se salvează...' : 'Salvează'}
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Închide</Button>
+          <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !draft}>
+            {saveMut.isPending ? 'Se salvează...' : 'Salvează schema'}
           </Button>
         </DialogFooter>
       </DialogContent>

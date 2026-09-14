@@ -1512,6 +1512,53 @@ def create_schema_incremental(conn, cursor):
         END $$;
     ''')
 
+    # ── supplier_konto_config: named EuroFib presets (up to 5 per supplier×company) ──
+    # Each supplier×company can now hold several named schemas; exactly one is `is_active`
+    # (drives worklist/export by default). Existing single rows become the 'Implicit', active
+    # preset via these column defaults, so current prod configs keep working with no data loss.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'supplier_konto_config' AND column_name = 'name') THEN
+                ALTER TABLE supplier_konto_config ADD COLUMN name TEXT NOT NULL DEFAULT 'Implicit';
+                ALTER TABLE supplier_konto_config ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE;
+            END IF;
+        END $$;
+    ''')
+    # Drop the old one-row-per-(supplier,company) uniqueness — presets need many rows per pair.
+    cursor.execute("ALTER TABLE supplier_konto_config DROP CONSTRAINT IF EXISTS supplier_konto_config_supplier_id_company_id_key")
+    # Preset names are unique within a (supplier, company).
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_supplier_konto_name') THEN
+                ALTER TABLE supplier_konto_config
+                    ADD CONSTRAINT uq_supplier_konto_name UNIQUE (supplier_id, company_id, name);
+            END IF;
+        END $$;
+    ''')
+    # Exactly one active preset per (supplier, company).
+    cursor.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_konto_one_active
+        ON supplier_konto_config(supplier_id, company_id) WHERE is_active
+    ''')
+
+    # ── invoice_konto_override: per-invoice preset choice (Procesare worklist) ──
+    # When set, this preset overrides the supplier's active preset for that one invoice at
+    # export time. ON DELETE CASCADE from supplier_konto_config means deleting a preset silently
+    # reverts its overridden invoices back to the active preset (no orphan rows).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS invoice_konto_override (
+            invoice_id INTEGER PRIMARY KEY REFERENCES invoices(id) ON DELETE CASCADE,
+            konto_config_id INTEGER NOT NULL REFERENCES supplier_konto_config(id) ON DELETE CASCADE,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_konto_override_config ON invoice_konto_override(konto_config_id)")
+
     # ── document_wml + chunks (Phase D) ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS document_wml (
