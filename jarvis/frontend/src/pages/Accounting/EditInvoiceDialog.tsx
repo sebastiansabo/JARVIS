@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback, type ChangeEvent } from 'react'
+import { useState, useRef, useMemo, useCallback, useEffect, type ChangeEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { invoicesApi } from '@/api/invoices'
+import { suppliersApi } from '@/api/suppliers'
 import { organizationApi } from '@/api/organization'
 import { tagsApi } from '@/api/tags'
 import { TagBadge } from '@/components/shared/TagBadge'
@@ -114,6 +115,30 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
   const updateInvoiceFn = apiOverrides?.updateInvoice ?? invoicesApi.updateInvoice
   const updateAllocationsFn = apiOverrides?.updateAllocations ?? invoicesApi.updateAllocations
 
+  // ── EuroFib schema (bugetare rule): when the supplier has >1 schema, the user MUST pick one
+  // before budgeting. The choice is stored per invoice (invoice_konto_override) and flows to the
+  // Procesare worklist/export. Company drives which schemas apply: per-line uses the fixed
+  // company; classic mode tracks the AllocationEditor's selected company.
+  const [schemaCompany, setSchemaCompany] = useState<string>(invoice.allocations?.[0]?.company ?? '')
+  const [schemaId, setSchemaId] = useState<number | null>(null)
+  const effectiveSchemaCompany = isPerLine ? perLineCompany : schemaCompany
+  const { data: schemaData } = useQuery({
+    queryKey: ['invoice-schemas', invoice.id, effectiveSchemaCompany],
+    queryFn: () => suppliersApi.schemasForInvoice(invoice.id, effectiveSchemaCompany),
+    enabled: !isProfile && !!effectiveSchemaCompany,
+  })
+  const schemaCount = schemaData?.count ?? 0
+  const needsSchema = schemaCount > 1
+  useEffect(() => {
+    if (!schemaData) return
+    setSchemaId((prev) => {
+      if (prev != null && schemaData.presets.some((p) => p.id === prev)) return prev
+      if (schemaData.selected_id != null) return schemaData.selected_id
+      if (schemaData.count === 1) return schemaData.presets[0].id
+      return null // >1 schemas and no prior choice → force an explicit pick
+    })
+  }, [schemaData])
+
   const handleFileUpload = useCallback(async (files: FileList | File[]) => {
     if (!files.length) return
     setUploading(true)
@@ -161,6 +186,11 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
   }, [handleFileUpload])
 
   const handleSave = useCallback(async () => {
+    // Bugetare rule: a supplier with multiple EuroFib schemas requires an explicit pick.
+    if (!isProfile && needsSchema && schemaId == null) {
+      toast.warning('Selectează schema EuroFib pentru acest furnizor înainte de a bugeta')
+      return
+    }
     setSaving(true)
     try {
       const currentObserverIds = [...observerUserIds].sort((a, b) => a - b)
@@ -219,6 +249,20 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
         }
       }
 
+      // Pin the chosen EuroFib schema for this invoice (per-invoice override), so it drives the
+      // Procesare worklist/export. Only when we resolved a supplier+company for it.
+      if (!isProfile && schemaId != null && schemaData?.supplier_id && schemaData?.company_id) {
+        try {
+          await suppliersApi.setInvoicePreset(invoice.id, {
+            konto_config_id: schemaId,
+            supplier_id: schemaData.supplier_id,
+            company_id: schemaData.company_id,
+          })
+        } catch {
+          toast.error('Factura salvată, dar schema EuroFib nu a putut fi setată')
+        }
+      }
+
       // Invalidate relevant query keys
       if (invalidateQueryKeys) {
         for (const key of invalidateQueryKeys) {
@@ -234,7 +278,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
     } finally {
       setSaving(false)
     }
-  }, [invoice.id, supplier, invoiceNumber, invoiceDate, invoiceValue, currency, status, paymentStatus, subtractVat, vatRate, netValue, comment, driveLink, observerUserIds, initialObserverIds, isPerLine, isProfile, lineAllocations, perLineCompany, queryClient, onClose, updateInvoiceFn, updateAllocationsFn, invalidateQueryKeys])
+  }, [invoice.id, supplier, invoiceNumber, invoiceDate, invoiceValue, currency, status, paymentStatus, subtractVat, vatRate, netValue, comment, driveLink, observerUserIds, initialObserverIds, isPerLine, isProfile, lineAllocations, perLineCompany, queryClient, onClose, updateInvoiceFn, updateAllocationsFn, invalidateQueryKeys, needsSchema, schemaId, schemaData])
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -248,6 +292,28 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
         <div className="grid gap-4 py-4">
           {!isProfile && (
             <>
+              {needsSchema && (
+                <div className={`rounded-md border p-3 ${schemaId == null ? 'border-amber-400 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-950/20' : 'border-border'}`}>
+                  <Label className="mb-1.5 block text-xs font-medium">
+                    Schemă EuroFib <span className="text-destructive">*</span>
+                  </Label>
+                  <Select value={schemaId != null ? String(schemaId) : ''} onValueChange={(v) => setSchemaId(Number(v))}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Selectează schema..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(schemaData?.presets ?? []).map((p) => (
+                        <SelectItem key={p.id} value={String(p.id)}>
+                          {p.name}{p.is_active ? ' · activă' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Acest furnizor are mai multe scheme — alege una pentru bugetare.
+                  </p>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Supplier</Label>
@@ -422,6 +488,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
                 initialRows={invoice.allocations ? allocationsToRows(invoice.allocations, effectiveValue) : undefined}
                 effectiveValue={effectiveValue}
                 currency={currency}
+                onCompanyChange={setSchemaCompany}
                 compact
               />
             )}
