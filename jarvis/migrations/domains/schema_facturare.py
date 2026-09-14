@@ -54,6 +54,13 @@ def create_schema_facturare(conn, cursor):
     # Per-invoice rounding mode: FALSE = whole-EUR per car (legacy default, keeps
     # already-issued documents unchanged); TRUE = keep 2 decimals per car ("zecimale").
     cursor.execute("ALTER TABLE facturare_invoices  ADD COLUMN IF NOT EXISTS round_decimals BOOLEAN NOT NULL DEFAULT FALSE")
+    # Partial advance invoices (factură de avans parțială): a proforma covering N
+    # cars may be confirmed by several advance invoices, each over a disjoint line
+    # subset, all sharing the proforma's sequence_number. That makes (anexa_id,
+    # sequence_number) non-unique for INVOICE rows, so the old 1:1 constraint must
+    # go. Numbering integrity is still enforced per-document by
+    # excl_facturare_docnum_cross_invoice. Idempotent.
+    cursor.execute("DROP INDEX IF EXISTS uq_anexa_invoice_seq")
     cursor.execute("ALTER TABLE facturare_contracts ADD COLUMN IF NOT EXISTS archived      BOOLEAN NOT NULL DEFAULT FALSE")
     cursor.execute("ALTER TABLE facturare_contracts ADD COLUMN IF NOT EXISTS archive_after TIMESTAMP")
     cursor.execute("ALTER TABLE facturare_contracts ADD COLUMN IF NOT EXISTS archived_at   TIMESTAMP")

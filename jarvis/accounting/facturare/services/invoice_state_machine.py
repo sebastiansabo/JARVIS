@@ -19,6 +19,7 @@ ONE = Decimal("1")
 from ..models import StoredInvoice, InvoiceTypeEnum, InvoiceStateEnum, InvoiceLinkTypeEnum
 from ..repositories.invoice_storage_repository import InvoiceStorageRepository
 from .document_numbering import allocate
+from .advance_alloc import partial_advance_total, WHOLE_EUR, CENTS
 
 logger = logging.getLogger("jarvis.facturare.state_machine")
 
@@ -188,21 +189,21 @@ class InvoiceStateMachine:
                 f"Amount {amount_eur} EUR exceeds remaining {remaining} EUR "
                 f"(anexa: {anexa_total}, proformas: {proformas_total})")
 
-        # Proformas covering the SAME cars must be paired before issuing a new one
+        # A car may sit on only ONE proforma that still has uninvoiced lines.
+        # Block a new proforma overlapping lines still OPEN on an existing one
+        # (line-based: a partially-invoiced proforma still guards its rest).
         import json as _json
-        existing_invoices = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.INVOICE)
-        invoice_seqs = {i["sequence_number"] for i in existing_invoices}
         all_line_id_set = {l["id"] for l in anexa_lines}
         new_line_set = set(line_ids) if line_ids else all_line_id_set
+        invoiced_by_seq = self._invoiced_lines_by_seq(
+            self.repo.get_invoices_by_anexa(anexa_id), all_line_id_set)
         for p in existing_proformas:
-            if p["sequence_number"] in invoice_seqs:
-                continue  # already paired
-            # Unpaired proforma — check if it overlaps with the new one
             raw = p.get("line_ids")
             if isinstance(raw, str):
                 raw = _json.loads(raw)
             p_lines = set(raw) if raw else all_line_id_set
-            overlap = new_line_set & p_lines
+            open_lines = p_lines - invoiced_by_seq.get(p["sequence_number"], set())
+            overlap = new_line_set & open_lines
             if overlap:
                 raise InvoiceStateMachineError(
                     f"Proforma #{p['sequence_number']} not yet invoiced — it covers some of the same vehicles")
@@ -242,23 +243,73 @@ class InvoiceStateMachine:
                       created_by_user_id: int = 0,
                       doc_mode: str | None = None,
                       manual_kurs=None,
-                      round_decimals: bool | None = None) -> StoredInvoice:
-        """Issue an Invoice confirming payment of a specific Proforma.
+                      round_decimals: bool | None = None,
+                      line_ids: list[int] | None = None) -> StoredInvoice:
+        """Issue an advance invoice (factură de avans) confirming payment of a Proforma.
+
+        A single proforma covering N cars may be confirmed by MULTIPLE advance
+        invoices, each over a disjoint subset of its lines (``line_ids``) — this
+        lets accounting invoice only the cars that were actually paid (e.g. 5 of 7)
+        and confirm the rest later. Passing ``line_ids=None`` confirms every line
+        of the proforma still left uninvoiced (the whole proforma when untouched,
+        so the pre-partial behaviour is preserved).
+
+        Each partial books its cars at their canonical per-car advance slice; the
+        invoice that *closes* the proforma books the residual so the partials
+        reconcile to the proforma total exactly.
 
         A manual_kurs override (when the BNR rate service is unreachable) takes
         precedence over the auto-fetched rate so issuing never depends on BNR."""
+        import json as _json
         proforma_row = self.repo.get_invoice_by_anexa_type_and_seq(
             anexa_id, InvoiceTypeEnum.PROFORMA, sequence_number)
         if not proforma_row:
             raise InvoiceStateMachineError(f"Proforma #{sequence_number} not found")
 
-        existing = self.repo.get_invoice_by_anexa_type_and_seq(
-            anexa_id, InvoiceTypeEnum.INVOICE, sequence_number)
-        if existing:
-            raise InvoiceStateMachineError(f"Invoice #{sequence_number} already exists")
+        all_lines = self.repo.get_lines_by_anexa(anexa_id)
+        all_line_id_set = {l["id"] for l in all_lines}
+        line_price = {l["id"]: Decimal(str(l["selling_price_eur"])) for l in all_lines}
+        line_number_order = {l["id"]: l["line_number"] for l in all_lines}
+
+        # Lines this proforma covers (None stored == whole anexa).
+        p_raw = proforma_row.get("line_ids")
+        if isinstance(p_raw, str):
+            p_raw = _json.loads(p_raw)
+        proforma_lines = set(p_raw) if p_raw else set(all_line_id_set)
+
+        # Lines of this proforma already confirmed by earlier advance invoices.
+        already = self._invoiced_lines_for_proforma(anexa_id, sequence_number, all_line_id_set)
+        already_total = self._invoiced_total_for_proforma(anexa_id, sequence_number)
+        remaining = proforma_lines - already
+        if not remaining:
+            raise InvoiceStateMachineError(
+                f"Proforma #{sequence_number} is already fully invoiced")
+
+        # Resolve which lines this invoice confirms.
+        if line_ids:
+            target = set(line_ids)
+            outside = target - proforma_lines
+            if outside:
+                raise InvoiceStateMachineError(
+                    f"Line IDs {sorted(outside)} are not part of proforma #{sequence_number}")
+            dupes = target & already
+            if dupes:
+                raise InvoiceStateMachineError(
+                    f"Line IDs {sorted(dupes)} are already invoiced under proforma #{sequence_number}")
+        else:
+            target = set(remaining)  # confirm everything still open on this proforma
 
         self._check_invoice_number_unique(anexa_id, invoice_number, "INVOICE")
+
         proforma_amount = Decimal(str(proforma_row["total_amount_eur"]))
+        split_mode = proforma_row.get("split_mode", "equal")
+        effective_round = round_decimals if round_decimals is not None else bool(proforma_row.get("round_decimals"))
+        quant = CENTS if effective_round else WHOLE_EUR
+        amount = partial_advance_total(
+            proforma_amount, split_mode, quant,
+            {lid: line_price[lid] for lid in proforma_lines},
+            target, already, already_total)
+
         manual = self._coerce_kurs(manual_kurs)
         proforma_kurs = Decimal(str(proforma_row["kurs_applied"])) if proforma_row.get("kurs_applied") else None
         if manual:
@@ -266,32 +317,31 @@ class InvoiceStateMachine:
         elif not proforma_kurs:
             proforma_kurs = self._fetch_kurs(issued_date)
         self._require_kurs(proforma_kurs, issued_date, f"Invoice #{sequence_number}")
-        total_ron = (proforma_amount * proforma_kurs) if proforma_kurs else Decimal("0")
+        total_ron = (amount * proforma_kurs) if proforma_kurs else Decimal("0")
         intocmit = self._resolve_intocmit(intocmit_de, created_by_user_id)
 
-        # Inherit line_ids from the proforma being confirmed
-        import json as _json
-        proforma_line_ids = proforma_row.get("line_ids")
-        if isinstance(proforma_line_ids, str):
-            proforma_line_ids = _json.loads(proforma_line_ids)
+        # Store None only when this invoice covers the WHOLE anexa (preserves the
+        # existing "line_ids null == all lines" convention every consumer relies on);
+        # otherwise store the explicit subset in line_number order.
+        sorted_target = sorted(target, key=lambda lid: line_number_order.get(lid, lid))
+        store_line_ids = None if target == all_line_id_set else sorted_target
 
         effective_doc_mode = doc_mode if doc_mode else proforma_row.get("doc_mode", "per_car")
-        effective_round = round_decimals if round_decimals is not None else bool(proforma_row.get("round_decimals"))
         inv_row = self.repo.create_invoice(
             anexa_id=anexa_id,
             invoice_type=InvoiceTypeEnum.INVOICE,
             invoice_state=InvoiceStateEnum.DRAFT,
             sequence_number=sequence_number,
-            total_amount_eur=proforma_amount,
+            total_amount_eur=amount,
             total_amount_ron=total_ron,
             kurs_applied=proforma_kurs,
             invoice_number=invoice_number,
             issued_date=issued_date,
             intocmit_de=intocmit,
             notes=notes or f"Confirms Proforma #{sequence_number} (No: {proforma_row.get('invoice_number') or 'N/A'})",
-            split_mode=proforma_row.get("split_mode", "equal"),
+            split_mode=split_mode,
             created_by=created_by_user_id,
-            line_ids=proforma_line_ids,
+            line_ids=store_line_ids,
             doc_mode=effective_doc_mode,
             round_decimals=effective_round,
         )
@@ -302,9 +352,35 @@ class InvoiceStateMachine:
             link_type=InvoiceLinkTypeEnum.PRECEDES,
         )
 
-        logger.info("Invoice #%d created: anexa=%s amount=%s EUR", sequence_number, anexa_id, proforma_amount)
+        logger.info("Invoice #%d created: anexa=%s amount=%s EUR lines=%s", sequence_number, anexa_id, amount, store_line_ids or "all")
         self._persist_document_numbers(inv_row, anexa_id)
         return StoredInvoice.from_row(inv_row)
+
+    def _invoiced_lines_for_proforma(self, anexa_id: int, proforma_seq: int,
+                                     all_line_id_set: set) -> set:
+        """Lines already confirmed by advance invoices belonging to a proforma.
+
+        An advance invoice belongs to its proforma via the shared sequence_number
+        (INVOICE #N confirms PROFORMA #N). Multiple partial invoices may share
+        that sequence, each over a disjoint line subset."""
+        import json as _json
+        covered = set()
+        for inv in self.repo.get_invoices_by_anexa(anexa_id):
+            if inv["invoice_type"] != "INVOICE" or inv["sequence_number"] != proforma_seq:
+                continue
+            raw = inv.get("line_ids")
+            if isinstance(raw, str):
+                raw = _json.loads(raw)
+            covered |= set(raw) if raw else set(all_line_id_set)
+        return covered
+
+    def _invoiced_total_for_proforma(self, anexa_id: int, proforma_seq: int) -> Decimal:
+        """Sum of the totals of advance invoices already issued for a proforma."""
+        total = Decimal("0")
+        for inv in self.repo.get_invoices_by_anexa(anexa_id):
+            if inv["invoice_type"] == "INVOICE" and inv["sequence_number"] == proforma_seq:
+                total += Decimal(str(inv["total_amount_eur"]))
+        return total
 
     # ── Issue Storno ─────────────────────────────────────────────
 
@@ -551,44 +627,95 @@ class InvoiceStateMachine:
 
     # ── Query helpers ────────────────────────────────────────────
 
+    def _invoiced_lines_by_seq(self, existing: list, all_line_id_set: set) -> dict:
+        """{proforma_seq: set(lines already confirmed)} — advance invoices share
+        their proforma's sequence_number, each covering a disjoint line subset."""
+        import json as _json
+        out: dict = {}
+        for inv in existing:
+            if inv["invoice_type"] != "INVOICE":
+                continue
+            raw = inv.get("line_ids")
+            if isinstance(raw, str):
+                raw = _json.loads(raw)
+            cov = set(raw) if raw else set(all_line_id_set)
+            out.setdefault(inv["sequence_number"], set()).update(cov)
+        return out
+
     def get_next_actions(self, anexa_id: int) -> list[str]:
+        import json as _json
         existing = self.repo.get_invoices_by_anexa(anexa_id)
         types = {}
         for row in existing:
             types.setdefault(row["invoice_type"], []).append(row)
-
         if "FINAL" in types:
             return []
+
+        all_lines = self.repo.get_lines_by_anexa(anexa_id)
+        all_line_id_set = {l["id"] for l in all_lines}
+
+        def _cov(inv):
+            raw = inv.get("line_ids")
+            if isinstance(raw, str):
+                raw = _json.loads(raw)
+            return set(raw) if raw else set(all_line_id_set)
+
+        invoiced_by_seq = self._invoiced_lines_by_seq(existing, all_line_id_set)
+
+        # Proforma lines still awaiting an advance invoice (line-based so a
+        # partially-invoiced proforma still offers INVOICE for its rest).
+        proforma_open_lines = set()
+        for p in types.get("PROFORMA", []):
+            proforma_open_lines |= (_cov(p) - invoiced_by_seq.get(p["sequence_number"], set()))
+
         actions = []
-        proforma_seqs = {r["sequence_number"] for r in types.get("PROFORMA", [])}
-        invoice_seqs = {r["sequence_number"] for r in types.get("INVOICE", [])}
-        unpaired = proforma_seqs - invoice_seqs
-
-        # Can add proforma only if all existing ones are invoiced AND remaining > 0
-        if not unpaired:
-            anexa_lines = self.repo.get_lines_by_anexa(anexa_id)
-            anexa_total = sum(Decimal(str(l["selling_price_eur"])) for l in anexa_lines)
-            proformas_total = sum(Decimal(str(r["total_amount_eur"])) for r in types.get("PROFORMA", []))
-            storno_freed = sum(abs(Decimal(str(r["total_amount_eur"]))) for r in types.get("STORNO", []))
-            if proformas_total - storno_freed < anexa_total:
-                actions.append("PROFORMA")
-
-        # Can issue invoice for unpaired proformas
-        if unpaired:
+        anexa_total = sum(Decimal(str(l["selling_price_eur"])) for l in all_lines)
+        proformas_total = sum(Decimal(str(r["total_amount_eur"])) for r in types.get("PROFORMA", []))
+        storno_freed = sum(abs(Decimal(str(r["total_amount_eur"]))) for r in types.get("STORNO", []))
+        if proformas_total - storno_freed < anexa_total:
+            actions.append("PROFORMA")
+        if proforma_open_lines:
             actions.append("INVOICE")
 
-        # Can storno only if all proformas invoiced
-        if proforma_seqs and proforma_seqs == invoice_seqs:
+        # Storno reverses advance invoices; available while any invoiced line is
+        # not yet stornoed.
+        invoiced_lines = set().union(*invoiced_by_seq.values()) if invoiced_by_seq else set()
+        stornoed_lines = set()
+        for s in types.get("STORNO", []):
+            stornoed_lines |= _cov(s)
+        if invoiced_lines - stornoed_lines:
             actions.append("STORNO")
 
-        # After storno, FINAL is always available
-        if "STORNO" in types and "FINAL" not in actions:
+        # After a storno, the final invoice can be issued.
+        if types.get("STORNO") and "FINAL" not in actions:
             actions.append("FINAL")
 
         return actions
 
     def get_unpaired_proformas(self, anexa_id: int) -> list[dict]:
+        """Proformas with at least one line not yet confirmed by an advance invoice.
+
+        Each returned row carries ``remaining_line_ids`` — the proforma's lines
+        still open — so the UI can offer per-car selection when only part of a
+        proforma has been paid."""
+        import json as _json
         existing = self.repo.get_invoices_by_anexa(anexa_id)
-        proformas = {r["sequence_number"]: r for r in existing if r["invoice_type"] == "PROFORMA"}
-        invoiced = {r["sequence_number"] for r in existing if r["invoice_type"] == "INVOICE"}
-        return [proformas[s] for s in sorted(proformas.keys() - invoiced)]
+        all_lines = self.repo.get_lines_by_anexa(anexa_id)
+        all_line_id_set = {l["id"] for l in all_lines}
+        line_number_order = {l["id"]: l["line_number"] for l in all_lines}
+        invoiced_by_seq = self._invoiced_lines_by_seq(existing, all_line_id_set)
+
+        out = []
+        proformas = [r for r in existing if r["invoice_type"] == "PROFORMA"]
+        for p in sorted(proformas, key=lambda r: r["sequence_number"]):
+            raw = p.get("line_ids")
+            if isinstance(raw, str):
+                raw = _json.loads(raw)
+            p_lines = set(raw) if raw else set(all_line_id_set)
+            remaining = p_lines - invoiced_by_seq.get(p["sequence_number"], set())
+            if remaining:
+                d = dict(p)
+                d["remaining_line_ids"] = sorted(
+                    remaining, key=lambda lid: line_number_order.get(lid, lid))
+                out.append(d)
+        return out

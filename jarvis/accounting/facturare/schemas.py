@@ -79,6 +79,7 @@ class InvoiceCreateRequest(BaseModel):
     doc_mode: str = "per_car"  # "per_car" or "single_doc"
     kurs: Optional[Decimal] = Field(None, gt=0)  # manual BNR rate when auto-fetch fails
     round_decimals: Optional[bool] = None  # None = inherit the paired proforma's mode
+    line_ids: Optional[list[int]] = None  # confirm only these proforma lines (None = all still open)
 
 
 class StornoCreateRequest(BaseModel):
