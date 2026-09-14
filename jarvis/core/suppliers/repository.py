@@ -275,6 +275,17 @@ class SupplierMasterRepository(BaseRepository):
         """Drop an invoice's preset override → it falls back to the supplier's active preset."""
         return self.execute("DELETE FROM invoice_konto_override WHERE invoice_id = %s", (invoice_id,))
 
+    def get_invoice_override(self, invoice_id):
+        """The pinned konto_config_id for an invoice, or None if it uses the active preset."""
+        row = self.query_one(
+            "SELECT konto_config_id FROM invoice_konto_override WHERE invoice_id = %s", (invoice_id,))
+        return row['konto_config_id'] if row else None
+
+    def invoice_supplier_name(self, invoice_id):
+        """The free-text supplier name on an invoice (used to resolve its master supplier)."""
+        row = self.query_one("SELECT supplier FROM invoices WHERE id = %s", (invoice_id,))
+        return row['supplier'] if row else None
+
     # ---- back-compat single-config writers (target the ACTIVE preset) ----
     def upsert_konto(self, supplier_id, company_id, created_by=None, **fields):
         """Back-compat: create/update the ACTIVE preset for (supplier, company). Creates the

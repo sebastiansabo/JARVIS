@@ -288,6 +288,42 @@ class TestImportStatusMarking:
         assert SupplierMasterRepository().import_ready_ids([]) == []
 
 
+class TestSchemasForInvoiceHelpers:
+
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_get_invoice_override_returns_id(self, mock_get_db, mock_get_cursor, mock_release):
+        from core.suppliers.repository import SupplierMasterRepository
+        conn, cursor = _mock_conn_cursor()
+        mock_get_db.return_value = conn
+        mock_get_cursor.return_value = cursor
+        cursor.fetchone.return_value = {'konto_config_id': 42}
+        assert SupplierMasterRepository().get_invoice_override(7) == 42
+
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_get_invoice_override_none_when_absent(self, mock_get_db, mock_get_cursor, mock_release):
+        from core.suppliers.repository import SupplierMasterRepository
+        conn, cursor = _mock_conn_cursor()
+        mock_get_db.return_value = conn
+        mock_get_cursor.return_value = cursor
+        cursor.fetchone.return_value = None
+        assert SupplierMasterRepository().get_invoice_override(7) is None
+
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_invoice_supplier_name(self, mock_get_db, mock_get_cursor, mock_release):
+        from core.suppliers.repository import SupplierMasterRepository
+        conn, cursor = _mock_conn_cursor()
+        mock_get_db.return_value = conn
+        mock_get_cursor.return_value = cursor
+        cursor.fetchone.return_value = {'supplier': 'A24 ROAD PATROL SRL'}
+        assert SupplierMasterRepository().invoice_supplier_name(7) == 'A24 ROAD PATROL SRL'
+
+
 class TestBuildMedlineRowsUsesConfig:
 
     def _invoice(self):
