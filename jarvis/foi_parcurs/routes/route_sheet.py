@@ -47,6 +47,8 @@ def api_route_sheet_pdf():
             norma_energie=data.get('norma_energie'),
             alimentari=data.get('alimentari') or [],
             events=data.get('events') or [],
+            # cosmetic export toggle — default keeps internal drives in the sheet
+            include_internal=data.get('include_internal', True) is not False,
         )
     except Exception as e:
         logger.exception('Route-sheet PDF failed for %s %s-%s', vin, year, month)
@@ -64,8 +66,10 @@ def api_route_sheet_xlsx():
     year, month = request.args.get('year', type=int), request.args.get('month', type=int)
     if not vin or not year or not month:
         return jsonify({'success': False, 'error': 'vin, year, month sunt obligatorii'}), 400
+    # cosmetic export toggle — ?include_internal=0/false drops internal drives
+    include_internal = (request.args.get('include_internal') or '').strip().lower() not in ('0', 'false', 'no')
     try:
-        content = render_xlsx(vin, year, month)
+        content = render_xlsx(vin, year, month, include_internal=include_internal)
     except Exception as e:
         logger.exception('Route-sheet XLSX failed for %s %s-%s', vin, year, month)
         return jsonify({'success': False, 'error': str(e)[:200]}), 500

@@ -76,8 +76,21 @@ def _iso_date(v) -> str:
     return dt.strftime('%Y-%m-%d') if dt else ''
 
 
-def aggregate_month(vin: str, year: int, month: int) -> dict:
-    """Collect the locked-facts view of one car's month of driving sessions."""
+def _td_traseu(distance_km, model_label: str) -> str:
+    """Locul/Scopul label for a client test-drive row. A drive over 50 km reads as
+    a courtesy loan ('Comodat / Test Drive {model}') rather than a plain
+    'Test Drive {model}' — purely cosmetic on the exported sheet; the session
+    itself stays a test drive (is_td, counts and totals unchanged)."""
+    prefix = 'Comodat / Test Drive' if (distance_km or 0) > 50 else 'Test Drive'
+    return f'{prefix} {model_label}'.strip()
+
+
+def aggregate_month(vin: str, year: int, month: int, include_internal: bool = True) -> dict:
+    """Collect the locked-facts view of one car's month of driving sessions.
+
+    `include_internal=False` drops internal (company) drives from the LISTING only
+    — the month's odometer span (km_month_min/max) is still computed from the full
+    set, so KM totals stay intact and the excluded stretch surfaces as a gap row."""
     rows, _ = _fp_repo.get_contracts(vin=vin, per_page=2000, lean=True)
     # In-month drives that actually moved the car — Ratate (no-shows) excluded.
     # This set INCLUDES internal drives: they define the month's true odometer span
@@ -90,7 +103,9 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
     # Internal (company) drives are LISTED alongside client drives — their
     # Locul/Scopul reads from the drive's Comentariu (stored in `itinerary`).
     # Only Ratate/no-shows are excluded (already filtered out of in_month above).
-    sessions = list(in_month)
+    # When include_internal is off they're dropped from the listing (but the KM
+    # span above is unchanged, so their stretch shows as an unjustified gap).
+    sessions = [c for c in in_month if include_internal or not c.get('is_internal')]
     # chronological by drive date (departure, else created)
     sessions.sort(key=lambda c: str(c.get('departure_datetime') or c.get('created_at') or ''))
 
@@ -142,7 +157,7 @@ def aggregate_month(vin: str, year: int, month: int) -> dict:
         if is_event:
             traseu = f'Eveniment: {comment}' if comment else 'Eveniment'
         elif is_td:
-            traseu = f'Test Drive {model_label}'
+            traseu = _td_traseu(dist, model_label)
         else:
             traseu = comment or 'Deplasare în interes de serviciu'
         trips.append({
@@ -1064,18 +1079,22 @@ def _user_signature(user_id) -> str | None:
 
 def generate_and_store(vin: str, year: int, month: int, user_id=None, user_name=None,
                        regenerate: bool = False, norma=None, norma_energie=None,
-                       alimentari=None, events=None) -> bytes:
+                       alimentari=None, events=None, include_internal: bool = True) -> bytes:
     """Return the stored PDF (unless `regenerate`), else build it with AI +
     Playwright, persist it to fp_route_sheets, and return the bytes. `norma`
     (l/100km) and `alimentari` (list of {date, bon, liters, lei}) are user-entered;
     when `norma` is omitted it falls back to the car's profile normă.
     `events` (list of {name, date}) are promo events the AI ties Comodat sessions
-    to. The generating user's stored signature is embedded in the 'Întocmit' box."""
-    if not regenerate:
+    to. The generating user's stored signature is embedded in the 'Întocmit' box.
+
+    `include_internal=False` builds an ad-hoc export that omits internal drives; it
+    never touches the cache — it neither returns the stored copy nor overwrites the
+    canonical (internal-included) stored sheet."""
+    if include_internal and not regenerate:
         cached = get_stored_pdf(vin, year, month)
         if cached is not None:
             return cached
-    data = aggregate_month(vin, year, month)
+    data = aggregate_month(vin, year, month, include_internal=include_internal)
     if norma is None or norma_energie is None:  # fall back to the car-profile norms
         veh = _veh_repo.get_by_vin(vin) or {}
         norma = norma if norma is not None else veh.get('norma_combustibil')
@@ -1085,16 +1104,17 @@ def generate_and_store(vin: str, year: int, month: int, user_id=None, user_name=
     data['signatures'] = {'intocmit': _user_signature(user_id), 'intocmit_name': user_name or ''}
     prose = _ai_prose(data)
     pdf_bytes = _html_to_pdf_bytes(_skeleton_html(data, prose, _scop_overrides(vin, year, month)))
-    _save_sheet(data, pdf_bytes, prose, user_id, user_name)
+    if include_internal:  # only the canonical (internal-included) sheet is persisted
+        _save_sheet(data, pdf_bytes, prose, user_id, user_name)
     return pdf_bytes
 
 
-def render_xlsx(vin: str, year: int, month: int) -> bytes:
+def render_xlsx(vin: str, year: int, month: int, include_internal: bool = True) -> bytes:
     """Deterministic monthly route-sheet workbook (no AI)."""
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
 
-    data = aggregate_month(vin, year, month)
+    data = aggregate_month(vin, year, month, include_internal=include_internal)
     overrides = _scop_overrides(vin, year, month)
     v = data['vehicle']
     wb = Workbook()
