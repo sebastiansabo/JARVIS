@@ -47,6 +47,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
@@ -652,6 +653,10 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
   const [filterYear, setFilterYear] = useState<number>(now.getFullYear())
   const [filterMonth, setFilterMonth] = useState<number>(now.getMonth() + 1) // 0 = all months
   const monthChosen = filterMonth !== 0 // a Foaie de parcurs is monthly — needs a specific month
+  // Cosmetic export toggle: include/exclude internal (company) drives in the
+  // generated foaie (PDF + Excel). Off drops them from the listing but keeps the
+  // odometer span, so KM totals are unchanged and the stretch shows as a gap.
+  const [includeInternal, setIncludeInternal] = usePersistentState('fp.routeSheet.includeInternal', true)
 
   const { data, isLoading } = useQuery({
     queryKey: ['foi-contracts-all', 'recent', companyId, documentType],
@@ -755,6 +760,11 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
         </SelectContent>
       </Select>
       {!isLoading && <span className="text-xs text-muted-foreground">{cars.length} mașini</span>}
+      <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
+        title="Include sesiunile interne (companie) în foaia de parcurs exportată (PDF/Excel)">
+        <Switch checked={includeInternal} onCheckedChange={setIncludeInternal} />
+        Sesiuni interne
+      </label>
     </div>
   )
   // On the Foi de Parcurs tab this row rides the tabs line (via the portal slot);
@@ -871,7 +881,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                 <FileText className="mr-2 h-4 w-4" /> PDF (previzualizare)
                               </DropdownMenuItem>
                               <DropdownMenuItem asChild>
-                                <a href={foiParcursApi.getRouteSheetXlsxUrl(sheet.vin, filterYear, filterMonth)} download>
+                                <a href={foiParcursApi.getRouteSheetXlsxUrl(sheet.vin, filterYear, filterMonth, includeInternal)} download>
                                   <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel
                                 </a>
                               </DropdownMenuItem>
@@ -1027,6 +1037,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
         vin={previewVin}
         year={filterYear}
         month={filterMonth}
+        includeInternal={includeInternal}
         stored={previewVin ? storedByVin.get(previewVin) ?? null : null}
         vehicleNorma={previewVin ? vinMap.get(previewVin)?.norma_combustibil ?? null : null}
         vehicleNormaEnergie={previewVin ? vinMap.get(previewVin)?.norma_energie ?? null : null}
@@ -1756,8 +1767,8 @@ function FileButton({ onPick, label, disabled }: { onPick: (f: File) => void; la
   )
 }
 
-function RouteSheetPreviewDialog({ vin, year, month, stored, vehicleNorma, vehicleNormaEnergie, vehicleFuelType, onClose }: {
-  vin: string | null; year: number; month: number; stored: StoredRouteSheet | null
+function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, stored, vehicleNorma, vehicleNormaEnergie, vehicleFuelType, onClose }: {
+  vin: string | null; year: number; month: number; includeInternal?: boolean; stored: StoredRouteSheet | null
   vehicleNorma: number | null; vehicleNormaEnergie: number | null; vehicleFuelType: string | null; onClose: () => void
 }) {
   const usesTank = usesFuelTank(vehicleFuelType || undefined)
@@ -1795,7 +1806,7 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, vehicleNorma, vehic
         .filter((e) => e.name.trim())
         .map((e) => ({ name: e.name.trim(), start: e.start, end: e.end || e.start }))
       const blob = await foiParcursApi.generateRouteSheetPdf(vin, year, month, {
-        regenerate, norma: norma ? Number(norma) : null, norma_energie: normaEnergie ? Number(normaEnergie) : null, alimentari, events: evPayload,
+        regenerate, norma: norma ? Number(norma) : null, norma_energie: normaEnergie ? Number(normaEnergie) : null, alimentari, events: evPayload, includeInternal,
       })
       setUrl((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(blob) })
     } catch (e: any) {
@@ -1803,7 +1814,7 @@ function RouteSheetPreviewDialog({ vin, year, month, stored, vehicleNorma, vehic
     } finally {
       setLoading(false)
     }
-  }, [vin, year, month, norma, normaEnergie, alim, events])
+  }, [vin, year, month, norma, normaEnergie, alim, events, includeInternal])
 
   // On open: prefill the form from the stored sheet, and if one exists show it.
   useEffect(() => {
