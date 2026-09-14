@@ -3340,6 +3340,34 @@ def _create_schema_incremental_continued(conn, cursor):
     # Foaie-level related files (Spaces keys): [{key, filename, content_type, size, uploaded_at, uploaded_by}].
     cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS attachments JSONB DEFAULT '[]'")
 
+    # ── Finalizat / lock state ──────────────────────────────────────────────
+    # A sheet marked 'finalizat' is LOCKED: its PDF, its own fields, and the
+    # underlying sessions/gaps of that car-month are frozen. Anyone with
+    # route-sheet access may finalize; only Admin + Dep Contabilitate may unlock
+    # (permission test_drive.route_sheet.unlock). status ∈ ('draft','finalizat').
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'draft'")
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS finalized_at TIMESTAMP WITH TIME ZONE")
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS finalized_by INTEGER")
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS finalized_by_name VARCHAR(255)")
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS unlocked_at TIMESTAMP WITH TIME ZONE")
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS unlocked_by INTEGER")
+    cursor.execute("ALTER TABLE fp_route_sheets ADD COLUMN IF NOT EXISTS unlocked_by_name VARCHAR(255)")
+    # Full finalize/unlock audit trail (survives re-locks), mirroring fp_vehicle_lock_events.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS fp_route_sheet_lock_events (
+            id BIGSERIAL PRIMARY KEY,
+            vin VARCHAR(50) NOT NULL,
+            year INTEGER NOT NULL,
+            month INTEGER NOT NULL,
+            action VARCHAR(20) NOT NULL,          -- 'finalize' | 'unlock'
+            reason TEXT,
+            actor_id INTEGER,
+            actor_name VARCHAR(255),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_fp_rs_lock_events_period ON fp_route_sheet_lock_events(vin, year, month)')
+
     # facturare per-document number registry (additive; never mutates facturare_invoices)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS facturare_document_numbers (
