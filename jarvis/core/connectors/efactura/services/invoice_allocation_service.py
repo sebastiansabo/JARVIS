@@ -349,7 +349,8 @@ class InvoiceAllocationService:
         """One-time: populate invoices.line_items for e-Factura-imported invoices from their stored
         XML, so the Procesare export can post the article as EuroFib text. Joins efactura_invoices
         (jarvis_invoice_id + xml_content) → invoices and parses each XML. only_missing skips
-        invoices that already have line_items. Returns the number of invoices updated."""
+        invoices that already have line_items. EXCLUDES archived invoices and invoices older than
+        60 days (by invoice_date) — those are out of scope for the export. Returns rows updated."""
         from core.database import get_db, get_cursor, release_db
         conn = get_db()
         cursor = get_cursor(conn)
@@ -362,6 +363,8 @@ class InvoiceAllocationService:
                 WHERE ef.jarvis_invoice_id IS NOT NULL
                   AND ef.xml_content IS NOT NULL
                   AND i.deleted_at IS NULL
+                  AND i.archived_at IS NULL
+                  AND i.invoice_date >= CURRENT_DATE - INTERVAL '60 days'
                   {where_missing}
             """)
             rows = cursor.fetchall()
