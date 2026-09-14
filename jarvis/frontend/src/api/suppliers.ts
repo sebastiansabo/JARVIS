@@ -197,4 +197,10 @@ export const suppliersApi = {
   /** Revert exported invoices back to 'Bugetata' (send to In lucru). */
   unprocess: (invoiceIds: number[]) =>
     api.post<{ success: boolean; reverted: number }>('/api/suppliers/unprocess', { invoice_ids: invoiceIds }),
+  /** Of the given invoice ids, which are ready to export to EuroFib (Bugetata + supplier has a
+   * complete active schema for an allocated company). Powers the Accounting "Pregătită de import"
+   * badge. companyId scopes to one company; omit to accept any allocated company. */
+  importReadyIds: (invoiceIds: number[], companyId?: number | null) =>
+    api.post<{ success: boolean; ready_ids: number[] }>('/api/suppliers/import-ready-ids',
+      { invoice_ids: invoiceIds, company_id: companyId ?? null }),
 }

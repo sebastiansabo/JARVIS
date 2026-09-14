@@ -262,8 +262,8 @@ export default function Procesare() {
   const [customTo, setCustomTo] = useState<string>(ymd(new Date()))
   const { from: startDate, to: endDate } = rangeForPreset(preset, customFrom, customTo)
 
-  // Worklist "Procesate" toggle — 'bugetata' (default) shows the actionable worklist,
-  // 'procesate' shows a read-only history of already-exported invoices (status='processed').
+  // Worklist "Importate" toggle — 'bugetata' (default) shows the actionable worklist,
+  // 'procesate' shows a read-only history of EuroFib-exported invoices (status='Importat').
   const [worklistView, setWorklistView] = useState<'bugetata' | 'procesate'>('bugetata')
   const isProcessedView = worklistView === 'procesate'
 
@@ -274,7 +274,7 @@ export default function Procesare() {
   })
   const procesateQ = useQuery({
     queryKey: ['supplier-worklist-invoices', companyId, startDate, endDate, 'procesate'],
-    queryFn: () => suppliersApi.fetchInvoices(companyId as number, startDate, endDate, 'processed'),
+    queryFn: () => suppliersApi.fetchInvoices(companyId as number, startDate, endDate, 'Importat'),
     enabled: !!companyId,
   })
   const invoicesData = isProcessedView ? procesateQ.data : bugetataQ.data
@@ -356,7 +356,7 @@ export default function Procesare() {
       await suppliersApi.exportCsv(companyId, startDate, endDate, invoiceIds)
     },
     onSuccess: (_res, group) => {
-      // Exported invoices flip Bugetata → processed server-side — refresh the worklist so they drop off.
+      // Exported invoices flip Bugetata → Importat server-side — refresh the worklist so they drop off.
       qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] })
       setWorklistView('procesate')
       toast.success(`Exportat — facturile au fost marcate procesate (${group.supplierName})`)
@@ -475,7 +475,7 @@ export default function Procesare() {
           </TabsList>
           {tab === 'worklist' && (
             <div className="flex flex-wrap items-center gap-2">
-              <Seg value={worklistView} onChange={setWorklistView} options={[['bugetata', `In lucru (${bugetataCount})`], ['procesate', `Procesate (${procesateCount})`]] as const} />
+              <Seg value={worklistView} onChange={setWorklistView} options={[['bugetata', `In lucru (${bugetataCount})`], ['procesate', `Importate (${procesateCount})`]] as const} />
               <Seg value={preset} onChange={setPreset} options={[['month', 'Luna curentă'], ['30d', 'Ultimele 30 zile'], ['year', 'Anul curent'], ['custom', 'Interval']] as const} />
               {preset === 'custom' && (
                 <DateField
