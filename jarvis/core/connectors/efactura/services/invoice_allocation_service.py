@@ -1,6 +1,7 @@
 """
 Invoice Allocation Service - unallocated invoice management and module integration.
 """
+import json
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import date
 
@@ -18,6 +19,32 @@ logger = get_logger('jarvis.core.connectors.efactura.invoice_allocation_service'
 
 _company_repo = _CompanyRepo()
 get_companies_with_vat = _company_repo.get_all_with_vat_and_brands
+
+
+def xml_to_line_items(xml_content):
+    """Parse e-Factura XML into the invoices.line_items JSON shape: per-line article name /
+    description plus amounts. Persisted at import so the Procesare worklist/export (and future
+    per-line features) have the article text. Returns [] on any parse failure or empty XML."""
+    if not xml_content:
+        return []
+    try:
+        from ..xml_parser import parse_invoice_xml
+        parsed = parse_invoice_xml(xml_content)
+        items = []
+        for li in parsed.line_items:
+            items.append({
+                'line_number': li.line_number,
+                'name': li.name or '',
+                'description': li.description or '',
+                'quantity': float(li.quantity) if li.quantity is not None else None,
+                'unit_price': float(li.unit_price) if li.unit_price is not None else None,
+                'amount': float(li.line_amount) if li.line_amount is not None else None,
+                'vat_rate': float(li.vat_rate) if li.vat_rate is not None else None,
+            })
+        return items
+    except Exception as e:
+        logger.warning(f"Failed to parse line items from XML: {e}")
+        return []
 
 
 def net_vat_fields(invoice_value, net_value):
@@ -318,6 +345,44 @@ class InvoiceAllocationService:
             logger.error(f"Error in batch send to module: {e}")
             return ServiceResult(success=False, error=str(e))
 
+    def backfill_invoice_line_items(self, only_missing: bool = True) -> int:
+        """One-time: populate invoices.line_items for e-Factura-imported invoices from their stored
+        XML, so the Procesare export can post the article as EuroFib text. Joins efactura_invoices
+        (jarvis_invoice_id + xml_content) → invoices and parses each XML. only_missing skips
+        invoices that already have line_items. Returns the number of invoices updated."""
+        from core.database import get_db, get_cursor, release_db
+        conn = get_db()
+        cursor = get_cursor(conn)
+        try:
+            where_missing = "AND (i.line_items IS NULL OR i.line_items = '[]'::jsonb)" if only_missing else ""
+            cursor.execute(f"""
+                SELECT ef.jarvis_invoice_id AS jid, ef.xml_content AS xml
+                FROM efactura_invoices ef
+                JOIN invoices i ON i.id = ef.jarvis_invoice_id
+                WHERE ef.jarvis_invoice_id IS NOT NULL
+                  AND ef.xml_content IS NOT NULL
+                  AND i.deleted_at IS NULL
+                  {where_missing}
+            """)
+            rows = cursor.fetchall()
+            updated = 0
+            for row in rows:
+                items = xml_to_line_items(row['xml'])
+                if not items:
+                    continue
+                cursor.execute("UPDATE invoices SET line_items = %s WHERE id = %s",
+                               (json.dumps(items), row['jid']))
+                updated += 1
+            conn.commit()
+            logger.info(f"Backfilled line_items for {updated} invoices")
+            return updated
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Backfill line_items failed: {e}")
+            raise
+        finally:
+            release_db(conn)
+
     def _create_main_invoice(self, invoice: Invoice) -> Optional[int]:
         """Create a record in the main invoices table."""
         from core.database import get_db, get_cursor, release_db
@@ -446,7 +511,11 @@ class InvoiceAllocationService:
                 # storno/credit-note invoices). VAT rate = (gross - net) / net * 100.
                 subtract_vat, vat_rate = net_vat_fields(invoice_value, net_value)
 
-                values.append(f"(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())")
+                # Persist per-line article name/description (parsed from the stored XML) so the
+                # Procesare worklist/export can post the article as the EuroFib text.
+                line_items = xml_to_line_items(inv.get('xml_content'))
+
+                values.append(f"(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())")
                 params.extend([
                     inv['partner_name'],      # supplier
                     inv['partner_name'],      # invoice_template
@@ -461,6 +530,7 @@ class InvoiceAllocationService:
                     'Nebugetata',             # status
                     subtract_vat,             # subtract_vat
                     vat_rate,                 # vat_rate
+                    json.dumps(line_items) if line_items else None,  # line_items
                 ])
                 efactura_ids.append(inv['id'])
 
@@ -469,7 +539,7 @@ class InvoiceAllocationService:
                 INSERT INTO invoices (
                     supplier, invoice_template, invoice_number, invoice_date,
                     invoice_value, net_value, currency, value_ron, drive_link,
-                    comment, status, subtract_vat, vat_rate, created_at
+                    comment, status, subtract_vat, vat_rate, line_items, created_at
                 ) VALUES {', '.join(values)}
                 RETURNING id
             ''', params)
