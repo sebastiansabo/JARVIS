@@ -869,9 +869,103 @@ def list_stored(company_id: int | None, year: int, month: int) -> list:
     """Metadata for every stored sheet in a period (badge + modal prefill)."""
     return _store.query_all(
         'SELECT vin, session_count, total_km, norma_combustibil, norma_energie, alimentari, evenimente, '
-        'scop_overrides, attachments, generated_by_name, generated_at '
+        'scop_overrides, attachments, generated_by_name, generated_at, '
+        'status, finalized_at, finalized_by_name '
         'FROM fp_route_sheets WHERE (%s IS NULL OR company_id=%s) AND year=%s AND month=%s',
         (company_id, company_id, year, month),
+    )
+
+
+# ── Finalizat / lock state ───────────────────────────────────────────────────
+# A sheet marked 'finalizat' is LOCKED: its PDF, its own fields, and the
+# underlying sessions/gaps of that car-month are frozen. Anyone with route-sheet
+# access may finalize; only Admin + Dep Contabilitate may unlock (gated at route).
+
+def route_sheet_status(vin: str, year: int, month: int) -> str:
+    """'finalizat' if the sheet is locked, else 'draft' (also for a sheet that
+    doesn't exist / isn't generated yet)."""
+    row = _store.query_one(
+        'SELECT status FROM fp_route_sheets WHERE vin=%s AND year=%s AND month=%s',
+        (vin, year, month),
+    )
+    return (row or {}).get('status') or 'draft'
+
+
+def is_finalized(vin: str, year: int, month: int) -> bool:
+    """True when the car-month route sheet is finalized (locked)."""
+    return route_sheet_status(vin, year, month) == 'finalizat'
+
+
+def get_lock_state(vin: str, year: int, month: int) -> dict:
+    """Lock metadata for one sheet (status + who/when finalized/unlocked)."""
+    row = _store.query_one(
+        'SELECT status, finalized_at, finalized_by_name, unlocked_at, unlocked_by_name '
+        'FROM fp_route_sheets WHERE vin=%s AND year=%s AND month=%s',
+        (vin, year, month),
+    ) or {}
+    return {
+        'status': row.get('status') or 'draft',
+        'finalized_at': row.get('finalized_at'),
+        'finalized_by_name': row.get('finalized_by_name'),
+        'unlocked_at': row.get('unlocked_at'),
+        'unlocked_by_name': row.get('unlocked_by_name'),
+    }
+
+
+def _log_lock_event(vin, year, month, action, actor_id, actor_name, reason=None) -> None:
+    _store.execute(
+        'INSERT INTO fp_route_sheet_lock_events (vin, year, month, action, reason, actor_id, actor_name) '
+        'VALUES (%s,%s,%s,%s,%s,%s,%s)',
+        (vin, year, month, action, (reason or None), actor_id, actor_name),
+    )
+
+
+def finalize_sheet(vin: str, year: int, month: int, user_id=None, user_name=None) -> dict:
+    """Mark a generated sheet 'finalizat' (locked). Requires an existing stored
+    sheet with a PDF. Raises ValueError if not generated / already finalized."""
+    row = _store.query_one(
+        'SELECT pdf_bytes, status FROM fp_route_sheets WHERE vin=%s AND year=%s AND month=%s',
+        (vin, year, month),
+    )
+    if not row or row.get('pdf_bytes') is None:
+        raise ValueError('Foaia de parcurs trebuie generată înainte de finalizare.')
+    if (row.get('status') or 'draft') == 'finalizat':
+        raise ValueError('Foaia de parcurs este deja finalizată.')
+    _store.execute(
+        "UPDATE fp_route_sheets SET status='finalizat', finalized_at=NOW(), finalized_by=%s, "
+        "finalized_by_name=%s, updated_at=NOW() WHERE vin=%s AND year=%s AND month=%s",
+        (user_id, user_name, vin, year, month),
+    )
+    _log_lock_event(vin, year, month, 'finalize', user_id, user_name)
+    return get_lock_state(vin, year, month)
+
+
+def unlock_sheet(vin: str, year: int, month: int, user_id=None, user_name=None, reason=None) -> dict:
+    """Unlock a finalized sheet back to 'draft' (route gates this to Admin +
+    Dep Contabilitate). Raises ValueError if the sheet isn't finalized."""
+    row = _store.query_one(
+        'SELECT status FROM fp_route_sheets WHERE vin=%s AND year=%s AND month=%s',
+        (vin, year, month),
+    )
+    if not row:
+        raise ValueError('Foaia de parcurs nu există.')
+    if (row.get('status') or 'draft') != 'finalizat':
+        raise ValueError('Foaia de parcurs nu este finalizată.')
+    _store.execute(
+        "UPDATE fp_route_sheets SET status='draft', unlocked_at=NOW(), unlocked_by=%s, "
+        "unlocked_by_name=%s, updated_at=NOW() WHERE vin=%s AND year=%s AND month=%s",
+        (user_id, user_name, vin, year, month),
+    )
+    _log_lock_event(vin, year, month, 'unlock', user_id, user_name, reason)
+    return get_lock_state(vin, year, month)
+
+
+def get_lock_events(vin: str, year: int, month: int) -> list:
+    """Finalize/unlock audit trail for one sheet (newest first)."""
+    return _store.query_all(
+        'SELECT action, reason, actor_name, created_at FROM fp_route_sheet_lock_events '
+        'WHERE vin=%s AND year=%s AND month=%s ORDER BY created_at DESC, id DESC',
+        (vin, year, month),
     )
 
 

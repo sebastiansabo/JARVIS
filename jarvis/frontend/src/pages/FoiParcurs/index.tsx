@@ -37,6 +37,7 @@ import {
   History,
   ArrowLeftRight,
   Paperclip,
+  LockOpen,
 } from 'lucide-react'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
@@ -649,6 +650,21 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
     },
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Corectarea a eșuat'),
   })
+  // Finalizat / lock. Finalize = any route-sheet user; unlock (Deblochează) is
+  // gated to Admin + Dep Contabilitate (test_drive.route_sheet.unlock).
+  const canUnlock = isAdmin || !!user?.permissions?.['test_drive.route_sheet.unlock']
+  const finalizeMutation = useMutation({
+    mutationFn: (v: { vin: string; year: number; month: number }) =>
+      foiParcursApi.finalizeRouteSheet(v.vin, v.year, v.month),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['fp-route-sheets'] }); toast.success('Foaie de parcurs finalizată (blocată).') },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Finalizarea a eșuat'),
+  })
+  const unlockMutation = useMutation({
+    mutationFn: (v: { vin: string; year: number; month: number }) =>
+      foiParcursApi.unlockRouteSheet(v.vin, v.year, v.month),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['fp-route-sheets'] }); toast.success('Foaie de parcurs deblocată.') },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Deblocarea a eșuat'),
+  })
   const now = new Date()
   const [filterYear, setFilterYear] = useState<number>(now.getFullYear())
   const [filterMonth, setFilterMonth] = useState<number>(now.getMonth() + 1) // 0 = all months
@@ -850,7 +866,12 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                       <TableCell>{clientCount}</TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
-                          {stored && (
+                          {stored?.status === 'finalizat' ? (
+                            <Badge className="bg-amber-600 text-white text-xs"
+                              title={`Finalizat${stored.finalized_by_name ? ' de ' + stored.finalized_by_name : ''}${stored.finalized_at ? ' · ' + new Date(stored.finalized_at).toLocaleString('ro-RO') : ''} — blocată`}>
+                              <Lock className="mr-1 h-3 w-3" /> Finalizat
+                            </Badge>
+                          ) : stored && (
                             <Badge className="bg-green-600 text-white text-xs"
                               title={`Salvat ${new Date(stored.generated_at).toLocaleString('ro-RO')}`}>
                               Salvat
@@ -885,6 +906,34 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                   <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel
                                 </a>
                               </DropdownMenuItem>
+                              {/* Finalizat / lock — freezes the foaie + its underlying sessions.
+                                  Finalize: any user (needs a generated sheet). Unlock: conta/admin. */}
+                              {stored && stored.status !== 'finalizat' && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem
+                                    disabled={finalizeMutation.isPending}
+                                    onClick={() => finalizeMutation.mutate({ vin: sheet.vin, year: filterYear, month: filterMonth })}>
+                                    <Lock className="mr-2 h-4 w-4" /> Finalizează (blochează)
+                                  </DropdownMenuItem>
+                                </>
+                              )}
+                              {stored?.status === 'finalizat' && (
+                                <>
+                                  <DropdownMenuSeparator />
+                                  {canUnlock ? (
+                                    <DropdownMenuItem
+                                      disabled={unlockMutation.isPending}
+                                      onClick={() => unlockMutation.mutate({ vin: sheet.vin, year: filterYear, month: filterMonth })}>
+                                      <LockOpen className="mr-2 h-4 w-4" /> Deblochează
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem disabled>
+                                      <Lock className="mr-2 h-4 w-4" /> Blocată — doar Contabilitate
+                                    </DropdownMenuItem>
+                                  )}
+                                </>
+                              )}
                               {/* Document driver(s) at an uncovered month start/end — opens
                                   the Rezolvă gap modal in boundary mode (no gap row needed). */}
                               <DropdownMenuSeparator />
@@ -1042,6 +1091,8 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
         vehicleNorma={previewVin ? vinMap.get(previewVin)?.norma_combustibil ?? null : null}
         vehicleNormaEnergie={previewVin ? vinMap.get(previewVin)?.norma_energie ?? null : null}
         vehicleFuelType={previewVin ? vinMap.get(previewVin)?.fuel_type ?? null : null}
+        canUnlock={canUnlock}
+        onUnlock={(vin, year, month) => unlockMutation.mutate({ vin, year, month })}
         onClose={() => {
           setPreviewVin(null)
           queryClient.invalidateQueries({ queryKey: ['fp-route-sheets'] })
@@ -1767,10 +1818,12 @@ function FileButton({ onPick, label, disabled }: { onPick: (f: File) => void; la
   )
 }
 
-function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, stored, vehicleNorma, vehicleNormaEnergie, vehicleFuelType, onClose }: {
+function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, stored, vehicleNorma, vehicleNormaEnergie, vehicleFuelType, canUnlock = false, onUnlock, onClose }: {
   vin: string | null; year: number; month: number; includeInternal?: boolean; stored: StoredRouteSheet | null
-  vehicleNorma: number | null; vehicleNormaEnergie: number | null; vehicleFuelType: string | null; onClose: () => void
+  vehicleNorma: number | null; vehicleNormaEnergie: number | null; vehicleFuelType: string | null
+  canUnlock?: boolean; onUnlock?: (vin: string, year: number, month: number) => void; onClose: () => void
 }) {
+  const finalized = stored?.status === 'finalizat'
   const usesTank = usesFuelTank(vehicleFuelType || undefined)
   const usesBatt = usesBattery(vehicleFuelType || undefined)
   const [url, setUrl] = useState<string | null>(null)
@@ -2032,8 +2085,20 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
               ))}
             </div>
 
-            <Button className="w-full" onClick={() => load(true)} disabled={loading}>
-              <Sparkles className="mr-1.5 h-4 w-4" /> {url ? 'Regenerează' : 'Generează'}
+            {finalized && (
+              <div className="flex flex-wrap items-center gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                <Lock className="h-4 w-4 shrink-0" />
+                <span className="flex-1">Foaie finalizată (blocată){stored?.finalized_by_name ? ` de ${stored.finalized_by_name}` : ''}. Deblocheaz-o pentru a regenera sau modifica.</span>
+                {canUnlock && vin && (
+                  <Button size="sm" variant="outline" className="h-7"
+                    onClick={() => onUnlock?.(vin, year, month)}>
+                    <LockOpen className="mr-1.5 h-3.5 w-3.5" /> Deblochează
+                  </Button>
+                )}
+              </div>
+            )}
+            <Button className="w-full" onClick={() => load(true)} disabled={loading || finalized}>
+              <Sparkles className="mr-1.5 h-4 w-4" /> {finalized ? 'Blocată (finalizată)' : url ? 'Regenerează' : 'Generează'}
             </Button>
             {error && <div className="text-sm text-red-600">{error}</div>}
           </div>

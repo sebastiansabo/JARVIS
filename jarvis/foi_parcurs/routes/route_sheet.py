@@ -2,11 +2,15 @@
 (persisted to fp_route_sheets), a deterministic Excel, and a list of stored
 sheets for a period. Regenerating overwrites the stored copy."""
 from flask import Response
-from ._shared import foi_parcurs_bp, jsonify, request, login_required, current_user, logger
+from ._shared import (
+    foi_parcurs_bp, jsonify, request, login_required, current_user, logger,
+    route_sheet_lock_block,
+)
 from core.roles.decorators import v2_permission_required
 from ..services.route_sheet_service import (
     generate_and_store, render_xlsx, list_stored, redistribute_gap, absorb_gap, retile_gap,
     set_scop_override, add_attachment, remove_attachment, upload_receipt, vin_exists,
+    finalize_sheet, unlock_sheet, get_lock_events, is_finalized,
 )
 
 _MAX_UPLOAD = 10 * 1024 * 1024  # 10 MB
@@ -37,6 +41,11 @@ def api_route_sheet_pdf():
     year, month = data.get('year'), data.get('month')
     if not vin or not year or not month:
         return jsonify({'success': False, 'error': 'vin, year, month sunt obligatorii'}), 400
+    # A finalized (locked) sheet may be viewed but not regenerated/overwritten.
+    if bool(data.get('regenerate')):
+        blocked = route_sheet_lock_block(vin, int(year), int(month))
+        if blocked:
+            return jsonify(blocked[0]), blocked[1]
     try:
         pdf = generate_and_store(
             vin, int(year), int(month),
@@ -94,6 +103,9 @@ def api_redistribute_gap():
         return jsonify({'success': False, 'error': 'vin, year, month și minim un contract sunt obligatorii'}), 400
     if len(contracts) > 3:
         return jsonify({'success': False, 'error': 'Maxim 3 șoferi per gap'}), 400
+    blocked = route_sheet_lock_block(vin, int(year), int(month))
+    if blocked:
+        return jsonify(blocked[0]), blocked[1]
     try:
         n = redistribute_gap(vin, int(year), int(month), contracts,
                              user_name=(getattr(current_user, 'name', None) or getattr(current_user, 'email', None)))
@@ -124,6 +136,9 @@ def api_absorb_gap():
                         'error': 'vin, year, month, before_id, after_id, before_km și after_km sunt obligatorii'}), 400
     if len(middles) > 3:
         return jsonify({'success': False, 'error': 'Maxim 3 șoferi intermediari'}), 400
+    blocked = route_sheet_lock_block(vin, int(year), int(month))
+    if blocked:
+        return jsonify(blocked[0]), blocked[1]
     try:
         result = absorb_gap(
             vin, int(year), int(month), int(before_id), int(after_id),
@@ -150,6 +165,9 @@ def api_retile_gap():
     if not vin or not year or not month or len(allocations) < 2:
         return jsonify({'success': False,
                         'error': 'vin, year, month și minim două sesiuni sunt obligatorii'}), 400
+    blocked = route_sheet_lock_block(vin, int(year), int(month))
+    if blocked:
+        return jsonify(blocked[0]), blocked[1]
     try:
         result = retile_gap(
             vin, int(year), int(month), allocations,
@@ -178,6 +196,9 @@ def api_route_sheet_upload():
         return jsonify({'success': False, 'error': 'file, vin, year, month sunt obligatorii'}), 400
     if not vin_exists(vin):
         return jsonify({'success': False, 'error': 'Vehicul necunoscut.'}), 404
+    blocked = route_sheet_lock_block(vin, int(year), int(month))
+    if blocked:
+        return jsonify(blocked[0]), blocked[1]
     data = f.read()
     if not data:
         return jsonify({'success': False, 'error': 'Fișier gol.'}), 400
@@ -209,6 +230,9 @@ def api_route_sheet_attachment_delete():
     year, month, key = data.get('year'), data.get('month'), (data.get('key') or '').strip()
     if not vin or not year or not month or not key:
         return jsonify({'success': False, 'error': 'vin, year, month, key sunt obligatorii'}), 400
+    blocked = route_sheet_lock_block(vin, int(year), int(month))
+    if blocked:
+        return jsonify(blocked[0]), blocked[1]
     try:
         remaining = remove_attachment(vin, int(year), int(month), key)
     except Exception as e:
@@ -228,6 +252,9 @@ def api_route_sheet_scop():
     session_id = data.get('session_id')
     if not vin or not year or not month or session_id is None:
         return jsonify({'success': False, 'error': 'vin, year, month, session_id sunt obligatorii'}), 400
+    blocked = route_sheet_lock_block(vin, int(year), int(month))
+    if blocked:
+        return jsonify(blocked[0]), blocked[1]
     try:
         overrides = set_scop_override(vin, int(year), int(month), session_id, data.get('text') or '')
     except Exception as e:
@@ -250,3 +277,71 @@ def api_route_sheets_list():
         logger.exception('Route-sheet list failed for %s %s-%s', company_id, year, month)
         return jsonify({'success': False, 'error': str(e)[:200]}), 500
     return jsonify({'success': True, 'sheets': sheets})
+
+
+# ── Finalizat / lock ─────────────────────────────────────────────────────────
+
+@foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/finalize', methods=['POST'])
+@login_required
+def api_route_sheet_finalize():
+    """Mark a generated foaie 'finalizat' (locked). Any route-sheet user may
+    finalize; unlocking is the privileged action. Requires the sheet to have been
+    generated first."""
+    data = request.get_json(silent=True) or {}
+    vin = (data.get('vin') or '').strip()
+    year, month = data.get('year'), data.get('month')
+    if not vin or not year or not month:
+        return jsonify({'success': False, 'error': 'vin, year, month sunt obligatorii'}), 400
+    try:
+        state = finalize_sheet(
+            vin, int(year), int(month),
+            user_id=getattr(current_user, 'id', None),
+            user_name=(getattr(current_user, 'name', None) or getattr(current_user, 'email', None)))
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        logger.exception('Route-sheet finalize failed for %s %s-%s', vin, year, month)
+        return jsonify({'success': False, 'error': str(e)[:200]}), 500
+    return jsonify({'success': True, **state})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/unlock', methods=['POST'])
+@login_required
+@v2_permission_required('test_drive', 'route_sheet', 'unlock')
+def api_route_sheet_unlock():
+    """Unlock a finalized foaie back to editable. Gated to Admin +
+    Dep Contabilitate (test_drive.route_sheet.unlock). Reason is optional, audited."""
+    data = request.get_json(silent=True) or {}
+    vin = (data.get('vin') or '').strip()
+    year, month = data.get('year'), data.get('month')
+    reason = (data.get('reason') or '').strip() or None
+    if not vin or not year or not month:
+        return jsonify({'success': False, 'error': 'vin, year, month sunt obligatorii'}), 400
+    try:
+        state = unlock_sheet(
+            vin, int(year), int(month),
+            user_id=getattr(current_user, 'id', None),
+            user_name=(getattr(current_user, 'name', None) or getattr(current_user, 'email', None)),
+            reason=reason)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        logger.exception('Route-sheet unlock failed for %s %s-%s', vin, year, month)
+        return jsonify({'success': False, 'error': str(e)[:200]}), 500
+    return jsonify({'success': True, **state})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/lock-events', methods=['GET'])
+@login_required
+def api_route_sheet_lock_events():
+    """Finalize/unlock audit trail for one sheet (newest first)."""
+    vin = (request.args.get('vin') or '').strip()
+    year, month = request.args.get('year', type=int), request.args.get('month', type=int)
+    if not vin or not year or not month:
+        return jsonify({'success': False, 'error': 'vin, year, month sunt obligatorii'}), 400
+    try:
+        events = get_lock_events(vin, year, month)
+    except Exception as e:
+        logger.exception('Route-sheet lock-events failed for %s %s-%s', vin, year, month)
+        return jsonify({'success': False, 'error': str(e)[:200]}), 500
+    return jsonify({'success': True, 'events': events})
