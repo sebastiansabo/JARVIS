@@ -491,7 +491,9 @@ class SupplierMasterRepository(BaseRepository):
                    i.invoice_value, i.value_ron, i.value_eur, i.currency, i.status,
                    i.subtract_vat,
                    MAX(ef.due_date) AS due_date,
-                   i.line_items->0->>'description' AS line_description,
+                   -- EuroFib `text` = the first line's article name (e-Factura cbc:Name); fall back
+                   -- to its description for AI-parsed invoices that carry only a description.
+                   COALESCE(NULLIF(i.line_items->0->>'name', ''), i.line_items->0->>'description') AS line_description,
                    MIN(s.id) AS supplier_id,
                    kc.id AS konto_config_id,
                    kc.name AS konto_name,

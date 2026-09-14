@@ -291,3 +291,18 @@ def send_to_invoice_module():
 
     except Exception as e:
         return safe_error_response(e)
+
+
+@efactura_bp.route('/api/invoices/backfill-line-items', methods=['POST'])
+@api_login_required
+@efactura_access_required
+def backfill_line_items():
+    """One-time maintenance: populate invoices.line_items from stored e-Factura XML so the Procesare
+    EuroFib export posts the article as `text`. Body: {only_missing?: bool (default true)}."""
+    try:
+        data = request.get_json(silent=True) or {}
+        updated = _alloc_service.backfill_invoice_line_items(
+            only_missing=bool(data.get('only_missing', True)))
+        return jsonify({'success': True, 'updated': updated})
+    except Exception as e:
+        return safe_error_response(e)
