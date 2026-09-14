@@ -519,26 +519,61 @@ class SupplierMasterRepository(BaseRepository):
         """
         return self.query_all(sql, (company_name, company_id, company_id, status, start_date, end_date, limit))
 
-    def mark_invoices_processed(self, invoice_ids):
-        """Flip the given invoices from 'Bugetata' to 'processed' after a successful EuroFib
+    def mark_invoices_imported(self, invoice_ids):
+        """Flip the given invoices from 'Bugetata' to 'Importat' after a successful EuroFib
         export. Only rows still in 'Bugetata' are touched — any invoice that changed status in
-        the meantime (or was never Bugetata) is left alone. Returns the number of rows updated."""
+        the meantime (or was never Bugetata) is left alone. 'Importat' is deliberately distinct
+        from the legacy 'processed' status. Returns the number of rows updated."""
         if not invoice_ids:
             return 0
         return self.execute(
-            "UPDATE invoices SET status = 'processed', updated_at = CURRENT_TIMESTAMP "
+            "UPDATE invoices SET status = 'Importat', updated_at = CURRENT_TIMESTAMP "
             "WHERE id = ANY(%s) AND lower(status) = 'bugetata'",
             (list(invoice_ids),))
 
-    def mark_invoices_budgeted(self, invoice_ids):
-        """Revert the given invoices from 'processed' back to 'Bugetata' (send them back to the
-        In-lucru worklist). Only rows still in 'processed' are touched. Returns rows updated."""
+    def unmark_imported_invoices(self, invoice_ids):
+        """Revert the given invoices from 'Importat' back to 'Bugetata' (send them back to the
+        In-lucru worklist). Only rows still in 'Importat' are touched. Returns rows updated."""
         if not invoice_ids:
             return 0
         return self.execute(
             "UPDATE invoices SET status = 'Bugetata', updated_at = CURRENT_TIMESTAMP "
-            "WHERE id = ANY(%s) AND lower(status) = 'processed'",
+            "WHERE id = ANY(%s) AND lower(status) = 'importat'",
             (list(invoice_ids),))
+
+    def import_ready_ids(self, invoice_ids, company_id=None):
+        """Of the given invoice ids, return those that are READY to export to EuroFib: status
+        'Bugetata', not deleted, whose free-text supplier resolves (name/alias) to a master
+        supplier with a COMPLETE active konto preset for a company the invoice is allocated to.
+        When company_id is given, only that company counts; otherwise any allocated company does.
+        Powers the Accounting "Pregătită de import" badge. Returns a list of invoice ids."""
+        if not invoice_ids:
+            return []
+        rows = self.query_all(
+            """
+            SELECT DISTINCT i.id
+            FROM invoices i
+            JOIN allocations a ON a.invoice_id = i.id
+            JOIN companies co ON lower(co.company) = lower(a.company)
+            JOIN suppliers s ON (
+                lower(s.name) = lower(i.supplier)
+                OR EXISTS (SELECT 1 FROM supplier_aliases al
+                           WHERE al.supplier_id = s.id AND lower(al.alias_name) = lower(i.supplier))
+            )
+            JOIN supplier_konto_config kc
+                ON kc.supplier_id = s.id AND kc.company_id = co.id AND kc.is_active
+            WHERE i.id = ANY(%s)
+              AND i.deleted_at IS NULL
+              AND lower(i.status) = 'bugetata'
+              AND (%s IS NULL OR co.id = %s)
+              AND NULLIF(kc.konto_debit, '') IS NOT NULL
+              AND NULLIF(kc.konto_credit, '') IS NOT NULL
+              AND NULLIF(kc.klient, '') IS NOT NULL
+              AND NULLIF(kc.steuercode, '') IS NOT NULL
+              AND NULLIF(kc.belegart, '') IS NOT NULL
+            """,
+            (list(invoice_ids), company_id, company_id))
+        return [r['id'] for r in rows]
 
     def unresolved_invoice_suppliers(self, limit=200, company_name=None):
         if company_name is not None:
