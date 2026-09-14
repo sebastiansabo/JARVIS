@@ -527,6 +527,43 @@ def api_unprocess():
     return jsonify({'success': True, 'reverted': reverted})
 
 
+@suppliers_bp.route('/api/suppliers/schemas-for-invoice', methods=['GET'])
+@login_required
+def api_schemas_for_invoice():
+    """EuroFib schemas available for an invoice's supplier at budgeting time. Resolves the
+    invoice's free-text supplier → master supplier, then lists that supplier's presets for the
+    given company (by name). Powers the required "Schemă EuroFib" selector in the bugetare
+    dialog. Returns {presets, active_id, selected_id (current override), count, supplier_id,
+    company_id}. An unresolved supplier/company yields count 0 (no selector)."""
+    if not _check_supplier_perm('view'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    invoice_id = request.args.get('invoice_id', type=int)
+    company = request.args.get('company')
+    if not invoice_id or not company:
+        return jsonify({'success': False, 'error': 'invoice_id and company are required'}), 400
+
+    empty = {'success': True, 'presets': [], 'active_id': None, 'selected_id': None,
+             'count': 0, 'supplier_id': None, 'company_id': None}
+    supplier_name = _repo.invoice_supplier_name(invoice_id)
+    if not supplier_name:
+        return jsonify(empty)
+    res = _resolver.resolve(name=supplier_name)
+    if not res.supplier_id:
+        return jsonify(empty)
+    crow = _company_repo.query_one(
+        "SELECT id FROM companies WHERE lower(company) = lower(%s)", (company,))
+    if not crow:
+        return jsonify(empty)
+    company_id = crow['id']
+    presets = _repo.list_presets(res.supplier_id, company_id)
+    active_id = next((p['id'] for p in presets if p['is_active']), None)
+    return jsonify({
+        'success': True, 'presets': presets, 'active_id': active_id,
+        'selected_id': _repo.get_invoice_override(invoice_id), 'count': len(presets),
+        'supplier_id': res.supplier_id, 'company_id': company_id,
+    })
+
+
 @suppliers_bp.route('/api/suppliers/import-ready-ids', methods=['POST'])
 @login_required
 def api_import_ready_ids():
