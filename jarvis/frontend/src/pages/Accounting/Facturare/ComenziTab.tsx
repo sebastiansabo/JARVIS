@@ -61,7 +61,7 @@ interface AnexaDetail {
   anexa_id: number; anexa_number: number; contract_ref: string
   supplier_name: string; customer_name: string
   lines: AnexaLine[]; invoices: InvoiceDetail[]
-  next_actions: string[]; unpaired_proformas: { sequence_number: number; total_amount_eur: number; invoice_number: number | null; line_ids: number[] | null }[]
+  next_actions: string[]; unpaired_proformas: { sequence_number: number; total_amount_eur: number; invoice_number: number | null; line_ids: number[] | null; remaining_line_ids?: number[] | null }[]
   anexa_total_eur: number; proformas_total_eur: number; remaining_eur: number
   lines_with_proforma: number; lines_invoiced: number; lines_total: number
 }
@@ -1297,7 +1297,7 @@ function VehicleTable({ detail, defaultIntocmit, onCreated }: {
       preSelectedIds={selectedIds} />
     <InvoiceDialog open={invoiceOpen} onOpenChange={setInvoiceOpen} anexaId={detail.anexa_id}
       unpairedProformas={unpairedProformas} defaultIntocmit={defaultIntocmit} onCreated={onCreated}
-      preSelectedLineIds={selectedIds} invoiceDetails={detailInvoices} />
+      preSelectedLineIds={selectedIds} invoiceDetails={detailInvoices} lines={lines} />
     <ActionDialog open={stornoOpen} onOpenChange={setStornoOpen} anexaId={detail.anexa_id} action="storno"
       defaultIntocmit={defaultIntocmit} onCreated={onCreated} lineIds={[...selectedIds]} lines={lines} invoices={detailInvoices} />
     <ActionDialog open={finalOpen} onOpenChange={setFinalOpen} anexaId={detail.anexa_id} action="final"
@@ -1553,11 +1553,11 @@ function ProformaDialog({ open, onOpenChange, anexaId, remainingEur, anexaTotalE
 
 // ── Invoice Dialog ──────────────────────────────────────────────
 
-function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, defaultIntocmit, onCreated, preSelectedLineIds, invoiceDetails }: {
+function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, defaultIntocmit, onCreated, preSelectedLineIds, invoiceDetails, lines }: {
   open: boolean; onOpenChange: (v: boolean) => void; anexaId: number
-  unpairedProformas: { sequence_number: number; total_amount_eur: number; invoice_number: number | null; line_ids: number[] | null }[]
+  unpairedProformas: { sequence_number: number; total_amount_eur: number; invoice_number: number | null; line_ids: number[] | null; remaining_line_ids?: number[] | null }[]
   defaultIntocmit?: string; onCreated: () => void; preSelectedLineIds?: Set<number>
-  invoiceDetails?: InvoiceDetail[]
+  invoiceDetails?: InvoiceDetail[]; lines?: AnexaLine[]
 }) {
   const [selectedSeq, setSelectedSeq] = useState('')
   const [invoiceNumber, setInvoiceNumber] = useState('')
@@ -1566,6 +1566,7 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
   const [notes, setNotes] = useState('')
   const [docMode, setDocMode] = useState<'per_car' | 'single_doc'>('per_car')
   const [roundDecimals, setRoundDecimals] = useState(false)  // inherited from the selected proforma
+  const [selectedLineIds, setSelectedLineIds] = useState<Set<number>>(new Set())  // cars to confirm (partial avans)
   const [submitting, setSubmitting] = useState(false)
   const [kurs, setKurs] = useState('')
   const [kursHint, setKursHint] = useState<string | null>(null)
@@ -1619,9 +1620,44 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
     if (unpairedProformas.length > 0) setSelectedSeq(String(unpairedProformas[0].sequence_number))
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Remaining (uninvoiced) lines of the selected proforma — the cars this advance
+  // invoice can confirm. A proforma may be confirmed by several partial invoices,
+  // so only its still-open lines are selectable.
+  const selectedProforma = unpairedProformas.find(p => p.sequence_number === parseInt(selectedSeq))
+  const lineById = new Map((lines || []).map(l => [l.id, l]))
+  const remainingLineIds: number[] = selectedProforma?.remaining_line_ids
+    || selectedProforma?.line_ids
+    || (lines || []).map(l => l.id)
+  const profLineIds: number[] = selectedProforma?.line_ids || (lines || []).map(l => l.id)
+  const coveredSelling = profLineIds.reduce((s, id) => s + (lineById.get(id)?.selling_price_eur || 0), 0)
+  const selSelling = [...selectedLineIds].reduce((s, id) => s + (lineById.get(id)?.selling_price_eur || 0), 0)
+  const estAmount = selectedProforma && coveredSelling ? selectedProforma.total_amount_eur * (selSelling / coveredSelling) : 0
+  const allRemainingSelected = remainingLineIds.length > 0
+    && selectedLineIds.size === remainingLineIds.length
+    && remainingLineIds.every(id => selectedLineIds.has(id))
+
+  // Default the car selection to all remaining lines (or just the pre-selected
+  // paid cars when the dialog was opened from a car selection).
+  useEffect(() => {
+    if (!open || !selectedSeq) return
+    const rem = new Set(remainingLineIds)
+    if (preSelectedLineIds && preSelectedLineIds.size > 0) {
+      const inter = [...preSelectedLineIds].filter(id => rem.has(id))
+      if (inter.length > 0) { setSelectedLineIds(new Set(inter)); return }
+    }
+    setSelectedLineIds(new Set(remainingLineIds))
+  }, [open, selectedSeq]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleLine = (id: number) => setSelectedLineIds(prev => {
+    const next = new Set(prev)
+    next.has(id) ? next.delete(id) : next.add(id)
+    return next
+  })
+
   const handleSubmit = async () => {
     if (!selectedSeq) { toast.error('Select a proforma'); return }
     if (!invoiceNumber) { toast.error('Invoice No. required'); return }
+    if (selectedLineIds.size === 0) { toast.error('Selectează cel puțin o mașină'); return }
     setSubmitting(true)
     try {
       const res = await fetch('/facturare/api/invoices/invoice', {
@@ -1632,6 +1668,9 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
           issued_date: issuedDate || undefined, intocmit_de: intocmitDe || undefined,
           notes: notes || undefined, doc_mode: docMode, round_decimals: roundDecimals,
           kurs: kurs && parseFloat(kurs) > 0 ? parseFloat(kurs) : undefined,
+          // Confirm only the selected cars; omit when confirming every remaining
+          // line so the backend keeps its whole-proforma path.
+          line_ids: allRemainingSelected ? undefined : [...selectedLineIds],
         }),
       })
       const data = await res.json()
@@ -1653,12 +1692,38 @@ function InvoiceDialog({ open, onOpenChange, anexaId, unpairedProformas, default
               <SelectContent>
                 {unpairedProformas.map(p => (
                   <SelectItem key={p.sequence_number} value={String(p.sequence_number)}>
-                    Proforma #{p.sequence_number} — {fmtEur(p.total_amount_eur)} EUR ({p.line_ids?.length || 'all'} cars)
+                    Proforma #{p.sequence_number} — {fmtEur(p.total_amount_eur)} EUR ({(p.remaining_line_ids?.length ?? p.line_ids?.length) || 'all'} cars)
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+          {remainingLineIds.length > 1 && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <Label>Mașini de facturat (avans)</Label>
+                <button type="button" className="text-xs text-muted-foreground hover:underline"
+                  onClick={() => setSelectedLineIds(allRemainingSelected ? new Set() : new Set(remainingLineIds))}>
+                  {allRemainingSelected ? 'Deselectează tot' : 'Selectează tot'}
+                </button>
+              </div>
+              <div className="max-h-44 overflow-y-auto rounded-md border divide-y">
+                {remainingLineIds.map(id => {
+                  const l = lineById.get(id)
+                  return (
+                    <label key={id} className="flex items-center gap-2 px-2 py-1.5 text-sm cursor-pointer hover:bg-muted/40">
+                      <input type="checkbox" className="accent-foreground" checked={selectedLineIds.has(id)} onChange={() => toggleLine(id)} />
+                      <span className="flex-1 truncate">{l?.model || `Linia ${id}`}{l?.nr_comanda ? ` — ${l.nr_comanda}` : ''}</span>
+                      <span className="font-mono text-xs text-muted-foreground">{fmtEur(l?.selling_price_eur || 0)}</span>
+                    </label>
+                  )
+                })}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                {selectedLineIds.size}/{remainingLineIds.length} mașini • avans ≈ <span className="font-mono">{fmtEur(estAmount)}</span> EUR
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-3 gap-3">
             <div><Label>Invoice No.</Label><Input type="number" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)} /></div>
             <div><Label>Date</Label><Input type="date" value={issuedDate} onChange={e => setIssuedDate(e.target.value)} /></div>
