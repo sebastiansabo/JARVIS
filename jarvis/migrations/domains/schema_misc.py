@@ -298,6 +298,18 @@ def create_schema_misc(conn, cursor):
         )
     ''')
 
+    # Ensure the 'Importat' invoice_status exists. Invoices become 'Importat' when they are
+    # exported to EuroFib from the Procesare worklist (see core.suppliers.repository
+    # .mark_invoices_imported) — a state distinct from the legacy 'processed'. Idempotent,
+    # additive only.
+    cursor.execute('''
+        INSERT INTO dropdown_options (dropdown_type, value, label, color, opacity, sort_order, is_active)
+        SELECT 'invoice_status', 'Importat', 'Importat', '#6f42c1', 0.20, 5, TRUE
+        WHERE NOT EXISTS (
+            SELECT 1 FROM dropdown_options WHERE dropdown_type = 'invoice_status' AND value = 'Importat'
+        )
+    ''')
+
     # Theme settings table - global theme configuration for Jarvis
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS theme_settings (

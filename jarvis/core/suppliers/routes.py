@@ -105,6 +105,41 @@ def _to_invoice_config_pairs(rows, company_id, skipped):
     return pairs
 
 
+def _schedule_export_archive(invoice_ids):
+    """After a EuroFib export marks invoices 'Importat', schedule their auto-archive using the
+    same notification settings the manual status-change hook honours (archive_enabled +
+    archive_delay_hours). The export marks status via raw SQL and bypasses invoice_service, so
+    the archive must be scheduled here. Best-effort — the export has already succeeded, so an
+    archive-settings/DB hiccup is swallowed rather than failing the download."""
+    if not invoice_ids:
+        return
+    try:
+        from core.notifications.repositories import NotificationRepository
+        from accounting.invoices.repositories.invoice_repository import InvoiceRepository
+        settings = NotificationRepository().get_settings()
+        if settings.get('archive_enabled', 'true') != 'true':
+            return
+        delay = int(settings.get('archive_delay_hours', '24'))
+        inv_repo = InvoiceRepository()
+        for iid in invoice_ids:
+            inv_repo.set_archive_after(iid, delay)
+    except Exception:
+        pass
+
+
+def _cancel_export_archive(invoice_ids):
+    """Cancel any scheduled auto-archive for invoices reverted from 'Importat' to 'Bugetata'."""
+    if not invoice_ids:
+        return
+    try:
+        from accounting.invoices.repositories.invoice_repository import InvoiceRepository
+        inv_repo = InvoiceRepository()
+        for iid in invoice_ids:
+            inv_repo.clear_archive_fields(iid)
+    except Exception:
+        pass
+
+
 @suppliers_bp.route('/api/suppliers', methods=['GET'])
 @login_required
 def api_list_suppliers():
@@ -381,8 +416,8 @@ def api_worklist():
 def api_worklist_invoices():
     """Invoices for the Procesare Worklist tab — company + period gated, restricted to
     suppliers with a complete Table-2 konto config for that company. `?status=` selects which
-    invoice status to list (default 'Bugetata'; the Worklist's "Procesate" toggle passes
-    'processed' for a read-only history view)."""
+    invoice status to list (default 'Bugetata'; the Worklist's "Importate" toggle passes
+    'Importat' for a read-only history view of EuroFib-exported invoices)."""
     if not _check_supplier_perm('view'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     company_id, err = _parse_company_id(request.args.get('company_id'))
@@ -460,7 +495,8 @@ def api_export():
 
     skipped_numbers = {s['invoice_number'] for s in skipped}
     exported_ids = [r['id'] for r in rows if r.get('invoice_number') not in skipped_numbers]
-    _repo.mark_invoices_processed(exported_ids)
+    _repo.mark_invoices_imported(exported_ids)
+    _schedule_export_archive(exported_ids)
 
     filename = f"eurofib_{company['company']}_{start_date}_{end_date}.{ext}"
     filename = re.sub(r'[^A-Za-z0-9_.\-]+', '_', filename)
@@ -474,7 +510,8 @@ def api_export():
 @suppliers_bp.route('/api/suppliers/unprocess', methods=['POST'])
 @login_required
 def api_unprocess():
-    """Revert exported invoices from 'processed' back to 'Bugetata' (send back to In lucru)."""
+    """Revert exported invoices from 'Importat' back to 'Bugetata' (send back to In lucru) and
+    cancel their scheduled auto-archive."""
     if not _check_supplier_perm('resolve'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     data = request.get_json(force=True) or {}
@@ -485,8 +522,36 @@ def api_unprocess():
         ids = [int(x) for x in ids]
     except (TypeError, ValueError):
         return jsonify({'success': False, 'error': 'invoice_ids must be integers'}), 400
-    reverted = _repo.mark_invoices_budgeted(ids)
+    reverted = _repo.unmark_imported_invoices(ids)
+    _cancel_export_archive(ids)
     return jsonify({'success': True, 'reverted': reverted})
+
+
+@suppliers_bp.route('/api/suppliers/import-ready-ids', methods=['POST'])
+@login_required
+def api_import_ready_ids():
+    """Given a set of invoice ids, return the subset that is READY to export to EuroFib
+    (Bugetata + supplier has a complete active konto preset for an allocated company). Powers the
+    Accounting "Pregătită de import" badge. Body: {invoice_ids: [...], company_id?: int}. When
+    company_id is given, only that company counts; otherwise any allocated company does."""
+    if not _check_supplier_perm('view'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(force=True) or {}
+    raw_ids = data.get('invoice_ids') or []
+    if not isinstance(raw_ids, list):
+        return jsonify({'success': False, 'error': 'invoice_ids must be a list'}), 400
+    try:
+        ids = [int(x) for x in raw_ids]
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'invoice_ids must be integers'}), 400
+    company_id = data.get('company_id')
+    if company_id is not None:
+        try:
+            company_id = int(company_id)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'company_id must be an integer'}), 400
+    ready = _repo.import_ready_ids(ids, company_id=company_id)
+    return jsonify({'success': True, 'ready_ids': ready})
 
 
 @suppliers_bp.route('/api/suppliers/resolve', methods=['POST'])

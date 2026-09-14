@@ -57,6 +57,7 @@ import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
 import { TagFilter } from '@/components/shared/TagFilter'
 import { invoicesApi } from '@/api/invoices'
+import { suppliersApi } from '@/api/suppliers'
 import { organizationApi } from '@/api/organization'
 import { ApiError } from '@/api/client'
 import { settingsApi } from '@/api/settings'
@@ -214,6 +215,20 @@ export default function Accounting() {
     queryFn: () => tagsApi.getEntityTagsBulk('invoice', invoiceIds),
     enabled: invoiceIds.length > 0,
   })
+
+  // "Pregătită de import": Bugetata invoices whose supplier has a complete active EuroFib schema.
+  // Only Bugetata rows can qualify, so we only ask about those. Gated on suppliers.master.view —
+  // users without it get a 403 (retry:false) and simply see no badge.
+  const bugetataIds = useMemo(
+    () => invoices.filter((i) => (i.status || '').toLowerCase() === 'bugetata').map((i) => i.id),
+    [invoices])
+  const { data: importReadyData } = useQuery({
+    queryKey: ['import-ready-ids', bugetataIds, selectedCompanyId],
+    queryFn: () => suppliersApi.importReadyIds(bugetataIds, selectedCompanyId),
+    enabled: bugetataIds.length > 0,
+    retry: false,
+  })
+  const importReadySet = useMemo(() => new Set(importReadyData?.ready_ids ?? []), [importReadyData])
 
   // Filter options
   const { data: companies = [] } = useQuery({
@@ -468,7 +483,10 @@ export default function Accounting() {
     return list
   }, [search, sort, filterTagIds, entityTagsMap, columnDefMap])
 
-  const displayedInvoices = useMemo(() => applySearchAndSort(invoices), [invoices, applySearchAndSort])
+  const displayedInvoices = useMemo(
+    () => applySearchAndSort(invoices).map((inv) =>
+      importReadySet.has(inv.id) ? { ...inv, import_ready: true } : inv),
+    [invoices, applySearchAndSort, importReadySet])
   const displayedBinInvoices = useMemo(() => applySearchAndSort(binInvoices), [binInvoices, applySearchAndSort])
 
   const totalRon = useMemo(
@@ -843,7 +861,19 @@ const columnDefs: ColumnDef[] = [
     label: 'Status',
     sortable: true,
     sortValue: (inv) => inv.status,
-    render: (inv) => <StatusBadge status={inv.status} />,
+    render: (inv) => (
+      <div className="flex flex-wrap items-center gap-1">
+        <StatusBadge status={inv.status} />
+        {inv.import_ready && (
+          <span
+            title="Furnizor configurat — gata de export EuroFib"
+            className="inline-flex items-center rounded border border-violet-400/60 px-1.5 py-0 text-[10px] font-medium text-violet-600 whitespace-nowrap dark:text-violet-300"
+          >
+            Pregătită de import
+          </span>
+        )}
+      </div>
+    ),
   },
   {
     key: 'payment_status',

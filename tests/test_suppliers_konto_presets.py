@@ -234,6 +234,60 @@ class TestExportPairWiring:
 # ═══════════════════════════════════════════════
 # Pure export: the chosen preset's accounts drive the rows
 # ═══════════════════════════════════════════════
+class TestImportStatusMarking:
+
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_mark_imported_sets_importat_from_bugetata(self, mock_get_db, mock_get_cursor, mock_release):
+        from core.suppliers.repository import SupplierMasterRepository
+        conn, cursor = _mock_conn_cursor()
+        mock_get_db.return_value = conn
+        mock_get_cursor.return_value = cursor
+        repo = SupplierMasterRepository()
+        repo.mark_invoices_imported([1, 2, 3])
+        sql = str(cursor.execute.call_args_list[-1].args[0]).lower()
+        assert "status = 'importat'" in sql
+        assert "lower(status) = 'bugetata'" in sql
+
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_unmark_reverts_importat_to_bugetata(self, mock_get_db, mock_get_cursor, mock_release):
+        from core.suppliers.repository import SupplierMasterRepository
+        conn, cursor = _mock_conn_cursor()
+        mock_get_db.return_value = conn
+        mock_get_cursor.return_value = cursor
+        repo = SupplierMasterRepository()
+        repo.unmark_imported_invoices([1])
+        sql = str(cursor.execute.call_args_list[-1].args[0]).lower()
+        assert "status = 'bugetata'" in sql
+        assert "lower(status) = 'importat'" in sql
+
+    def test_mark_imported_empty_is_noop(self):
+        from core.suppliers.repository import SupplierMasterRepository
+        assert SupplierMasterRepository().mark_invoices_imported([]) == 0
+
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_import_ready_ids_returns_query_ids(self, mock_get_db, mock_get_cursor, mock_release):
+        from core.suppliers.repository import SupplierMasterRepository
+        conn, cursor = _mock_conn_cursor()
+        mock_get_db.return_value = conn
+        mock_get_cursor.return_value = cursor
+        cursor.fetchall.return_value = [{'id': 5}, {'id': 9}]
+        repo = SupplierMasterRepository()
+        assert repo.import_ready_ids([5, 7, 9], company_id=2) == [5, 9]
+        sql = str(cursor.execute.call_args_list[-1].args[0]).lower()
+        assert "lower(i.status) = 'bugetata'" in sql
+        assert 'kc.is_active' in sql
+
+    def test_import_ready_ids_empty_is_noop(self):
+        from core.suppliers.repository import SupplierMasterRepository
+        assert SupplierMasterRepository().import_ready_ids([]) == []
+
+
 class TestBuildMedlineRowsUsesConfig:
 
     def _invoice(self):

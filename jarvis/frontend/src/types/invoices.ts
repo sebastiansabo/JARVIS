@@ -31,6 +31,9 @@ export interface Invoice {
   allocations?: Allocation[]
   observers?: InvoiceObserver[]
   is_observer?: boolean
+  /** UI-only: Bugetata + supplier has a complete active EuroFib schema → ready to export.
+   * Computed client-side from /api/suppliers/import-ready-ids, not a DB column. */
+  import_ready?: boolean
 }
 
 export interface LineItem {
