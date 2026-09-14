@@ -26,6 +26,18 @@ import type { InvoicePreview } from './profile'
 
 const BASE = '/efactura/api'
 
+/** Per-invoice override payload for the e-Factura "Edit Invoice Overrides" dialog. Any omitted
+ * key is left untouched server-side; konto_config_id is the chosen EuroFib schema (null clears). */
+export type EFacturaOverridesPayload = {
+  type_override?: string | null
+  department_override?: string | null
+  subdepartment_override?: string | null
+  department_override_2?: string | null
+  subdepartment_override_2?: string | null
+  observer_user_ids?: number[]
+  konto_config_id?: number | null
+}
+
 export const efacturaApi = {
   // ── Connections ────────────────────────────────────────────
   getConnections: async () => {
@@ -92,10 +104,7 @@ export const efacturaApi = {
           : {}),
       },
     ),
-  updateOverrides: (
-    invoiceId: number,
-    overrides: Record<string, string | null> & { observer_user_ids?: number[] },
-  ) =>
+  updateOverrides: (invoiceId: number, overrides: EFacturaOverridesPayload) =>
     api.put<{ success: boolean }>(`${BASE}/invoices/${invoiceId}/overrides`, overrides),
   bulkUpdateOverrides: (invoiceIds: number[], overrides: Record<string, string | null>) =>
     api.put<{ success: boolean; updated_count: number }>(`${BASE}/invoices/bulk-overrides`, {
