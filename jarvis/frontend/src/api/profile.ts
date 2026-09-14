@@ -12,6 +12,7 @@ export interface ProfileUpdatePayload {
 
 export interface InvoicePreviewLine {
   line_number: number
+  name: string
   description: string
   quantity: string
   unit: string

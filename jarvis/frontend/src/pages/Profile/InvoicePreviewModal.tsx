@@ -82,7 +82,12 @@ function PreviewBody({ p }: { p: InvoicePreview }) {
               ) : p.line_items.map((li) => (
                 <tr key={li.line_number} className="border-t">
                   <td className="px-2 py-1.5 text-muted-foreground">{li.line_number}</td>
-                  <td className="px-2 py-1.5">{li.description}</td>
+                  <td className="px-2 py-1.5">
+                    <div>{li.name || li.description || '-'}</div>
+                    {li.name && li.description && li.description !== li.name && (
+                      <div className="text-xs text-muted-foreground">{li.description}</div>
+                    )}
+                  </td>
                   <td className="px-2 py-1.5 text-right">{Number(li.quantity).toLocaleString('ro-RO')}</td>
                   <td className="px-2 py-1.5">{li.unit}</td>
                   <td className="px-2 py-1.5 text-right">{money(li.unit_price, cur)}</td>

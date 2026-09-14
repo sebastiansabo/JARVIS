@@ -277,11 +277,15 @@ def _parse_line_item(line: ET.Element) -> Optional[InvoiceLineItem]:
 
         item.line_number = int(_get_text(line, 'cbc:ID') or '0')
 
-        # Get item info
+        # Get item info. cbc:Name (BT-153) is the mandatory product name and is
+        # the primary label; cbc:Description (BT-154) is optional supplementary
+        # text. Prefer Name, but fall back to Description when Name is absent.
         item_elem = line.find('cac:Item', NAMESPACES)
         if item_elem is not None:
-            item.description = _get_text(item_elem, 'cbc:Description') or \
-                              _get_text(item_elem, 'cbc:Name') or ''
+            name = _get_text(item_elem, 'cbc:Name') or ''
+            desc = _get_text(item_elem, 'cbc:Description') or ''
+            item.name = name or desc
+            item.description = desc if name else ''
 
             # Item identification codes
             item.seller_item_id = _get_text(

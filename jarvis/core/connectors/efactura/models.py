@@ -268,7 +268,8 @@ class InvoiceLineItem:
     Extracted from XML, used for display/reports.
     """
     line_number: int = 0
-    description: str = ""
+    name: str = ""         # cbc:Name — product/article name (BT-153)
+    description: str = ""  # cbc:Description — supplementary free text (BT-154)
     quantity: Decimal = Decimal("1")
     unit: str = "BUC"  # Bucata (piece)
     unit_price: Decimal = Decimal("0.00")
