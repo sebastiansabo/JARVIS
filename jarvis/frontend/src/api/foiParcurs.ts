@@ -585,13 +585,13 @@ export const foiParcursApi = {
   // user-entered fuel data; regenerate rebuilds + overwrites the stored copy.
   generateRouteSheetPdf: async (
     vin: string, year: number, month: number,
-    opts: { regenerate?: boolean; norma?: number | null; norma_energie?: number | null; alimentari?: RouteSheetAlimentare[]; events?: RouteSheetEvent[] } = {},
+    opts: { regenerate?: boolean; norma?: number | null; norma_energie?: number | null; alimentari?: RouteSheetAlimentare[]; events?: RouteSheetEvent[]; includeInternal?: boolean } = {},
   ): Promise<Blob> => {
     const res = await fetch(`${BASE}/route-sheet/pdf`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ vin, year, month, regenerate: !!opts.regenerate, norma: opts.norma ?? null, norma_energie: opts.norma_energie ?? null, alimentari: opts.alimentari ?? [], events: opts.events ?? [] }),
+      body: JSON.stringify({ vin, year, month, regenerate: !!opts.regenerate, norma: opts.norma ?? null, norma_energie: opts.norma_energie ?? null, alimentari: opts.alimentari ?? [], events: opts.events ?? [], include_internal: opts.includeInternal !== false }),
     })
     if (!res.ok) {
       let msg = 'Generarea foii de parcurs a eșuat'
@@ -601,8 +601,9 @@ export const foiParcursApi = {
     return res.blob()
   },
 
-  getRouteSheetXlsxUrl: (vin: string, year: number, month: number) =>
-    `${BASE}/route-sheet/xlsx${qs({ vin, year, month })}`,
+  // includeInternal=false drops internal drives from the exported workbook (cosmetic).
+  getRouteSheetXlsxUrl: (vin: string, year: number, month: number, includeInternal: boolean = true) =>
+    `${BASE}/route-sheet/xlsx${qs({ vin, year, month, include_internal: includeInternal ? undefined : 0 })}`,
 
   // ZIP of this car's per-session contract PDFs for the selected period — exactly
   // the sessions the Foi de Parcurs row aggregates. month=0 → the whole year.
