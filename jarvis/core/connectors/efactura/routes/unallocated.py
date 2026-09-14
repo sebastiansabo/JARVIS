@@ -166,6 +166,12 @@ def update_invoice_overrides(invoice_id):
         else:
             observer_user_ids = None
 
+        # EuroFib schema — only touched when the key is explicitly present (int to set, null to clear)
+        konto_config_id = '__keep__'
+        if 'konto_config_id' in data:
+            raw_kc = data.get('konto_config_id')
+            konto_config_id = int(raw_kc) if raw_kc else None
+
         success = _invoice_repo.update_overrides(
             invoice_id=invoice_id,
             type_override=type_override,
@@ -174,6 +180,7 @@ def update_invoice_overrides(invoice_id):
             department_override_2=department_override_2,
             subdepartment_override_2=subdepartment_override_2,
             observer_user_ids=observer_user_ids,
+            konto_config_id=konto_config_id,
         )
 
         if success:
@@ -267,10 +274,13 @@ def send_to_invoice_module():
         result = _alloc_service.send_to_invoice_module(invoice_ids, observer_user_ids=observer_user_ids)
 
         if not result.success:
+            # A schema-selection gate is a client-fixable validation error (400), not a 500.
+            needs_schema = (result.data or {}).get('needs_schema')
             return jsonify({
                 'success': False,
                 'error': result.error or 'Failed to send invoices to module',
-            }), 500
+                'needs_schema': needs_schema,
+            }), 400 if needs_schema else 500
 
         return jsonify({
             'success': True,

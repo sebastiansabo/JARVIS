@@ -455,6 +455,35 @@ class TestInvoiceRepository:
     @patch(f'{_B}.release_db')
     @patch(f'{_B}.get_cursor')
     @patch(f'{_B}.get_db')
+    def test_update_overrides_sets_konto_config_id(self, mock_get_db, mock_get_cursor, mock_release):
+        mock_conn, mock_cursor = _mock_db()
+        mock_get_db.return_value = mock_conn
+        mock_get_cursor.return_value = mock_cursor
+
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
+        assert InvoiceRepository().update_overrides(10, konto_config_id=5) is True
+        sql = str(mock_cursor.execute.call_args.args[0]).lower()
+        params = mock_cursor.execute.call_args.args[1]
+        assert 'konto_config_id = %s' in sql
+        assert 5 in params
+
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_update_overrides_keeps_konto_when_sentinel(self, mock_get_db, mock_get_cursor, mock_release):
+        mock_conn, mock_cursor = _mock_db()
+        mock_get_db.return_value = mock_conn
+        mock_get_cursor.return_value = mock_cursor
+
+        from core.connectors.efactura.repositories.invoice_repository import EFacturaInvoiceRepository as InvoiceRepository
+        # No konto_config_id passed → column left untouched (sentinel default).
+        assert InvoiceRepository().update_overrides(10, type_override='X') is True
+        sql = str(mock_cursor.execute.call_args.args[0]).lower()
+        assert 'konto_config_id' not in sql
+
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
     def test_exists_by_message_id_true(self, mock_get_db, mock_get_cursor, mock_release):
         mock_conn, mock_cursor = _mock_db()
         mock_get_db.return_value = mock_conn

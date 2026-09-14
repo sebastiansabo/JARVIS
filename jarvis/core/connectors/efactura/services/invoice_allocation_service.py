@@ -215,6 +215,26 @@ class InvoiceAllocationService:
             if skipped_ids:
                 errors.append(f"Skipped {len(skipped_ids)} already allocated/not found invoices")
 
+            # Gate: a supplier with >1 EuroFib schema must have one explicitly chosen (in the
+            # "Edit Invoice Overrides" dialog) before its invoice is sent to Accounting.
+            from core.suppliers.repository import SupplierMasterRepository
+            from core.suppliers.resolver import SupplierResolver
+            sup_repo = SupplierMasterRepository()
+            resolver = SupplierResolver(sup_repo)
+            needs_schema = []
+            for inv in invoices:
+                if inv.get('konto_config_id') or not inv.get('company_id'):
+                    continue
+                res = resolver.resolve(name=inv.get('partner_name'), cui=inv.get('partner_cif'))
+                if not res.supplier_id:
+                    continue
+                if len(sup_repo.list_presets(res.supplier_id, inv['company_id'])) > 1:
+                    needs_schema.append(inv.get('invoice_number') or str(inv['id']))
+            if needs_schema:
+                return ServiceResult(success=False, error=(
+                    'Selectează schema EuroFib pentru: ' + ', '.join(needs_schema)),
+                    data={'needs_schema': needs_schema})
+
             # Step 2: Bulk insert into main invoices table (1 query)
             # Returns (mappings, skipped_duplicates)
             mappings, skipped_duplicates = self._bulk_create_main_invoices(invoices)
@@ -234,6 +254,19 @@ class InvoiceAllocationService:
 
             # Step 3: Bulk mark as allocated (1 query)
             self.invoice_repo.bulk_mark_allocated(mappings)
+
+            # Step 3b: Carry the staged EuroFib schema choice onto each new invoice (per-invoice
+            # override), so it drives the Procesare worklist/export just like a manual pick.
+            konto_by_efactura = {inv['id']: inv.get('konto_config_id')
+                                 for inv in invoices if inv.get('konto_config_id')}
+            if konto_by_efactura:
+                for efactura_id, jarvis_id in mappings:
+                    kc = konto_by_efactura.get(efactura_id)
+                    if kc:
+                        try:
+                            sup_repo.set_invoice_override(jarvis_id, kc)
+                        except Exception as kc_err:
+                            logger.error(f"Failed to set schema override for invoice {jarvis_id}: {kc_err}")
 
             # Step 4: Attach observers — union of dialog-level observers and per-invoice stored observers.
             def _normalize_ids(raw_list):
