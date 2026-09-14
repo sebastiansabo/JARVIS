@@ -383,12 +383,16 @@ def _xl_safe(v):
 
 
 def _fuel_section_html(unit: str, norma, entries: list, km) -> str:
-    """One consumption section — Combustibil (l) or Energie (kWh) — as HTML.
-    A hybrid renders both; every entry carries its receipt value (lei)."""
+    """One consumption section — Combustibil (l) or Energie (kWh) — as a
+    reimbursement (decontare) table. Decontabili = everything alimentat
+    (Σ litri/kWh); Valoare decontabilă = Σ lei at the price paid. A hybrid
+    renders both; every entry carries its receipt value (lei)."""
     e = html.escape
     is_e = unit == 'kWh'
     title = 'Energie' if is_e else 'Combustibil'
     qty_h = 'kWh' if is_e else 'Litri'
+    qty_word = 'kWh' if is_e else 'litri'   # row: "Total {qty} decontabili"
+    per_word = 'kWh' if is_e else 'litru'   # row: "Cost per {per}"
     op = 'încărcare' if is_e else 'alimentare'
     op_pl = 'încărcări' if is_e else 'alimentări'
     rows = ''.join(
@@ -398,35 +402,22 @@ def _fuel_section_html(unit: str, norma, entries: list, km) -> str:
         f'<td class="n">{float(a.get("lei", 0) or 0):g}</td></tr>'
         for a in entries
     ) or f'<tr><td colspan="4" class="empty">Fără {op_pl} înregistrate.</td></tr>'
-    total = round(sum(float(a.get('liters', 0) or 0) for a in entries), 2)
-    cost = round(sum(float(a.get('lei', 0) or 0) for a in entries), 2)
-    pret = round(cost / total, 2) if total else None
-    consum_normat = round(float(norma) * km / 100, 2) if norma else None
-    # Consum efectiv = total fuel actually put in (Σ alimentări), the monthly
-    # proxy for real consumption; the per-session fuel_consumed_liters column is
-    # not tracked by this flow so it can't drive it.
-    consum_efectiv = total
-    # Deviație = how far the fuel actually bought strays from the normed
-    # consumption for the km driven. Threshold ±10% per vehicle-month; beyond it
-    # the row turns red (possible over-fuelling / anomaly).
-    dev_pct = round((consum_efectiv - consum_normat) / consum_normat * 100, 1) if consum_normat else None
-    if dev_pct is None:
-        dev_html = '—'
-    else:
-        # Alert (red) only on OVER-consumption — bought >10% MORE than normed
-        # (possible over-fuelling). Buying less than normed is fine → stays green.
-        _over = dev_pct > 10
-        _color = '#b3261e' if _over else '#1a7f37'
-        _weight = '700' if _over else '400'
-        dev_html = f'<span style="color:{_color};font-weight:{_weight}">{dev_pct:+g}%</span> (prag ≤ +10%)'
+    total = round(sum(float(a.get('liters', 0) or 0) for a in entries), 2)  # alimentat = decontabili
+    cost = round(sum(float(a.get('lei', 0) or 0) for a in entries), 2)      # valoare decontabilă
+    pret = round(cost / total, 2) if total else None                       # cost per litru/kWh
+    norma_km = round(float(norma) / 100, 4) if norma else None             # normă proprie / km
+    norma_consum = f'{float(norma):g} {unit}/100 km' if norma is not None else '—'
+    norma_prop = f'{norma_km:g} {unit}/km' if norma_km is not None else '—'
+    pret_disp = f'{pret:g} lei/{unit}' if pret is not None else '—'
     kv = [
-        f'<tr><td class="k">Normă consum</td><td>{norma if norma is not None else "—"} {unit}/100 km</td></tr>',
-        f'<tr><td class="k">Consum normat</td><td>{consum_normat if consum_normat is not None else "—"} {unit}</td></tr>',
-        f'<tr><td class="k">Consum efectiv</td><td>{consum_efectiv:g} {unit}</td></tr>',
-        f'<tr><td class="k">Deviație (cumpărat vs normat)</td><td>{dev_html}</td></tr>',
+        f'<tr><td class="k">Km efectuați</td><td>{km:g} km</td></tr>',
+        f'<tr><td class="k">Total alimentat</td><td>{total:g} {unit}</td></tr>',
+        f'<tr><td class="k">Normă consum / 100 km</td><td>{norma_consum}</td></tr>',
+        f'<tr><td class="k">Normă proprie / km</td><td>{norma_prop}</td></tr>',
+        f'<tr><td class="k">Total {qty_word} decontabili</td><td>{total:g} {unit}</td></tr>',
+        f'<tr><td class="k">Cost per {per_word}</td><td>{pret_disp}</td></tr>',
+        f'<tr><td class="k">Valoare decontabilă</td><td>{cost:g} lei</td></tr>',
     ]
-    kv.append(f'<tr><td class="k">Cost total {title.lower()}</td><td>{cost:g} lei</td></tr>')
-    kv.append(f'<tr><td class="k">Preț mediu</td><td>{pret if pret is not None else "—"} lei/{unit}</td></tr>')
     return f"""<div class="fuel-section"><div class="fuel-title">{title}</div>
 <div class="fuel">
   <table class="kv">{''.join(kv)}</table>
@@ -440,34 +431,34 @@ def _fuel_section_html(unit: str, norma, entries: list, km) -> str:
 
 
 def _xlsx_fuel_section(ws, start_row, unit, norma, entries, km, head, fill, bold):
-    """Write one Combustibil (l) / Energie (kWh) section to the worksheet; returns
+    """Write one Combustibil (l) / Energie (kWh) reimbursement section; returns
     the next free row so a hybrid can stack both sections."""
     from openpyxl.styles import Alignment
     is_e = unit == 'kWh'
     title = 'Energie' if is_e else 'Combustibil'
+    qty_word = 'kWh' if is_e else 'litri'
+    per_word = 'kWh' if is_e else 'litru'
     op = 'încărcare' if is_e else 'alimentare'
-    consum_normat = round(float(norma) * km / 100, 2) if norma else None
-    cost = round(sum(float(a.get('lei', 0) or 0) for a in entries), 2)
-    total = round(sum(float(a.get('liters', 0) or 0) for a in entries), 2)
-    pret = round(cost / total, 2) if total else None
-    # Consum efectiv = total alimentat (see _fuel_section_html).
-    consum_efectiv = total
+    cost = round(sum(float(a.get('lei', 0) or 0) for a in entries), 2)      # valoare decontabilă
+    total = round(sum(float(a.get('liters', 0) or 0) for a in entries), 2)  # alimentat = decontabili
+    pret = round(cost / total, 2) if total else None                       # cost per litru/kWh
+    norma_km = round(float(norma) / 100, 4) if norma else None             # normă proprie / km
     row = start_row
     ws.cell(row=row, column=1, value=title).font = bold
-    ws.cell(row=row + 1, column=1, value=f'Normă consum ({unit}/100km)'); ws.cell(row=row + 1, column=2, value=float(norma) if norma else None)
-    ws.cell(row=row + 2, column=1, value=f'Consum normat ({unit})'); ws.cell(row=row + 2, column=2, value=consum_normat)
-    row += 3
-    ws.cell(row=row, column=1, value=f'Consum efectiv ({unit})'); ws.cell(row=row, column=2, value=consum_efectiv); row += 1
-    # Deviație cumpărat vs normat; red ALERT only on over-consumption (>+10%).
-    dev_pct = round((consum_efectiv - consum_normat) / consum_normat * 100, 1) if consum_normat else None
-    ws.cell(row=row, column=1, value='Deviație cumpărat vs normat (%)')
-    _dev_cell = ws.cell(row=row, column=2, value=dev_pct)
-    if dev_pct is not None and dev_pct > 10:
-        from openpyxl.styles import Font as _Font
-        _dev_cell.font = _Font(bold=True, color='B3261E')
     row += 1
-    ws.cell(row=row, column=1, value=f'Cost total {title.lower()} (lei)'); ws.cell(row=row, column=2, value=cost); row += 1
-    ws.cell(row=row, column=1, value=f'Preț mediu (lei/{unit})'); ws.cell(row=row, column=2, value=pret); row += 2
+    for label, val in (
+        ('Km efectuați', km),
+        (f'Total alimentat ({unit})', total),
+        (f'Normă consum ({unit}/100km)', float(norma) if norma else None),
+        (f'Normă proprie ({unit}/km)', norma_km),
+        (f'Total {qty_word} decontabili ({unit})', total),
+        (f'Cost per {per_word} (lei/{unit})', pret),
+        ('Valoare decontabilă (lei)', cost),
+    ):
+        ws.cell(row=row, column=1, value=label)
+        ws.cell(row=row, column=2, value=val)
+        row += 1
+    row += 1
     for col, h in enumerate([f'Data {op}', 'Bon fiscal', 'kWh' if is_e else 'Litri', 'Valoare (lei)'], start=1):
         cell = ws.cell(row=row, column=col, value=h)
         cell.font = head; cell.fill = fill; cell.alignment = Alignment(horizontal='center')
