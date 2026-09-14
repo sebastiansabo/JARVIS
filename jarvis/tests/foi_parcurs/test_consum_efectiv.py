@@ -1,9 +1,12 @@
-"""Consum efectiv on the monthly Foaie de Parcurs = total fuel *alimentat* (Σ of
-the alimentări the user records), not the per-session `fuel_consumed_liters`
-column (which the route flow never populates → it always rendered 0).
+"""Monthly Foaie de Parcurs — Combustibil/Energie section is a reimbursement
+(decontare) table:
 
-Fuel section → Σ litri; Energie section → Σ kWh. Shown on BOTH the HTML/PDF and
-the Excel, for both sections.
+  Km efectuați · Total alimentat · Normă consum/100 km · Normă proprie/km ·
+  Total litri|kWh decontabili · Cost per litru|kWh · Valoare decontabilă
+
+Decontabili = everything alimentat (Σ litri/kWh); Valoare decontabilă = Σ lei
+(value of the alimentări at the price paid). Shown on BOTH HTML/PDF and Excel,
+for the Combustibil (l) and Energie (kWh) sections.
 """
 import os
 
@@ -11,77 +14,92 @@ os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')
 
 import foi_parcurs.services.route_sheet_service as rss
 
-# 41.43 + 16.89 = 58.32 l alimentat over 843 km (the reported case).
+# 41.43 + 16.89 = 58.32 l alimentat / 392.34 + 161.64 = 553.98 lei over 843 km.
 ENTRIES_L = [
     {'date': '2026-08-03', 'bon': '001', 'liters': 41.43, 'lei': 392.34},
     {'date': '2026-08-13', 'bon': '001', 'liters': 16.89, 'lei': 161.64},
 ]
 
 
-def test_fuel_html_consum_efectiv_equals_total_alimentat():
+# ── HTML (PDF) — the 7 decontare rows ────────────────────────────────────────
+def test_fuel_html_has_all_seven_rows():
     html = rss._fuel_section_html('l', 6.5, ENTRIES_L, 843)
-    assert 'Consum efectiv</td><td>58.32 l' in html
+    assert 'Km efectuați</td><td>843 km' in html
+    assert 'Total alimentat</td><td>58.32 l' in html
+    assert 'Normă consum / 100 km</td><td>6.5 l/100 km' in html
+    assert 'Normă proprie / km</td><td>0.065 l/km' in html
+    assert 'Total litri decontabili</td><td>58.32 l' in html
+    assert 'Cost per litru</td><td>9.5 lei/l' in html
+    assert 'Valoare decontabilă</td><td>553.98 lei' in html
 
 
-def test_energy_html_consum_efectiv_shown_for_kwh():
-    html = rss._fuel_section_html('kWh', 17.0, [{'liters': 17.5, 'lei': 30}], 100)
-    assert 'Consum efectiv</td><td>17.5 kWh' in html
+def test_fuel_html_no_deviation_or_old_rows():
+    # The ±10% deviation alert and the old normat/efectiv/cost-total rows are gone.
+    html = rss._fuel_section_html('l', 6.5, ENTRIES_L, 843)
+    assert 'Deviație' not in html
+    assert 'Consum normat' not in html
+    assert 'Consum efectiv' not in html
+    assert 'prag' not in html
 
 
-def test_fuel_html_consum_efectiv_zero_when_no_alimentari():
+def test_energy_html_uses_kwh_labels_and_units():
+    html = rss._fuel_section_html('kWh', 17.0, [{'liters': 17.5, 'lei': 35}], 100)
+    assert 'Total alimentat</td><td>17.5 kWh' in html
+    assert 'Total kWh decontabili</td><td>17.5 kWh' in html
+    assert 'Cost per kWh</td><td>2 lei/kWh' in html      # 35/17.5 = 2
+    assert 'Normă proprie / km</td><td>0.17 kWh/km' in html
+    assert 'Valoare decontabilă</td><td>35 lei' in html
+
+
+def test_fuel_html_zero_when_no_alimentari():
     html = rss._fuel_section_html('l', 6.5, [], 843)
-    assert 'Consum efectiv</td><td>0 l' in html
+    assert 'Total alimentat</td><td>0 l' in html
+    assert 'Total litri decontabili</td><td>0 l' in html
+    assert 'Valoare decontabilă</td><td>0 lei' in html
+    # No purchases → no average price.
+    assert 'Cost per litru</td><td>—' in html
 
 
-def test_xlsx_consum_efectiv_equals_total_alimentat():
+def test_fuel_html_dashes_when_no_norma():
+    html = rss._fuel_section_html('l', None, ENTRIES_L, 843)
+    assert 'Normă consum / 100 km</td><td>—' in html
+    assert 'Normă proprie / km</td><td>—' in html
+    # Alimentat/decontabili/valoare still computed from receipts.
+    assert 'Total alimentat</td><td>58.32 l' in html
+    assert 'Valoare decontabilă</td><td>553.98 lei' in html
+
+
+# ── XLSX — same 7 rows, numeric cells ────────────────────────────────────────
+def _xlsx_labels(norma, entries, km, unit='l'):
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill
-    wb = Workbook()
-    ws = wb.active
-    bold = Font(bold=True)
-    fill = PatternFill('solid', fgColor='1A1A2E')
-    rss._xlsx_fuel_section(ws, 1, 'l', 6.5, ENTRIES_L, 843, bold, fill, bold)
-    labels = {}
+    wb = Workbook(); ws = wb.active
+    bold = Font(bold=True); fill = PatternFill('solid', fgColor='1A1A2E')
+    rss._xlsx_fuel_section(ws, 1, unit, norma, entries, km, bold, fill, bold)
+    out = {}
     for r in range(1, ws.max_row + 1):
         label = str(ws.cell(row=r, column=1).value or '')
-        if label.startswith('Consum efectiv'):
-            labels[label] = ws.cell(row=r, column=2).value
-    assert any(v == 58.32 for v in labels.values())
+        if label:
+            out[label] = ws.cell(row=r, column=2).value
+    return out
 
 
-# ── Deviație litri cumpărați vs consum normat (prag ±10%) ────────────────────
-
-def test_deviation_within_threshold_is_green():
-    # normat = 10 * 100 / 100 = 10 l; bought 10.5 → +5% → within ±10% (green).
-    html = rss._fuel_section_html('l', 10.0, [{'liters': 10.5, 'lei': 100}], 100)
-    assert 'Deviație (cumpărat vs normat)' in html
-    assert '+5%' in html
-    assert '#1a7f37' in html  # green, within threshold
-
-
-def test_deviation_over_threshold_is_red():
-    # normat = 10 l; bought 12 → +20% → exceeds +10% (red + bold).
-    html = rss._fuel_section_html('l', 10.0, [{'liters': 12.0, 'lei': 100}], 100)
-    assert '+20%' in html
-    assert '#b3261e' in html  # red, over threshold
+def test_xlsx_has_decontare_rows_with_values():
+    labels = _xlsx_labels(6.5, ENTRIES_L, 843)
+    # values are real numbers (not formatted strings) for spreadsheet math
+    assert any(k.startswith('Km efectuați') and v == 843 for k, v in labels.items())
+    assert any(k.startswith('Total alimentat') and v == 58.32 for k, v in labels.items())
+    assert any(k.startswith('Normă proprie') and v == 0.065 for k, v in labels.items())
+    assert any('decontabili' in k and v == 58.32 for k, v in labels.items())
+    assert any(k.startswith('Valoare decontabilă') and v == 553.98 for k, v in labels.items())
 
 
-def test_deviation_under_consumption_not_red():
-    # Bought LESS than normed (normat=10, bought 7 → -30%): economical, not an
-    # alert — stays green even though |dev| > 10%.
-    html = rss._fuel_section_html('l', 10.0, [{'liters': 7.0, 'lei': 60}], 100)
-    assert '-30%' in html
-    assert '#b3261e' not in html   # no red alert for under-consumption
-    assert '#1a7f37' in html       # green
+def test_xlsx_has_no_deviation_row():
+    labels = _xlsx_labels(6.5, ENTRIES_L, 843)
+    assert not any(k.startswith('Deviație') for k in labels)
 
 
-def test_deviation_dash_when_no_norma():
-    html = rss._fuel_section_html('l', None, [{'liters': 12.0, 'lei': 100}], 100)
-    assert 'Deviație (cumpărat vs normat)</td><td>—' in html
-
-
-# ── Empty consumption sections are hidden ────────────────────────────────────
-
+# ── Empty consumption sections are still hidden ──────────────────────────────
 def _skeleton(fuel, fuel_type='Hybrid'):
     data = {
         'company': {'id': 1, 'name': 'Co', 'prestator': ''},
@@ -95,7 +113,6 @@ def _skeleton(fuel, fuel_type='Hybrid'):
 
 
 def test_plain_hybrid_shows_fuel_only():
-    # HEV has no plug — even with an energy norm set, it gets no Energie section.
     html = _skeleton({'norma': 7.5, 'norma_energie': 17.0,
                       'alimentari': [{'liters': 12, 'lei': 100, 'unit': 'l'}]}, fuel_type='Hybrid')
     assert 'fuel-title">Combustibil' in html
@@ -103,7 +120,6 @@ def test_plain_hybrid_shows_fuel_only():
 
 
 def test_plugin_hybrid_shows_both_sections():
-    # PHEV is charged → both Combustibil and Energie sections render.
     html = _skeleton({'norma': 7.5, 'norma_energie': 17.0,
                       'alimentari': [{'liters': 12, 'lei': 100, 'unit': 'l'},
                                      {'liters': 8, 'lei': 20, 'unit': 'kWh'}]},
@@ -112,47 +128,6 @@ def test_plugin_hybrid_shows_both_sections():
     assert 'fuel-title">Energie' in html
 
 
-def test_plugin_hybrid_empty_energy_hidden():
-    # PHEV that never charged (no energy norm, no kWh entries) → Energie hidden.
-    html = _skeleton({'norma': 7.5, 'norma_energie': None,
-                      'alimentari': [{'liters': 12, 'lei': 100, 'unit': 'l'}]},
-                     fuel_type='Plug-in Hybrid')
-    assert 'fuel-title">Combustibil' in html
-    assert 'fuel-title">Energie' not in html
-
-
 def test_empty_fuel_section_hidden():
-    # Fuel car with no norm and no refuels → no Combustibil section rendered.
     html = _skeleton({'norma': None, 'norma_energie': None, 'alimentari': []}, fuel_type='Benzina')
     assert 'fuel-title">Combustibil' not in html
-
-
-def test_xlsx_deviation_cell_red_when_over_threshold():
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill
-    wb = Workbook()
-    ws = wb.active
-    bold = Font(bold=True)
-    fill = PatternFill('solid', fgColor='1A1A2E')
-    rss._xlsx_fuel_section(ws, 1, 'l', 10.0, [{'liters': 12.0, 'lei': 100}], 100, bold, fill, bold)
-    found = None
-    for r in range(1, ws.max_row + 1):
-        if str(ws.cell(row=r, column=1).value or '').startswith('Deviație'):
-            found = ws.cell(row=r, column=2)
-    assert found is not None and found.value == 20.0
-    assert (found.font.color.rgb or '').endswith('B3261E')  # red for >+10%
-
-
-def test_xlsx_deviation_under_consumption_not_red():
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill
-    wb = Workbook(); ws = wb.active
-    bold = Font(bold=True); fill = PatternFill('solid', fgColor='1A1A2E')
-    # normat=10, bought 7 → -30% → no red alert.
-    rss._xlsx_fuel_section(ws, 1, 'l', 10.0, [{'liters': 7.0, 'lei': 60}], 100, bold, fill, bold)
-    found = None
-    for r in range(1, ws.max_row + 1):
-        if str(ws.cell(row=r, column=1).value or '').startswith('Deviație'):
-            found = ws.cell(row=r, column=2)
-    assert found is not None and found.value == -30.0
-    assert not found.font.bold   # red alert is bold; under-consumption stays default
