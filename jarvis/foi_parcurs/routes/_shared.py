@@ -10,6 +10,7 @@ __all__ = [
     '_fp_repo', '_client_repo', '_vehicle_repo', '_inspection_repo', '_crm_client_repo',
     '_dealer_repo',
     'open_session_block', 'is_privileged', '_actor', 'log_history', 'log_status_change',
+    'route_sheet_lock_block', 'session_lock_block',
 ]
 
 import logging
@@ -61,6 +62,40 @@ def log_status_change(session_id, old_status, new_status):
     if (old_status or None) == (new_status or None):
         return
     log_history(session_id, f'status:{old_status or ""}:{new_status or ""}')
+
+
+def route_sheet_lock_block(vin, year, month):
+    """Full-freeze guard: when a car-month route sheet is 'finalizat' (locked),
+    return a ready ``(payload, 423)`` that blocks the mutation; None otherwise.
+    A finalized foaie de parcurs freezes its PDF, its own fields, and the
+    underlying sessions/gaps of that car-month until an unlock (Admin +
+    Dep Contabilitate)."""
+    try:
+        from ..services import route_sheet_service as _rss
+        if _rss.is_finalized(vin, year, month):
+            return ({'success': False, 'locked': True,
+                     'error': 'Foaia de parcurs este finalizată (blocată). '
+                              'Deblocheaz-o pentru a modifica.'}, 423)
+    except Exception:
+        logger.warning('route-sheet lock check failed for %s %s-%s', vin, year, month, exc_info=True)
+    return None
+
+
+def session_lock_block(session):
+    """Lock guard keyed on a session row: derives (vin, year, month) from the
+    session's drive (departure) date — the same bucketing a foaie uses — and
+    defers to route_sheet_lock_block. Returns a ready ``(payload, 423)`` or None."""
+    if not session:
+        return None
+    try:
+        from ..services.route_sheet_service import _period
+        year, month = _period(session)
+        if not year or not month:
+            return None
+        return route_sheet_lock_block(session.get('vin'), year, month)
+    except Exception:
+        logger.warning('session lock check failed for session %s', (session or {}).get('id'), exc_info=True)
+        return None
 
 
 def open_session_block(vin, exclude_id=None, allow_override=False, privileged=False):

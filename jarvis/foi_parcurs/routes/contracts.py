@@ -8,6 +8,7 @@ from datetime import datetime
 from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required, current_user,
     logger, _fp_repo, _client_repo, _vehicle_repo, log_history, log_status_change,
+    session_lock_block,
 )
 from core.roles.decorators import v2_permission_required
 from ..services.fuel_service import calculate_fuel_distribution
@@ -241,6 +242,9 @@ def api_delete_contract(id):
     contract = _fp_repo.get_contract_by_id(id)
     if not contract:
         return jsonify({'success': False, 'error': 'Not found'}), 404
+    blocked = session_lock_block(contract)   # finalized car-month is frozen (unlock first)
+    if blocked:
+        return jsonify(blocked[0]), blocked[1]
     if not _is_admin():
         own_company = getattr(current_user, 'company_id', None)
         if (not contract.get('is_internal')
@@ -303,6 +307,9 @@ def api_correct_contract(id):
     contract = _fp_repo.get_contract_by_id(id)
     if not contract:
         return jsonify({'success': False, 'error': 'Not found'}), 404
+    blocked = session_lock_block(contract)   # finalized car-month is frozen (unlock first)
+    if blocked:
+        return jsonify(blocked[0]), blocked[1]
 
     data = request.get_json(silent=True) or {}
     fields = {}
@@ -409,6 +416,9 @@ def api_adjust_reading(id):
     contract = _fp_repo.get_contract_by_id(id)
     if not contract:
         return jsonify({'success': False, 'error': 'Not found'}), 404
+    blocked = session_lock_block(contract)   # finalized car-month is frozen (unlock first)
+    if blocked:
+        return jsonify(blocked[0]), blocked[1]
     vin = contract.get('vin')
     if not vin:
         return jsonify({'success': False, 'error': 'Sesiunea nu are un vehicul asociat'}), 400
@@ -510,6 +520,9 @@ def api_set_drive_type(id):
     contract = _fp_repo.get_contract_by_id(id)
     if not contract:
         return jsonify({'success': False, 'error': 'Not found'}), 404
+    blocked = session_lock_block(contract)   # finalized car-month is frozen (unlock first)
+    if blocked:
+        return jsonify(blocked[0]), blocked[1]
 
     data = request.get_json(silent=True) or {}
     # Strict boolean — reject 1/"true"/None so a bad payload can't corrupt the flag.
@@ -534,6 +547,9 @@ def api_reset_contract(id):
     contract = _fp_repo.get_contract_by_id(id)
     if not contract:
         return jsonify({'success': False, 'error': 'Not found'}), 404
+    blocked = session_lock_block(contract)   # finalized car-month is frozen (unlock first)
+    if blocked:
+        return jsonify(blocked[0]), blocked[1]
     if contract.get('route_type') != 'TD':
         return jsonify({'success': False, 'error': 'Only Test Drive registrations can be reset'}), 400
     updated = _fp_repo.reset_return(id)

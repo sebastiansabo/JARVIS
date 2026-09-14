@@ -102,6 +102,25 @@ export interface StoredRouteSheet {
   attachments: RouteSheetFile[] | null
   generated_by_name: string | null
   generated_at: string
+  // Finalizat / lock state (absent on old rows → treated as 'draft').
+  status?: 'draft' | 'finalizat'
+  finalized_at?: string | null
+  finalized_by_name?: string | null
+}
+
+export interface RouteSheetLockState {
+  status: 'draft' | 'finalizat'
+  finalized_at: string | null
+  finalized_by_name: string | null
+  unlocked_at: string | null
+  unlocked_by_name: string | null
+}
+
+export interface RouteSheetLockEvent {
+  action: 'finalize' | 'unlock'
+  reason: string | null
+  actor_name: string | null
+  created_at: string
 }
 
 function qs(params: Record<string, unknown>): string {
@@ -614,6 +633,19 @@ export const foiParcursApi = {
   listRouteSheets: (companyId: number, year: number, month: number) =>
     api.get<{ success: boolean; sheets: StoredRouteSheet[] }>(
       `${BASE}/route-sheets${qs({ company_id: companyId || undefined, year, month })}`,
+    ),
+
+  // Finalizat / lock. Finalize = any route-sheet user; unlock = Admin + Dep
+  // Contabilitate (test_drive.route_sheet.unlock). A finalized foaie is frozen.
+  finalizeRouteSheet: (vin: string, year: number, month: number) =>
+    api.post<{ success: boolean } & RouteSheetLockState>(
+      `${BASE}/route-sheet/finalize`, { vin, year, month }),
+  unlockRouteSheet: (vin: string, year: number, month: number, reason?: string) =>
+    api.post<{ success: boolean } & RouteSheetLockState>(
+      `${BASE}/route-sheet/unlock`, { vin, year, month, reason: reason || undefined }),
+  getRouteSheetLockEvents: (vin: string, year: number, month: number) =>
+    api.get<{ success: boolean; events: RouteSheetLockEvent[] }>(
+      `${BASE}/route-sheet/lock-events${qs({ vin, year, month })}`,
     ),
 
   // Upload a related file. kind='receipt' → returns the file record to attach to
