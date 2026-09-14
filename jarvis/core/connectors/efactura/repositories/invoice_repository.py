@@ -1016,6 +1016,7 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
                 i.subdepartment_override_2,
                 i.observer_user_ids,
                 i.konto_config_id,
+                i.xml_content,
                 sm.department as mapping_department,
                 sm.subdepartment as mapping_subdepartment,
                 sm.brand as mapping_brand,

@@ -411,6 +411,31 @@ class TestSyncRepository:
 # InvoiceRepository Tests
 # ═══════════════════════════════════════════════
 
+class TestXmlToLineItems:
+
+    def test_maps_name_description_and_amounts(self):
+        from core.connectors.efactura.models import ParsedInvoice, InvoiceLineItem
+        parsed = ParsedInvoice()
+        parsed.line_items = [
+            InvoiceLineItem(line_number=1, name='Gaze naturale',
+                            description='Anexa la factura nr. 010237641424',
+                            quantity=Decimal('1'), unit_price=Decimal('100'),
+                            line_amount=Decimal('1521.56'), vat_rate=Decimal('21')),
+        ]
+        with patch('core.connectors.efactura.xml_parser.parse_invoice_xml', return_value=parsed):
+            from core.connectors.efactura.services.invoice_allocation_service import xml_to_line_items
+            items = xml_to_line_items('<xml/>')
+        assert items[0]['name'] == 'Gaze naturale'
+        assert items[0]['description'] == 'Anexa la factura nr. 010237641424'
+        assert items[0]['amount'] == 1521.56
+        assert items[0]['vat_rate'] == 21.0
+
+    def test_empty_or_bad_xml_returns_empty(self):
+        from core.connectors.efactura.services.invoice_allocation_service import xml_to_line_items
+        assert xml_to_line_items(None) == []
+        assert xml_to_line_items('') == []
+
+
 class TestInvoiceRepository:
 
     @patch(f'{_B}.release_db')
