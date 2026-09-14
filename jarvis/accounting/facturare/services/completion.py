@@ -67,10 +67,26 @@ def _final_covered_line_ids(repo, anexa_id):
 
 
 def _has_unpaired_proforma(repo, anexa_id):
+    """True if any proforma has a line not yet confirmed by an advance invoice.
+
+    A proforma may be confirmed by several partial advance invoices (each over a
+    disjoint line subset), all sharing the proforma's sequence_number. The gate
+    is per-line: the proforma is "paired" only once every line it covers has an
+    advance invoice under the same sequence."""
     invs = repo.get_invoices_by_anexa(anexa_id)
-    proforma_seqs = {i["sequence_number"] for i in invs if i["invoice_type"] == "PROFORMA"}
-    invoice_seqs = {i["sequence_number"] for i in invs if i["invoice_type"] == "INVOICE"}
-    return bool(proforma_seqs - invoice_seqs)
+    all_ids = [l["id"] for l in repo.get_lines_by_anexa(anexa_id)]
+    invoiced_by_seq = {}
+    for i in invs:
+        if i["invoice_type"] != "INVOICE":
+            continue
+        invoiced_by_seq.setdefault(i["sequence_number"], set()).update(
+            _covered_line_ids(i, all_ids))
+    for p in invs:
+        if p["invoice_type"] != "PROFORMA":
+            continue
+        if _covered_line_ids(p, all_ids) - invoiced_by_seq.get(p["sequence_number"], set()):
+            return True
+    return False
 
 
 def is_anexa_complete(repo, anexa_id):
