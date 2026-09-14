@@ -9,7 +9,8 @@ from core.organization.repositories.company_repository import CompanyRepository
 from core.roles.repositories.permission_repository import PermissionRepository
 from core.suppliers.eurofib_export import build_csv, build_xlsx
 from core.suppliers.normalize import normalize_cui
-from core.suppliers.repository import SupplierMasterRepository, KONTO_FIELDS
+from core.suppliers.repository import (
+    SupplierMasterRepository, KONTO_FIELDS, MAX_PRESETS_PER_SUPPLIER_COMPANY, PresetLimitError)
 from core.suppliers.resolver import SupplierResolver
 
 suppliers_bp = Blueprint('suppliers', __name__)
@@ -80,7 +81,12 @@ def _to_invoice_config_pairs(rows, company_id, skipped):
                             'reason': 'missing_amounts'})
             continue
         vat = float(gross) - float(net)
-        konto = _repo.get_effective_konto(row['supplier_id'], company_id)['konto']
+        # list_budgeted_invoices resolves the effective preset (per-invoice override → active)
+        # and returns its konto_config_id; use it so export honours worklist overrides. Fall back
+        # to the active preset if a row somehow arrives without one.
+        preset_id = row.get('konto_config_id')
+        resolved = _repo.get_konto_by_id(preset_id) if preset_id else None
+        konto = resolved['konto'] if resolved else _repo.get_effective_konto(row['supplier_id'], company_id)['konto']
         invoice = {
             'supplier': row.get('supplier'),
             'supplier_id': row.get('supplier_id'),
@@ -171,6 +177,9 @@ def api_get_konto(supplier_id):
 @suppliers_bp.route('/api/suppliers/<int:supplier_id>/konto', methods=['PUT'])
 @login_required
 def api_update_konto(supplier_id):
+    """Back-compat single-config writer — targets the ACTIVE preset for (supplier, company).
+    The preset-manager UI uses the /konto/presets endpoints below; this stays for the legacy
+    add-supplier / resolve flows and the replicate-all toggle."""
     if not _check_supplier_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     data = request.get_json(force=True) or {}
@@ -186,6 +195,125 @@ def api_update_konto(supplier_id):
         return err
     kc_id = _repo.upsert_konto(supplier_id, company_id, created_by=uid, **fields)
     return jsonify({'success': True, 'id': kc_id})
+
+
+# ── EuroFib preset manager (up to MAX_PRESETS_PER_SUPPLIER_COMPANY per supplier×company) ──
+@suppliers_bp.route('/api/suppliers/<int:supplier_id>/konto/presets', methods=['GET'])
+@login_required
+def api_list_presets(supplier_id):
+    if not _check_supplier_perm('view'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    company_id, err = _parse_company_id(request.args.get('company_id'))
+    if err:
+        return err
+    presets = _repo.list_presets(supplier_id, company_id)
+    return jsonify({'success': True, 'presets': presets, 'max': MAX_PRESETS_PER_SUPPLIER_COMPANY})
+
+
+@suppliers_bp.route('/api/suppliers/<int:supplier_id>/konto/presets', methods=['POST'])
+@login_required
+def api_create_preset(supplier_id):
+    if not _check_supplier_perm('edit'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(force=True) or {}
+    company_id, err = _parse_company_id(request.args.get('company_id'))
+    if err:
+        return err
+    fields = {k: v for k, v in data.items() if k in KONTO_FIELDS}
+    uid = getattr(current_user, 'id', None)
+    name = data.get('name')
+    is_active = bool(data.get('is_active'))
+    try:
+        preset_id = _repo.create_preset(supplier_id, company_id, name, is_active=is_active, created_by=uid, **fields)
+    except PresetLimitError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+    except pg_errors.UniqueViolation:
+        return jsonify({'success': False, 'error': 'A preset with this name already exists'}), 409
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            return jsonify({'success': False, 'error': 'A preset with this name already exists'}), 409
+        raise
+    if data.get('replicate_all'):
+        _repo.replicate_konto(supplier_id, fields, created_by=uid,
+                              name=name or 'Implicit', is_active=is_active)
+    return jsonify({'success': True, 'id': preset_id}), 201
+
+
+@suppliers_bp.route('/api/suppliers/<int:supplier_id>/konto/presets/<int:preset_id>', methods=['PUT'])
+@login_required
+def api_update_preset(supplier_id, preset_id):
+    if not _check_supplier_perm('edit'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(force=True) or {}
+    fields = {k: v for k, v in data.items() if k in KONTO_FIELDS}
+    uid = getattr(current_user, 'id', None)
+    try:
+        updated = _repo.update_preset(
+            preset_id, name=data.get('name'),
+            is_active=True if data.get('is_active') else None, **fields)
+    except pg_errors.UniqueViolation:
+        return jsonify({'success': False, 'error': 'A preset with this name already exists'}), 409
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            return jsonify({'success': False, 'error': 'A preset with this name already exists'}), 409
+        raise
+    if not updated:
+        return jsonify({'success': False, 'error': 'Preset not found'}), 404
+    if data.get('replicate_all'):
+        _repo.replicate_konto(supplier_id, fields, created_by=uid,
+                              name=data.get('name') or 'Implicit',
+                              is_active=bool(data.get('is_active')))
+    return jsonify({'success': True})
+
+
+@suppliers_bp.route('/api/suppliers/<int:supplier_id>/konto/presets/<int:preset_id>/activate', methods=['POST'])
+@login_required
+def api_activate_preset(supplier_id, preset_id):
+    if not _check_supplier_perm('edit'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    if not _repo.set_active(preset_id):
+        return jsonify({'success': False, 'error': 'Preset not found'}), 404
+    return jsonify({'success': True})
+
+
+@suppliers_bp.route('/api/suppliers/<int:supplier_id>/konto/presets/<int:preset_id>', methods=['DELETE'])
+@login_required
+def api_delete_preset(supplier_id, preset_id):
+    if not _check_supplier_perm('edit'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    if not _repo.delete_preset(preset_id):
+        return jsonify({'success': False, 'error': 'Preset not found'}), 404
+    return jsonify({'success': True})
+
+
+@suppliers_bp.route('/api/suppliers/invoices/<int:invoice_id>/konto-preset', methods=['POST'])
+@login_required
+def api_set_invoice_preset(invoice_id):
+    """Pin (or clear) the EuroFib preset for a single invoice in the worklist. Body:
+    {konto_config_id, supplier_id, company_id}. A null/absent konto_config_id clears the
+    override → the invoice falls back to the supplier's active preset. The preset must belong to
+    the given (supplier_id, company_id)."""
+    if not _check_supplier_perm('edit'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(force=True) or {}
+    konto_config_id = data.get('konto_config_id')
+    uid = getattr(current_user, 'id', None)
+
+    if not konto_config_id:
+        _repo.clear_invoice_override(invoice_id)
+        return jsonify({'success': True, 'cleared': True})
+
+    company_id, err = _parse_company_id(data.get('company_id'))
+    if err:
+        return err
+    supplier_id = data.get('supplier_id')
+    owner = _repo.get_preset_owner(konto_config_id)
+    if not owner:
+        return jsonify({'success': False, 'error': 'Preset not found'}), 404
+    if owner['company_id'] != company_id or (supplier_id and owner['supplier_id'] != int(supplier_id)):
+        return jsonify({'success': False, 'error': 'Preset does not belong to this supplier/company'}), 400
+    _repo.set_invoice_override(invoice_id, konto_config_id, created_by=uid)
+    return jsonify({'success': True})
 
 
 @suppliers_bp.route('/api/suppliers/<int:supplier_id>/aliases', methods=['POST'])

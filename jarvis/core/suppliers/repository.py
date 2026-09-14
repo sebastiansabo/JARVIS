@@ -24,6 +24,13 @@ KONTO_FIELDS = (
 # Subset of KONTO_FIELDS that also exists as a flat column on `suppliers` (per-supplier default).
 _KONTO_FLAT_FIELDS = KONTO_FIELDS[:9]
 
+# A supplier×company may hold at most this many named EuroFib presets.
+MAX_PRESETS_PER_SUPPLIER_COMPANY = 5
+
+
+class PresetLimitError(Exception):
+    """Raised when creating a preset would exceed MAX_PRESETS_PER_SUPPLIER_COMPANY."""
+
 
 class SupplierMasterRepository(BaseRepository):
 
@@ -77,28 +84,22 @@ class SupplierMasterRepository(BaseRepository):
             effective_cols = ', '.join(
                 f"COALESCE(kc.{f}, s.{f}) AS {f}" for f in _KONTO_FLAT_FIELDS)
             child_only_cols = ', '.join(f"kc.{f} AS {f}" for f in KONTO_FIELDS[9:])
+            # Master-list konto reflects the ACTIVE preset for the company (kc.is_active).
             sql = (
                 f"SELECT s.*, {effective_cols}, {child_only_cols}, (kc.id IS NOT NULL) AS has_company_config "
                 f"FROM suppliers s LEFT JOIN supplier_konto_config kc "
-                f"ON kc.supplier_id = s.id AND kc.company_id = %s {where} "
+                f"ON kc.supplier_id = s.id AND kc.company_id = %s AND kc.is_active {where} "
                 f"ORDER BY s.name LIMIT %s OFFSET %s")
             return self.query_all(sql, tuple([company_id] + params + [limit, offset]))
 
         params += [limit, offset]
         return self.query_all(f"SELECT s.* FROM suppliers s {where} ORDER BY s.name LIMIT %s OFFSET %s", tuple(params))
 
-    def get_effective_konto(self, supplier_id, company_id):
-        """Effective Table-2 konto for (supplier, company): the supplier_konto_config child
-        row (if present) overrides the flat suppliers.* defaults field-by-field. NULL/absent
-        fields on the child fall back to the flat columns (steuercode/text_template/belegart
-        have no flat fallback — they stay NULL when no child row/value exists).
-
-        Returns {'konto': {...KONTO_FIELDS...}, 'has_company_config': bool}.
-        """
-        child = self.query_one(
-            f"SELECT {', '.join(KONTO_FIELDS)} FROM supplier_konto_config "
-            f"WHERE supplier_id = %s AND company_id = %s",
-            (supplier_id, company_id))
+    def _apply_flat_fallback(self, child, supplier_id):
+        """Merge a preset row (dict of KONTO_FIELDS, or None) with the flat suppliers.*
+        defaults: a NULL/absent field on the preset falls back to the flat column for the 9
+        flat-backed fields (steuercode/text_template/belegart have no flat fallback). Returns
+        a plain {field: value} dict over KONTO_FIELDS."""
         flat = self.query_one(
             f"SELECT {', '.join(_KONTO_FLAT_FIELDS)} FROM suppliers WHERE id = %s",
             (supplier_id,)) or {}
@@ -106,54 +107,247 @@ class SupplierMasterRepository(BaseRepository):
         for field in KONTO_FIELDS:
             child_val = child.get(field) if child else None
             konto[field] = child_val if child_val is not None else flat.get(field)
-        return {'konto': konto, 'has_company_config': child is not None}
+        return konto
 
-    def upsert_konto(self, supplier_id, company_id, created_by=None, **fields):
-        """Create/update the supplier_konto_config row for (supplier_id, company_id).
-        Only KONTO_FIELDS are ever written — arbitrary kwargs are silently dropped, never
-        interpolated as SQL identifiers."""
-        cols = [f for f in KONTO_FIELDS if f in fields]
-        vals = [fields[f] for f in cols]
-        insert_cols = ['supplier_id', 'company_id', 'created_by'] + cols
-        insert_vals = [supplier_id, company_id, created_by] + vals
-        placeholders = ', '.join(['%s'] * len(insert_vals))
-        update_sets = ', '.join(f"{f} = EXCLUDED.{f}" for f in cols)
-        update_clause = (update_sets + ', ') if update_sets else ''
-        row = self.execute(
-            f"""INSERT INTO supplier_konto_config ({', '.join(insert_cols)})
-                VALUES ({placeholders})
-                ON CONFLICT (supplier_id, company_id) DO UPDATE SET
-                    {update_clause}updated_at = CURRENT_TIMESTAMP
-                RETURNING id""",
-            tuple(insert_vals), returning=True)
-        return row['id']
+    def get_effective_konto(self, supplier_id, company_id):
+        """Effective Table-2 konto for (supplier, company): the ACTIVE preset (if any) resolved
+        against the flat suppliers.* defaults field-by-field. NULL/absent fields on the preset
+        fall back to the flat columns (steuercode/text_template/belegart stay NULL).
 
-    def replicate_konto(self, supplier_id, fields, created_by=None):
-        """Upsert the given (whitelisted) KONTO_FIELDS into supplier_konto_config for EVERY
-        company, atomically in a single transaction. Mirrors upsert_konto's INSERT ... ON
-        CONFLICT per company. Only KONTO_FIELDS are ever written — arbitrary keys in `fields`
-        are silently dropped, never interpolated as SQL identifiers.
-
-        Returns the number of companies written.
+        Returns {'konto': {...KONTO_FIELDS...}, 'has_company_config': bool,
+                 'konto_config_id': int|None, 'name': str|None}.
         """
+        child = self.query_one(
+            f"SELECT id, name, {', '.join(KONTO_FIELDS)} FROM supplier_konto_config "
+            f"WHERE supplier_id = %s AND company_id = %s AND is_active",
+            (supplier_id, company_id))
+        return {
+            'konto': self._apply_flat_fallback(child, supplier_id),
+            'has_company_config': child is not None,
+            'konto_config_id': child['id'] if child else None,
+            'name': child['name'] if child else None,
+        }
+
+    def get_konto_by_id(self, preset_id):
+        """Resolve a specific preset (by id) against its supplier's flat defaults. Returns
+        {'konto': {...}, 'konto_config_id': int, 'name': str} or None if the preset is gone."""
+        child = self.query_one(
+            f"SELECT id, name, supplier_id, {', '.join(KONTO_FIELDS)} "
+            f"FROM supplier_konto_config WHERE id = %s",
+            (preset_id,))
+        if not child:
+            return None
+        return {
+            'konto': self._apply_flat_fallback(child, child['supplier_id']),
+            'konto_config_id': child['id'],
+            'name': child['name'],
+        }
+
+    # ---- preset CRUD (up to MAX_PRESETS_PER_SUPPLIER_COMPANY per supplier×company) ----
+    def list_presets(self, supplier_id, company_id):
+        """All presets for (supplier, company), active one first. Each row carries its raw
+        KONTO_FIELDS (no flat fallback — the editor shows exactly what's stored)."""
+        return self.query_all(
+            f"SELECT id, name, is_active, {', '.join(KONTO_FIELDS)} FROM supplier_konto_config "
+            f"WHERE supplier_id = %s AND company_id = %s ORDER BY is_active DESC, lower(name)",
+            (supplier_id, company_id))
+
+    def get_preset_owner(self, preset_id):
+        """(supplier_id, company_id) dict for a preset, or None — used to validate overrides."""
+        return self.query_one(
+            "SELECT supplier_id, company_id FROM supplier_konto_config WHERE id = %s", (preset_id,))
+
+    def create_preset(self, supplier_id, company_id, name, is_active=False, created_by=None, **fields):
+        """Create a named preset. The first preset for a pair is always active; otherwise the
+        caller decides. Activating one deactivates the rest atomically. Raises PresetLimitError
+        if the pair already has MAX_PRESETS_PER_SUPPLIER_COMPANY presets. Unique-name violations
+        surface as the driver's UniqueViolation. Returns the new preset id."""
+        name = (name or '').strip() or 'Implicit'
         cols = [f for f in KONTO_FIELDS if f in fields]
         vals = [fields[f] for f in cols]
-        insert_cols = ['supplier_id', 'company_id', 'created_by'] + cols
-        placeholders = ', '.join(['%s'] * len(insert_cols))
-        update_sets = ', '.join(f"{f} = EXCLUDED.{f}" for f in cols)
-        update_clause = (update_sets + ', ') if update_sets else ''
-        sql = (
-            f"""INSERT INTO supplier_konto_config ({', '.join(insert_cols)})
-                VALUES ({placeholders})
-                ON CONFLICT (supplier_id, company_id) DO UPDATE SET
-                    {update_clause}updated_at = CURRENT_TIMESTAMP""")
+
+        def _work(cursor):
+            cursor.execute(
+                "SELECT COUNT(*) AS n FROM supplier_konto_config WHERE supplier_id = %s AND company_id = %s",
+                (supplier_id, company_id))
+            existing = cursor.fetchone()['n']
+            if existing >= MAX_PRESETS_PER_SUPPLIER_COMPANY:
+                raise PresetLimitError(
+                    f"maximum {MAX_PRESETS_PER_SUPPLIER_COMPANY} presets per supplier/company reached")
+            active = bool(is_active) or existing == 0  # first preset must be active
+            if active:
+                cursor.execute(
+                    "UPDATE supplier_konto_config SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP "
+                    "WHERE supplier_id = %s AND company_id = %s", (supplier_id, company_id))
+            insert_cols = ['supplier_id', 'company_id', 'name', 'is_active', 'created_by'] + cols
+            insert_vals = [supplier_id, company_id, name, active, created_by] + vals
+            placeholders = ', '.join(['%s'] * len(insert_vals))
+            cursor.execute(
+                f"INSERT INTO supplier_konto_config ({', '.join(insert_cols)}) "
+                f"VALUES ({placeholders}) RETURNING id",
+                tuple(insert_vals))
+            return cursor.fetchone()['id']
+
+        return self.execute_many(_work)
+
+    def update_preset(self, preset_id, name=None, is_active=None, **fields):
+        """Update a preset's konto fields and/or name; is_active=True activates it (and
+        deactivates its siblings). Activation is one-way here — pass is_active=False is ignored
+        so the pair never ends up with zero active presets. Returns 1 if the preset exists."""
+        cols = [f for f in KONTO_FIELDS if f in fields]
+
+        def _work(cursor):
+            cursor.execute(
+                "SELECT supplier_id, company_id FROM supplier_konto_config WHERE id = %s", (preset_id,))
+            row = cursor.fetchone()
+            if not row:
+                return 0
+            sets, vals = [], []
+            for f in cols:
+                sets.append(f"{f} = %s"); vals.append(fields[f])
+            if name is not None:
+                sets.append("name = %s"); vals.append((name or '').strip() or 'Implicit')
+            if is_active is True:
+                cursor.execute(
+                    "UPDATE supplier_konto_config SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP "
+                    "WHERE supplier_id = %s AND company_id = %s AND id <> %s",
+                    (row['supplier_id'], row['company_id'], preset_id))
+                sets.append("is_active = TRUE")
+            if not sets:
+                return 0
+            sets.append("updated_at = CURRENT_TIMESTAMP")
+            vals.append(preset_id)
+            cursor.execute(f"UPDATE supplier_konto_config SET {', '.join(sets)} WHERE id = %s", tuple(vals))
+            return 1
+
+        return self.execute_many(_work)
+
+    def set_active(self, preset_id):
+        """Make `preset_id` the active preset for its (supplier, company), deactivating the
+        rest atomically. Returns 1 if the preset exists, else 0."""
+        def _work(cursor):
+            cursor.execute(
+                "SELECT supplier_id, company_id FROM supplier_konto_config WHERE id = %s", (preset_id,))
+            row = cursor.fetchone()
+            if not row:
+                return 0
+            cursor.execute(
+                "UPDATE supplier_konto_config SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP "
+                "WHERE supplier_id = %s AND company_id = %s", (row['supplier_id'], row['company_id']))
+            cursor.execute(
+                "UPDATE supplier_konto_config SET is_active = TRUE, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                (preset_id,))
+            return 1
+        return self.execute_many(_work)
+
+    def delete_preset(self, preset_id):
+        """Delete a preset. If it was the active one and siblings remain, promote the first
+        sibling (alphabetical) to active so the pair never has zero active presets. Overrides
+        pointing at the deleted preset cascade away (ON DELETE CASCADE). Returns 1 if deleted."""
+        def _work(cursor):
+            cursor.execute(
+                "SELECT supplier_id, company_id, is_active FROM supplier_konto_config WHERE id = %s",
+                (preset_id,))
+            row = cursor.fetchone()
+            if not row:
+                return 0
+            cursor.execute("DELETE FROM supplier_konto_config WHERE id = %s", (preset_id,))
+            if row['is_active']:
+                cursor.execute(
+                    "UPDATE supplier_konto_config SET is_active = TRUE, updated_at = CURRENT_TIMESTAMP "
+                    "WHERE id = (SELECT id FROM supplier_konto_config "
+                    "            WHERE supplier_id = %s AND company_id = %s ORDER BY lower(name) LIMIT 1)",
+                    (row['supplier_id'], row['company_id']))
+            return 1
+        return self.execute_many(_work)
+
+    # ---- per-invoice preset override (Procesare worklist) ----
+    def set_invoice_override(self, invoice_id, konto_config_id, created_by=None):
+        """Pin `invoice_id` to a specific preset for export. Upsert on invoice_id."""
+        return self.execute(
+            """INSERT INTO invoice_konto_override (invoice_id, konto_config_id, created_by)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (invoice_id) DO UPDATE SET
+                   konto_config_id = EXCLUDED.konto_config_id, updated_at = CURRENT_TIMESTAMP""",
+            (invoice_id, konto_config_id, created_by))
+
+    def clear_invoice_override(self, invoice_id):
+        """Drop an invoice's preset override → it falls back to the supplier's active preset."""
+        return self.execute("DELETE FROM invoice_konto_override WHERE invoice_id = %s", (invoice_id,))
+
+    # ---- back-compat single-config writers (target the ACTIVE preset) ----
+    def upsert_konto(self, supplier_id, company_id, created_by=None, **fields):
+        """Back-compat: create/update the ACTIVE preset for (supplier, company). Creates the
+        'Implicit' active preset if the pair has none yet. Only KONTO_FIELDS are written.
+        Returns the affected preset id."""
+        cols = [f for f in KONTO_FIELDS if f in fields]
+        vals = [fields[f] for f in cols]
+
+        def _work(cursor):
+            cursor.execute(
+                "SELECT id FROM supplier_konto_config "
+                "WHERE supplier_id = %s AND company_id = %s AND is_active", (supplier_id, company_id))
+            active = cursor.fetchone()
+            if active:
+                if cols:
+                    set_sql = ', '.join(f"{f} = %s" for f in cols)
+                    cursor.execute(
+                        f"UPDATE supplier_konto_config SET {set_sql}, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                        tuple(vals + [active['id']]))
+                return active['id']
+            insert_cols = ['supplier_id', 'company_id', 'name', 'is_active', 'created_by'] + cols
+            insert_vals = [supplier_id, company_id, 'Implicit', True, created_by] + vals
+            placeholders = ', '.join(['%s'] * len(insert_vals))
+            cursor.execute(
+                f"INSERT INTO supplier_konto_config ({', '.join(insert_cols)}) "
+                f"VALUES ({placeholders}) RETURNING id", tuple(insert_vals))
+            return cursor.fetchone()['id']
+
+        return self.execute_many(_work)
+
+    def replicate_konto(self, supplier_id, fields, created_by=None, name='Implicit', is_active=True):
+        """Copy a preset (by `name`) to EVERY company for this supplier, atomically. Upserts on
+        (supplier, company, name): updates the same-named preset where it exists, else inserts a
+        new one when the company is under the preset cap (companies at the cap without that name
+        are skipped). When is_active, the copy becomes the active preset in each company. Only
+        KONTO_FIELDS are written. Returns the number of companies written."""
+        name = (name or '').strip() or 'Implicit'
+        cols = [f for f in KONTO_FIELDS if f in fields]
+        vals = [fields[f] for f in cols]
 
         def _work(cursor):
             cursor.execute("SELECT id FROM companies")
-            company_ids = [row['id'] for row in cursor.fetchall()]
+            company_ids = [r['id'] for r in cursor.fetchall()]
+            written = 0
             for company_id in company_ids:
-                cursor.execute(sql, tuple([supplier_id, company_id, created_by] + vals))
-            return len(company_ids)
+                if is_active:
+                    cursor.execute(
+                        "UPDATE supplier_konto_config SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP "
+                        "WHERE supplier_id = %s AND company_id = %s", (supplier_id, company_id))
+                cursor.execute(
+                    "SELECT id FROM supplier_konto_config "
+                    "WHERE supplier_id = %s AND company_id = %s AND name = %s",
+                    (supplier_id, company_id, name))
+                existing = cursor.fetchone()
+                if existing:
+                    set_sql = (', '.join(f"{f} = %s" for f in cols) + ', ') if cols else ''
+                    cursor.execute(
+                        f"UPDATE supplier_konto_config SET {set_sql}is_active = %s, updated_at = CURRENT_TIMESTAMP "
+                        f"WHERE id = %s", tuple(vals + [is_active, existing['id']]))
+                    written += 1
+                    continue
+                cursor.execute(
+                    "SELECT COUNT(*) AS n FROM supplier_konto_config WHERE supplier_id = %s AND company_id = %s",
+                    (supplier_id, company_id))
+                if cursor.fetchone()['n'] >= MAX_PRESETS_PER_SUPPLIER_COMPANY:
+                    continue  # company at the cap and no same-named preset to overwrite → skip
+                insert_cols = ['supplier_id', 'company_id', 'name', 'is_active', 'created_by'] + cols
+                placeholders = ', '.join(['%s'] * len(insert_cols))
+                cursor.execute(
+                    f"INSERT INTO supplier_konto_config ({', '.join(insert_cols)}) VALUES ({placeholders})",
+                    tuple([supplier_id, company_id, name, is_active, created_by] + vals))
+                written += 1
+            return written
 
         return self.execute_many(_work)
 
@@ -278,13 +472,19 @@ class SupplierMasterRepository(BaseRepository):
         `company_id` (all key posting fields non-empty). GROUP BY i.id collapses the allocation
         fan-out (an invoice can have multiple allocation rows for the same company, split
         across departments)."""
+        # kc = the EFFECTIVE preset for each invoice: the per-invoice override if one is pinned
+        # (invoice_konto_override), otherwise the supplier's active preset. The completeness gate
+        # and the returned konto_config_id/konto_name all reflect that chosen preset.
         sql = """
             SELECT i.id, i.supplier, i.invoice_number, i.invoice_date, i.net_value,
                    i.invoice_value, i.value_ron, i.value_eur, i.currency, i.status,
                    i.subtract_vat,
                    MAX(ef.due_date) AS due_date,
                    i.line_items->0->>'description' AS line_description,
-                   MIN(s.id) AS supplier_id
+                   MIN(s.id) AS supplier_id,
+                   kc.id AS konto_config_id,
+                   kc.name AS konto_name,
+                   (ov.konto_config_id IS NOT NULL) AS konto_overridden
             FROM invoices i
             JOIN allocations a ON a.invoice_id = i.id AND lower(a.company) = lower(%s)
             JOIN suppliers s ON (
@@ -294,7 +494,13 @@ class SupplierMasterRepository(BaseRepository):
                     WHERE al.supplier_id = s.id AND lower(al.alias_name) = lower(i.supplier)
                 )
             )
-            JOIN supplier_konto_config kc ON kc.supplier_id = s.id AND kc.company_id = %s
+            LEFT JOIN invoice_konto_override ov ON ov.invoice_id = i.id
+            JOIN supplier_konto_config kc
+                ON kc.supplier_id = s.id AND kc.company_id = %s
+               AND kc.id = COALESCE(
+                       ov.konto_config_id,
+                       (SELECT act.id FROM supplier_konto_config act
+                        WHERE act.supplier_id = s.id AND act.company_id = %s AND act.is_active))
             -- e-Factura source carries the due date (data scadență) → valuta; null for parsed/manual
             LEFT JOIN efactura_invoices ef ON ef.jarvis_invoice_id = i.id
             WHERE lower(i.status) = lower(%s)
@@ -307,11 +513,11 @@ class SupplierMasterRepository(BaseRepository):
               AND NULLIF(kc.belegart, '') IS NOT NULL
             GROUP BY i.id, i.supplier, i.invoice_number, i.invoice_date, i.net_value,
                      i.invoice_value, i.value_ron, i.value_eur, i.currency, i.status,
-                     i.subtract_vat, i.line_items
+                     i.subtract_vat, i.line_items, kc.id, kc.name, ov.konto_config_id
             ORDER BY i.invoice_date DESC, i.id DESC
             LIMIT %s
         """
-        return self.query_all(sql, (company_name, company_id, status, start_date, end_date, limit))
+        return self.query_all(sql, (company_name, company_id, company_id, status, start_date, end_date, limit))
 
     def mark_invoices_processed(self, invoice_ids):
         """Flip the given invoices from 'Bugetata' to 'processed' after a successful EuroFib
