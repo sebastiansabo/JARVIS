@@ -564,6 +564,37 @@ def api_schemas_for_invoice():
     })
 
 
+@suppliers_bp.route('/api/suppliers/schemas-for-efactura', methods=['GET'])
+@login_required
+def api_schemas_for_efactura():
+    """EuroFib schemas for an UNALLOCATED e-Factura invoice's supplier (resolved partner × the
+    invoice's company). Powers the schema selector in the e-Factura "Edit Invoice Overrides"
+    dialog. Returns {presets, active_id, selected_id (staged efactura choice), count, supplier_id,
+    company_id}. Unresolved supplier/company yields count 0 (no selector)."""
+    if not _check_supplier_perm('view'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    ef_id = request.args.get('efactura_invoice_id', type=int)
+    if not ef_id:
+        return jsonify({'success': False, 'error': 'efactura_invoice_id is required'}), 400
+    empty = {'success': True, 'presets': [], 'active_id': None, 'selected_id': None,
+             'count': 0, 'supplier_id': None, 'company_id': None}
+    row = _repo.query_one(
+        "SELECT partner_name, partner_cif, company_id, konto_config_id FROM efactura_invoices WHERE id = %s",
+        (ef_id,))
+    if not row or not row.get('company_id'):
+        return jsonify(empty)
+    res = _resolver.resolve(name=row.get('partner_name'), cui=row.get('partner_cif'))
+    if not res.supplier_id:
+        return jsonify({**empty, 'company_id': row['company_id'], 'selected_id': row.get('konto_config_id')})
+    presets = _repo.list_presets(res.supplier_id, row['company_id'])
+    active_id = next((p['id'] for p in presets if p['is_active']), None)
+    return jsonify({
+        'success': True, 'presets': presets, 'active_id': active_id,
+        'selected_id': row.get('konto_config_id'), 'count': len(presets),
+        'supplier_id': res.supplier_id, 'company_id': row['company_id'],
+    })
+
+
 @suppliers_bp.route('/api/suppliers/import-ready-ids', methods=['POST'])
 @login_required
 def api_import_ready_ids():

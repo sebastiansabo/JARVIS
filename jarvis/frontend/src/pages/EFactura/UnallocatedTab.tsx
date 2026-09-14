@@ -40,7 +40,8 @@ import { StatusBadge } from '@/components/shared/StatusBadge'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn, usePersistedState } from '@/lib/utils'
-import { efacturaApi } from '@/api/efactura'
+import { efacturaApi, type EFacturaOverridesPayload } from '@/api/efactura'
+import { suppliersApi } from '@/api/suppliers'
 import { organizationApi } from '@/api/organization'
 import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
@@ -72,6 +73,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   const [viewInvoice, setViewInvoice] = useState<InvoiceRow | null>(null)
   const [previewId, setPreviewId] = useState<number | null>(null)
   const [editInvoice, setEditInvoice] = useState<InvoiceRow | null>(null)
+  const [schemaId, setSchemaId] = useState<number | null>(null)
   const [overrides, setOverrides] = useState({
     type_override: '',
     department_override: '',
@@ -153,6 +155,22 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
     staleTime: 5 * 60_000,
     enabled: !!editInvoice,
   })
+
+  // EuroFib schema for the invoice being allocated. Shown when the supplier has a saved schema;
+  // required (gated at Send-to-Module) when the supplier has more than one.
+  const { data: schemaData } = useQuery({
+    queryKey: ['efactura-schemas', editInvoice?.id],
+    queryFn: () => suppliersApi.schemasForEfactura(editInvoice!.id),
+    enabled: !!editInvoice,
+  })
+  const schemaCount = schemaData?.count ?? 0
+  useEffect(() => {
+    if (!schemaData) return
+    setSchemaId((prev) => {
+      if (prev != null && schemaData.presets.some((p) => p.id === prev)) return prev
+      return schemaData.selected_id ?? (schemaData.count === 1 ? schemaData.presets[0].id : null)
+    })
+  }, [schemaData])
 
   // ── Mutations ─────────────────────────────────────────────
   const invalidateAll = () => {
@@ -260,10 +278,8 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   })
 
   const updateOverridesMut = useMutation({
-    mutationFn: ({ id, data }: {
-      id: number
-      data: Record<string, string | null> & { observer_user_ids?: number[] }
-    }) => efacturaApi.updateOverrides(id, data),
+    mutationFn: ({ id, data }: { id: number; data: EFacturaOverridesPayload }) =>
+      efacturaApi.updateOverrides(id, data),
     onSuccess: () => {
       invalidateAll()
       setEditInvoice(null)
@@ -428,22 +444,25 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
     })
     setSplitDept(!!(inv.department_override_2 || inv.subdepartment_override_2))
     setEditObserverIds(inv.observer_user_ids ?? [])
+    setSchemaId(null) // re-initialized from schemasForEfactura once it loads
     setEditInvoice(inv)
   }
 
   const saveOverrides = () => {
     if (!editInvoice) return
-    const data: Record<string, string | null> & { observer_user_ids?: number[] } = {}
-    for (const [k, v] of Object.entries(overrides)) {
-      data[k] = v || null
-    }
-    // Clear second department pair if split is off
-    if (!splitDept) {
-      data.department_override_2 = null
-      data.subdepartment_override_2 = null
-    }
-    data.observer_user_ids = editObserverIds
-    updateOverridesMut.mutate({ id: editInvoice.id, data })
+    updateOverridesMut.mutate({
+      id: editInvoice.id,
+      data: {
+        type_override: overrides.type_override || null,
+        department_override: overrides.department_override || null,
+        subdepartment_override: overrides.subdepartment_override || null,
+        // Clear the second department pair when split is off.
+        department_override_2: splitDept ? (overrides.department_override_2 || null) : null,
+        subdepartment_override_2: splitDept ? (overrides.subdepartment_override_2 || null) : null,
+        observer_user_ids: editObserverIds,
+        konto_config_id: schemaId,
+      },
+    })
   }
 
   return (
@@ -857,6 +876,11 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                 Observers get view-only access to the resulting invoices.
               </p>
             </div>
+            {sendToModuleMut.isError && (
+              <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {(sendToModuleMut.error as Error)?.message || 'Nu s-a putut trimite în Accounting.'}
+              </p>
+            )}
           </div>
           <DialogFooter>
             <Button
@@ -864,6 +888,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
               onClick={() => {
                 setSendDialog(null)
                 setSendObserverIds([])
+                sendToModuleMut.reset()
               }}
               disabled={sendToModuleMut.isPending}
             >
@@ -982,6 +1007,33 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                   <CurrencyDisplay value={editInvoice.total_amount} currency={editInvoice.currency} />
                 </div>
               </div>
+
+              {/* EuroFib schema — first step. Required (gated at Send-to-Module) when >1 schema. */}
+              {schemaCount > 0 && (
+                <div className={cn('space-y-1 rounded-md border p-3',
+                  schemaCount > 1 && schemaId == null && 'border-amber-400 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-950/20')}>
+                  <Label className="text-xs font-medium">
+                    Schemă EuroFib{schemaCount > 1 && <span className="text-destructive"> *</span>}
+                  </Label>
+                  <Select value={schemaId != null ? String(schemaId) : ''} onValueChange={(v) => setSchemaId(Number(v))}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={schemaCount > 1 ? 'Selectează schema...' : 'Schema activă'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(schemaData?.presets ?? []).map((p) => (
+                        <SelectItem key={p.id} value={String(p.id)}>
+                          {p.name}{p.is_active ? ' · activă' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">
+                    {schemaCount > 1
+                      ? 'Acest furnizor are mai multe scheme — alege una înainte de a trimite în Accounting.'
+                      : 'Schema EuroFib pentru acest furnizor.'}
+                  </p>
+                </div>
+              )}
 
               {/* Type Override */}
               <div className="space-y-1">

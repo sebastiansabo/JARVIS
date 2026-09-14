@@ -128,14 +128,12 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
     enabled: !isProfile && !!effectiveSchemaCompany,
   })
   const schemaCount = schemaData?.count ?? 0
-  const needsSchema = schemaCount > 1
+  const needsSchema = schemaCount > 1 // only surface the optional selector when there's a choice
   useEffect(() => {
     if (!schemaData) return
     setSchemaId((prev) => {
       if (prev != null && schemaData.presets.some((p) => p.id === prev)) return prev
-      if (schemaData.selected_id != null) return schemaData.selected_id
-      if (schemaData.count === 1) return schemaData.presets[0].id
-      return null // >1 schemas and no prior choice → force an explicit pick
+      return schemaData.selected_id ?? null // pre-fill an existing override; else leave empty (optional)
     })
   }, [schemaData])
 
@@ -186,11 +184,6 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
   }, [handleFileUpload])
 
   const handleSave = useCallback(async () => {
-    // Bugetare rule: a supplier with multiple EuroFib schemas requires an explicit pick.
-    if (!isProfile && needsSchema && schemaId == null) {
-      toast.warning('Selectează schema EuroFib pentru acest furnizor înainte de a bugeta')
-      return
-    }
     setSaving(true)
     try {
       const currentObserverIds = [...observerUserIds].sort((a, b) => a - b)
@@ -249,9 +242,10 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
         }
       }
 
-      // Pin the chosen EuroFib schema for this invoice (per-invoice override), so it drives the
-      // Procesare worklist/export. Only when we resolved a supplier+company for it.
-      if (!isProfile && schemaId != null && schemaData?.supplier_id && schemaData?.company_id) {
+      // Optionally pin a changed EuroFib schema for this invoice (per-invoice override). Only when
+      // the user picked a different schema than what's stored — bugetare is NOT gated on this.
+      if (!isProfile && needsSchema && schemaId != null && schemaId !== schemaData?.selected_id
+          && schemaData?.supplier_id && schemaData?.company_id) {
         try {
           await suppliersApi.setInvoicePreset(invoice.id, {
             konto_config_id: schemaId,
@@ -293,13 +287,11 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
           {!isProfile && (
             <>
               {needsSchema && (
-                <div className={`rounded-md border p-3 ${schemaId == null ? 'border-amber-400 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-950/20' : 'border-border'}`}>
-                  <Label className="mb-1.5 block text-xs font-medium">
-                    Schemă EuroFib <span className="text-destructive">*</span>
-                  </Label>
+                <div className="rounded-md border border-border p-3">
+                  <Label className="mb-1.5 block text-xs font-medium">Schemă EuroFib</Label>
                   <Select value={schemaId != null ? String(schemaId) : ''} onValueChange={(v) => setSchemaId(Number(v))}>
                     <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder="Selectează schema..." />
+                      <SelectValue placeholder="Schema activă (implicit)" />
                     </SelectTrigger>
                     <SelectContent>
                       {(schemaData?.presets ?? []).map((p) => (
@@ -310,7 +302,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
                     </SelectContent>
                   </Select>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    Acest furnizor are mai multe scheme — alege una pentru bugetare.
+                    Opțional — schimbă schema EuroFib pentru această factură (implicit: schema activă).
                   </p>
                 </div>
               )}
