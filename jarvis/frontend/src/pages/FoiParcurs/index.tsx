@@ -826,6 +826,11 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                 const kmStart = Number.isFinite(sheet.kmMin) ? sheet.kmMin : Math.min(...sheet.sessions.map((c) => c.km_start ?? 0))
                 const kmEnd = Number.isFinite(sheet.kmMax) ? sheet.kmMax : Math.max(...sheet.sessions.map((c) => c.km_end ?? 0))
                 const totalKm = Math.max(0, kmEnd - kmStart)
+                // "Sesiuni interne" toggle also filters this on-screen list: with it
+                // off, internal drives drop out and their km surface as gap rows
+                // (same as the PDF/Excel export). The KM span + header counts stay
+                // full (odometer continuity); only the displayed/gap rows change.
+                const visibleSessions = includeInternal ? sheet.sessions : sheet.sessions.filter((c) => !c.is_internal)
                 const anomalies = sessionAnomalies(sheet.sessions)
                 const clientCount = new Set(sheet.sessions.map((c) => c.client_name).filter(Boolean)).size
                 const stored = storedByVin.get(sheet.vin)
@@ -938,10 +943,10 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                   the Rezolvă gap modal in boundary mode (no gap row needed). */}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
-                                disabled={sheet.sessions.length === 0}
+                                disabled={visibleSessions.length === 0}
                                 onClick={() => setRedistribute({
                                   vin: sheet.vin, gap: null, boundary: 'end',
-                                  sessions: [...sheet.sessions]
+                                  sessions: [...visibleSessions]
                                     .sort((a, b) => (a.km_start ?? 0) - (b.km_start ?? 0) || (a.km_end ?? 0) - (b.km_end ?? 0))
                                     .map((s) => ({
                                       id: s.id, kmStart: s.km_start ?? 0, kmEnd: s.km_end ?? 0,
@@ -973,7 +978,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {withGaps(sheet.sessions, sheet.kmMin, sheet.kmMax).slice().reverse().map((row) => {
+                                {withGaps(visibleSessions, sheet.kmMin, sheet.kmMax).slice().reverse().map((row) => {
                                   if (row.gap) {
                                     return (
                                       <TableRow key={row.id} className="bg-amber-500/10">
@@ -990,7 +995,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                           <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
                                             onClick={() => setRedistribute({
                                               vin: sheet.vin, gap: row,
-                                              sessions: [...sheet.sessions]
+                                              sessions: [...visibleSessions]
                                                 .sort((a, b) => (a.km_start ?? 0) - (b.km_start ?? 0) || (a.km_end ?? 0) - (b.km_end ?? 0))
                                                 .map((s) => ({
                                                   id: s.id, kmStart: s.km_start ?? 0, kmEnd: s.km_end ?? 0,
