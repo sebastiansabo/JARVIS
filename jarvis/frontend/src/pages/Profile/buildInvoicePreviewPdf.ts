@@ -142,7 +142,10 @@ export function buildInvoicePreviewPdf(p: InvoicePreview): void {
     y += 9
   } else {
     p.line_items.forEach((li) => {
-      const descLines = doc.splitTextToSize(ascii(li.description), COLS[1].w - 4) as string[]
+      const label = [li.name, li.description && li.description !== li.name ? li.description : '']
+        .filter(Boolean)
+        .join(' — ')
+      const descLines = doc.splitTextToSize(ascii(label || '-'), COLS[1].w - 4) as string[]
       const rowH = Math.max(descLines.length * 4 + 3, 7)
       checkPage(rowH)
       const cells = [

@@ -84,6 +84,54 @@ MINIMAL_XML = """<?xml version="1.0" encoding="UTF-8"?>
 </Invoice>
 """
 
+# Utility-style invoice (E.ON): each line carries BOTH cbc:Name (product) and
+# cbc:Description (supplementary note), and the free text arrives already
+# mojibake'd at the source (issuer round-tripped UTF-8 through latin-1):
+# ă/ș/ț collapsed to '?', î/â collapsed to U+FFFD ('�').
+EON_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>MS EON 010237641424</cbc:ID>
+  <cbc:IssueDate>2026-09-10</cbc:IssueDate>
+  <cbc:Note>Dorim s? v? inform?m c? neachitarea facturii �n termenele prev?zute.</cbc:Note>
+  <cac:PaymentTerms>
+    <cbc:Note>penalit??i de �nt�rziere</cbc:Note>
+  </cac:PaymentTerms>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="KWH">4268.088</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="RON">1501.43</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Description>Anexa la factura nr. 010237641424</cbc:Description>
+      <cbc:Name>Gaze naturale</cbc:Name>
+      <cac:ClassifiedTaxCategory><cbc:Percent>21</cbc:Percent></cac:ClassifiedTaxCategory>
+    </cac:Item>
+    <cac:Price><cbc:PriceAmount currencyID="RON">0.35178</cbc:PriceAmount></cac:Price>
+  </cac:InvoiceLine>
+</Invoice>
+"""
+
+
+def test_line_item_prefers_name_over_description():
+    # cbc:Name is the product (BT-153); cbc:Description is supplementary (BT-154).
+    # The product name must be the primary label even when Description comes first.
+    p = build_invoice_preview(EON_XML)
+    li = p['line_items'][0]
+    assert li['name'] == 'Gaze naturale'
+    assert li['description'] == 'Anexa la factura nr. 010237641424'
+
+
+def test_mojibake_diacritics_dropped_from_free_text():
+    # Unreadable diacritic markers ('?' stand-ins and U+FFFD) are dropped for display.
+    p = build_invoice_preview(EON_XML)
+    note = p['note'] or ''
+    terms = p['payment']['terms'] or ''
+    assert '�' not in note and '?' not in note
+    assert '�' not in terms and '?' not in terms
+    assert note == 'Dorim s v informm c neachitarea facturii n termenele prevzute.'
+    assert terms == 'penaliti de ntrziere'
+
 
 def test_full_invoice_preview():
     p = build_invoice_preview(FULL_XML)
@@ -112,7 +160,9 @@ def test_full_invoice_preview():
     assert p['vat_breakdown'][0]['amount'] == '1141.62'
 
     assert len(p['line_items']) == 2
-    assert p['line_items'][0]['description'] == 'Filtru ulei'
+    # cbc:Name populates the primary label; no cbc:Description here.
+    assert p['line_items'][0]['name'] == 'Filtru ulei'
+    assert p['line_items'][0]['description'] == ''
     assert p['line_items'][0]['line_amount'] == '5000.00'
     assert p['line_items'][0]['vat_rate'] == '19'
 
