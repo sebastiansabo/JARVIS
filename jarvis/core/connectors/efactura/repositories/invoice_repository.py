@@ -140,6 +140,8 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
             logger.error(f"Failed to auto-hide invoices for partner: {e}")
             return 0
 
+    _KEEP = '__keep__'  # sentinel: leave a column untouched
+
     def update_overrides(
         self,
         invoice_id: int,
@@ -149,28 +151,24 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
         department_override_2: Optional[str] = None,
         subdepartment_override_2: Optional[str] = None,
         observer_user_ids: Optional[List[int]] = None,
+        konto_config_id='__keep__',
     ) -> bool:
-        """Update invoice-level overrides for Type, Department, Subdepartment, and Observers.
+        """Update invoice-level overrides for Type, Department, Subdepartment, Observers, and the
+        EuroFib schema (konto_config_id).
 
-        Passing observer_user_ids=None leaves the existing value untouched.
-        Passing an empty list clears stored observers.
+        Passing observer_user_ids=None leaves observers untouched; an empty list clears them.
+        Passing konto_config_id='__keep__' (default) leaves the schema untouched; an int sets it,
+        None clears it.
         """
         try:
-            if observer_user_ids is None:
-                self.execute("""
-                    UPDATE efactura_invoices
-                    SET type_override = %s,
-                        department_override = %s,
-                        subdepartment_override = %s,
-                        department_override_2 = %s,
-                        subdepartment_override_2 = %s,
-                        updated_at = NOW()
-                    WHERE id = %s
-                """, (type_override, department_override, subdepartment_override,
-                      department_override_2, subdepartment_override_2, invoice_id))
-            else:
-                normalized = []
-                seen = set()
+            sets = [
+                "type_override = %s", "department_override = %s", "subdepartment_override = %s",
+                "department_override_2 = %s", "subdepartment_override_2 = %s",
+            ]
+            params = [type_override, department_override, subdepartment_override,
+                      department_override_2, subdepartment_override_2]
+            if observer_user_ids is not None:
+                normalized, seen = [], set()
                 for raw in observer_user_ids:
                     try:
                         uid = int(raw)
@@ -180,32 +178,15 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
                         continue
                     seen.add(uid)
                     normalized.append(uid)
-                stored_observers = normalized if normalized else None
-                self.execute("""
-                    UPDATE efactura_invoices
-                    SET type_override = %s,
-                        department_override = %s,
-                        subdepartment_override = %s,
-                        department_override_2 = %s,
-                        subdepartment_override_2 = %s,
-                        observer_user_ids = %s,
-                        updated_at = NOW()
-                    WHERE id = %s
-                """, (type_override, department_override, subdepartment_override,
-                      department_override_2, subdepartment_override_2,
-                      stored_observers, invoice_id))
-            logger.info(
-                f"Invoice overrides updated",
-                extra={
-                    'invoice_id': invoice_id,
-                    'type_override': type_override,
-                    'department_override': department_override,
-                    'subdepartment_override': subdepartment_override,
-                    'department_override_2': department_override_2,
-                    'subdepartment_override_2': subdepartment_override_2,
-                    'observers_updated': observer_user_ids is not None,
-                }
-            )
+                sets.append("observer_user_ids = %s")
+                params.append(normalized if normalized else None)
+            if konto_config_id != self._KEEP:
+                sets.append("konto_config_id = %s")
+                params.append(konto_config_id)
+            sets.append("updated_at = NOW()")
+            params.append(invoice_id)
+            self.execute(f"UPDATE efactura_invoices SET {', '.join(sets)} WHERE id = %s", tuple(params))
+            logger.info("Invoice overrides updated", extra={'invoice_id': invoice_id})
             return True
         except Exception as e:
             logger.error(f"Failed to update invoice overrides: {e}")
@@ -1034,6 +1015,7 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
                 i.department_override_2,
                 i.subdepartment_override_2,
                 i.observer_user_ids,
+                i.konto_config_id,
                 sm.department as mapping_department,
                 sm.subdepartment as mapping_subdepartment,
                 sm.brand as mapping_brand,

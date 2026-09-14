@@ -122,6 +122,16 @@ def create_schema_efactura(conn, cursor):
             ) THEN
                 ALTER TABLE efactura_invoices ADD COLUMN observer_user_ids INTEGER[];
             END IF;
+            -- EuroFib schema chosen at allocation time (before the invoice exists in `invoices`).
+            -- Staged here, then copied to invoice_konto_override on Send-to-Module. Plain INTEGER
+            -- (no FK) because this table is created before supplier_konto_config; referential
+            -- integrity is enforced downstream by invoice_konto_override's FK.
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'efactura_invoices' AND column_name = 'konto_config_id'
+            ) THEN
+                ALTER TABLE efactura_invoices ADD COLUMN konto_config_id INTEGER;
+            END IF;
         END $$;
     ''')
 
