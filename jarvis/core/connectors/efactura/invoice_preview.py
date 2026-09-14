@@ -5,11 +5,29 @@ Reads only local data (the XML we already hold in `efactura_invoices.xml_content
 existing `parse_invoice_xml` — it makes NO ANAF calls, so the in-app preview works even when
 ANAF's transformare/PDF service is unavailable.
 """
+import re
 from datetime import date
 from decimal import Decimal
 
 from .models import InvoiceLineItem, ParsedInvoice
 from .xml_parser import parse_invoice_xml
+
+# Some issuers (e.g. E.ON) send free text that is already mojibake'd at the
+# source: they round-tripped UTF-8 through latin-1, collapsing ă/ș/ț to '?' and
+# î/â to U+FFFD ('�'). Those characters are unrecoverable, so for display we drop
+# the unreadable diacritic markers rather than show '?'/'�' to the user:
+#   - U+FFFD: always mojibake → drop
+#   - '?' directly adjacent to a letter/digit: a stand-in for a lost diacritic →
+#     drop (a genuine sentence-final '?' in invoice legal text is vanishingly rare)
+_MOJIBAKE_RE = re.compile(r'�|(?<=\w)\?|\?(?=\w)')
+
+
+def _clean(value):
+    """Strip unreadable mojibake diacritic markers from user-facing free text."""
+    if not value:
+        return value
+    cleaned = _MOJIBAKE_RE.sub('', value)
+    return re.sub(r' {2,}', ' ', cleaned).strip()
 
 
 def _num(value) -> str:
@@ -26,7 +44,8 @@ def _iso(value):
 def _line_dict(li: InvoiceLineItem) -> dict:
     return {
         'line_number': li.line_number,
-        'description': li.description,
+        'name': _clean(li.name),
+        'description': _clean(li.description),
         'quantity': _num(li.quantity),
         'unit': li.unit,
         'unit_price': _num(li.unit_price),
@@ -48,15 +67,15 @@ def parsed_invoice_to_dict(inv: ParsedInvoice) -> dict:
         'due_date': _iso(inv.due_date),
         'currency': inv.currency,
         'seller': {
-            'name': inv.seller_name,
+            'name': _clean(inv.seller_name),
             'cif': inv.seller_cif,
-            'address': inv.seller_address,
+            'address': _clean(inv.seller_address),
             'reg_number': inv.seller_reg_number,
         },
         'buyer': {
-            'name': inv.buyer_name,
+            'name': _clean(inv.buyer_name),
             'cif': inv.buyer_cif,
-            'address': inv.buyer_address,
+            'address': _clean(inv.buyer_address),
         },
         'totals': {
             'without_vat': _num(inv.total_without_vat),
@@ -74,10 +93,10 @@ def parsed_invoice_to_dict(inv: ParsedInvoice) -> dict:
         'line_items': [_line_dict(li) for li in inv.line_items],
         'payment': {
             'means': inv.payment_means,
-            'terms': inv.payment_terms,
+            'terms': _clean(inv.payment_terms),
             'bank_account': inv.bank_account,
         },
-        'note': inv.invoice_note,
+        'note': _clean(inv.invoice_note),
     }
 
 
