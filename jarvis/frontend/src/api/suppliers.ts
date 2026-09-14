@@ -186,6 +186,13 @@ export const suppliersApi = {
   setInvoicePreset: (invoiceId: number, body: { konto_config_id: number | null; supplier_id: number; company_id: number }) =>
     api.post<{ success: boolean; cleared?: boolean }>(
       `/api/suppliers/invoices/${invoiceId}/konto-preset`, body),
+  /** EuroFib schemas available for an invoice's supplier at budgeting time (resolved supplier ×
+   * the given company). Drives the required "Schemă EuroFib" selector in the bugetare dialog. */
+  schemasForInvoice: (invoiceId: number, company: string) =>
+    api.get<{
+      success: boolean; presets: KontoPreset[]; active_id: number | null; selected_id: number | null
+      count: number; supplier_id: number | null; company_id: number | null
+    }>(`/api/suppliers/schemas-for-invoice?invoice_id=${invoiceId}&company=${encodeURIComponent(company)}`),
   /** EuroFib MEDLINE single-file download (CSV or XLSX) — one supplier's invoices, an explicit
    * invoiceIds set, or all budgeted invoices for the period when invoiceIds is omitted;
    * grouped/ordered per build_csv. */

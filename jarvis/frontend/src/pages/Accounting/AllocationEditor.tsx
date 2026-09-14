@@ -126,13 +126,18 @@ interface AllocationEditorProps {
   onCancel?: () => void
   isSaving?: boolean
   compact?: boolean
+  /** Notified with the selected company (initial + on change) so callers can react — e.g. the
+   * bugetare dialog's EuroFib schema selector, which is scoped to (supplier, company). */
+  onCompanyChange?: (company: string) => void
 }
 
 export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditorProps>(function AllocationEditor(
-  { initialCompany, initialRows, effectiveValue, currency, onSave, onCancel, isSaving, compact },
+  { initialCompany, initialRows, effectiveValue, currency, onSave, onCancel, isSaving, compact, onCompanyChange },
   ref,
 ) {
   const [company, setCompany] = useState(initialCompany || '')
+  // Emit the initial company once mounted so consumers start in sync.
+  useEffect(() => { onCompanyChange?.(company) }, []) // eslint-disable-line react-hooks/exhaustive-deps
   const [rows, setRows] = useState<AllocationRow[]>(initialRows?.length ? initialRows : [newRow()])
 
   const { data: companies = [] } = useQuery({
@@ -218,6 +223,7 @@ export const AllocationEditor = forwardRef<AllocationEditorRef, AllocationEditor
           onValueChange={(v) => {
             setCompany(v)
             setRows([newRow()])
+            onCompanyChange?.(v)
           }}
         >
           <SelectTrigger className={cn('h-8 text-xs', compact ? 'w-48' : 'flex-1')}>
