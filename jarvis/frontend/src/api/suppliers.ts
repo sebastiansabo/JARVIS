@@ -222,6 +222,7 @@ export const suppliersApi = {
       per_line: boolean
       line_items: { name?: string | null; description?: string | null; amount: number | null; vat_rate: number | null }[]
       line_selected: Record<string, number>
+      alloc_map: Record<string, { department: string; subdepartment?: string | null; value: number; konto_config_id: number | null }[]>
     }>(`/api/suppliers/schemas-for-efactura?efactura_invoice_id=${efacturaInvoiceId}`),
   /** EuroFib MEDLINE single-file download (CSV or XLSX) — one supplier's invoices, an explicit
    * invoiceIds set, or all budgeted invoices for the period when invoiceIds is omitted;
