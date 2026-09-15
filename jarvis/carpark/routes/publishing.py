@@ -8,7 +8,7 @@ from flask_login import login_required, current_user
 from carpark import carpark_bp
 from carpark.services.publishing_service import PublishingService
 from carpark.repositories.listing_schedule_repository import ListingScheduleRepository
-from carpark.connectors.cadence import cadence_to_minutes
+from carpark.connectors.cadence import cadence_to_minutes, VALID_CADENCES
 from carpark.routes.vehicles import (
     carpark_required, carpark_edit_required, _serialize,
     _verify_vehicle_ownership, _acting_company_id,
@@ -18,8 +18,6 @@ logger = logging.getLogger('jarvis.carpark')
 
 _pub_service = PublishingService()
 _schedule_repo = ListingScheduleRepository()
-
-_VALID_CADENCES = {'manual', 'instant', '2h', '3h', '5h', 'daily'}
 
 
 # ═══════════════════════════════════════════════
@@ -315,6 +313,9 @@ def get_listing_schedule(vid):
 
     Query: ?platform=shopify (default 'shopify')
     """
+    _, err = _verify_vehicle_ownership(vid)
+    if err:
+        return err
     platform = request.args.get('platform', 'shopify')
     schedule = _schedule_repo.get(vid, platform)
     return jsonify({'schedule': _serialize(schedule)})
@@ -328,12 +329,16 @@ def put_listing_schedule(vid):
 
     Body: { platform, cadence, enabled }
     """
+    _, err = _verify_vehicle_ownership(vid)
+    if err:
+        return err
+
     body = request.get_json(silent=True) or {}
     platform = body.get('platform', 'shopify')
     cadence = body.get('cadence', 'manual')
     enabled = bool(body.get('enabled', True))
 
-    if cadence not in _VALID_CADENCES:
+    if cadence not in VALID_CADENCES:
         return jsonify({'error': 'invalid cadence'}), 400
 
     minutes = cadence_to_minutes(cadence)
