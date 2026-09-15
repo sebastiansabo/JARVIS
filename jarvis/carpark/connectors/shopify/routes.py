@@ -13,6 +13,7 @@ from .client import ShopifyClient, ShopifyAuthError
 from .connector import ShopifyConnector, ensure_platform
 from . import taxonomy
 from .taxonomy_repository import TaxonomyMapRepository
+from .schema_repository import SchemaRepository
 from core.connectors.repositories.connector_repository import ConnectorRepository
 from core.utils.api_helpers import api_login_required, admin_required
 from carpark.repositories.vehicle_repository import VehicleRepository
@@ -26,7 +27,11 @@ _repo = ConnectorRepository()
 _vehicle_repo = VehicleRepository()
 _photo_repo = PhotoRepository()
 _taxo_repo = TaxonomyMapRepository()
+_schema_repo = SchemaRepository()
 _pub_repo = PublishingRepository()
+
+DEFAULT_VENDOR = 'Autoworld'
+DEFAULT_TEMPLATE_SUFFIX = 'produs_servicii_stoc'
 
 CONNECTOR_TYPE = 'shopify'
 BULK_CAP = 250  # max vehicles auto-published when no explicit vehicle_ids are given
@@ -98,6 +103,29 @@ def _get_single_account():
     return rows[0] if rows else None
 
 
+def _config(connector) -> dict:
+    """Connector-level publish config (vendor / product template), defaults applied."""
+    cfg = _parse_json(connector, 'config')
+    return {
+        'vendor': cfg.get('vendor') or DEFAULT_VENDOR,
+        'template_suffix': cfg.get('template_suffix') or DEFAULT_TEMPLATE_SUFFIX,
+    }
+
+
+def _reconcile_best_effort(client) -> None:
+    """Refresh + reconcile the field map against live store metafield defs.
+
+    Called on the publish/bulk hot path so drift (new/stale/type-changed) is
+    caught as it happens rather than only via the manual "Sync schema" button.
+    Never allowed to fail a publish — any error (network, auth, GraphQL) is
+    logged and swallowed; publish proceeds with the last-known field map.
+    """
+    try:
+        _schema_repo.reconcile(client.fetch_metafield_definitions())
+    except Exception:
+        logger.exception('publish-time schema reconcile failed; continuing with cached field map')
+
+
 # ---------- config CRUD ----------
 @shopify_bp.route('/api/config', methods=['GET'])
 @api_login_required
@@ -113,10 +141,16 @@ def save_account():
     store_domain = (data.get('store_domain') or '').strip()
     client_id = (data.get('client_id') or '').strip()
     client_secret = (data.get('client_secret') or '').strip()
+    vendor = (data.get('vendor') or '').strip()
+    template_suffix = (data.get('template_suffix') or '').strip()
     account_id = data.get('id')
     if not store_domain or not client_id:
         return jsonify({'success': False, 'error': 'store_domain and client_id are required'}), 400
     config = {'store_domain': store_domain}
+    if vendor:
+        config['vendor'] = vendor
+    if template_suffix:
+        config['template_suffix'] = template_suffix
     creds = {'client_id': client_id}
     if client_secret:
         creds['client_secret'] = client_secret
@@ -124,9 +158,11 @@ def save_account():
         connector = _repo.get(account_id)
         if not connector:
             return jsonify({'success': False, 'error': 'Account not found'}), 404
+        existing_config = _parse_json(connector, 'config')
+        existing_config.update(config)
         existing = _parse_json(connector, 'credentials')
         existing.update({k: v for k, v in creds.items() if v})
-        _repo.update(account_id, name=store_domain, config=config, credentials=existing)
+        _repo.update(account_id, name=store_domain, config=existing_config, credentials=existing)
         return jsonify({'success': True, 'account': _safe_account(_repo.get(account_id))})
     if not client_secret:
         return jsonify({'success': False, 'error': 'client_secret required for new account'}), 400
@@ -198,6 +234,69 @@ def save_taxonomy():
     return jsonify({'success': True, 'saved': len(entries)})
 
 
+# ---------- schema (field map + value map + store reconcile) ----------
+@shopify_bp.route('/api/schema', methods=['GET'])
+@api_login_required
+def get_schema():
+    try:
+        _schema_repo.seed_defaults_if_empty()
+    except Exception:
+        logger.exception('schema seed failed; continuing with existing field/value map')
+    field_map = _schema_repo.get_field_map()
+    value_map = _schema_repo.get_value_map()
+    store_defs: dict = {}
+    drift: dict = {}
+    connector = _get_single_account()
+    if connector:
+        try:
+            client = _build_client(connector)
+            store_defs = client.fetch_metafield_definitions()
+            # Read-only: a GET must not write. persist=False skips the
+            # last_seen_in_store UPDATEs; the publish hot path and the explicit
+            # "Sync schema" POST keep persist=True so the mapper's stale-skip
+            # still gets refreshed.
+            drift = _schema_repo.reconcile(store_defs, persist=False)
+        except Exception:
+            logger.exception('schema fetch/reconcile failed')
+            store_defs = {}
+            drift = {}
+    return jsonify({'success': True, 'field_map': field_map, 'value_map': value_map,
+                    'store_defs': store_defs, 'drift': drift})
+
+
+@shopify_bp.route('/api/schema', methods=['POST'])
+@admin_required
+def save_schema():
+    data = request.get_json(silent=True) or {}
+    field_entries = data.get('field_entries') or []
+    value_entries = data.get('value_entries') or []
+    for e in field_entries:
+        _schema_repo.upsert_field(
+            e.get('source_expr'), e['target_namespace'], e['target_key'],
+            e.get('target_type'), e.get('transform'), e.get('is_active', True),
+            updated_by=getattr(current_user, 'id', None))
+    for e in value_entries:
+        _schema_repo.upsert_value(
+            e['dimension'], e['source_value'], e.get('ro_value'),
+            updated_by=getattr(current_user, 'id', None))
+    return jsonify({'success': True, 'saved': len(field_entries) + len(value_entries)})
+
+
+@shopify_bp.route('/api/schema/sync', methods=['POST'])
+@admin_required
+def sync_schema():
+    connector = _get_single_account()
+    if not connector:
+        return jsonify({'success': False, 'error': 'Shopify is not configured'}), 400
+    try:
+        client = _build_client(connector)
+        drift = _schema_repo.reconcile(client.fetch_metafield_definitions())
+    except Exception:
+        logger.exception('schema sync failed')
+        return jsonify({'success': False, 'error': 'Schema sync failed'}), 502
+    return jsonify({'success': True, 'drift': drift})
+
+
 # ---------- publish / unpublish ----------
 def _connector_or_error():
     connector = _get_single_account()
@@ -211,14 +310,23 @@ def _connector_or_error():
 @shopify_bp.route('/api/vehicles/<int:vid>/publish', methods=['POST'])
 @carpark_edit_required
 def publish_vehicle(vid):
+    try:
+        _schema_repo.seed_defaults_if_empty()
+    except Exception:
+        logger.exception('schema seed failed; continuing with existing field/value map')
     conn, err = _connector_or_error()
     if err:
         return err
+    connector = _get_single_account()
     vehicle = _vehicle_repo.get_by_id(vid)
     if not vehicle:
         return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
     photos = _photo_repo.get_by_vehicle(vid)
-    result = conn.publish(vehicle, photos, _taxo_repo.get_map())
+    _reconcile_best_effort(_build_client(connector))
+    field_map = _schema_repo.get_active_field_map()
+    value_map = _schema_repo.get_value_map()
+    config = _config(connector)
+    result = conn.publish(vehicle, photos, field_map, value_map, config)
     return jsonify(result), (200 if result.get('success') else 400)
 
 
@@ -256,9 +364,14 @@ def vehicle_status(vid):
 @shopify_bp.route('/api/publish-bulk', methods=['POST'])
 @carpark_edit_required
 def publish_bulk():
+    try:
+        _schema_repo.seed_defaults_if_empty()
+    except Exception:
+        logger.exception('schema seed failed; continuing with existing field/value map')
     conn, err = _connector_or_error()
     if err:
         return err
+    connector = _get_single_account()
     from carpark.connectors.shopify.mapper import ELIGIBLE_STATUSES
     ids = (request.get_json(silent=True) or {}).get('vehicle_ids')
     truncated = False
@@ -274,12 +387,16 @@ def publish_bulk():
                            total_eligible, BULK_CAP)
             ids = ids[:BULK_CAP]
             truncated = True
-    taxo = _taxo_repo.get_map()
+    _reconcile_best_effort(_build_client(connector))
+    field_map = _schema_repo.get_active_field_map()
+    value_map = _schema_repo.get_value_map()
+    config = _config(connector)
     results = []
     for vid in ids:
         vehicle = _vehicle_repo.get_by_id(vid)
         photos = _photo_repo.get_by_vehicle(vid) if vehicle else []
-        res = conn.publish(vehicle, photos, taxo) if vehicle else {'success': False, 'error': 'not found'}
+        res = (conn.publish(vehicle, photos, field_map, value_map, config)
+               if vehicle else {'success': False, 'error': 'not found'})
         results.append({'vehicle_id': vid, **res})
     response = {'success': True, 'results': results,
                 'published': sum(1 for r in results if r.get('success')),

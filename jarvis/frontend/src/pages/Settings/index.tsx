@@ -49,6 +49,7 @@ const EmployeeMappingTab = lazy(() => import('./EmployeeMappingTab'))
 const TablesTab = lazy(() => import('./TablesTab'))
 const AutovitDetail = lazy(() => import('./AutovitDetail'))
 const ShopifyTaxonomy = lazy(() => import('./ShopifyTaxonomy'))
+const ShopifySchema = lazy(() => import('./ShopifySchema'))
 const TelemetryTab = lazy(() => import('./TelemetryTab'))
 const ConsentsTab = lazy(() => import('./ConsentsTab'))
 
@@ -177,6 +178,7 @@ export default function Settings() {
               <Route path="connectors" element={<ConnectorsTab />} />
               <Route path="connectors/autovit/:accountId" element={<AutovitDetail />} />
               <Route path="connectors/shopify/taxonomy" element={<ShopifyTaxonomy />} />
+              <Route path="connectors/shopify/schema" element={<ShopifySchema />} />
               <Route path="ai" element={<AiTab />} />
               <Route path="consents" element={<ConsentsTab />} />
               {isAdmin && <Route path="telemetry" element={<TelemetryTab />} />}

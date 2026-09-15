@@ -19,6 +19,10 @@ def _auth(monkeypatch):
     user = FakeUser()
     monkeypatch.setattr(api_helpers, 'current_user', user)
     monkeypatch.setattr(routes_mod, 'current_user', user)
+    # seed_defaults_if_empty() runs at the start of publish/publish-bulk/GET schema
+    # and hits the real DB when the map is empty; neutralize it here so route unit
+    # tests stay isolated (seeding itself is covered at the repository level).
+    monkeypatch.setattr(routes_mod._schema_repo, 'seed_defaults_if_empty', lambda: None)
 
 @pytest.fixture
 def client():
@@ -41,18 +45,28 @@ def test_publish_vehicle_calls_connector(client, monkeypatch):
     monkeypatch.setattr(routes_mod._photo_repo, 'get_by_vehicle',
         lambda vid, photo_type=None: [{'url': 'https://cdn/1.jpg', 'is_primary': True, 'sort_order': 0}])
     monkeypatch.setattr(routes_mod._taxo_repo, 'get_map', lambda: {})
+    monkeypatch.setattr(routes_mod._schema_repo, 'get_active_field_map', lambda: [{'target_key': 'marca'}])
+    monkeypatch.setattr(routes_mod._schema_repo, 'get_value_map', lambda: {})
+    monkeypatch.setattr(routes_mod, '_reconcile_best_effort', lambda client: None)
     monkeypatch.setattr(routes_mod, 'ensure_platform', lambda pub, dom: 3)
 
+    captured = {}
     class FakeConn:
         def __init__(self, *a, **k): pass
-        def publish(self, v, p, m): return {'success': True, 'external_id': 'gid://shopify/Product/9',
-                                            'external_url': 'https://x', 'warnings': []}
+        def publish(self, v, p, field_map, value_map, config):
+            captured['args'] = (field_map, value_map, config)
+            return {'success': True, 'external_id': 'gid://shopify/Product/9',
+                    'external_url': 'https://x', 'warnings': []}
     monkeypatch.setattr(routes_mod, 'ShopifyConnector', FakeConn)
 
     r = client.post('/shopify/api/vehicles/7/publish')
     assert r.status_code == 200
     body = r.get_json()
     assert body['success'] is True and body['external_id'] == 'gid://shopify/Product/9'
+    field_map, value_map, config = captured['args']
+    assert field_map == [{'target_key': 'marca'}]
+    assert value_map == {}
+    assert config == {'vendor': 'Autoworld', 'template_suffix': 'produs_servicii_stoc'}
 
 def test_publish_requires_configured_account(client, monkeypatch):
     monkeypatch.setattr(routes_mod._repo, 'get_all_by_type', lambda t: [])
@@ -144,8 +158,6 @@ def test_status_returns_freshness_and_vehicle_updated_at(client, monkeypatch):
     assert r.status_code == 200
     body = r.get_json()
     assert body['success'] is True
-    # vehicle updated_at = now−2h, listing.last_sync = now−1h, status published
-    # → deterministically up_to_date (synced after the last edit).
     assert body['freshness'] == 'up_to_date'
     assert 'vehicle_updated_at' in body
 
@@ -160,6 +172,105 @@ def test_status_no_account_is_not_published(client, monkeypatch):
     assert body['success'] is True
     assert body['freshness'] == 'not_published'
     assert body['vehicle_updated_at'] is None
+
+
+def test_get_schema_returns_shape(client, monkeypatch):
+    monkeypatch.setattr(routes_mod._repo, 'get_all_by_type',
+        lambda t: [{'id': 1, 'connector_type': 'shopify',
+                    'config': {'store_domain': 'cb6c17-2.myshopify.com'},
+                    'credentials': {'client_id': 'cid', 'client_secret': 'sec'}}])
+    monkeypatch.setattr(routes_mod._schema_repo, 'get_field_map',
+        lambda: [{'target_namespace': 'custom', 'target_key': 'marca'}])
+    monkeypatch.setattr(routes_mod._schema_repo, 'get_value_map', lambda: {'fuel_type': {'Diesel': 'Motorină'}})
+    captured = {}
+
+    def fake_reconcile(store_defs, persist=True):
+        captured['persist'] = persist
+        return {'new': [], 'stale': [], 'type_changed': [], 'ok': 1}
+    monkeypatch.setattr(routes_mod._schema_repo, 'reconcile', fake_reconcile)
+
+    class FakeClient:
+        def fetch_metafield_definitions(self): return {'custom.marca': 'single_line_text_field'}
+    monkeypatch.setattr(routes_mod, '_build_client', lambda connector: FakeClient())
+
+    r = client.get('/shopify/api/schema')
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['success'] is True
+    for key in ('field_map', 'value_map', 'store_defs', 'drift'):
+        assert key in body
+    assert body['field_map'] == [{'target_namespace': 'custom', 'target_key': 'marca'}]
+    assert body['value_map'] == {'fuel_type': {'Diesel': 'Motorină'}}
+    assert body['store_defs'] == {'custom.marca': 'single_line_text_field'}
+    assert body['drift'] == {'new': [], 'stale': [], 'type_changed': [], 'ok': 1}
+    # GET must not write — reconcile is called with persist=False.
+    assert captured['persist'] is False
+
+
+def test_get_schema_no_account_returns_empty_store_defs(client, monkeypatch):
+    monkeypatch.setattr(routes_mod._repo, 'get_all_by_type', lambda t: [])
+    monkeypatch.setattr(routes_mod._schema_repo, 'get_field_map', lambda: [])
+    monkeypatch.setattr(routes_mod._schema_repo, 'get_value_map', lambda: {})
+
+    r = client.get('/shopify/api/schema')
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['success'] is True
+    assert body['store_defs'] == {} and body['drift'] == {}
+
+
+def test_schema_sync_returns_drift(client, monkeypatch):
+    monkeypatch.setattr(routes_mod._repo, 'get_all_by_type',
+        lambda t: [{'id': 1, 'connector_type': 'shopify',
+                    'config': {'store_domain': 'cb6c17-2.myshopify.com'},
+                    'credentials': {'client_id': 'cid', 'client_secret': 'sec'}}])
+
+    class FakeClient:
+        def fetch_metafield_definitions(self): return {'custom.marca': 'single_line_text_field'}
+    monkeypatch.setattr(routes_mod, '_build_client', lambda connector: FakeClient())
+    monkeypatch.setattr(routes_mod._schema_repo, 'reconcile',
+        lambda store_defs: {'new': [{'namespace': 'custom', 'key': 'nou'}], 'stale': [],
+                            'type_changed': [], 'ok': 0})
+
+    r = client.post('/shopify/api/schema/sync')
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['success'] is True
+    assert body['drift']['new'] == [{'namespace': 'custom', 'key': 'nou'}]
+
+
+def test_schema_write_forbidden_without_settings(client, monkeypatch):
+    class NoSettingsUser:
+        is_authenticated = True; id = 3; company_id = 10
+        can_access_carpark = True; can_edit_carpark = True
+        can_access_settings = False
+    user = NoSettingsUser()
+    monkeypatch.setattr(api_helpers, 'current_user', user)
+    monkeypatch.setattr(routes_mod, 'current_user', user)
+    r = client.post('/shopify/api/schema', json={'field_entries': [], 'value_entries': []})
+    assert r.status_code == 403
+
+
+def test_save_schema_upserts_entries(client, monkeypatch):
+    saved = {'fields': [], 'values': []}
+    monkeypatch.setattr(routes_mod._schema_repo, 'upsert_field',
+        lambda source_expr, ns, key, ttype, transform, is_active=True, updated_by=None:
+            saved['fields'].append((source_expr, ns, key, ttype, transform, is_active, updated_by)))
+    monkeypatch.setattr(routes_mod._schema_repo, 'upsert_value',
+        lambda dimension, source_value, ro_value, updated_by=None:
+            saved['values'].append((dimension, source_value, ro_value, updated_by)))
+
+    r = client.post('/shopify/api/schema', json={
+        'field_entries': [{'source_expr': 'brand', 'target_namespace': 'custom',
+                           'target_key': 'marca', 'target_type': 'single_line_text_field',
+                           'transform': 'raw'}],
+        'value_entries': [{'dimension': 'fuel_type', 'source_value': 'Diesel', 'ro_value': 'Motorină'}],
+    })
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['success'] is True and body['saved'] == 2
+    assert saved['fields'] == [('brand', 'custom', 'marca', 'single_line_text_field', 'raw', True, 1)]
+    assert saved['values'] == [('fuel_type', 'Diesel', 'Motorină', 1)]
 
 
 def test_build_client_caches_per_connector(monkeypatch):

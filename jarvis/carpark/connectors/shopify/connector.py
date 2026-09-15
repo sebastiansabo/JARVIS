@@ -37,13 +37,14 @@ class ShopifyConnector(BaseConnector):
         return f'https://{self.client.store_domain}/admin/products/{num}'
 
     def publish(self, vehicle: Dict[str, Any], photos: List[dict],
-                taxo_map: Dict[str, Dict[str, dict]]) -> Dict[str, Any]:
+                field_map: List[dict], value_map: Dict[str, Dict[str, str]],
+                config: Dict[str, Any]) -> Dict[str, Any]:
         ok, reason = mapper.is_eligible(vehicle, photos)
         if not ok:
             return {'success': False, 'error': reason}
 
         existing = self.pub.get_listing_by_vehicle_platform(vehicle['id'], self.platform_id)
-        product_input, warnings = mapper.vehicle_to_product(vehicle, photos, taxo_map)
+        product_input, warnings = mapper.vehicle_to_product(vehicle, photos, field_map, value_map, config)
         if existing and existing.get('external_listing_id'):
             product_input['id'] = existing['external_listing_id']
 

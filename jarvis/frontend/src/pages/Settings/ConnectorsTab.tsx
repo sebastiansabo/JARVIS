@@ -2012,6 +2012,9 @@ function ShopifySection() {
             <Button size="sm" variant="ghost" onClick={() => navigate('shopify/taxonomy')}>
               <ExternalLink className="mr-1 h-3 w-3" /> Taxonomy mapping
             </Button>
+            <Button size="sm" variant="ghost" onClick={() => navigate('shopify/schema')}>
+              <Database className="mr-1 h-3 w-3" /> Schema
+            </Button>
             <Button size="sm" variant="ghost" className="text-red-500 hover:text-red-600" onClick={() => setDeleteId(account.id)}>
               <Trash2 className="mr-1 h-3 w-3" /> Delete
             </Button>
