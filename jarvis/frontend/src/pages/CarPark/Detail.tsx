@@ -371,7 +371,6 @@ export default function CarParkDetail() {
         ]}
         actions={
           <div className="flex items-center gap-2">
-            <ShopifyPublishControl vehicleId={id} canEdit={canEdit} />
             {canEdit && nextStatuses.length > 0 && (
               <Button
                 variant="outline"
