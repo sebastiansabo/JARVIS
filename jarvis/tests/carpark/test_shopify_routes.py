@@ -273,6 +273,65 @@ def test_save_schema_upserts_entries(client, monkeypatch):
     assert saved['values'] == [('fuel_type', 'Diesel', 'Motorină', 1)]
 
 
+def test_set_autosync_merges_flag_without_wiping_config(client, monkeypatch):
+    account = {'id': 1, 'connector_type': 'shopify', 'name': 'cb6c17-2.myshopify.com',
+               'config': {'store_domain': 'cb6c17-2.myshopify.com', 'vendor': 'Autoworld'},
+               'credentials': {'client_id': 'cid', 'client_secret': 'sec'}}
+    monkeypatch.setattr(routes_mod, '_get_single_account', lambda: account)
+
+    calls = []
+    monkeypatch.setattr(routes_mod._repo, 'update',
+        lambda account_id, **kwargs: calls.append((account_id, kwargs)))
+
+    r = client.post('/shopify/api/autosync', json={'enabled': False})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body == {'success': True, 'autosync_enabled': False}
+
+    assert len(calls) == 1
+    account_id, kwargs = calls[0]
+    assert account_id == 1
+    assert kwargs['config']['store_domain'] == 'cb6c17-2.myshopify.com'
+    assert kwargs['config']['vendor'] == 'Autoworld'
+    assert kwargs['config']['autosync_enabled'] is False
+    assert kwargs['credentials'] == {'client_id': 'cid', 'client_secret': 'sec'}
+    assert kwargs['name'] == 'cb6c17-2.myshopify.com'
+
+
+def test_set_autosync_requires_configured_account(client, monkeypatch):
+    monkeypatch.setattr(routes_mod, '_get_single_account', lambda: None)
+    r = client.post('/shopify/api/autosync', json={'enabled': True})
+    assert r.status_code == 400
+    assert 'not configured' in r.get_json()['error'].lower()
+
+
+def test_set_autosync_forbidden_without_settings(client, monkeypatch):
+    class NoSettingsUser:
+        is_authenticated = True; id = 3; company_id = 10
+        can_access_carpark = True; can_edit_carpark = True
+        can_access_settings = False
+    user = NoSettingsUser()
+    monkeypatch.setattr(api_helpers, 'current_user', user)
+    monkeypatch.setattr(routes_mod, 'current_user', user)
+    r = client.post('/shopify/api/autosync', json={'enabled': True})
+    assert r.status_code == 403
+
+
+def test_safe_account_reports_autosync_enabled_default_true(monkeypatch):
+    row = {'id': 1, 'name': 'x', 'config': {'store_domain': 'd.myshopify.com'},
+           'credentials': {}, 'status': 'connected', 'last_error': None}
+    out = routes_mod._safe_account(row)
+    assert out['autosync_enabled'] is True
+
+
+def test_safe_account_reports_autosync_enabled_false_when_set(monkeypatch):
+    row = {'id': 1, 'name': 'x',
+           'config': {'store_domain': 'd.myshopify.com', 'autosync_enabled': False},
+           'credentials': {}, 'status': 'connected', 'last_error': None}
+    out = routes_mod._safe_account(row)
+    assert out['autosync_enabled'] is False
+
+
 def test_build_client_caches_per_connector(monkeypatch):
     routes_mod._client_cache.clear()
     row = {'id': 42, 'config': {'store_domain': 'd.myshopify.com'},
