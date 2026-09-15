@@ -653,6 +653,37 @@ def create_schema_carpark(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_cstm_dimension ON carpark_shopify_taxonomy_map(dimension)')
 
+    # --- Shopify connector: field mappings (CarPark fields -> Shopify targets) ---
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_shopify_field_map (
+            id                    SERIAL PRIMARY KEY,
+            source_expr           TEXT        NOT NULL,
+            target_namespace      VARCHAR(40) NOT NULL,
+            target_key            VARCHAR(80) NOT NULL,
+            target_type           VARCHAR(60),
+            transform             VARCHAR(20) DEFAULT 'raw',
+            is_active             BOOLEAN DEFAULT TRUE,
+            last_seen_in_store    BOOLEAN DEFAULT TRUE,
+            updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_by            INTEGER,
+            UNIQUE(target_namespace, target_key)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_csfm_active ON carpark_shopify_field_map(is_active)')
+
+    # --- Shopify connector: value mappings (dimension values: CarPark -> Romanian/Shopify) ---
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_shopify_value_map (
+            id            SERIAL PRIMARY KEY,
+            dimension     VARCHAR(40) NOT NULL,
+            source_value  TEXT        NOT NULL,
+            ro_value      TEXT,
+            updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_by    INTEGER,
+            UNIQUE(dimension, source_value)
+        )
+    ''')
+
     # ── Pricing History ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS carpark_pricing_history (
