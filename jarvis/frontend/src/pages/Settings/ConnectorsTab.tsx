@@ -1926,6 +1926,18 @@ function ShopifySection() {
     },
   })
 
+  const autosyncMut = useMutation({
+    mutationFn: (enabled: boolean) => shopifyApi.setAutosync(enabled),
+    onSuccess: (_res, enabled) => {
+      qc.invalidateQueries({ queryKey: ['shopify'] })
+      toast.success('Sincronizare automată ' + (enabled ? 'activată' : 'oprită'))
+    },
+    onError: (err: unknown) => {
+      const msg = (err as { data?: { error?: string } })?.data?.error || 'Failed to update autosync'
+      toast.error(msg)
+    },
+  })
+
   const resetForm = () => {
     setForm({ store_domain: '', client_id: '', client_secret: '' })
     setShowSecret(false)
@@ -1996,6 +2008,20 @@ function ShopifySection() {
               {account.last_error}
             </p>
           )}
+
+          <div className="flex items-center gap-3 rounded border p-3">
+            <Switch
+              checked={account.autosync_enabled ?? true}
+              onCheckedChange={(v) => autosyncMut.mutate(v)}
+              disabled={autosyncMut.isPending}
+            />
+            <div className="flex-1 min-w-0">
+              <span className="text-sm font-medium">Sincronizare automată anunțuri</span>
+              <p className="text-xs text-muted-foreground">
+                Oprește pentru a pune pe pauză toată sincronizarea automată către Shopify
+              </p>
+            </div>
+          </div>
 
           <div className="flex flex-wrap gap-2">
             <Button size="sm" variant="outline" onClick={() => testMut.mutate()} disabled={testMut.isPending}>
