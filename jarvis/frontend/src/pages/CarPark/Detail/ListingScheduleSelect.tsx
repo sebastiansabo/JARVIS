@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import {
   Select,
   SelectContent,
@@ -39,7 +40,7 @@ export function ListingScheduleSelect({
   const queryClient = useQueryClient()
   const queryKey = ['listing-schedule', vehicleId, platform]
 
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey,
     queryFn: () => carparkApi.getListingSchedule(vehicleId, platform),
     enabled: !!vehicleId,
@@ -58,6 +59,9 @@ export function ListingScheduleSelect({
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey })
     },
+    onError: () => {
+      toast.error('Salvarea programării a eșuat')
+    },
   })
 
   return (
@@ -67,7 +71,7 @@ export function ListingScheduleSelect({
         <Select
           value={cadence}
           onValueChange={(v) => mutation.mutate(v)}
-          disabled={mutation.isPending}
+          disabled={isLoading || mutation.isPending}
         >
           <SelectTrigger className="w-[140px]">
             <SelectValue />
