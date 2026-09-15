@@ -75,6 +75,8 @@ export interface BudgetedInvoice {
   konto_config_id: number | null
   konto_name: string | null
   konto_overridden: boolean
+  /** True when the invoice posts each line to its own schema (edited in the budgeting dialog). */
+  per_line: boolean
 }
 
 /** Trigger a browser download for a raw fetch Response that carries a file (blob) body,
