@@ -199,6 +199,9 @@ class _FakeRepo:
         return {'konto': {'konto_debit': 'ACTIVE'}, 'has_company_config': True,
                 'konto_config_id': 99, 'name': 'Implicit'}
 
+    def list_line_overrides(self, invoice_id):
+        return getattr(self, 'line_over', {})
+
 
 class TestExportPairWiring:
 
@@ -413,3 +416,39 @@ class TestPerLineRepo:
         conn, cur = _mock_conn_cursor(); mock_get_db.return_value = conn; mock_get_cursor.return_value = cur
         cur.fetchone.return_value = {'konto_config_id': 5, 'per_line': True}
         assert SupplierMasterRepository().get_invoice_override_full(7) == {'konto_config_id': 5, 'per_line': True}
+
+
+class TestPerLineExportWiring:
+    def _row(self, **over):
+        row = {'id': 1, 'supplier': 'A24', 'supplier_id': 5, 'invoice_number': 'F1',
+               'invoice_date': '2026-08-31', 'net_value': 150, 'invoice_value': 178.50,
+               'subtract_vat': True, 'due_date': '2026-09-30'}
+        row.update(over)
+        return row
+
+    def test_per_line_builds_line_configs(self):
+        from core.suppliers import routes
+        fake = _FakeRepo()
+        fake.line_over = {}  # both lines use base preset id 7
+        items = [{'amount': 100, 'vat_rate': 19, 'name': 'A'}, {'amount': 50, 'vat_rate': 19, 'name': 'B'}]
+        with patch.object(routes, '_repo', fake):
+            pairs = routes._to_invoice_config_pairs(
+                [self._row(per_line=True, konto_config_id=7, line_items_json=items)], company_id=2, skipped=[])
+        assert len(pairs) == 1
+        invoice, _konto = pairs[0]
+        lc = invoice['line_configs']
+        assert len(lc) == 2
+        assert lc[0]['net'] == 100.0 and lc[0]['vat'] == 19.0 and lc[0]['text'] == 'A'
+        assert lc[0]['config']['konto_debit'] == 'BYID-7'
+        assert lc[1]['net'] == 50.0 and lc[1]['vat'] == 9.5
+
+    def test_per_line_totals_mismatch_skipped(self):
+        from core.suppliers import routes
+        fake = _FakeRepo(); fake.line_over = {}
+        items = [{'amount': 100, 'vat_rate': 19, 'name': 'A'}]  # gross 119 != invoice_value 178.50
+        skipped = []
+        with patch.object(routes, '_repo', fake):
+            pairs = routes._to_invoice_config_pairs(
+                [self._row(per_line=True, konto_config_id=7, line_items_json=items)], company_id=2, skipped=skipped)
+        assert pairs == []
+        assert skipped and skipped[0]['reason'] == 'line_totals_mismatch'
