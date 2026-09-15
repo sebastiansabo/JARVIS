@@ -1,6 +1,6 @@
 from functools import wraps
 from flask import request, jsonify
-from flask_login import current_user, login_required
+from flask_login import current_user
 
 from core.utils.api_helpers import safe_error_response
 from accounting.cost_centers import cost_centers_bp
@@ -13,11 +13,11 @@ def _accounting_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if not current_user.is_authenticated:
-            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+            return jsonify({'success': False, 'error': 'Autentificare necesară'}), 401
         if getattr(current_user, 'can_access_accounting', False) or \
            getattr(current_user, 'can_access_settings', False):
             return f(*args, **kwargs)
-        return jsonify({'success': False, 'error': 'Permission denied: accounting required'}), 403
+        return jsonify({'success': False, 'error': 'Acces interzis: sunt necesare permisiuni de contabilitate'}), 403
     return decorated
 
 
