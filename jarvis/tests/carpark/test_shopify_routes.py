@@ -144,8 +144,9 @@ def test_status_returns_freshness_and_vehicle_updated_at(client, monkeypatch):
     assert r.status_code == 200
     body = r.get_json()
     assert body['success'] is True
-    assert body['freshness'] in (
-        'up_to_date', 'stale', 'expired', 'inactive', 'error', 'not_published')
+    # vehicle updated_at = now−2h, listing.last_sync = now−1h, status published
+    # → deterministically up_to_date (synced after the last edit).
+    assert body['freshness'] == 'up_to_date'
     assert 'vehicle_updated_at' in body
 
 
@@ -158,7 +159,7 @@ def test_status_no_account_is_not_published(client, monkeypatch):
     body = r.get_json()
     assert body['success'] is True
     assert body['freshness'] == 'not_published'
-    assert 'vehicle_updated_at' in body
+    assert body['vehicle_updated_at'] is None
 
 
 def test_build_client_caches_per_connector(monkeypatch):
