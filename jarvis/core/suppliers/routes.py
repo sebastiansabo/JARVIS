@@ -740,16 +740,17 @@ def api_schemas_for_efactura():
         return jsonify({'success': False, 'error': 'efactura_invoice_id is required'}), 400
     empty = {'success': True, 'presets': [], 'active_id': None, 'selected_id': None,
              'count': 0, 'supplier_id': None, 'company_id': None,
-             'per_line': False, 'line_items': [], 'line_selected': {}}
+             'per_line': False, 'line_items': [], 'line_selected': {}, 'alloc_map': {}}
     row = _repo.query_one(
         "SELECT partner_name, partner_cif, company_id, konto_config_id, konto_per_line, konto_line_map, "
-        "xml_content FROM efactura_invoices WHERE id = %s", (ef_id,))
+        "konto_alloc_map, xml_content FROM efactura_invoices WHERE id = %s", (ef_id,))
     if not row or not row.get('company_id'):
         return jsonify(empty)
     from core.connectors.efactura.services.invoice_allocation_service import xml_to_line_items
     base = {'per_line': bool(row.get('konto_per_line')),
             'line_items': xml_to_line_items(row.get('xml_content')),
-            'line_selected': row.get('konto_line_map') or {}}
+            'line_selected': row.get('konto_line_map') or {},
+            'alloc_map': row.get('konto_alloc_map') or {}}
     res = _resolver.resolve(name=row.get('partner_name'), cui=row.get('partner_cif'))
     if not res.supplier_id:
         return jsonify({**empty, **base, 'company_id': row['company_id'], 'selected_id': row.get('konto_config_id')})
