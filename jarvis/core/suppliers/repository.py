@@ -362,6 +362,50 @@ class SupplierMasterRepository(BaseRepository):
         row = self.query_one("SELECT supplier FROM invoices WHERE id = %s", (invoice_id,))
         return row['supplier'] if row else None
 
+    # ---- per-line schema (Phase 3) ----
+    def get_invoice_override_full(self, invoice_id):
+        """Per-invoice override state: {'konto_config_id': int|None, 'per_line': bool} or None."""
+        row = self.query_one(
+            "SELECT konto_config_id, per_line FROM invoice_konto_override WHERE invoice_id = %s",
+            (invoice_id,))
+        return {'konto_config_id': row['konto_config_id'], 'per_line': row['per_line']} if row else None
+
+    def set_invoice_per_line(self, invoice_id, per_line, konto_config_id=None, created_by=None):
+        """Set per-line mode for an invoice. `konto_config_id` is the base (credit) schema — NULL
+        means fall back to the supplier's active preset. per_line False clears all line overrides."""
+        def _work(cursor):
+            cursor.execute(
+                """INSERT INTO invoice_konto_override (invoice_id, konto_config_id, per_line, created_by)
+                   VALUES (%s, %s, %s, %s)
+                   ON CONFLICT (invoice_id) DO UPDATE SET
+                       konto_config_id = EXCLUDED.konto_config_id, per_line = EXCLUDED.per_line,
+                       updated_at = CURRENT_TIMESTAMP""",
+                (invoice_id, konto_config_id, bool(per_line), created_by))
+            if not per_line:
+                cursor.execute("DELETE FROM invoice_line_konto_override WHERE invoice_id = %s", (invoice_id,))
+            return True
+        return self.execute_many(_work)
+
+    def set_invoice_line_preset(self, invoice_id, line_index, konto_config_id, created_by=None):
+        """Pin (or clear when konto_config_id is None) one line's preset."""
+        if konto_config_id is None:
+            return self.execute(
+                "DELETE FROM invoice_line_konto_override WHERE invoice_id = %s AND line_index = %s",
+                (invoice_id, line_index))
+        return self.execute(
+            """INSERT INTO invoice_line_konto_override (invoice_id, line_index, konto_config_id, created_by)
+               VALUES (%s, %s, %s, %s)
+               ON CONFLICT (invoice_id, line_index) DO UPDATE SET
+                   konto_config_id = EXCLUDED.konto_config_id, updated_at = CURRENT_TIMESTAMP""",
+            (invoice_id, line_index, konto_config_id, created_by))
+
+    def list_line_overrides(self, invoice_id):
+        """{line_index: konto_config_id} for an invoice's per-line schema choices."""
+        rows = self.query_all(
+            "SELECT line_index, konto_config_id FROM invoice_line_konto_override WHERE invoice_id = %s",
+            (invoice_id,))
+        return {r['line_index']: r['konto_config_id'] for r in rows}
+
     # ---- back-compat single-config writers (target the ACTIVE preset) ----
     def upsert_konto(self, supplier_id, company_id, created_by=None, **fields):
         """Back-compat: create/update the ACTIVE preset for (supplier, company). Creates the
