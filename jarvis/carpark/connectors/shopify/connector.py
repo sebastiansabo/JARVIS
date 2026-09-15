@@ -60,6 +60,7 @@ class ShopifyConnector(BaseConnector):
             'vehicle_id': vehicle['id'], 'platform_id': self.platform_id,
             'external_listing_id': gid, 'external_url': url,
             'status': 'published', 'error_message': None,
+            'last_sync': datetime.now(timezone.utc),
         }
         if existing:
             self.pub.update_listing(existing['id'], {k: v for k, v in listing_data.items()
