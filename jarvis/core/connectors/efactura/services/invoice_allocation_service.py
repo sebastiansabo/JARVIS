@@ -282,18 +282,25 @@ class InvoiceAllocationService:
             # Step 3: Bulk mark as allocated (1 query)
             self.invoice_repo.bulk_mark_allocated(mappings)
 
-            # Step 3b: Carry the staged EuroFib schema choice onto each new invoice (per-invoice
-            # override), so it drives the Procesare worklist/export just like a manual pick.
-            konto_by_efactura = {inv['id']: inv.get('konto_config_id')
-                                 for inv in invoices if inv.get('konto_config_id')}
+            # Step 3b: Carry the staged EuroFib schema onto each new invoice — a single per-invoice
+            # override, or per-line mode (base schema + line→schema map). Drives the Procesare export.
+            konto_by_efactura = {inv['id']: inv for inv in invoices
+                                 if inv.get('konto_config_id') or inv.get('konto_per_line')}
             if konto_by_efactura:
                 for efactura_id, jarvis_id in mappings:
-                    kc = konto_by_efactura.get(efactura_id)
-                    if kc:
-                        try:
-                            sup_repo.set_invoice_override(jarvis_id, kc)
-                        except Exception as kc_err:
-                            logger.error(f"Failed to set schema override for invoice {jarvis_id}: {kc_err}")
+                    inv = konto_by_efactura.get(efactura_id)
+                    if not inv:
+                        continue
+                    try:
+                        if inv.get('konto_per_line'):
+                            sup_repo.set_invoice_per_line(jarvis_id, True, konto_config_id=inv.get('konto_config_id'))
+                            for line_index, kc in (inv.get('konto_line_map') or {}).items():
+                                if kc:
+                                    sup_repo.set_invoice_line_preset(jarvis_id, int(line_index), int(kc))
+                        elif inv.get('konto_config_id'):
+                            sup_repo.set_invoice_override(jarvis_id, inv['konto_config_id'])
+                    except Exception as kc_err:
+                        logger.error(f"Failed to set schema override for invoice {jarvis_id}: {kc_err}")
 
             # Step 4: Attach observers — union of dialog-level observers and per-invoice stored observers.
             def _normalize_ids(raw_list):
