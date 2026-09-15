@@ -76,6 +76,7 @@ import { CronologieTab } from './Detail/CronologieTab'
 import { VanzareTab } from './Detail/VanzareTab'
 import { StatusStepper } from './Detail/StatusStepper'
 import { ShopifyPublishControl } from './Detail/ShopifyPublishControl'
+import { ListingScheduleSelect } from './Detail/ListingScheduleSelect'
 import { safeStatusTransitions } from './Dispo/statusTransitions'
 import {
   STATUS_LABELS,
@@ -2110,7 +2111,10 @@ function ListingsTab({
               Publică acest vehicul în magazinul Shopify conectat.
             </p>
           </div>
-          <ShopifyPublishControl vehicleId={vehicleId} canEdit={canEdit} />
+          <div className="flex flex-col items-end gap-2">
+            <ShopifyPublishControl vehicleId={vehicleId} canEdit={canEdit} />
+            {canEdit && <ListingScheduleSelect vehicleId={vehicleId} platform="shopify" />}
+          </div>
         </Card>
       )}
 
