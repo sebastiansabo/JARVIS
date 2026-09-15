@@ -7,7 +7,7 @@ class CostCenterRepository(BaseRepository):
         return self.query_all("""
             SELECT c.id AS company_id, c.company, COUNT(cc.id) AS count
             FROM companies c
-            JOIN cost_centers cc ON cc.company_id = c.id
+            LEFT JOIN cost_centers cc ON cc.company_id = c.id
             GROUP BY c.id, c.company
             ORDER BY c.company
         """)
