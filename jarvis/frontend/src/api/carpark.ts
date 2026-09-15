@@ -443,4 +443,17 @@ export const carparkApi = {
 
   removePromotionVehicle: (promoId: number, vehicleId: number) =>
     api.delete<{ success: boolean }>(`/api/carpark/promotions/${promoId}/vehicles/${vehicleId}`),
+
+  // ── Listing auto-update schedule ───────────────────────
+  getListingSchedule: (vid: number, platform: string) =>
+    api.get<{ schedule: { cadence: string; enabled: boolean; next_run_at: string | null } | null }>(
+      `/api/carpark/vehicles/${vid}/listing-schedule`,
+      { platform },
+    ),
+
+  setListingSchedule: (vid: number, data: { platform: string; cadence: string; enabled: boolean }) =>
+    api.put<{ schedule: { cadence: string; enabled: boolean; next_run_at: string | null } }>(
+      `/api/carpark/vehicles/${vid}/listing-schedule`,
+      data,
+    ),
 }
