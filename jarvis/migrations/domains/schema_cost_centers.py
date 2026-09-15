@@ -6,6 +6,8 @@ Fully idempotent; auto-applied on boot via database.init_db().
 """
 import logging
 
+from .cost_centers_seed import SEED_ROWS, SHEET_TO_COMPANY
+
 logger = logging.getLogger(__name__)
 
 
@@ -36,5 +38,29 @@ def create_schema_cost_centers(conn, cursor):
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_cc_map_node ON cost_center_structure_map(structure_node_id)")
 
+    cursor.execute('SELECT COUNT(*) FROM cost_centers')
+    if cursor.fetchone()['count'] == 0:
+        _seed_cost_centers(cursor)
+
     conn.commit()
     logger.info('Cost Centers schema created/verified')
+
+
+def _seed_cost_centers(cursor):
+    inserted, skipped = 0, 0
+    for sheet_key, code, name in SEED_ROWS:
+        company_name = SHEET_TO_COMPANY.get(sheet_key)
+        cursor.execute('SELECT id FROM companies WHERE company = %s', (company_name,))
+        row = cursor.fetchone()
+        if not row:
+            logger.warning('cost_centers seed: no company for sheet %r (%r) — skipping %s %s',
+                           sheet_key, company_name, code, name)
+            skipped += 1
+            continue
+        cursor.execute(
+            "INSERT INTO cost_centers (company_id, code, name) VALUES (%s, %s, %s) "
+            "ON CONFLICT (company_id, code) DO NOTHING",
+            (row['id'], code, name),
+        )
+        inserted += 1
+    logger.info('cost_centers seeded: %s inserted, %s skipped', inserted, skipped)
