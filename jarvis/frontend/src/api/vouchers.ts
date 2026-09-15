@@ -20,7 +20,10 @@ export const vouchersApi = {
   redeem: (id: number, notes?: string) =>
     api.patch<{ success: boolean; voucher: Voucher }>(`/api/vouchers/${id}/redeem`, { redemption_notes: notes }),
 
-  editVoucher: (id: number, data: { client_name?: string; contract_number?: string; car_vin?: string; notes?: string }) =>
+  // Non-admins send the 4 base fields; admins may send the full field set
+  // (status, benefit, type, validity, dates, client_email/cif). Values go as
+  // strings/arrays — the backend coerces and validates.
+  editVoucher: (id: number, data: Record<string, unknown>) =>
     api.patch<{ success: boolean; voucher: Voucher }>(`/api/vouchers/${id}/edit`, data),
 
   reissueVoucher: (id: number) =>

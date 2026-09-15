@@ -24,6 +24,9 @@ export interface Voucher {
   redeemed_by_name: string | null
   redemption_notes: string | null
   notes: string | null
+  start_date: string | null
+  client_email: string | null
+  client_cif: string | null
   days_remaining: number | null
   benefit_display: string
   created_at: string

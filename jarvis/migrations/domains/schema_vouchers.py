@@ -297,6 +297,22 @@ def create_schema_vouchers(conn, cursor):
         END $$;
     ''')
 
+    # ── Admin edit audit trail ──────────────────────────
+    # Records who changed what when an admin uses the full-edit power
+    # (status/benefit/dates overrides). One row per edit; ``changes`` is a
+    # {column: {old, new}} JSON diff of the fields that actually changed.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS voucher_audit_log (
+            id SERIAL PRIMARY KEY,
+            voucher_id INT NOT NULL REFERENCES vouchers(id),
+            actor_user_id INT REFERENCES users(id),
+            action VARCHAR(30) NOT NULL,
+            changes JSONB,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_voucher_audit_voucher ON voucher_audit_log(voucher_id)')
+
     # ── V2 Permissions ──────────────────────────────────
     cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'vouchers'")
     if cursor.fetchone()['cnt'] == 0:
