@@ -169,3 +169,21 @@ def test_get_requires_carpark_access(client, monkeypatch, seeded_vehicle):
     vid = seeded_vehicle['id']
     resp = client.get(f'/api/carpark/vehicles/{vid}/listing-schedule?platform=shopify')
     assert resp.status_code == 403
+
+
+def test_get_nonexistent_vehicle_returns_404(client, monkeypatch):
+    """The existence guard (_verify_vehicle_ownership) short-circuits before
+    any repo access, so an unknown vid is a clean 404 (not {schedule: null}
+    200). Mirrors the sibling vehicle-scoped routes in publishing.py."""
+    monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle', lambda vid: None)
+    resp = client.get('/api/carpark/vehicles/999999/listing-schedule?platform=shopify')
+    assert resp.status_code == 404
+
+
+def test_put_nonexistent_vehicle_returns_404(client, monkeypatch):
+    """PUT on an unknown vid is a clean 404 via the existence guard, never a
+    500 from hitting the carpark_listing_schedules.vehicle_id FK."""
+    monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle', lambda vid: None)
+    resp = client.put('/api/carpark/vehicles/999999/listing-schedule',
+                       json={'platform': 'shopify', 'cadence': 'daily', 'enabled': True})
+    assert resp.status_code == 404
