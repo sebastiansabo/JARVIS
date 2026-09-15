@@ -1,9 +1,8 @@
 """Business logic for voucher operations."""
 import logging
 from datetime import date
-from dateutil.relativedelta import relativedelta
 
-from accounting.vouchers.repositories import VoucherRepository
+from accounting.vouchers.repositories import VoucherRepository, compute_voucher_dates
 from core.base_repository import BaseRepository
 
 logger = logging.getLogger('jarvis.vouchers.service')
@@ -156,9 +155,7 @@ class VoucherService:
 
         # Anchor on the voucher's own start_date (Slice 2 — design doc §6.B5).
         # Falls back to today when NULL, preserving existing behavior.
-        start = voucher.get('start_date') or date.today()
-        if isinstance(start, str):
-            start = date.fromisoformat(start[:10])
+        start = voucher.get('start_date')
 
         # Path A (Forms) fallback: if this voucher was created via a form
         # submission, its own f_start_date answer still wins when present —
@@ -170,18 +167,18 @@ class VoucherService:
                 if sub:
                     raw = (sub.get('answers') or {}).get('f_start_date', '')
                     if raw:
-                        start = date.fromisoformat(str(raw)[:10])
+                        start = str(raw)[:10]
             except Exception:
                 pass
 
-        expires = start + relativedelta(months=voucher['validity_months'])
+        issued_at, expires_at = compute_voucher_dates(start, voucher['validity_months'])
         self.repo.update_status(
             voucher_id,
             status='active',
-            issued_at=start,
-            expires_at=expires,
+            issued_at=issued_at,
+            expires_at=expires_at,
         )
-        logger.info('Voucher %s activated, issued %s expires %s', voucher['voucher_code'], start, expires)
+        logger.info('Voucher %s activated, issued %s expires %s', voucher['voucher_code'], issued_at, expires_at)
 
         # Notify issuer
         self._notify_issuer_approved(voucher)
