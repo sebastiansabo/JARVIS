@@ -102,9 +102,9 @@ def _to_invoice_config_pairs(rows, company_id, skipped):
             'gross_amount': gross,
             'line_description': row.get('line_description'),
         }
-        if row.get('per_line'):
+        if row.get('per_line') or row.get('alloc_mode'):
             line_configs = _build_line_configs(row, konto, company_id)
-            if line_configs is None:  # per-line requested but line totals don't reconcile
+            if line_configs is None:  # per-line/alloc requested but totals don't reconcile
                 skipped.append({'invoice_number': row.get('invoice_number'), 'supplier': row.get('supplier'),
                                 'reason': 'line_totals_mismatch'})
                 continue
@@ -115,29 +115,41 @@ def _to_invoice_config_pairs(rows, company_id, skipped):
 
 
 def _build_line_configs(row, base_konto, company_id):
-    """For a per-line invoice, build the list of {'net','vat','text','config'} the per-line MEDLINE
-    builder consumes. Line net = line_items[i].amount (UBL LineExtensionAmount); line VAT =
-    net * vat_rate/100. Each line uses its pinned preset (invoice_line_konto_override) else the
-    invoice base. Returns [] if the invoice has no usable lines, or None if Σ(line net+VAT)
+    """Build the list of {'net','vat','text','config'} the per-line MEDLINE builder consumes.
+
+    Alloc mode: one config per ALLOCATION zone (its allocated net value + its schema). Per-line
+    mode: one config per line item (line_items[i].amount + its schema). Each config's `config`
+    falls back to the invoice base. Returns [] if there are no usable rows, or None if Σ(net+VAT)
     diverges from the invoice gross by more than 1 ban (caller skips it)."""
-    raw = row.get('line_items_json')
-    try:
-        items = raw if isinstance(raw, list) else (json.loads(raw) if raw else [])
-    except (TypeError, ValueError):
-        items = []
-    line_over = _repo.list_line_overrides(row['id'])
     base_id = row.get('konto_config_id')
     configs = []
-    for idx, li in enumerate(items):
-        if not isinstance(li, dict) or li.get('amount') is None:
-            continue
-        net = float(li['amount'])
-        vat = round(net * float(li.get('vat_rate') or 0) / 100.0, 2)
-        cfg_id = line_over.get(idx, base_id)
-        cfg = (_repo.get_konto_by_id(cfg_id) or {}).get('konto') if cfg_id else None
-        configs.append({'net': net, 'vat': vat,
-                        'text': li.get('name') or li.get('description') or '',
-                        'config': cfg or base_konto})
+    if row.get('alloc_mode'):
+        for a in _repo.list_invoice_allocations_with_konto(row['id']):
+            if a.get('value') is None:
+                continue
+            net = float(a['value'])
+            vat = round(net * float(a.get('vat_rate') or 0) / 100.0, 2)
+            cfg_id = a.get('konto_config_id') or base_id
+            cfg = (_repo.get_konto_by_id(cfg_id) or {}).get('konto') if cfg_id else None
+            text = ' · '.join(x for x in [a.get('line_name'), a.get('department')] if x)
+            configs.append({'net': net, 'vat': vat, 'text': text, 'config': cfg or base_konto})
+    else:
+        raw = row.get('line_items_json')
+        try:
+            items = raw if isinstance(raw, list) else (json.loads(raw) if raw else [])
+        except (TypeError, ValueError):
+            items = []
+        line_over = _repo.list_line_overrides(row['id'])
+        for idx, li in enumerate(items):
+            if not isinstance(li, dict) or li.get('amount') is None:
+                continue
+            net = float(li['amount'])
+            vat = round(net * float(li.get('vat_rate') or 0) / 100.0, 2)
+            cfg_id = line_over.get(idx, base_id)
+            cfg = (_repo.get_konto_by_id(cfg_id) or {}).get('konto') if cfg_id else None
+            configs.append({'net': net, 'vat': vat,
+                            'text': li.get('name') or li.get('description') or '',
+                            'config': cfg or base_konto})
     if not configs:
         return []
     line_gross = round(sum(c['net'] + c['vat'] for c in configs), 2)

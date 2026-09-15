@@ -406,6 +406,22 @@ class SupplierMasterRepository(BaseRepository):
             (invoice_id,))
         return {r['line_index']: r['konto_config_id'] for r in rows}
 
+    def list_invoice_allocations_with_konto(self, invoice_id):
+        """For an alloc-mode invoice, per-zone export data: each allocation's net value, its schema
+        (konto_config_id), department, line index and that line's VAT rate (from invoices.line_items,
+        falling back to the invoice vat_rate). One row per allocation zone."""
+        return self.query_all("""
+            SELECT a.line_item_index AS line_index, a.allocation_value AS value,
+                   a.department, a.konto_config_id,
+                   COALESCE((i.line_items->(a.line_item_index)->>'vat_rate')::numeric, i.vat_rate, 0) AS vat_rate,
+                   COALESCE(i.line_items->(a.line_item_index)->>'name',
+                            i.line_items->(a.line_item_index)->>'description') AS line_name
+            FROM allocations a
+            JOIN invoices i ON i.id = a.invoice_id
+            WHERE a.invoice_id = %s
+            ORDER BY a.line_item_index NULLS FIRST, a.id
+        """, (invoice_id,))
+
     # ---- back-compat single-config writers (target the ACTIVE preset) ----
     def upsert_konto(self, supplier_id, company_id, created_by=None, **fields):
         """Back-compat: create/update the ACTIVE preset for (supplier, company). Creates the
@@ -619,6 +635,8 @@ class SupplierMasterRepository(BaseRepository):
                    kc.name AS konto_name,
                    (ov.konto_config_id IS NOT NULL) AS konto_overridden,
                    COALESCE(ov.per_line, FALSE) AS per_line,
+                   EXISTS (SELECT 1 FROM allocations az WHERE az.invoice_id = i.id
+                           AND az.konto_config_id IS NOT NULL) AS alloc_mode,
                    i.line_items AS line_items_json
             FROM invoices i
             JOIN allocations a ON a.invoice_id = i.id AND lower(a.company) = lower(%s)
