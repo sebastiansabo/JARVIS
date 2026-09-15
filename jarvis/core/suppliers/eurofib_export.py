@@ -163,6 +163,50 @@ def build_medline_rows(invoice: dict, config: dict) -> list:
     return [credit, debit]
 
 
+def build_medline_rows_per_line(invoice: dict, base_config: dict, line_configs: list) -> list:
+    """Per-line MEDLINE posting: one supplier-payable credit (gross total, from base_config) plus
+    one debit per line (its net+VAT posted to that line's expense account/steuercode).
+
+    line_configs: list of {'net': float, 'vat': float, 'text': str, 'config': konto dict}.
+    Returns [credit_row, debit_row, ...]. Empty line_configs -> [] (caller skips the invoice).
+    """
+    if not line_configs:
+        return []
+    invoice_number = invoice.get('invoice_number')
+    invoice_date = _date_str(invoice.get('invoice_date'))
+    due_date = _date_str(invoice.get('due_date'))
+    belegart = _s(base_config.get('belegart'))
+    extbeleg_val = _belegnummer(invoice_number) if (
+        base_config.get('extbeleg_credit') == 'invoice_number'
+        or base_config.get('extbeleg_debit') == 'invoice_number') else ''
+    gross_total = sum(round(float(l['net']) + float(l['vat']), 2) for l in line_configs)
+
+    credit = _new_row()
+    credit[_MARKER_INDEX] = 'x'
+    _set(credit,
+         klient=_s(base_config.get('klient')), konto=_s(base_config.get('konto_credit')),
+         soll_haben='h', buchdatum=invoice_date, belegart=belegart, belegdatum=invoice_date,
+         belegnummer=_belegnummer(invoice_number), betrag=_money(gross_total),
+         gegenkonto=_s(base_config.get('gegenkonto_credit')),
+         text=_s(line_configs[0].get('text')) or _resolve_text(base_config.get('text_template'), invoice),
+         brutto_netto='B', valuta=due_date, extbeleg=extbeleg_val)
+
+    rows = [credit]
+    for line in line_configs:
+        cfg = line['config']
+        kostenstelle = _s(cfg.get('kostenstelle_debit')) or _s(cfg.get('kostenstelle_credit'))
+        debit = _new_row()
+        _set(debit,
+             konto=_s(cfg.get('konto_debit')), soll_haben='s', buchdatum=invoice_date,
+             belegart=belegart, belegdatum=invoice_date, belegnummer=_belegnummer(invoice_number),
+             betrag=_money(line['net']), steuercode=_s(cfg.get('steuercode')),
+             steuerbetrag=_money(line['vat']), gegenkonto=_s(cfg.get('gegenkonto_debit')),
+             kostenstelle=kostenstelle, extbeleg=extbeleg_val, brutto_netto='N', valuta=due_date,
+             text=_s(line.get('text')))
+        rows.append(debit)
+    return rows
+
+
 def _config_incomplete(config):
     if not config:
         return True
@@ -198,6 +242,15 @@ def build_rows(invoices_with_configs, skipped=None) -> list:
         if _config_incomplete(config):
             skipped.append({'invoice_number': invoice.get('invoice_number'),
                              'supplier': invoice.get('supplier'), 'reason': 'incomplete_config'})
+            continue
+        if invoice.get('line_configs'):
+            # Per-line invoice: 1 credit (base config) + one debit per line.
+            per_line = build_medline_rows_per_line(invoice, config, invoice['line_configs'])
+            if not per_line:
+                skipped.append({'invoice_number': invoice.get('invoice_number'),
+                                 'supplier': invoice.get('supplier'), 'reason': 'no_line_configs'})
+                continue
+            rows.extend(per_line)
             continue
         if _amounts_missing(invoice):
             skipped.append({'invoice_number': invoice.get('invoice_number'),
