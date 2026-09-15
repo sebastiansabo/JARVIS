@@ -202,6 +202,9 @@ class _FakeRepo:
     def list_line_overrides(self, invoice_id):
         return getattr(self, 'line_over', {})
 
+    def list_invoice_allocations_with_konto(self, invoice_id):
+        return getattr(self, 'allocs', [])
+
 
 class TestExportPairWiring:
 
@@ -452,3 +455,67 @@ class TestPerLineExportWiring:
                 [self._row(per_line=True, konto_config_id=7, line_items_json=items)], company_id=2, skipped=skipped)
         assert pairs == []
         assert skipped and skipped[0]['reason'] == 'line_totals_mismatch'
+
+
+class TestAllocExportWiring:
+    """Per alocare (Phase 4): _build_line_configs sources one config per allocation zone
+    (its allocated net + its schema), falling back to the invoice base preset, and skips the
+    invoice when Σ(net+VAT) across zones diverges from the invoice gross."""
+
+    def _row(self, **over):
+        row = {'id': 1, 'supplier': 'A24', 'supplier_id': 5, 'invoice_number': 'F1',
+               'invoice_date': '2026-08-31', 'net_value': 150, 'invoice_value': 178.50,
+               'subtract_vat': True, 'due_date': '2026-09-30'}
+        row.update(over)
+        return row
+
+    def test_alloc_builds_zone_configs(self):
+        from core.suppliers import routes
+        fake = _FakeRepo()
+        # Zone A carries its own schema (id 8); Zone B has none → falls back to base preset 7.
+        fake.allocs = [
+            {'value': 100, 'vat_rate': 19, 'konto_config_id': 8, 'line_name': 'Gaze', 'department': 'VW'},
+            {'value': 50, 'vat_rate': 19, 'konto_config_id': None, 'line_name': 'Acciza', 'department': 'Audi'},
+        ]
+        with patch.object(routes, '_repo', fake):
+            pairs = routes._to_invoice_config_pairs(
+                [self._row(alloc_mode=True, konto_config_id=7)], company_id=2, skipped=[])
+        assert len(pairs) == 1
+        invoice, _konto = pairs[0]
+        lc = invoice['line_configs']
+        assert len(lc) == 2
+        assert lc[0]['net'] == 100.0 and lc[0]['vat'] == 19.0
+        assert lc[0]['text'] == 'Gaze · VW'
+        assert lc[0]['config']['konto_debit'] == 'BYID-8'   # zone's own schema
+        assert lc[1]['net'] == 50.0 and lc[1]['vat'] == 9.5
+        assert lc[1]['config']['konto_debit'] == 'BYID-7'   # base fallback
+
+    def test_alloc_totals_mismatch_skipped(self):
+        from core.suppliers import routes
+        fake = _FakeRepo()
+        fake.allocs = [{'value': 100, 'vat_rate': 19, 'konto_config_id': None, 'line_name': 'A', 'department': 'VW'}]
+        skipped = []
+        with patch.object(routes, '_repo', fake):
+            pairs = routes._to_invoice_config_pairs(
+                [self._row(alloc_mode=True, konto_config_id=7)], company_id=2, skipped=skipped)  # 119 != 178.50
+        assert pairs == []
+        assert skipped and skipped[0]['reason'] == 'line_totals_mismatch'
+
+
+class TestAllocRepo:
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_list_allocations_with_konto_shape(self, mock_get_db, mock_get_cursor, mock_release):
+        from core.suppliers.repository import SupplierMasterRepository
+        conn, cur = _mock_conn_cursor(); mock_get_db.return_value = conn; mock_get_cursor.return_value = cur
+        row = {'line_index': 0, 'value': 100.0, 'department': 'VW',
+               'konto_config_id': 8, 'vat_rate': 19.0, 'line_name': 'Gaze'}
+        cur.fetchall.return_value = [row]
+        rows = SupplierMasterRepository().list_invoice_allocations_with_konto(7)
+        # Contract _build_line_configs depends on: exactly these keys, passed straight through.
+        assert rows == [row]
+        sql = str(cur.execute.call_args_list[-1].args[0]).lower()
+        assert 'from allocations a' in sql and 'join invoices i' in sql
+        assert 'a.invoice_id = %s' in sql
+        assert cur.execute.call_args_list[-1].args[1] == (7,)
