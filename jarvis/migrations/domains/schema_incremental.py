@@ -1580,6 +1580,24 @@ def create_schema_incremental(conn, cursor):
         ON supplier_konto_config(supplier_id, company_id) WHERE is_active
     ''')
 
+    # ── One-time backfill: default Extbeleg Credit to the `invoice_number` tag (2026-09-15) ──
+    # The EuroFib exporter substitutes the real invoice number into the extbeleg column when
+    # either extbeleg side carries this tag. New suppliers/schemas get it from the frontend
+    # EMPTY_KONTO default; this fills existing EMPTY values (flat per-supplier default + presets)
+    # so every current Furnizor gets it too. Guarded so it runs ONCE — a later deliberate clear
+    # is not re-filled on the next boot; existing custom values are never overwritten.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM suppliers WHERE extbeleg_credit = 'invoice_number') THEN
+                UPDATE suppliers SET extbeleg_credit = 'invoice_number'
+                    WHERE COALESCE(extbeleg_credit, '') = '';
+                UPDATE supplier_konto_config SET extbeleg_credit = 'invoice_number'
+                    WHERE COALESCE(extbeleg_credit, '') = '';
+            END IF;
+        END $$;
+    ''')
+
     # ── invoice_konto_override: per-invoice preset choice (Procesare worklist) ──
     # When set, this preset overrides the supplier's active preset for that one invoice at
     # export time. ON DELETE CASCADE from supplier_konto_config means deleting a preset silently

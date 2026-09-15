@@ -85,7 +85,9 @@ const EMPTY_KONTO: KontoConfig = {
   konto_debit: null, konto_credit: null, klient: null,
   gegenkonto_debit: null, gegenkonto_credit: null,
   kostenstelle_debit: null, kostenstelle_credit: null,
-  extbeleg_debit: null, extbeleg_credit: null,
+  // Extbeleg Credit defaults to the `invoice_number` tag: the EuroFib exporter substitutes
+  // the real invoice number into the extbeleg column when either side carries this tag.
+  extbeleg_debit: null, extbeleg_credit: 'invoice_number',
   steuercode: null, text_template: null, belegart: null,
 }
 
