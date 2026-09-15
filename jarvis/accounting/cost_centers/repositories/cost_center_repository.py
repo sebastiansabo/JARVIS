@@ -72,7 +72,8 @@ class CostCenterRepository(BaseRepository):
             SELECT cc.id AS cc_id,
                    (SELECT sn.id FROM structure_nodes sn
                      WHERE sn.company_id = cc.company_id
-                       AND LOWER(sn.name) = LOWER(cc.name)) AS node_id,
+                       AND LOWER(sn.name) = LOWER(cc.name)
+                     LIMIT 1) AS node_id,
                    (SELECT COUNT(*) FROM structure_nodes sn
                      WHERE sn.company_id = cc.company_id
                        AND LOWER(sn.name) = LOWER(cc.name)) AS match_count
