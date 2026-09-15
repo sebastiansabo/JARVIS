@@ -195,12 +195,21 @@ export const suppliersApi = {
   setInvoicePreset: (invoiceId: number, body: { konto_config_id: number | null; supplier_id: number; company_id: number }) =>
     api.post<{ success: boolean; cleared?: boolean }>(
       `/api/suppliers/invoices/${invoiceId}/konto-preset`, body),
+  /** Enable/disable per-line schema mode for an invoice (base/credit schema optional; null = active). */
+  setInvoicePerLine: (invoiceId: number, body: { per_line: boolean; konto_config_id: number | null; supplier_id: number; company_id: number }) =>
+    api.post<{ success: boolean }>(`/api/suppliers/invoices/${invoiceId}/per-line`, body),
+  /** Pin (or clear with null) the EuroFib schema for one line of a per-line invoice. */
+  setInvoiceLinePreset: (invoiceId: number, body: { line_index: number; konto_config_id: number | null; supplier_id: number; company_id: number }) =>
+    api.post<{ success: boolean }>(`/api/suppliers/invoices/${invoiceId}/line-preset`, body),
   /** EuroFib schemas available for an invoice's supplier at budgeting time (resolved supplier ×
-   * the given company). Drives the required "Schemă EuroFib" selector in the bugetare dialog. */
+   * the given company). Drives the "Schemă EuroFib" selector + per-line pickers in the bugetare dialog. */
   schemasForInvoice: (invoiceId: number, company: string) =>
     api.get<{
       success: boolean; presets: KontoPreset[]; active_id: number | null; selected_id: number | null
       count: number; supplier_id: number | null; company_id: number | null
+      per_line: boolean
+      line_items: { name?: string | null; description?: string | null; amount: number | null; vat_rate: number | null }[]
+      line_selected: Record<string, number>
     }>(`/api/suppliers/schemas-for-invoice?invoice_id=${invoiceId}&company=${encodeURIComponent(company)}`),
   /** EuroFib schemas for an unallocated e-Factura invoice's supplier (× the invoice's company).
    * Drives the schema selector in the e-Factura "Edit Invoice Overrides" dialog. */
