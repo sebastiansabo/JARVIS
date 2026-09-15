@@ -125,6 +125,42 @@ def test_save_config_forbidden_without_settings(client, monkeypatch):
     assert r.status_code == 403
 
 
+def test_status_returns_freshness_and_vehicle_updated_at(client, monkeypatch):
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    monkeypatch.setattr(routes_mod._repo, 'get_all_by_type',
+        lambda t: [{'id': 1, 'connector_type': 'shopify',
+                    'config': {'store_domain': 'cb6c17-2.myshopify.com'},
+                    'credentials': {'client_id': 'cid', 'client_secret': 'sec'}}])
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id',
+        lambda vid: {'id': vid, 'updated_at': now - timedelta(hours=2)})
+    monkeypatch.setattr(routes_mod, 'ensure_platform', lambda pub, dom: 3)
+    monkeypatch.setattr(routes_mod._pub_repo, 'get_listing_by_vehicle_platform',
+        lambda vid, pid: {'external_listing_id': 'gid://shopify/Product/9',
+                          'status': 'published', 'last_sync': now - timedelta(hours=1),
+                          'expires_at': None})
+
+    r = client.get('/shopify/api/vehicles/7/status')
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['success'] is True
+    assert body['freshness'] in (
+        'up_to_date', 'stale', 'expired', 'inactive', 'error', 'not_published')
+    assert 'vehicle_updated_at' in body
+
+
+def test_status_no_account_is_not_published(client, monkeypatch):
+    monkeypatch.setattr(routes_mod._repo, 'get_all_by_type', lambda t: [])
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id', lambda vid: None)
+
+    r = client.get('/shopify/api/vehicles/7/status')
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['success'] is True
+    assert body['freshness'] == 'not_published'
+    assert 'vehicle_updated_at' in body
+
+
 def test_build_client_caches_per_connector(monkeypatch):
     routes_mod._client_cache.clear()
     row = {'id': 42, 'config': {'store_domain': 'd.myshopify.com'},
