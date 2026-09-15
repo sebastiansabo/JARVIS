@@ -172,6 +172,15 @@ def update_invoice_overrides(invoice_id):
             raw_kc = data.get('konto_config_id')
             konto_config_id = int(raw_kc) if raw_kc else None
 
+        # Per-line schema mode (int-keyed map {line_index: konto_config_id}). Only touched when present.
+        konto_per_line = '__keep__'
+        if 'konto_per_line' in data:
+            konto_per_line = bool(data.get('konto_per_line'))
+        konto_line_map = '__keep__'
+        if 'konto_line_map' in data:
+            raw_map = data.get('konto_line_map') or {}
+            konto_line_map = {str(int(k)): int(v) for k, v in raw_map.items() if v} if isinstance(raw_map, dict) else {}
+
         success = _invoice_repo.update_overrides(
             invoice_id=invoice_id,
             type_override=type_override,
@@ -181,6 +190,8 @@ def update_invoice_overrides(invoice_id):
             subdepartment_override_2=subdepartment_override_2,
             observer_user_ids=observer_user_ids,
             konto_config_id=konto_config_id,
+            konto_per_line=konto_per_line,
+            konto_line_map=konto_line_map,
         )
 
         if success:
