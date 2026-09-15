@@ -38,6 +38,17 @@ import { vouchersApi } from '@/api/vouchers'
 import { organizationApi } from '@/api/organization'
 import type { Voucher, VoucherSummary } from '@/types/vouchers'
 
+/** Format a voucher date (ISO or RFC-1123 from Flask) as dd/mm/yyyy, matching
+ *  the PDF. Read in UTC so the stored calendar day never shifts by timezone. */
+function fmtDate(value: string | null | undefined): string {
+  if (!value) return '—'
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return String(value)
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  return `${dd}/${mm}/${d.getUTCFullYear()}`
+}
+
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
   pending_approval: 'bg-yellow-100 text-yellow-800',
@@ -205,8 +216,8 @@ export default function Vouchers() {
     { key: 'vin', label: 'VIN', className: 'font-mono text-xs', render: (v) => v.car_vin },
     { key: 'type', label: 'Type', render: (v) => v.voucher_type.replace(/_/g, ' ') },
     { key: 'benefit', label: 'Benefit', render: (v) => v.benefit_display },
-    { key: 'issued', label: 'Issued', render: (v) => v.issued_at || '—' },
-    { key: 'expires', label: 'Expires', render: (v) => <>{v.expires_at || '—'}{v.days_remaining != null && v.days_remaining <= 30 && v.days_remaining > 0 && <span className="ml-1 text-xs text-orange-500">({v.days_remaining}d)</span>}</> },
+    { key: 'issued', label: 'Issued', render: (v) => fmtDate(v.issued_at) },
+    { key: 'expires', label: 'Expires', render: (v) => <>{fmtDate(v.expires_at)}{v.days_remaining != null && v.days_remaining <= 30 && v.days_remaining > 0 && <span className="ml-1 text-xs text-orange-500">({v.days_remaining}d)</span>}</> },
     { key: 'approver', label: 'Approver', render: (v) => v.approver_name || '—' },
     { key: 'status', label: 'Status', render: (v) => <StatusBadge status={v.status} /> },
     { key: 'actions', label: 'Actions', render: (v) => deletedView ? (
@@ -476,8 +487,8 @@ export default function Vouchers() {
                 <div><span className="text-muted-foreground">Type:</span> {detailVoucher.voucher_type.replace(/_/g, ' ')}</div>
                 <div><span className="text-muted-foreground">Benefit:</span> {detailVoucher.benefit_display}</div>
                 <div><span className="text-muted-foreground">Validity:</span> {detailVoucher.validity_months} months</div>
-                <div><span className="text-muted-foreground">Issued:</span> {detailVoucher.issued_at || '—'}</div>
-                <div><span className="text-muted-foreground">Expires:</span> {detailVoucher.expires_at || '—'}</div>
+                <div><span className="text-muted-foreground">Issued:</span> {fmtDate(detailVoucher.issued_at)}</div>
+                <div><span className="text-muted-foreground">Expires:</span> {fmtDate(detailVoucher.expires_at)}</div>
                 <div><span className="text-muted-foreground">Status:</span> <StatusBadge status={detailVoucher.status} /></div>
                 <div><span className="text-muted-foreground">Issued by:</span> {detailVoucher.issued_by_name}</div>
                 {detailVoucher.approver_name && <div><span className="text-muted-foreground">Approver:</span> {detailVoucher.approver_name}</div>}
