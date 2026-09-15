@@ -30,6 +30,7 @@ import {
   Unlink,
   Upload,
   Send,
+  ShoppingBag,
   AlertTriangle,
   Loader2,
 } from 'lucide-react'
@@ -1863,7 +1864,7 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
 
   return (
     <>
-      <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+      <Button size="sm" variant="outline" className="w-44" onClick={() => setOpen(true)}>
         <Send className="mr-1.5 h-3.5 w-3.5" />
         Publică pe Autovit
       </Button>
@@ -2078,6 +2079,23 @@ function ListingsTab({
   const listedPlatformIds = new Set(listings.map((l) => l.platform_id))
   const unlistedPlatforms = platforms.filter((p) => !listedPlatformIds.has(p.id))
 
+  // Autovit and Shopify each have their own connector panel above, so we drop their
+  // generic rows here — otherwise the vehicle shows up twice per channel. The Shopify
+  // store IS autoworld.ro, so the legacy "Website Autoworld" channel points at the
+  // same destination and is covered by the Shopify panel too.
+  const isDedicatedConnector = (name?: string | null, type?: string | null) => {
+    const n = (name ?? '').toLowerCase()
+    return (
+      type === 'autovit' ||
+      n.includes('autovit') ||
+      n.includes('shopify') ||
+      n.includes('autoworld')
+    )
+  }
+  const otherListings = listings.filter((l) => !isDedicatedConnector(l.platform_name, l.platform_type))
+  const otherUnlisted = unlistedPlatforms.filter((p) => !isDedicatedConnector(p.name, p.platform_type))
+  const hasOtherChannels = otherListings.length > 0 || otherUnlisted.length > 0
+
   const statusColors: Record<string, string> = {
     active: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
     draft: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
@@ -2086,137 +2104,176 @@ function ListingsTab({
     error: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300',
   }
 
+  const tileBase = 'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl'
+
   return (
-    <div className="space-y-4">
-      {/* Autovit direct sync (Task 8/9 two-way sync) */}
+    <div className="space-y-8">
+      {/* ── Publicare directă — real connectors, grouped in one bordered list ── */}
       {canEdit && (
-        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <section className="space-y-3">
           <div>
-            <h4 className="text-sm font-medium">Autovit.ro — sincronizare directă</h4>
-            <p className="text-xs text-muted-foreground">
-              Publică acest vehicul pe un cont Autovit conectat (preview înainte de publicare).
+            <h3 className="text-base font-semibold tracking-tight">Publicare directă</h3>
+            <p className="text-sm text-muted-foreground">
+              Sincronizează acest vehicul cu platformele conectate.
             </p>
           </div>
-          <AutovitPublishAction vehicleId={vehicleId} />
-        </Card>
-      )}
 
-      {/* Shopify direct publish — mirrors the Autovit panel; reuses the header control. */}
-      {canEdit && (
-        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
-          <div>
-            <h4 className="text-sm font-medium">Shopify — publicare în magazin</h4>
-            <p className="text-xs text-muted-foreground">
-              Publică acest vehicul în magazinul Shopify conectat.
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-2">
-            <ShopifyPublishControl vehicleId={vehicleId} canEdit={canEdit} />
-            <ListingScheduleSelect vehicleId={vehicleId} platform="shopify" />
-          </div>
-        </Card>
-      )}
-
-      {/* Actions bar */}
-      {canEdit && (
-        <div className="flex items-center gap-2">
-          {unlistedPlatforms.length > 0 && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => publishAllMutation.mutate()}
-              disabled={publishAllMutation.isPending}
-            >
-              <Globe className="mr-1.5 h-3.5 w-3.5" />
-              {publishAllMutation.isPending ? 'Se publică...' : 'Publică pe toate'}
-            </Button>
-          )}
-          {listings.some((l) => l.status === 'active') && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => deactivateAllMutation.mutate()}
-              disabled={deactivateAllMutation.isPending}
-            >
-              <PowerOff className="mr-1.5 h-3.5 w-3.5" />
-              Dezactivează toate
-            </Button>
-          )}
-        </div>
-      )}
-
-      {/* Current listings */}
-      {listings.length === 0 && unlistedPlatforms.length === 0 ? (
-        <EmptyState
-          icon={<Globe className="h-8 w-8" />}
-          title="Nicio platformă configurată"
-          description="Configurează platformele din secțiunea CarPark > Publishing"
-        />
-      ) : (
-        <div className="space-y-2">
-          {listings.map((listing) => (
-            <Card key={listing.id} className="flex items-center justify-between p-3">
-              <div className="flex items-center gap-3">
-                <Globe className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">{listing.platform_name}</span>
-                    <Badge variant="outline" className={`text-[10px] ${statusColors[listing.status] ?? ''}`}>
-                      {LISTING_STATUS_LABELS[listing.status as ListingStatus] ?? listing.status}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                    <span className="flex items-center gap-1"><Eye className="h-3 w-3" /> {listing.views}</span>
-                    <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" /> {listing.inquiries}</span>
-                    {listing.published_at && <span>Publicat: {formatDate(listing.published_at)}</span>}
-                    {listing.last_sync && <span>Sync: {formatDate(listing.last_sync)}</span>}
-                    {listing.error_message && (
-                      <span className="text-red-500">{listing.error_message}</span>
-                    )}
-                  </div>
+          <div className="divide-y overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+            {/* Autovit */}
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 p-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className={`${tileBase} bg-orange-100 text-orange-600 dark:bg-orange-950/50 dark:text-orange-400`}>
+                  <Send className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium leading-tight">Autovit.ro</div>
+                  <p className="text-xs text-muted-foreground">
+                    Publicare directă, cu previzualizare înainte de trimitere.
+                  </p>
                 </div>
               </div>
-              <div className="flex items-center gap-1">
-                {listing.external_url && (
-                  <Button variant="ghost" size="sm" asChild>
-                    <a href={listing.external_url} target="_blank" rel="noopener noreferrer">
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  </Button>
-                )}
-                {canEdit && listing.status === 'active' && (
-                  <Button variant="ghost" size="sm" onClick={() => deactivateMutation.mutate(listing.id)} title="Dezactivează">
-                    <PowerOff className="h-4 w-4" />
-                  </Button>
-                )}
-                {canEdit && listing.status !== 'active' && (
-                  <Button variant="ghost" size="sm" onClick={() => activateMutation.mutate(listing.id)} title="Activează">
-                    <Power className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            </Card>
-          ))}
+              <AutovitPublishAction vehicleId={vehicleId} />
+            </div>
 
-          {/* Unlisted platforms — quick publish buttons */}
-          {canEdit && unlistedPlatforms.map((platform) => (
-            <Card key={platform.id} className="flex items-center justify-between p-3 opacity-60">
-              <div className="flex items-center gap-3">
-                <Globe className="h-5 w-5 text-muted-foreground" />
-                <span className="text-sm">{platform.name}</span>
-                <Badge variant="outline" className="text-[10px]">Nepublicat</Badge>
+            {/* Shopify */}
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 p-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className={`${tileBase} bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400`}>
+                  <ShoppingBag className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <div className="text-sm font-medium leading-tight">Shopify</div>
+                  <p className="text-xs text-muted-foreground">
+                    Publică vehiculul în magazinul online conectat.
+                  </p>
+                </div>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => publishMutation.mutate(platform.id)}
-                disabled={publishMutation.isPending}
-              >
-                <Plus className="mr-1 h-3.5 w-3.5" /> Publică
-              </Button>
-            </Card>
-          ))}
-        </div>
+              <div className="flex flex-col items-end gap-2">
+                <ShopifyPublishControl vehicleId={vehicleId} canEdit={canEdit} />
+                <ListingScheduleSelect vehicleId={vehicleId} platform="shopify" />
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── Alte canale — manually managed channels without a direct integration ── */}
+      {hasOtherChannels ? (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h3 className="text-base font-semibold tracking-tight">Alte canale</h3>
+              <p className="text-sm text-muted-foreground">
+                Canale gestionate manual, fără sincronizare automată.
+              </p>
+            </div>
+            {canEdit && (
+              <div className="flex items-center gap-2">
+                {otherUnlisted.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => publishAllMutation.mutate()}
+                    disabled={publishAllMutation.isPending}
+                  >
+                    <Globe className="mr-1.5 h-3.5 w-3.5" />
+                    {publishAllMutation.isPending ? 'Se publică...' : 'Publică pe toate'}
+                  </Button>
+                )}
+                {otherListings.some((l) => l.status === 'active') && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => deactivateAllMutation.mutate()}
+                    disabled={deactivateAllMutation.isPending}
+                  >
+                    <PowerOff className="mr-1.5 h-3.5 w-3.5" />
+                    Dezactivează toate
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="divide-y overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
+            {otherListings.map((listing) => (
+              <div key={listing.id} className="flex items-center justify-between gap-3 p-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className={`${tileBase} bg-muted text-muted-foreground`}>
+                    <Globe className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium">{listing.platform_name}</span>
+                      <Badge variant="outline" className={`text-[10px] ${statusColors[listing.status] ?? ''}`}>
+                        {LISTING_STATUS_LABELS[listing.status as ListingStatus] ?? listing.status}
+                      </Badge>
+                    </div>
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1"><Eye className="h-3 w-3" /> {listing.views}</span>
+                      <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" /> {listing.inquiries}</span>
+                      {listing.published_at && <span>Publicat: {formatDate(listing.published_at)}</span>}
+                      {listing.last_sync && <span>Sync: {formatDate(listing.last_sync)}</span>}
+                      {listing.error_message && (
+                        <span className="text-red-500">{listing.error_message}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  {listing.external_url && (
+                    <Button variant="ghost" size="sm" asChild>
+                      <a href={listing.external_url} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
+                    </Button>
+                  )}
+                  {canEdit && listing.status === 'active' && (
+                    <Button variant="ghost" size="sm" onClick={() => deactivateMutation.mutate(listing.id)} title="Dezactivează">
+                      <PowerOff className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {canEdit && listing.status !== 'active' && (
+                    <Button variant="ghost" size="sm" onClick={() => activateMutation.mutate(listing.id)} title="Activează">
+                      <Power className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+
+            {/* Unlisted manual channels — quick publish */}
+            {canEdit && otherUnlisted.map((platform) => (
+              <div key={platform.id} className="flex items-center justify-between gap-3 p-4">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className={`${tileBase} bg-muted text-muted-foreground`}>
+                    <Globe className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">{platform.name}</div>
+                    <p className="text-xs text-muted-foreground">Nepublicat</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => publishMutation.mutate(platform.id)}
+                  disabled={publishMutation.isPending}
+                >
+                  <Plus className="mr-1 h-3.5 w-3.5" /> Publică
+                </Button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : (
+        !canEdit && (
+          <EmptyState
+            icon={<Globe className="h-8 w-8" />}
+            title="Nicio platformă configurată"
+            description="Configurează platformele din secțiunea CarPark › Publishing."
+          />
+        )
       )}
     </div>
   )
