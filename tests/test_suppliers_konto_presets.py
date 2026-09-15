@@ -382,3 +382,34 @@ class TestBuildMedlineRowsPerLine:
     def test_empty_line_configs_returns_empty(self):
         from core.suppliers.eurofib_export import build_medline_rows_per_line
         assert build_medline_rows_per_line(self._invoice(), {'konto_credit': '4'}, []) == []
+
+
+class TestPerLineRepo:
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_set_per_line_false_clears_line_rows(self, mock_get_db, mock_get_cursor, mock_release):
+        from core.suppliers.repository import SupplierMasterRepository
+        conn, cur = _mock_conn_cursor(); mock_get_db.return_value = conn; mock_get_cursor.return_value = cur
+        SupplierMasterRepository().set_invoice_per_line(7, False)
+        sqls = _executed_sql(cur)
+        assert any('delete from invoice_line_konto_override' in s for s in sqls)
+        assert any('insert into invoice_konto_override' in s for s in sqls)
+
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_set_line_preset_null_deletes(self, mock_get_db, mock_get_cursor, mock_release):
+        from core.suppliers.repository import SupplierMasterRepository
+        conn, cur = _mock_conn_cursor(); mock_get_db.return_value = conn; mock_get_cursor.return_value = cur
+        SupplierMasterRepository().set_invoice_line_preset(7, 2, None)
+        assert any('delete from invoice_line_konto_override' in s for s in _executed_sql(cur))
+
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_get_override_full_returns_per_line(self, mock_get_db, mock_get_cursor, mock_release):
+        from core.suppliers.repository import SupplierMasterRepository
+        conn, cur = _mock_conn_cursor(); mock_get_db.return_value = conn; mock_get_cursor.return_value = cur
+        cur.fetchone.return_value = {'konto_config_id': 5, 'per_line': True}
+        assert SupplierMasterRepository().get_invoice_override_full(7) == {'konto_config_id': 5, 'per_line': True}

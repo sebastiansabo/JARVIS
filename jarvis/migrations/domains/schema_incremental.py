@@ -1596,12 +1596,19 @@ def create_schema_incremental(conn, cursor):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_konto_override_config ON invoice_konto_override(konto_config_id)")
 
     # ── invoice_konto_override.per_line: per-line schema mode (Phase 3) ──
+    # In per-line mode the base (credit) schema may be NULL → falls back to the supplier's active
+    # preset, so konto_config_id becomes nullable.
     cursor.execute('''
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                            WHERE table_name = 'invoice_konto_override' AND column_name = 'per_line') THEN
                 ALTER TABLE invoice_konto_override ADD COLUMN per_line BOOLEAN NOT NULL DEFAULT FALSE;
+            END IF;
+            IF EXISTS (SELECT 1 FROM information_schema.columns
+                       WHERE table_name = 'invoice_konto_override' AND column_name = 'konto_config_id'
+                         AND is_nullable = 'NO') THEN
+                ALTER TABLE invoice_konto_override ALTER COLUMN konto_config_id DROP NOT NULL;
             END IF;
         END $$;
     ''')
