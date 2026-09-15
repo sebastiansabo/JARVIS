@@ -132,6 +132,16 @@ def create_schema_efactura(conn, cursor):
             ) THEN
                 ALTER TABLE efactura_invoices ADD COLUMN konto_config_id INTEGER;
             END IF;
+            -- Per-line schema staged at allocation (Phase 3 → e-Factura). konto_per_line marks the
+            -- mode; konto_line_map is {line_index: konto_config_id}. Both copied to
+            -- invoice_konto_override.per_line + invoice_line_konto_override on Send-to-Module.
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'efactura_invoices' AND column_name = 'konto_per_line'
+            ) THEN
+                ALTER TABLE efactura_invoices ADD COLUMN konto_per_line BOOLEAN NOT NULL DEFAULT FALSE;
+                ALTER TABLE efactura_invoices ADD COLUMN konto_line_map JSONB;
+            END IF;
         END $$;
     ''')
 
