@@ -88,7 +88,7 @@ export default function CostCenters() {
   const toggleActiveMut = useMutation({
     mutationFn: (payload: { id: number; active: boolean }) =>
       costCentersApi.update(payload.id, { active: payload.active }),
-    onSuccess: () => invalidate(),
+    onSuccess: () => { invalidate(); toast.success('Stare actualizată') },
     onError: (e) => toast.error(errMsg(e, 'Actualizarea stării a eșuat')),
   })
 
@@ -101,7 +101,7 @@ export default function CostCenters() {
   const mapMut = useMutation({
     mutationFn: (payload: { id: number; nodeId: number | null }) =>
       costCentersApi.setMap(payload.id, payload.nodeId),
-    onSuccess: () => invalidate(),
+    onSuccess: () => { invalidate(); toast.success('Mapare actualizată') },
     onError: (e) => toast.error(errMsg(e, 'Maparea a eșuat')),
   })
 
