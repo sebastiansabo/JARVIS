@@ -617,7 +617,9 @@ class SupplierMasterRepository(BaseRepository):
                    MIN(s.id) AS supplier_id,
                    kc.id AS konto_config_id,
                    kc.name AS konto_name,
-                   (ov.konto_config_id IS NOT NULL) AS konto_overridden
+                   (ov.konto_config_id IS NOT NULL) AS konto_overridden,
+                   COALESCE(ov.per_line, FALSE) AS per_line,
+                   i.line_items AS line_items_json
             FROM invoices i
             JOIN allocations a ON a.invoice_id = i.id AND lower(a.company) = lower(%s)
             JOIN suppliers s ON s.deleted_at IS NULL AND (
@@ -646,7 +648,7 @@ class SupplierMasterRepository(BaseRepository):
               AND NULLIF(kc.belegart, '') IS NOT NULL
             GROUP BY i.id, i.supplier, i.invoice_number, i.invoice_date, i.net_value,
                      i.invoice_value, i.value_ron, i.value_eur, i.currency, i.status,
-                     i.subtract_vat, i.line_items, kc.id, kc.name, ov.konto_config_id
+                     i.subtract_vat, i.line_items, kc.id, kc.name, ov.konto_config_id, ov.per_line
             ORDER BY i.invoice_date DESC, i.id DESC
             LIMIT %s
         """
