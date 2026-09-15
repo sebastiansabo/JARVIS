@@ -1,11 +1,14 @@
 """Publishing API routes — Platforms, listings, publish/deactivate, sync."""
 import logging
+from datetime import datetime, timezone, timedelta
 
 from flask import request, jsonify
 from flask_login import login_required, current_user
 
 from carpark import carpark_bp
 from carpark.services.publishing_service import PublishingService
+from carpark.repositories.listing_schedule_repository import ListingScheduleRepository
+from carpark.connectors.cadence import cadence_to_minutes
 from carpark.routes.vehicles import (
     carpark_required, carpark_edit_required, _serialize,
     _verify_vehicle_ownership, _acting_company_id,
@@ -14,6 +17,9 @@ from carpark.routes.vehicles import (
 logger = logging.getLogger('jarvis.carpark')
 
 _pub_service = PublishingService()
+_schedule_repo = ListingScheduleRepository()
+
+_VALID_CADENCES = {'manual', 'instant', '2h', '3h', '5h', 'daily'}
 
 
 # ═══════════════════════════════════════════════
@@ -295,3 +301,43 @@ def vehicle_sync_log(vehicle_id):
         return err
     log = _pub_service.get_sync_log(vehicle_id=vehicle_id)
     return jsonify({'log': _serialize(log)})
+
+
+# ═══════════════════════════════════════════════
+# LISTING AUTO-UPDATE SCHEDULE
+# ═══════════════════════════════════════════════
+
+@carpark_bp.route('/vehicles/<int:vid>/listing-schedule', methods=['GET'])
+@login_required
+@carpark_required
+def get_listing_schedule(vid):
+    """Get the auto-update schedule config for a vehicle+platform.
+
+    Query: ?platform=shopify (default 'shopify')
+    """
+    platform = request.args.get('platform', 'shopify')
+    schedule = _schedule_repo.get(vid, platform)
+    return jsonify({'schedule': _serialize(schedule)})
+
+
+@carpark_bp.route('/vehicles/<int:vid>/listing-schedule', methods=['PUT'])
+@login_required
+@carpark_edit_required
+def put_listing_schedule(vid):
+    """Create/update the auto-update schedule config for a vehicle+platform.
+
+    Body: { platform, cadence, enabled }
+    """
+    body = request.get_json(silent=True) or {}
+    platform = body.get('platform', 'shopify')
+    cadence = body.get('cadence', 'manual')
+    enabled = bool(body.get('enabled', True))
+
+    if cadence not in _VALID_CADENCES:
+        return jsonify({'error': 'invalid cadence'}), 400
+
+    minutes = cadence_to_minutes(cadence)
+    next_run = (datetime.now(timezone.utc) + timedelta(minutes=minutes)) if (enabled and minutes) else None
+
+    row = _schedule_repo.upsert(vid, platform, cadence, enabled, next_run)
+    return jsonify({'schedule': _serialize(row)})
