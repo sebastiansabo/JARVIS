@@ -1,4 +1,5 @@
 """Supplier master + Procesare resolution API."""
+import json
 import re
 
 from flask import Blueprint, Response, jsonify, request
@@ -101,8 +102,49 @@ def _to_invoice_config_pairs(rows, company_id, skipped):
             'gross_amount': gross,
             'line_description': row.get('line_description'),
         }
+        if row.get('per_line'):
+            line_configs = _build_line_configs(row, konto, company_id)
+            if line_configs is None:  # per-line requested but line totals don't reconcile
+                skipped.append({'invoice_number': row.get('invoice_number'), 'supplier': row.get('supplier'),
+                                'reason': 'line_totals_mismatch'})
+                continue
+            if line_configs:
+                invoice['line_configs'] = line_configs
         pairs.append((invoice, konto))
     return pairs
+
+
+def _build_line_configs(row, base_konto, company_id):
+    """For a per-line invoice, build the list of {'net','vat','text','config'} the per-line MEDLINE
+    builder consumes. Line net = line_items[i].amount (UBL LineExtensionAmount); line VAT =
+    net * vat_rate/100. Each line uses its pinned preset (invoice_line_konto_override) else the
+    invoice base. Returns [] if the invoice has no usable lines, or None if Σ(line net+VAT)
+    diverges from the invoice gross by more than 1 ban (caller skips it)."""
+    raw = row.get('line_items_json')
+    try:
+        items = raw if isinstance(raw, list) else (json.loads(raw) if raw else [])
+    except (TypeError, ValueError):
+        items = []
+    line_over = _repo.list_line_overrides(row['id'])
+    base_id = row.get('konto_config_id')
+    configs = []
+    for idx, li in enumerate(items):
+        if not isinstance(li, dict) or li.get('amount') is None:
+            continue
+        net = float(li['amount'])
+        vat = round(net * float(li.get('vat_rate') or 0) / 100.0, 2)
+        cfg_id = line_over.get(idx, base_id)
+        cfg = (_repo.get_konto_by_id(cfg_id) or {}).get('konto') if cfg_id else None
+        configs.append({'net': net, 'vat': vat,
+                        'text': li.get('name') or li.get('description') or '',
+                        'config': cfg or base_konto})
+    if not configs:
+        return []
+    line_gross = round(sum(c['net'] + c['vat'] for c in configs), 2)
+    gross = row.get('invoice_value')
+    if gross is not None and abs(line_gross - float(gross)) > 0.01:
+        return None
+    return configs
 
 
 def _schedule_export_archive(invoice_ids):
