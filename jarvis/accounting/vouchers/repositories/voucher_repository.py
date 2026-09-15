@@ -5,9 +5,28 @@ import random
 import string
 from datetime import date, timedelta
 
+from dateutil.relativedelta import relativedelta
+
 from core.base_repository import BaseRepository
 
 logger = logging.getLogger('jarvis.vouchers.repository')
+
+
+def compute_voucher_dates(start_date, validity_months) -> tuple[date, date]:
+    """Anchor a voucher's issue and expiry dates.
+
+    ``issued_at`` = the given start_date (accepts a date or ISO string), or today
+    when none is provided. ``expires_at`` = issued_at + validity_months.
+
+    Used at BOTH creation (so pending/rejected/reissued vouchers show dates
+    immediately) and activation (which re-anchors on approval). Keeping the math
+    in one place means the two paths can never drift.
+    """
+    start = start_date or date.today()
+    if isinstance(start, str):
+        start = date.fromisoformat(start[:10])
+    expires = start + relativedelta(months=int(validity_months))
+    return start, expires
 
 
 def _generate_voucher_code() -> str:
@@ -53,6 +72,10 @@ class VoucherRepository(BaseRepository):
                client_email=None, form_submission_id=None,
                start_date=None, client_cif=None) -> dict:
         """Insert a new voucher. Retries on code collision. Returns full row."""
+        # Anchor issue/expiry dates at creation so they show on every surface
+        # (list, detail, PDF, CSV, email) even while the voucher is still
+        # pending approval. activate_voucher() later re-anchors on approval.
+        issued_at, expires_at = compute_voucher_dates(start_date, validity_months)
         for attempt in range(5):
             code = _generate_voucher_code()
             try:
@@ -62,9 +85,9 @@ class VoucherRepository(BaseRepository):
                          car_vin, validity_months, issued_by_user_id, voucher_type,
                          value_lei, discount_code, discount_percentage, service_items,
                          status, approver_user_id, notes, client_email, form_submission_id,
-                         start_date, client_cif)
+                         start_date, client_cif, issued_at, expires_at)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                            'pending_approval', %s, %s, %s, %s, %s, %s)
+                            'pending_approval', %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING *
                 ''', (
                     company_id, code, client_name, contract_number,
@@ -72,7 +95,7 @@ class VoucherRepository(BaseRepository):
                     value_lei, discount_code, discount_percentage,
                     json.dumps(service_items) if service_items else None,
                     approver_user_id, notes, client_email, form_submission_id,
-                    start_date, client_cif,
+                    start_date, client_cif, issued_at, expires_at,
                 ), returning=True)
                 return row
             except Exception as e:
