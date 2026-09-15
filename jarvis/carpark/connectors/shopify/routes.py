@@ -2,6 +2,7 @@
 """Shopify connector API routes."""
 import json
 import logging
+from datetime import datetime, timezone
 from functools import wraps
 
 from flask import request, jsonify
@@ -17,6 +18,7 @@ from core.utils.api_helpers import api_login_required, admin_required
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.photo_repository import PhotoRepository
 from carpark.repositories.publishing_repository import PublishingRepository
+from carpark.connectors.listing_freshness import compute_listing_freshness
 
 logger = logging.getLogger('jarvis.shopify.routes')
 
@@ -239,11 +241,16 @@ def unpublish_vehicle(vid):
 @api_login_required
 def vehicle_status(vid):
     connector = _get_single_account()
+    vehicle = _vehicle_repo.get_by_id(vid)
+    v_updated = vehicle.get('updated_at') if vehicle else None
     if not connector:
-        return jsonify({'success': True, 'listing': None})
+        return jsonify({'success': True, 'listing': None,
+                        'freshness': 'not_published', 'vehicle_updated_at': v_updated})
     platform_id = ensure_platform(_pub_repo, _parse_json(connector, 'config').get('store_domain', ''))
     listing = _pub_repo.get_listing_by_vehicle_platform(vid, platform_id)
-    return jsonify({'success': True, 'listing': listing})
+    freshness = compute_listing_freshness(listing, v_updated, datetime.now(timezone.utc))
+    return jsonify({'success': True, 'listing': listing,
+                    'freshness': freshness, 'vehicle_updated_at': v_updated})
 
 
 @shopify_bp.route('/api/publish-bulk', methods=['POST'])
