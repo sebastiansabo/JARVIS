@@ -1,10 +1,9 @@
-import type { ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ExternalLink, Globe, Loader2, Undo2 } from 'lucide-react'
+import { Globe, Loader2, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { shopifyApi } from '@/api/shopify'
+import { ListingFreshness } from './ListingFreshness'
 
 // ── Shopify publish control (status chip + publish/retract button) ──
 export function ShopifyPublishControl({
@@ -59,51 +58,15 @@ export function ShopifyPublishControl({
 
   const isMutating = publishMutation.isPending || unpublishMutation.isPending
 
-  let chip: ReactNode = null
-  if (!isLoading) {
-    if (!listing) {
-      chip = (
-        <Badge variant="secondary" className="font-normal">
-          Nepublicat
-        </Badge>
-      )
-    } else if (listing.status === 'published') {
-      chip = (
-        <Badge
-          variant="secondary"
-          className="gap-1 font-normal bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-        >
-          Publicat
-          {listing.external_url && (
-            <a
-              href={listing.external_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center hover:underline"
-            >
-              <ExternalLink className="h-3 w-3" />
-            </a>
-          )}
-        </Badge>
-      )
-    } else if (listing.status === 'archived') {
-      chip = (
-        <Badge variant="secondary" className="font-normal">
-          Arhivat
-        </Badge>
-      )
-    } else {
-      chip = (
-        <Badge variant="outline" className="font-normal">
-          {listing.status}
-        </Badge>
-      )
-    }
-  }
-
   return (
     <div className="flex items-center gap-2">
-      {chip}
+      {!isLoading && (
+        <ListingFreshness
+          freshness={data?.freshness ?? 'not_published'}
+          lastSync={listing?.last_sync}
+          expiresAt={listing?.expires_at}
+        />
+      )}
       {canEdit && (
         <Button
           size="sm"

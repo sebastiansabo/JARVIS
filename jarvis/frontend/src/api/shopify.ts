@@ -26,6 +26,11 @@ export const shopifyApi = {
     api.post<{ success: boolean; saved: number }>(`${BASE}/taxonomy`, { mappings }),
   publishVehicle: (vid: number) => api.post<{ success: boolean; external_id?: string; external_url?: string; warnings?: string[]; error?: string }>(`${BASE}/vehicles/${vid}/publish`, {}),
   unpublishVehicle: (vid: number) => api.post<{ success: boolean; error?: string }>(`${BASE}/vehicles/${vid}/unpublish`, {}),
-  vehicleStatus: (vid: number) => api.get<{ success: boolean; listing: { status: string; external_url?: string } | null }>(`${BASE}/vehicles/${vid}/status`),
+  vehicleStatus: (vid: number) => api.get<{
+    success: boolean
+    listing: { status: string; external_url?: string; last_sync?: string | null; published_at?: string | null; expires_at?: string | null; error_message?: string | null } | null
+    freshness: 'not_published' | 'up_to_date' | 'stale' | 'expired' | 'inactive' | 'error'
+    vehicle_updated_at?: string | null
+  }>(`${BASE}/vehicles/${vid}/status`),
   publishBulk: (vehicleIds?: number[]) => api.post<{ success: boolean; published: number; results: Array<{ vehicle_id: number; success: boolean; error?: string }> }>(`${BASE}/publish-bulk`, vehicleIds ? { vehicle_ids: vehicleIds } : {}),
 }
