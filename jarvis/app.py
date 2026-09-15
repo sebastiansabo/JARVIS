@@ -215,6 +215,9 @@ def _register_blueprints(flask_app: Flask):
     from accounting.vouchers import vouchers_bp
     flask_app.register_blueprint(vouchers_bp)
 
+    from accounting.cost_centers import cost_centers_bp
+    flask_app.register_blueprint(cost_centers_bp)
+
     from core.drive import drive_bp
     flask_app.register_blueprint(drive_bp)
 
