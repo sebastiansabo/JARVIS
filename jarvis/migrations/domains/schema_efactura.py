@@ -142,6 +142,15 @@ def create_schema_efactura(conn, cursor):
                 ALTER TABLE efactura_invoices ADD COLUMN konto_per_line BOOLEAN NOT NULL DEFAULT FALSE;
                 ALTER TABLE efactura_invoices ADD COLUMN konto_line_map JSONB;
             END IF;
+            -- Per-allocation zones staged at allocation (Phase 4 / Per alocare):
+            -- {line_index: [{department, subdepartment, value, konto_config_id}]}. On Send-to-Module
+            -- each zone becomes an `allocations` row (with its konto_config_id).
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'efactura_invoices' AND column_name = 'konto_alloc_map'
+            ) THEN
+                ALTER TABLE efactura_invoices ADD COLUMN konto_alloc_map JSONB;
+            END IF;
         END $$;
     ''')
 

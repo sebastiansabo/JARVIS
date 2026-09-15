@@ -1647,6 +1647,22 @@ def create_schema_incremental(conn, cursor):
     ''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_line_konto_config ON invoice_line_konto_override(konto_config_id)")
 
+    # ── allocations.konto_config_id: per-ALLOCATION-zone EuroFib schema (Phase 4 / Per alocare) ──
+    # Each allocation zone (department split of a line) can post to its own preset. NULL = fall back
+    # to the invoice's base/active schema. Added here (after supplier_konto_config exists) so the FK
+    # is valid even though `allocations` is created earlier in schema_core.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'allocations' AND column_name = 'konto_config_id') THEN
+                ALTER TABLE allocations ADD COLUMN konto_config_id INTEGER
+                    REFERENCES supplier_konto_config(id) ON DELETE SET NULL;
+            END IF;
+        END $$;
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_allocations_konto_config ON allocations(konto_config_id)")
+
     # ── document_wml + chunks (Phase D) ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS document_wml (
