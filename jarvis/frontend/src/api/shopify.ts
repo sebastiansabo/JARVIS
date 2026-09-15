@@ -15,6 +15,31 @@ export interface TaxonomyPayload {
   mapping: Record<string, Record<string, { target_gid?: string; target_label?: string; shopify_attribute_gid?: string }>>
 }
 
+export interface FieldMapRow {
+  source_expr: string | null
+  target_namespace: string
+  target_key: string
+  target_type: string
+  transform: string
+  is_active: boolean
+  last_seen_in_store: boolean
+}
+
+export interface SchemaDrift {
+  new: { namespace: string; key: string; type: string }[]
+  stale: { target_namespace: string; target_key: string }[]
+  type_changed: { target_namespace: string; target_key: string; map_type: string; store_type: string }[]
+  ok: number
+}
+
+export interface SchemaPayload {
+  success: boolean
+  field_map: FieldMapRow[]
+  value_map: Record<string, Record<string, string>>
+  store_defs: Record<string, string>
+  drift: Partial<SchemaDrift>
+}
+
 export const shopifyApi = {
   getAccounts: async () => (await api.get<{ success: boolean; accounts: ShopifyAccount[] }>(`${BASE}/config`)).accounts,
   saveAccount: (data: { id?: number; store_domain: string; client_id: string; client_secret?: string }) =>
@@ -33,4 +58,8 @@ export const shopifyApi = {
     vehicle_updated_at?: string | null
   }>(`${BASE}/vehicles/${vid}/status`),
   publishBulk: (vehicleIds?: number[]) => api.post<{ success: boolean; published: number; results: Array<{ vehicle_id: number; success: boolean; error?: string }> }>(`${BASE}/publish-bulk`, vehicleIds ? { vehicle_ids: vehicleIds } : {}),
+  getSchema: () => api.get<SchemaPayload>(`${BASE}/schema`),
+  saveSchema: (field_entries: Partial<FieldMapRow>[], value_entries: { dimension: string; source_value: string; ro_value: string }[]) =>
+    api.post<{ success: boolean; saved: number }>(`${BASE}/schema`, { field_entries, value_entries }),
+  syncSchema: () => api.post<{ success: boolean; drift: Partial<SchemaDrift> }>(`${BASE}/schema/sync`, {}),
 }
