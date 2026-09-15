@@ -618,6 +618,24 @@ def create_schema_carpark(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vl_platform ON carpark_vehicle_listings(platform_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vl_status ON carpark_vehicle_listings(status)')
 
+    # --- Listing auto-update schedule: per-vehicle+platform cadence config ---
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_listing_schedules (
+            id SERIAL PRIMARY KEY,
+            vehicle_id INTEGER NOT NULL REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            platform_type VARCHAR(20) NOT NULL,
+            cadence VARCHAR(16) NOT NULL DEFAULT 'manual',
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            next_run_at TIMESTAMP,
+            last_run_at TIMESTAMP,
+            last_result TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (vehicle_id, platform_type)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_cls_due ON carpark_listing_schedules(next_run_at) WHERE enabled')
+
     # --- Shopify connector: CarPark<->Shopify taxonomy value mapping ---
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS carpark_shopify_taxonomy_map (
