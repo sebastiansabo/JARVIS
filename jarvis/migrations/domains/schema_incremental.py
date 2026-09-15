@@ -1595,6 +1595,33 @@ def create_schema_incremental(conn, cursor):
     ''')
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_konto_override_config ON invoice_konto_override(konto_config_id)")
 
+    # ── invoice_konto_override.per_line: per-line schema mode (Phase 3) ──
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'invoice_konto_override' AND column_name = 'per_line') THEN
+                ALTER TABLE invoice_konto_override ADD COLUMN per_line BOOLEAN NOT NULL DEFAULT FALSE;
+            END IF;
+        END $$;
+    ''')
+
+    # ── invoice_line_konto_override: per-LINE preset choice (Phase 3) ──
+    # One row per (invoice, line_index). When an invoice is per_line, each line posts its net+VAT
+    # to this preset's expense account; lines without a row fall back to the invoice's base schema.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS invoice_line_konto_override (
+            invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+            line_index INTEGER NOT NULL,
+            konto_config_id INTEGER NOT NULL REFERENCES supplier_konto_config(id) ON DELETE CASCADE,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (invoice_id, line_index)
+        )
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_invoice_line_konto_config ON invoice_line_konto_override(konto_config_id)")
+
     # ── document_wml + chunks (Phase D) ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS document_wml (
