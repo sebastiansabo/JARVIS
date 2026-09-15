@@ -73,7 +73,7 @@ export function ListingScheduleSelect({
           onValueChange={(v) => mutation.mutate(v)}
           disabled={isLoading || mutation.isPending}
         >
-          <SelectTrigger className="w-[140px]">
+          <SelectTrigger size="sm" className="w-44">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>

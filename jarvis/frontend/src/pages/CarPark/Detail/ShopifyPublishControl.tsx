@@ -71,6 +71,7 @@ export function ShopifyPublishControl({
         <Button
           size="sm"
           variant={isPublished ? 'outline' : 'default'}
+          className="w-44"
           disabled={isMutating || isLoading}
           onClick={() => (isPublished ? unpublishMutation.mutate() : publishMutation.mutate())}
         >
