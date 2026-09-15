@@ -4,6 +4,7 @@ Invoice Repository
 Database operations for e-Factura invoices and related entities.
 """
 
+import json
 from datetime import date
 from decimal import Decimal
 from typing import Optional, List, Dict, Any, Tuple
@@ -152,13 +153,16 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
         subdepartment_override_2: Optional[str] = None,
         observer_user_ids: Optional[List[int]] = None,
         konto_config_id='__keep__',
+        konto_per_line='__keep__',
+        konto_line_map='__keep__',
     ) -> bool:
         """Update invoice-level overrides for Type, Department, Subdepartment, Observers, and the
-        EuroFib schema (konto_config_id).
+        EuroFib schema (konto_config_id / per-line mode).
 
         Passing observer_user_ids=None leaves observers untouched; an empty list clears them.
         Passing konto_config_id='__keep__' (default) leaves the schema untouched; an int sets it,
-        None clears it.
+        None clears it. konto_per_line (bool) + konto_line_map ({line_index: konto_config_id})
+        drive per-line mode; '__keep__' leaves each untouched.
         """
         try:
             sets = [
@@ -183,6 +187,12 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
             if konto_config_id != self._KEEP:
                 sets.append("konto_config_id = %s")
                 params.append(konto_config_id)
+            if konto_per_line != self._KEEP:
+                sets.append("konto_per_line = %s")
+                params.append(bool(konto_per_line))
+            if konto_line_map != self._KEEP:
+                sets.append("konto_line_map = %s")
+                params.append(json.dumps(konto_line_map) if konto_line_map else None)
             sets.append("updated_at = NOW()")
             params.append(invoice_id)
             self.execute(f"UPDATE efactura_invoices SET {', '.join(sets)} WHERE id = %s", tuple(params))
@@ -1016,6 +1026,8 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
                 i.subdepartment_override_2,
                 i.observer_user_ids,
                 i.konto_config_id,
+                i.konto_per_line,
+                i.konto_line_map,
                 i.xml_content,
                 sm.department as mapping_department,
                 sm.subdepartment as mapping_subdepartment,
