@@ -250,7 +250,7 @@ class InvoiceAllocationService:
             resolver = SupplierResolver(sup_repo)
             needs_schema = []
             for inv in invoices:
-                if inv.get('konto_config_id') or inv.get('konto_per_line') or not inv.get('company_id'):
+                if inv.get('konto_config_id') or inv.get('konto_per_line') or inv.get('konto_alloc_map') or not inv.get('company_id'):
                     continue
                 res = resolver.resolve(name=inv.get('partner_name'), cui=inv.get('partner_cif'))
                 if not res.supplier_id:
@@ -285,14 +285,19 @@ class InvoiceAllocationService:
             # Step 3b: Carry the staged EuroFib schema onto each new invoice — a single per-invoice
             # override, or per-line mode (base schema + line→schema map). Drives the Procesare export.
             konto_by_efactura = {inv['id']: inv for inv in invoices
-                                 if inv.get('konto_config_id') or inv.get('konto_per_line')}
+                                 if inv.get('konto_config_id') or inv.get('konto_per_line') or inv.get('konto_alloc_map')}
             if konto_by_efactura:
                 for efactura_id, jarvis_id in mappings:
                     inv = konto_by_efactura.get(efactura_id)
                     if not inv:
                         continue
                     try:
-                        if inv.get('konto_per_line'):
+                        if inv.get('konto_alloc_map'):
+                            # Per alocare: zone schemas live on the allocations rows (created in
+                            # _bulk_create_main_invoices). Set only the base/credit schema, if chosen.
+                            if inv.get('konto_config_id'):
+                                sup_repo.set_invoice_override(jarvis_id, inv['konto_config_id'])
+                        elif inv.get('konto_per_line'):
                             sup_repo.set_invoice_per_line(jarvis_id, True, konto_config_id=inv.get('konto_config_id'))
                             for line_index, kc in (inv.get('konto_line_map') or {}).items():
                                 if kc:
@@ -578,6 +583,8 @@ class InvoiceAllocationService:
                     responsible_user_ids[row['name_lower']] = row['id']
 
             for inv, (_, jarvis_id) in zip(invoices_to_create, mappings):
+                if inv.get('konto_alloc_map'):
+                    continue  # Per alocare — zones create their own allocations below.
                 company_name = inv.get('company_name')
                 department = inv.get('department')
                 has_second_dept = bool(inv.get('department_override_2'))
@@ -689,6 +696,48 @@ class InvoiceAllocationService:
                 logger.info(
                     f"Created {len(alloc_values)} allocations for e-Factura invoices"
                 )
+
+            # Per-allocation zones (Phase 4 / Per alocare): one `allocations` row per zone, each with
+            # its own value + konto_config_id + line_item_index; the invoice is budgeted (per_line).
+            for inv, (_, jarvis_id) in zip(invoices_to_create, mappings):
+                alloc_map = inv.get('konto_alloc_map')
+                company_name = inv.get('company_name')
+                if not alloc_map or not company_name:
+                    continue
+                brand = inv.get('brand')
+                total_net = float(inv.get('total_without_vat') or inv.get('total_amount') or 0)
+                zone_rows, zone_params = [], []
+                for line_index, zones in alloc_map.items():
+                    for z in (zones or []):
+                        dept = z.get('department')
+                        if not dept:
+                            continue
+                        value = float(z.get('value') or 0)
+                        pct = round(value / total_net * 100, 4) if total_net else 0
+                        cursor.execute("""
+                            SELECT ds.manager, u.id AS user_id FROM department_structure ds
+                            LEFT JOIN users u ON LOWER(u.name) = LOWER(ds.manager)
+                            WHERE ds.company = %s AND ds.department = %s
+                            ORDER BY CASE WHEN ds.subdepartment = %s THEN 0 ELSE 1 END, ds.id LIMIT 1
+                        """, (company_name, dept, z.get('subdepartment')))
+                        rr = cursor.fetchone()
+                        zone_rows.append("(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)")
+                        zone_params.extend([
+                            jarvis_id, company_name, brand, dept, z.get('subdepartment'),
+                            pct, value, (rr['manager'] if rr else None), (rr['user_id'] if rr else None),
+                            int(line_index), z.get('konto_config_id'),
+                        ])
+                if zone_rows:
+                    cursor.execute(f"""
+                        INSERT INTO allocations (
+                            invoice_id, company, brand, department, subdepartment,
+                            allocation_percent, allocation_value, responsible, responsible_user_id,
+                            line_item_index, konto_config_id
+                        ) VALUES {', '.join(zone_rows)}
+                    """, zone_params)
+                    cursor.execute(
+                        "UPDATE invoices SET allocation_mode = 'per_line', status = 'Bugetata' WHERE id = %s",
+                        (jarvis_id,))
 
             conn.commit()
 
