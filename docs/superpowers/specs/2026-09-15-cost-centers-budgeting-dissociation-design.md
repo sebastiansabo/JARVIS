@@ -79,9 +79,15 @@ comparison to BAB integers is a pad/strip at the boundary only.
 4. Home: **Finance/Accounting**, admin-gated.
 5. Backfill historical `Bugetata` invoices where department→cost-center is unambiguous; null +
    report the rest (non-destructive).
-6. New allocations: cost center **optional** at first, tightened to **required for `Bugetata`**
-   once seeded + mapped.
+6. New allocations: cost center **optional** at first; becomes **required to reach `Bugetata`**
+   only at a **later gate, once map coverage is proven** (not at end of Phase 2).
 7. Ship **Phases 1–3**; Phase 4 decided later.
+8. **Seed authority: in-app CRUD is the source of truth.** The Excel is a **one-time seed**;
+   re-import is explicit/opt-in and must never clobber in-app edits.
+9. **Default map: seed exact name-matches only.** `cost_center → structure_node` auto-created where
+   names match unambiguously; accounting fills the remainder (incl. the ~10% divergences) in-app.
+10. **Reinvoice lines: covered by the parent allocation's cost center** for now — no
+    `cost_center_id` on `reinvoice_destinations` until a real split need appears.
 
 ## 5. Data model
 
@@ -122,8 +128,8 @@ ALTER TABLE allocations ADD COLUMN cost_center_id INTEGER
 ```
 The existing `company/brand/department/subdepartment` + `responsible/responsible_user_id` columns
 stay exactly as they are and keep driving notification. `cost_center_id` is the new **budgeting**
-key. (Same additive treatment for `reinvoice_destinations` deferred until needed — see Open
-Questions.)
+key. (`reinvoice_destinations` get **no** `cost_center_id` — reinvoiced lines inherit the parent
+allocation's cost center, per decision 10.)
 
 ## 6. Resolution / data flow
 
@@ -176,8 +182,10 @@ export kostenstelle = allocations.cost_center_id.code  ('0211')  when present
   explicit list.
 
 **Phase 1 — Cost Center dimension + Finance "Centre de cost"** *(standalone; zero invoice impact)*
-- Migration: `cost_centers` + `cost_center_structure_map` + Excel seed.
-- Repository + routes: list/CRUD/deactivate per company; import/re-seed; get/set default map.
+- Migration: `cost_centers` + `cost_center_structure_map` + **one-time** Excel seed (in-app CRUD
+  authoritative thereafter; re-import is opt-in and never clobbers edits).
+- Repository + routes: list/CRUD/deactivate per company; opt-in import; get/set default map.
+  Auto-seed the default map for **exact name-matches only**; accounting fills the rest in-app.
 - Frontend Finance section. Admin-gated.
 
 **Phase 2 — Attach cost center to allocations** *(the actual dissociation)*
@@ -185,6 +193,8 @@ export kostenstelle = allocations.cost_center_id.code  ('0211')  when present
 - AllocationEditor cost-center picker + map-driven auto-fill; independent responsable override.
 - Backfill `Bugetata` invoices where department→cost-center is unambiguous via the map; null +
   report the rest. Non-destructive.
+- `cost_center_id` stays **optional** through Phase 2; a later gate (after coverage is proven)
+  makes it required to reach `Bugetata`.
 - Notification untouched.
 
 **Phase 3 — EuroFib/export from the allocation's cost center**
@@ -225,16 +235,16 @@ Phases 1–3 solve the 90/10 inconsistency. Each phase is independently shippabl
 - Phase 3: EuroFib export golden-file test — kostenstelle from cost center when present, supplier
   fallback when null.
 
-## 11. Open questions (for review)
+## 11. Resolved decisions (2026-09-15)
 
-1. **Reinvoice destinations** — do reinvoiced lines also need their own `cost_center_id`, or is the
-   parent allocation's cost center sufficient for now?
-2. **Seed authority** — is the Excel the ongoing source of truth (re-import overwrites), or does the
-   in-app CRUD become authoritative after the first seed?
-3. **Default-map coverage** — should Phase 1 ship the full 90% map, or seed only the exact-name
-   matches and let accounting fill the rest in-app?
-4. **Required-ness timing** — at which point does `cost_center_id` become mandatory to reach
-   `Bugetata` (end of Phase 2, or a later gate once coverage is proven)?
+1. **Reinvoice destinations** — no own `cost_center_id`; reinvoiced lines inherit the parent
+   allocation's cost center (revisit if a real split need appears).
+2. **Seed authority** — **in-app CRUD is the source of truth.** Excel is a one-time seed; re-import
+   is opt-in and never clobbers in-app edits.
+3. **Default-map coverage** — Phase 1 auto-seeds the map for **exact name-matches only**;
+   accounting fills the remaining (incl. the ~10% divergences) in-app.
+4. **Required-ness timing** — `cost_center_id` stays optional through Phase 2 and becomes required
+   to reach `Bugetata` only at a **later gate, once map coverage is proven**.
 
 ## 12. Key references (as-is code)
 
