@@ -2113,7 +2113,7 @@ function ListingsTab({
           </div>
           <div className="flex flex-col items-end gap-2">
             <ShopifyPublishControl vehicleId={vehicleId} canEdit={canEdit} />
-            {canEdit && <ListingScheduleSelect vehicleId={vehicleId} platform="shopify" />}
+            <ListingScheduleSelect vehicleId={vehicleId} platform="shopify" />
           </div>
         </Card>
       )}
