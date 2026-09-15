@@ -52,6 +52,7 @@ def test_tick_processes_due_and_marks_run(monkeypatch):
     sch = {'id': 9, 'vehicle_id': 5, 'cadence': 'daily'}
     with patch.object(A, 'build_shopify_connector', return_value=MagicMock(platform_id=7)), \
          patch.object(A, '_taxo_map', return_value={}), \
+         patch.object(A, '_config_autosync_enabled', return_value=True), \
          patch.object(A, 'ListingScheduleRepository') as SR, \
          patch.object(A, 'VehicleRepository') as VR, \
          patch.object(A, 'resync_shopify_vehicle', return_value='pushed') as RS:
@@ -63,10 +64,60 @@ def test_tick_processes_due_and_marks_run(monkeypatch):
 
 
 def test_autosync_enabled_env_gate(monkeypatch):
+    """The env gate alone (config gate patched open) still drives autosync_enabled()."""
+    with patch.object(A, '_config_autosync_enabled', return_value=True):
+        monkeypatch.delenv('ENABLE_LISTING_AUTOSYNC', raising=False)
+        assert A.autosync_enabled() is False
+        monkeypatch.setenv('ENABLE_LISTING_AUTOSYNC', 'true')
+        assert A.autosync_enabled() is True
+
+
+def test_env_gate_helper(monkeypatch):
     monkeypatch.delenv('ENABLE_LISTING_AUTOSYNC', raising=False)
-    assert A.autosync_enabled() is False
+    assert A._env_gate() is False
     monkeypatch.setenv('ENABLE_LISTING_AUTOSYNC', 'true')
-    assert A.autosync_enabled() is True
+    assert A._env_gate() is True
+
+
+def test_config_autosync_enabled_no_account_defaults_true():
+    with patch.object(A, '_get_single_account', return_value=None):
+        assert A._config_autosync_enabled() is True
+
+
+def test_config_autosync_enabled_reads_flag_false():
+    with patch.object(A, '_get_single_account', return_value={'id': 1, 'config': {}}), \
+         patch.object(A, '_parse_json', return_value={'autosync_enabled': False}):
+        assert A._config_autosync_enabled() is False
+
+
+def test_config_autosync_enabled_flag_absent_defaults_true():
+    with patch.object(A, '_get_single_account', return_value={'id': 1, 'config': {}}), \
+         patch.object(A, '_parse_json', return_value={}):
+        assert A._config_autosync_enabled() is True
+
+
+def test_config_autosync_enabled_fails_open_on_error():
+    with patch.object(A, '_get_single_account', side_effect=RuntimeError('db down')):
+        assert A._config_autosync_enabled() is True
+
+
+def test_autosync_enabled_truth_table(monkeypatch):
+    # env true + config flag absent (defaults True) -> enabled True
+    monkeypatch.setenv('ENABLE_LISTING_AUTOSYNC', 'true')
+    with patch.object(A, '_config_autosync_enabled', return_value=True):
+        assert A.autosync_enabled() is True
+
+    # env true + config flag False -> enabled False
+    monkeypatch.setenv('ENABLE_LISTING_AUTOSYNC', 'true')
+    with patch.object(A, '_config_autosync_enabled', return_value=False):
+        assert A.autosync_enabled() is False
+
+    # env false -> False regardless of config flag
+    monkeypatch.delenv('ENABLE_LISTING_AUTOSYNC', raising=False)
+    with patch.object(A, '_config_autosync_enabled', return_value=True):
+        assert A.autosync_enabled() is False
+    with patch.object(A, '_config_autosync_enabled', return_value=False):
+        assert A.autosync_enabled() is False
 
 
 def test_tick_noop_when_disabled(monkeypatch):
@@ -86,6 +137,7 @@ def test_tick_continues_after_one_schedule_fails(monkeypatch):
     bad_sch = {'id': 9, 'vehicle_id': 5, 'cadence': 'daily'}
     with patch.object(A, 'build_shopify_connector', return_value=MagicMock(platform_id=7)), \
          patch.object(A, '_taxo_map', return_value={}), \
+         patch.object(A, '_config_autosync_enabled', return_value=True), \
          patch.object(A, 'ListingScheduleRepository') as SR, \
          patch.object(A, 'VehicleRepository') as VR, \
          patch.object(A, 'resync_shopify_vehicle', side_effect=[RuntimeError('boom'), 'pushed']) as RS:
@@ -125,7 +177,8 @@ def test_instant_noop_when_disabled(monkeypatch):
 
 def test_instant_spawns_for_instant_schedule(monkeypatch):
     monkeypatch.setenv('ENABLE_LISTING_AUTOSYNC', 'true')
-    with patch.object(A, 'ListingScheduleRepository') as SR, patch.object(A, 'threading') as T:
+    with patch.object(A, '_config_autosync_enabled', return_value=True), \
+         patch.object(A, 'ListingScheduleRepository') as SR, patch.object(A, 'threading') as T:
         SR.return_value.get.return_value = {'enabled': True, 'cadence': 'instant'}
         A.maybe_instant_resync(5)
         T.Thread.assert_called_once()
@@ -133,7 +186,8 @@ def test_instant_spawns_for_instant_schedule(monkeypatch):
 
 def test_instant_noop_for_non_instant(monkeypatch):
     monkeypatch.setenv('ENABLE_LISTING_AUTOSYNC', 'true')
-    with patch.object(A, 'ListingScheduleRepository') as SR, patch.object(A, 'threading') as T:
+    with patch.object(A, '_config_autosync_enabled', return_value=True), \
+         patch.object(A, 'ListingScheduleRepository') as SR, patch.object(A, 'threading') as T:
         SR.return_value.get.return_value = {'enabled': True, 'cadence': 'daily'}
         A.maybe_instant_resync(5)
         T.Thread.assert_not_called()
