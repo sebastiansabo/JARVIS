@@ -114,3 +114,26 @@ def test_tick_not_registered_when_disabled(monkeypatch):
     monkeypatch.delenv('ENABLE_LISTING_AUTOSYNC', raising=False)
     C._register_listing_autosync()
     assert sched.get_job('listing_autosync') is None
+
+
+def test_instant_noop_when_disabled(monkeypatch):
+    monkeypatch.delenv('ENABLE_LISTING_AUTOSYNC', raising=False)
+    with patch.object(A, 'threading') as T:
+        A.maybe_instant_resync(5)
+        T.Thread.assert_not_called()
+
+
+def test_instant_spawns_for_instant_schedule(monkeypatch):
+    monkeypatch.setenv('ENABLE_LISTING_AUTOSYNC', 'true')
+    with patch.object(A, 'ListingScheduleRepository') as SR, patch.object(A, 'threading') as T:
+        SR.return_value.get.return_value = {'enabled': True, 'cadence': 'instant'}
+        A.maybe_instant_resync(5)
+        T.Thread.assert_called_once()
+
+
+def test_instant_noop_for_non_instant(monkeypatch):
+    monkeypatch.setenv('ENABLE_LISTING_AUTOSYNC', 'true')
+    with patch.object(A, 'ListingScheduleRepository') as SR, patch.object(A, 'threading') as T:
+        SR.return_value.get.return_value = {'enabled': True, 'cadence': 'daily'}
+        A.maybe_instant_resync(5)
+        T.Thread.assert_not_called()
