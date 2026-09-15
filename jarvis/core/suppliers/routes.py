@@ -146,11 +146,13 @@ def api_list_suppliers():
     if not _check_supplier_perm('view'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
     company_id = request.args.get('company_id')
+    only_deleted = request.args.get('deleted') in ('1', 'true', 'True')
     suppliers = _repo.list_master(
         search=request.args.get('search'),
         limit=min(int(request.args.get('limit', 100)), 500),
         offset=int(request.args.get('offset', 0)),
-        company_id=int(company_id) if company_id else None)
+        company_id=int(company_id) if company_id else None,
+        only_deleted=only_deleted)
     return jsonify({'success': True, 'suppliers': suppliers})
 
 
@@ -194,6 +196,45 @@ def api_update_supplier(supplier_id):
     data = request.get_json(force=True) or {}
     fields = {k: v for k, v in data.items() if k not in {'id', 'supplier_id', 'created_by', 'created_at', 'updated_at'}}
     _repo.update_master(supplier_id, **fields)
+    return jsonify({'success': True})
+
+
+@suppliers_bp.route('/api/suppliers/<int:supplier_id>', methods=['DELETE'])
+@login_required
+def api_delete_supplier(supplier_id):
+    """Soft-delete a Furnizor (gated on 'edit'). Hides it from lists/resolver; recoverable via
+    restore. The who/when is recorded in supplier_audit_log."""
+    if not _check_supplier_perm('edit'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    deleted = _repo.soft_delete_supplier(
+        supplier_id,
+        actor_user_id=getattr(current_user, 'id', None),
+        actor_name=getattr(current_user, 'name', None))
+    if not deleted:
+        return jsonify({'success': False, 'error': 'Supplier not found or already deleted'}), 404
+    return jsonify({'success': True})
+
+
+@suppliers_bp.route('/api/suppliers/<int:supplier_id>/restore', methods=['POST'])
+@login_required
+def api_restore_supplier(supplier_id):
+    """Restore a soft-deleted Furnizor (gated on 'edit'). 409 if another active supplier has
+    since claimed this one's normalized CUI."""
+    if not _check_supplier_perm('edit'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    try:
+        restored = _repo.restore_supplier(
+            supplier_id,
+            actor_user_id=getattr(current_user, 'id', None),
+            actor_name=getattr(current_user, 'name', None))
+    except pg_errors.UniqueViolation:
+        return jsonify({'success': False, 'error': 'CUI now used by another supplier — resolve the conflict first'}), 409
+    except Exception as exc:
+        if _is_unique_violation(exc):
+            return jsonify({'success': False, 'error': 'CUI now used by another supplier — resolve the conflict first'}), 409
+        raise
+    if not restored:
+        return jsonify({'success': False, 'error': 'Supplier not found or not deleted'}), 404
     return jsonify({'success': True})
 
 
@@ -316,7 +357,10 @@ def api_activate_preset(supplier_id, preset_id):
 def api_delete_preset(supplier_id, preset_id):
     if not _check_supplier_perm('edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
-    if not _repo.delete_preset(preset_id):
+    if not _repo.delete_preset(
+            preset_id,
+            actor_user_id=getattr(current_user, 'id', None),
+            actor_name=getattr(current_user, 'name', None)):
         return jsonify({'success': False, 'error': 'Preset not found'}), 404
     return jsonify({'success': True})
 

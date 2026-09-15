@@ -21,6 +21,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { organizationApi } from '@/api/organization'
 import { suppliersApi, type MasterSupplier, type BudgetedInvoice, type KontoConfig, type KontoPreset, type EfacturaPartner } from '@/api/suppliers'
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import type { CompanyWithBrands } from '@/types/organization'
 
 /* ── worklist grouped by supplier ── */
@@ -281,9 +282,11 @@ export default function Procesare() {
   const invoicesLoading = isProcessedView ? procesateQ.isLoading : bugetataQ.isLoading
   const bugetataCount = bugetataQ.data?.invoices.length ?? 0
   const procesateCount = procesateQ.data?.invoices.length ?? 0
+  // Furnizori tab shows active suppliers by default, or the soft-deleted ones ('Șterse').
+  const [masterView, setMasterView] = useState<'active' | 'deleted'>('active')
   const { data: masters, isLoading: mastersLoading } = useQuery({
-    queryKey: ['supplier-master', companyId, search],
-    queryFn: () => suppliersApi.list(companyId as number, search || undefined),
+    queryKey: ['supplier-master', companyId, search, masterView],
+    queryFn: () => suppliersApi.list(companyId as number, search || undefined, { deleted: masterView === 'deleted' }),
     enabled: !!companyId,
   })
 
@@ -436,6 +439,28 @@ export default function Procesare() {
   const [editorSupplier, setEditorSupplier] = useState<MasterSupplier | null>(null)
   const openEditor = (s: MasterSupplier) => setEditorSupplier(s)
 
+  // ── Delete / restore Furnizori (soft delete, gated on backend, recorded in audit log) ──
+  const [deleteSup, setDeleteSup] = useState<MasterSupplier | null>(null)
+  const deleteSupMut = useMutation({
+    mutationFn: (id: number) => suppliersApi.remove(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['supplier-master'] })
+      qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] })
+      setDeleteSup(null)
+      toast.success('Furnizor șters')
+    },
+    onError: () => toast.error('Nu s-a putut șterge furnizorul'),
+  })
+  const restoreSupMut = useMutation({
+    mutationFn: (id: number) => suppliersApi.restore(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['supplier-master'] })
+      qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] })
+      toast.success('Furnizor restaurat')
+    },
+    onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Nu s-a putut restaura furnizorul'),
+  })
+
   return (
     <div className="space-y-4">
       <PageHeader
@@ -509,6 +534,9 @@ export default function Procesare() {
                 </DropdownMenu>
               )}
             </div>
+          )}
+          {tab === 'master' && (
+            <Seg value={masterView} onChange={setMasterView} options={[['active', 'Active'], ['deleted', 'Șterse']] as const} />
           )}
         </div>
 
@@ -614,51 +642,90 @@ export default function Procesare() {
 
         <TabsContent value="master">
           <Card><CardContent className="p-0">
-            <Table>
-              <TableHeader><TableRow>
-                <TableHead>Name</TableHead><TableHead>CUI</TableHead>
-                <TableHead>Konto (D/C)</TableHead><TableHead>Gegenkonto (D/C)</TableHead>
-                <TableHead>Kostenstelle (D/C)</TableHead><TableHead>Extbeleg (D/C)</TableHead><TableHead>Klient</TableHead>
-                <TableHead className="w-10" /></TableRow></TableHeader>
-              <TableBody>
-                {(masters?.suppliers ?? []).map((s: MasterSupplier) => (
-                  <TableRow
-                    key={s.id}
-                    className="cursor-pointer hover:bg-muted/40"
-                    onClick={() => openEditor(s)}
-                  >
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        {s.name}
-                        {s.has_company_config === false && (
-                          <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground" title="Folosește configurația implicită a furnizorului">implicit</Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{s.cui ?? '-'}</TableCell>
-                    <TableCell>{`${s.konto_debit ?? '-'} / ${s.konto_credit ?? '-'}`}</TableCell>
-                    <TableCell>{`${s.gegenkonto_debit ?? '-'} / ${s.gegenkonto_credit ?? '-'}`}</TableCell>
-                    <TableCell>{`${s.kostenstelle_debit ?? '-'} / ${s.kostenstelle_credit ?? '-'}`}</TableCell>
-                    <TableCell>{`${s.extbeleg_debit ?? '-'} / ${s.extbeleg_credit ?? '-'}`}</TableCell>
-                    <TableCell>{s.klient ?? '-'}</TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        title="Editează konto"
-                        onClick={(e) => { e.stopPropagation(); openEditor(s) }}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {!mastersLoading && (masters?.suppliers ?? []).length === 0 && (
-                  <TableRow><TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">Niciun furnizor găsit</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
+            {masterView === 'deleted' ? (
+              <Table>
+                <TableHeader><TableRow>
+                  <TableHead>Name</TableHead><TableHead>CUI</TableHead>
+                  <TableHead>Șters de</TableHead><TableHead>Data ștergerii</TableHead>
+                  <TableHead className="w-28" /></TableRow></TableHeader>
+                <TableBody>
+                  {(masters?.suppliers ?? []).map((s: MasterSupplier) => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-medium">{s.name}</TableCell>
+                      <TableCell>{s.cui ?? '-'}</TableCell>
+                      <TableCell>{s.deleted_by_name ?? '-'}</TableCell>
+                      <TableCell className="whitespace-nowrap">{s.deleted_at ? new Date(s.deleted_at).toLocaleString('ro-RO') : '-'}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost" size="sm" className="h-7 gap-1.5"
+                          title="Restaurează furnizorul"
+                          onClick={() => restoreSupMut.mutate(s.id)}
+                          disabled={restoreSupMut.isPending}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" /> Restaurează
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!mastersLoading && (masters?.suppliers ?? []).length === 0 && (
+                    <TableRow><TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-8">Niciun furnizor șters</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            ) : (
+              <Table>
+                <TableHeader><TableRow>
+                  <TableHead>Name</TableHead><TableHead>CUI</TableHead>
+                  <TableHead>Konto (D/C)</TableHead><TableHead>Gegenkonto (D/C)</TableHead>
+                  <TableHead>Kostenstelle (D/C)</TableHead><TableHead>Extbeleg (D/C)</TableHead><TableHead>Klient</TableHead>
+                  <TableHead className="w-20" /></TableRow></TableHeader>
+                <TableBody>
+                  {(masters?.suppliers ?? []).map((s: MasterSupplier) => (
+                    <TableRow
+                      key={s.id}
+                      className="cursor-pointer hover:bg-muted/40"
+                      onClick={() => openEditor(s)}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          {s.name}
+                          {s.has_company_config === false && (
+                            <Badge variant="outline" className="text-[10px] font-normal text-muted-foreground" title="Folosește configurația implicită a furnizorului">implicit</Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>{s.cui ?? '-'}</TableCell>
+                      <TableCell>{`${s.konto_debit ?? '-'} / ${s.konto_credit ?? '-'}`}</TableCell>
+                      <TableCell>{`${s.gegenkonto_debit ?? '-'} / ${s.gegenkonto_credit ?? '-'}`}</TableCell>
+                      <TableCell>{`${s.kostenstelle_debit ?? '-'} / ${s.kostenstelle_credit ?? '-'}`}</TableCell>
+                      <TableCell>{`${s.extbeleg_debit ?? '-'} / ${s.extbeleg_credit ?? '-'}`}</TableCell>
+                      <TableCell>{s.klient ?? '-'}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button
+                            variant="ghost" size="icon" className="h-7 w-7"
+                            title="Editează konto"
+                            onClick={(e) => { e.stopPropagation(); openEditor(s) }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            title="Șterge furnizorul"
+                            onClick={(e) => { e.stopPropagation(); setDeleteSup(s) }}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!mastersLoading && (masters?.suppliers ?? []).length === 0 && (
+                    <TableRow><TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">Niciun furnizor găsit</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            )}
           </CardContent></Card>
         </TabsContent>
       </Tabs>
@@ -722,6 +789,17 @@ export default function Procesare() {
         company={selectedCompany}
         onOpenChange={(open) => { if (!open) setEditorSupplier(null) }}
       />
+
+      {/* ═══ Delete Furnizor (soft delete) confirmation ═══ */}
+      <ConfirmDialog
+        open={deleteSup !== null}
+        onOpenChange={(open) => { if (!open) setDeleteSup(null) }}
+        title="Șterge furnizorul"
+        description={`Furnizorul „${deleteSup?.name ?? ''}” va fi șters și nu va mai apărea în liste sau la rezolvarea facturilor. Îl poți restaura din „Șterse”. Acțiunea este înregistrată în jurnal.`}
+        confirmLabel="Șterge"
+        variant="destructive"
+        onConfirm={() => { if (deleteSup) deleteSupMut.mutate(deleteSup.id) }}
+      />
     </div>
   )
 }
@@ -750,6 +828,7 @@ function KontoEditorDialog({
   const qc = useQueryClient()
   const [draft, setDraft] = useState<PresetDraft | null>(null)
   const [replicateAll, setReplicateAll] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<KontoPreset | null>(null)
 
   const open = !!supplier && !!company
   const supplierId = supplier?.id ?? null
@@ -834,6 +913,7 @@ function KontoEditorDialog({
     setDraft((prev) => (prev ? { ...prev, konto: { ...prev.konto, [key]: value || null } } : prev))
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
@@ -870,7 +950,7 @@ function KontoEditorDialog({
                     <button
                       type="button"
                       title="Șterge schema"
-                      onClick={(e) => { e.stopPropagation(); deleteMut.mutate(p.id) }}
+                      onClick={(e) => { e.stopPropagation(); setPendingDelete(p) }}
                       className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -934,6 +1014,16 @@ function KontoEditorDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <ConfirmDialog
+      open={pendingDelete !== null}
+      onOpenChange={(o) => { if (!o) setPendingDelete(null) }}
+      title="Șterge schema"
+      description={`Schema „${pendingDelete?.name ?? ''}” va fi ștearsă definitiv. Acțiunea este înregistrată în jurnal.`}
+      confirmLabel="Șterge"
+      variant="destructive"
+      onConfirm={() => { if (pendingDelete) { deleteMut.mutate(pendingDelete.id); setPendingDelete(null) } }}
+    />
+    </>
   )
 }
 

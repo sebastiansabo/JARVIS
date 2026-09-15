@@ -169,3 +169,105 @@ def test_import_cui_collision_without_resolvable_master_is_skipped(monkeypatch):
     repo = _FakeRepo(raise_on_create=True, cui_hit=None)
     assert _run_import(monkeypatch, Resolution(None, 'none', 'none'), repo) == 'skipped'
     assert repo.aliased == [] and repo.bound == []  # nothing touched on skip
+
+
+# ── soft-delete / restore Furnizori + audit wiring (routes call the right repo methods,
+#    gate on 'edit', map missing→404 and CUI conflict→409). No DB: _repo is monkeypatched,
+#    routes are called via .__wrapped__ to bypass @login_required. ──
+from flask import Flask as _Flask  # noqa: E402
+
+_test_app = _Flask(__name__)
+
+
+def _fake_user(uid=7, name='Ana Pop'):
+    return type('U', (), {'id': uid, 'name': name, 'is_authenticated': True})()
+
+
+def test_delete_supplier_denied_without_edit(monkeypatch):
+    import core.suppliers.routes as r
+    monkeypatch.setattr(r, '_check_supplier_perm', lambda action: False)
+    with _test_app.test_request_context():
+        _resp, code = r.api_delete_supplier.__wrapped__(5)
+    assert code == 403
+
+
+def test_delete_supplier_soft_deletes_with_actor(monkeypatch):
+    import core.suppliers.routes as r
+    monkeypatch.setattr(r, '_check_supplier_perm', lambda action: action == 'edit')
+    monkeypatch.setattr(r, 'current_user', _fake_user(42, 'Ana'), raising=False)
+    seen = {}
+    def fake(sid, actor_user_id=None, actor_name=None):
+        seen.update(sid=sid, actor_user_id=actor_user_id, actor_name=actor_name); return 1
+    monkeypatch.setattr(r._repo, 'soft_delete_supplier', fake)
+    with _test_app.test_request_context():
+        resp = r.api_delete_supplier.__wrapped__(5)
+    assert seen == {'sid': 5, 'actor_user_id': 42, 'actor_name': 'Ana'}
+    assert resp.get_json()['success'] is True
+
+
+def test_delete_supplier_404_when_missing(monkeypatch):
+    import core.suppliers.routes as r
+    monkeypatch.setattr(r, '_check_supplier_perm', lambda a: True)
+    monkeypatch.setattr(r, 'current_user', _fake_user(), raising=False)
+    monkeypatch.setattr(r._repo, 'soft_delete_supplier', lambda *a, **k: 0)
+    with _test_app.test_request_context():
+        _resp, code = r.api_delete_supplier.__wrapped__(9)
+    assert code == 404
+
+
+def test_restore_supplier_success(monkeypatch):
+    import core.suppliers.routes as r
+    monkeypatch.setattr(r, '_check_supplier_perm', lambda a: True)
+    monkeypatch.setattr(r, 'current_user', _fake_user(1, 'Bob'), raising=False)
+    seen = {}
+    def fake(sid, actor_user_id=None, actor_name=None):
+        seen.update(sid=sid, actor_user_id=actor_user_id, actor_name=actor_name); return 1
+    monkeypatch.setattr(r._repo, 'restore_supplier', fake)
+    with _test_app.test_request_context():
+        resp = r.api_restore_supplier.__wrapped__(5)
+    assert seen['sid'] == 5 and seen['actor_name'] == 'Bob'
+    assert resp.get_json()['success'] is True
+
+
+def test_restore_supplier_cui_conflict_returns_409(monkeypatch):
+    import core.suppliers.routes as r
+    # Under pytest psycopg2 is a MagicMock (see jarvis/conftest.py), so give pg_errors a real
+    # exception class for this test; in prod it is the genuine psycopg2 UniqueViolation.
+    class _UV(Exception):
+        pass
+    monkeypatch.setattr(r.pg_errors, 'UniqueViolation', _UV, raising=False)
+    monkeypatch.setattr(r, '_check_supplier_perm', lambda a: True)
+    monkeypatch.setattr(r, 'current_user', _fake_user(), raising=False)
+    def boom(*a, **k):
+        raise _UV()
+    monkeypatch.setattr(r._repo, 'restore_supplier', boom)
+    with _test_app.test_request_context():
+        _resp, code = r.api_restore_supplier.__wrapped__(5)
+    assert code == 409
+
+
+def test_delete_preset_passes_actor_for_audit(monkeypatch):
+    import core.suppliers.routes as r
+    monkeypatch.setattr(r, '_check_supplier_perm', lambda a: True)
+    monkeypatch.setattr(r, 'current_user', _fake_user(7, 'Bob'), raising=False)
+    seen = {}
+    def fake(pid, actor_user_id=None, actor_name=None):
+        seen.update(pid=pid, actor_user_id=actor_user_id, actor_name=actor_name); return 1
+    monkeypatch.setattr(r._repo, 'delete_preset', fake)
+    with _test_app.test_request_context():
+        r.api_delete_preset.__wrapped__(3, 99)  # (supplier_id, preset_id)
+    assert seen == {'pid': 99, 'actor_user_id': 7, 'actor_name': 'Bob'}
+
+
+def test_list_suppliers_forwards_only_deleted_flag(monkeypatch):
+    import core.suppliers.routes as r
+    monkeypatch.setattr(r, '_check_supplier_perm', lambda a: True)
+    seen = {}
+    monkeypatch.setattr(r._repo, 'list_master', lambda **kw: seen.update(kw) or [])
+    with _test_app.test_request_context('/api/suppliers?deleted=1'):
+        r.api_list_suppliers.__wrapped__()
+    assert seen.get('only_deleted') is True
+    seen.clear()
+    with _test_app.test_request_context('/api/suppliers'):
+        r.api_list_suppliers.__wrapped__()
+    assert seen.get('only_deleted') is False
