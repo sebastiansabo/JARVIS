@@ -129,12 +129,20 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
   })
   const schemaCount = schemaData?.count ?? 0
   const needsSchema = schemaCount > 1 // only surface the optional selector when there's a choice
+  // Per-line SCHEMA (distinct from allocation `isPerLine`): each invoice line → its own schema.
+  const [schemaPerLine, setSchemaPerLine] = useState(false)
+  const [lineSchemas, setLineSchemas] = useState<Record<number, number | null>>({})
+  const schemaLineItems = schemaData?.line_items ?? []
   useEffect(() => {
     if (!schemaData) return
     setSchemaId((prev) => {
       if (prev != null && schemaData.presets.some((p) => p.id === prev)) return prev
       return schemaData.selected_id ?? null // pre-fill an existing override; else leave empty (optional)
     })
+    setSchemaPerLine(schemaData.per_line)
+    const sel: Record<number, number | null> = {}
+    for (const [k, v] of Object.entries(schemaData.line_selected || {})) sel[Number(k)] = v
+    setLineSchemas(sel)
   }, [schemaData])
 
   const handleFileUpload = useCallback(async (files: FileList | File[]) => {
@@ -242,16 +250,20 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
         }
       }
 
-      // Optionally pin a changed EuroFib schema for this invoice (per-invoice override). Only when
-      // the user picked a different schema than what's stored — bugetare is NOT gated on this.
-      if (!isProfile && needsSchema && schemaId != null && schemaId !== schemaData?.selected_id
-          && schemaData?.supplier_id && schemaData?.company_id) {
+      // Persist the EuroFib schema choice (optional — bugetare is NOT gated on this).
+      if (!isProfile && needsSchema && schemaData?.supplier_id && schemaData?.company_id) {
+        const sid = schemaData.supplier_id, cid = schemaData.company_id
         try {
-          await suppliersApi.setInvoicePreset(invoice.id, {
-            konto_config_id: schemaId,
-            supplier_id: schemaData.supplier_id,
-            company_id: schemaData.company_id,
-          })
+          if (schemaPerLine) {
+            await suppliersApi.setInvoicePerLine(invoice.id, { per_line: true, konto_config_id: schemaId, supplier_id: sid, company_id: cid })
+            await Promise.all(schemaLineItems.map((_li, idx) =>
+              suppliersApi.setInvoiceLinePreset(invoice.id, { line_index: idx, konto_config_id: lineSchemas[idx] ?? null, supplier_id: sid, company_id: cid })))
+          } else if (schemaData.per_line) {
+            // Turning per-line OFF — disable + clear line overrides; keep the base as the single schema.
+            await suppliersApi.setInvoicePerLine(invoice.id, { per_line: false, konto_config_id: schemaId, supplier_id: sid, company_id: cid })
+          } else if (schemaId != null && schemaId !== schemaData.selected_id) {
+            await suppliersApi.setInvoicePreset(invoice.id, { konto_config_id: schemaId, supplier_id: sid, company_id: cid })
+          }
         } catch {
           toast.error('Factura salvată, dar schema EuroFib nu a putut fi setată')
         }
@@ -272,7 +284,7 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
     } finally {
       setSaving(false)
     }
-  }, [invoice.id, supplier, invoiceNumber, invoiceDate, invoiceValue, currency, status, paymentStatus, subtractVat, vatRate, netValue, comment, driveLink, observerUserIds, initialObserverIds, isPerLine, isProfile, lineAllocations, perLineCompany, queryClient, onClose, updateInvoiceFn, updateAllocationsFn, invalidateQueryKeys, needsSchema, schemaId, schemaData])
+  }, [invoice.id, supplier, invoiceNumber, invoiceDate, invoiceValue, currency, status, paymentStatus, subtractVat, vatRate, netValue, comment, driveLink, observerUserIds, initialObserverIds, isPerLine, isProfile, lineAllocations, perLineCompany, queryClient, onClose, updateInvoiceFn, updateAllocationsFn, invalidateQueryKeys, needsSchema, schemaId, schemaData, schemaPerLine, lineSchemas, schemaLineItems])
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -287,23 +299,59 @@ export function EditInvoiceDialog({ invoice, open, onClose, statusOptions, payme
           {!isProfile && (
             <>
               {needsSchema && (
-                <div className="rounded-md border border-border p-3">
-                  <Label className="mb-1.5 block text-xs font-medium">Schemă EuroFib</Label>
+                <div className="space-y-2.5 rounded-md border border-border p-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label className="text-xs font-medium">{schemaPerLine ? 'Schemă de bază (credit)' : 'Schemă EuroFib'}</Label>
+                    {schemaLineItems.length > 0 && (
+                      <label className="flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground">
+                        Schemă pe linie
+                        <Switch checked={schemaPerLine} onCheckedChange={setSchemaPerLine} />
+                      </label>
+                    )}
+                  </div>
                   <Select value={schemaId != null ? String(schemaId) : ''} onValueChange={(v) => setSchemaId(Number(v))}>
                     <SelectTrigger className="h-8 text-sm">
                       <SelectValue placeholder="Schema activă (implicit)" />
                     </SelectTrigger>
                     <SelectContent>
                       {(schemaData?.presets ?? []).map((p) => (
-                        <SelectItem key={p.id} value={String(p.id)}>
-                          {p.name}{p.is_active ? ' · activă' : ''}
-                        </SelectItem>
+                        <SelectItem key={p.id} value={String(p.id)}>{p.name}{p.is_active ? ' · activă' : ''}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="mt-1 text-[11px] text-muted-foreground">
-                    Opțional — schimbă schema EuroFib pentru această factură (implicit: schema activă).
-                  </p>
+
+                  {schemaPerLine ? (
+                    <div className="space-y-1.5 border-t pt-2.5">
+                      <p className="text-[11px] text-muted-foreground">
+                        Fiecare linie postează net+TVA în schema ei; liniile nealese folosesc schema de bază.
+                      </p>
+                      {schemaLineItems.map((li, idx) => (
+                        <div key={idx} className="grid grid-cols-[1fr_auto] items-center gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-xs">{li.name || li.description || `Linia ${idx + 1}`}</div>
+                            <div className="font-mono text-[10.5px] text-muted-foreground">
+                              net {li.amount != null ? Number(li.amount).toFixed(2) : '—'}
+                            </div>
+                          </div>
+                          <Select
+                            value={lineSchemas[idx] != null ? String(lineSchemas[idx]) : ''}
+                            onValueChange={(v) => setLineSchemas((m) => ({ ...m, [idx]: v ? Number(v) : null }))}
+                          >
+                            <SelectTrigger className="h-7 w-44 text-xs"><SelectValue placeholder="Schema de bază" /></SelectTrigger>
+                            <SelectContent>
+                              {(schemaData?.presets ?? []).map((p) => (
+                                <SelectItem key={p.id} value={String(p.id)}>{p.name}{p.is_active ? ' · activă' : ''}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      Opțional — schimbă schema EuroFib pentru această factură (implicit: schema activă).
+                    </p>
+                  )}
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
