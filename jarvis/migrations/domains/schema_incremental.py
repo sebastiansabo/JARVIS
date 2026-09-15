@@ -1418,11 +1418,28 @@ def create_schema_incremental(conn, cursor):
             END IF;
         END $$;
     ''')
-    # Re-scoped to active rows only (idempotent drop+recreate): inactive suppliers keep a
-    # populated cui_normalized (dirty backfill data / DMS soft-delete), so an unscoped partial
-    # index collides when an active supplier is created with a CUI an inactive row still holds.
+    # ── suppliers: soft-delete (Furnizori) — orthogonal to is_active (2026-09-15) ──
+    # Deletion is a soft delete (deleted_at/deleted_by) kept separate from the is_active
+    # business flag, so restore is a clean deleted_at→NULL. The cui_normalized unique index
+    # (below) also excludes deleted rows, so a deleted supplier frees its CUI slot for re-use.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_name = 'suppliers' AND column_name = 'deleted_at') THEN
+                ALTER TABLE suppliers ADD COLUMN deleted_at TIMESTAMP;
+                ALTER TABLE suppliers ADD COLUMN deleted_by INTEGER REFERENCES users(id);
+            END IF;
+        END $$;
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_suppliers_not_deleted ON suppliers(id) WHERE deleted_at IS NULL")
+
+    # Re-scoped to active, non-deleted rows only (idempotent drop+recreate): inactive/deleted
+    # suppliers keep a populated cui_normalized (dirty backfill data / DMS soft-delete), so an
+    # unscoped partial index collides when an active supplier is created with a CUI a stale row
+    # still holds.
     cursor.execute("DROP INDEX IF EXISTS idx_suppliers_cui_norm")
-    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_suppliers_cui_norm ON suppliers(cui_normalized) WHERE cui_normalized IS NOT NULL AND is_active")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_suppliers_cui_norm ON suppliers(cui_normalized) WHERE cui_normalized IS NOT NULL AND is_active AND deleted_at IS NULL")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_suppliers_nrreg_norm ON suppliers(nr_reg_normalized)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_suppliers_ref_no ON suppliers(ref_no)")
 
@@ -1446,6 +1463,25 @@ def create_schema_incremental(conn, cursor):
     # One-time cleanup: existing inactive rows must not keep claiming the (now active-scoped)
     # unique index slot for their CUI.
     cursor.execute("UPDATE suppliers SET cui_normalized = NULL WHERE NOT is_active AND cui_normalized IS NOT NULL")
+
+    # ── supplier_audit_log: who/when for destructive supplier & schema (konto preset) ops ──
+    # Records deletions (and supplier restores). details JSONB holds a snapshot of the removed
+    # row so a deletion stays explainable even after the row is gone (schemas are hard-deleted).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS supplier_audit_log (
+            id SERIAL PRIMARY KEY,
+            entity_type TEXT NOT NULL,            -- 'supplier' | 'schema'
+            entity_id INTEGER NOT NULL,
+            action TEXT NOT NULL,                 -- 'delete' | 'restore'
+            actor_user_id INTEGER REFERENCES users(id),
+            actor_name TEXT,
+            company_id INTEGER,
+            details JSONB,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_supplier_audit_entity ON supplier_audit_log(entity_type, entity_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_supplier_audit_created ON supplier_audit_log(created_at DESC)")
 
     # ── supplier_aliases (spelling/CUI variants → one master) ──
     cursor.execute('''

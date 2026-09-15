@@ -36,45 +36,62 @@ class SupplierMasterRepository(BaseRepository):
 
     # ---- lookup protocol (consumed by SupplierResolver) ----
     def find_by_cui_normalized(self, cui):
-        row = self.query_one("SELECT id FROM suppliers WHERE cui_normalized = %s AND is_active LIMIT 1", (cui,))
+        row = self.query_one("SELECT id FROM suppliers WHERE cui_normalized = %s AND is_active AND deleted_at IS NULL LIMIT 1", (cui,))
         return row['id'] if row else None
 
     def find_by_nr_reg_normalized(self, nr):
-        row = self.query_one("SELECT id FROM suppliers WHERE nr_reg_normalized = %s AND is_active LIMIT 1", (nr,))
+        row = self.query_one("SELECT id FROM suppliers WHERE nr_reg_normalized = %s AND is_active AND deleted_at IS NULL LIMIT 1", (nr,))
         return row['id'] if row else None
 
     def find_by_ref_no(self, ref):
-        row = self.query_one("SELECT id FROM suppliers WHERE ref_no = %s AND is_active LIMIT 1", (ref,))
+        row = self.query_one("SELECT id FROM suppliers WHERE ref_no = %s AND is_active AND deleted_at IS NULL LIMIT 1", (ref,))
         return row['id'] if row else None
 
     def find_by_alias(self, name=None, cui_normalized=None):
+        # Aliases of a soft-deleted supplier must not resolve back to it.
         row = self.query_one(
-            """SELECT supplier_id FROM supplier_aliases
-               WHERE (alias_cui_normalized IS NOT NULL AND alias_cui_normalized = %s)
-                  OR (%s IS NOT NULL AND lower(alias_name) = lower(%s))
+            """SELECT sa.supplier_id FROM supplier_aliases sa
+               JOIN suppliers s ON s.id = sa.supplier_id AND s.deleted_at IS NULL
+               WHERE (sa.alias_cui_normalized IS NOT NULL AND sa.alias_cui_normalized = %s)
+                  OR (%s IS NOT NULL AND lower(sa.alias_name) = lower(%s))
                LIMIT 1""",
             (cui_normalized, name, name))
         return row['supplier_id'] if row else None
 
     def find_by_name_exact(self, name):
-        row = self.query_one("SELECT id FROM suppliers WHERE lower(name) = lower(%s) AND is_active LIMIT 1", (name,))
+        row = self.query_one("SELECT id FROM suppliers WHERE lower(name) = lower(%s) AND is_active AND deleted_at IS NULL LIMIT 1", (name,))
         return row['id'] if row else None
 
     def find_by_fuzzy_name(self, name):
         row = self.query_one(
             """SELECT id, similarity(name, %s) AS score FROM suppliers
-               WHERE is_active AND similarity(name, %s) >= %s
+               WHERE is_active AND deleted_at IS NULL AND similarity(name, %s) >= %s
                ORDER BY score DESC LIMIT 1""",
             (name, name, _FUZZY_THRESHOLD))
         return (row['id'], float(row['score'])) if row else None
 
     # ---- master reads / writes ----
-    def list_master(self, search=None, limit=100, offset=0, company_id=None):
+    def list_master(self, search=None, limit=100, offset=0, company_id=None, only_deleted=False):
         """List master suppliers. When company_id is given, each row carries that company's
         EFFECTIVE konto (supplier_konto_config child row, falling back to the flat suppliers.*
         defaults for the 9 flat-backed fields) plus has_company_config. Without company_id,
-        behaves as before (flat columns only, no steuercode/text_template/belegart)."""
-        where, params = "WHERE s.is_active", []
+        behaves as before (flat columns only, no steuercode/text_template/belegart).
+
+        only_deleted=True returns the soft-deleted suppliers instead (the 'Șterse' view), each
+        row carrying deleted_by_name; deleted rows never appear in the default (active) list."""
+        if only_deleted:
+            where, params = "WHERE s.deleted_at IS NOT NULL", []
+            if search:
+                where += " AND (s.name ILIKE %s OR s.cui ILIKE %s OR s.ref_no ILIKE %s)"
+                like = f"%{search}%"
+                params += [like, like, like]
+            params += [limit, offset]
+            return self.query_all(
+                "SELECT s.*, du.name AS deleted_by_name FROM suppliers s "
+                "LEFT JOIN users du ON du.id = s.deleted_by "
+                f"{where} ORDER BY s.deleted_at DESC LIMIT %s OFFSET %s", tuple(params))
+
+        where, params = "WHERE s.is_active AND s.deleted_at IS NULL", []
         if search:
             where += " AND (s.name ILIKE %s OR s.cui ILIKE %s OR s.ref_no ILIKE %s)"
             like = f"%{search}%"
@@ -240,13 +257,15 @@ class SupplierMasterRepository(BaseRepository):
             return 1
         return self.execute_many(_work)
 
-    def delete_preset(self, preset_id):
-        """Delete a preset. If it was the active one and siblings remain, promote the first
-        sibling (alphabetical) to active so the pair never has zero active presets. Overrides
-        pointing at the deleted preset cascade away (ON DELETE CASCADE). Returns 1 if deleted."""
+    def delete_preset(self, preset_id, actor_user_id=None, actor_name=None):
+        """Delete a preset (schema). If it was the active one and siblings remain, promote the
+        first sibling (alphabetical) to active so the pair never has zero active presets.
+        Overrides pointing at the deleted preset cascade away (ON DELETE CASCADE). Snapshots the
+        row into supplier_audit_log before deleting (schemas are hard-deleted). Returns 1 if deleted."""
         def _work(cursor):
             cursor.execute(
-                "SELECT supplier_id, company_id, is_active FROM supplier_konto_config WHERE id = %s",
+                f"SELECT supplier_id, company_id, name, is_active, {', '.join(KONTO_FIELDS)} "
+                f"FROM supplier_konto_config WHERE id = %s",
                 (preset_id,))
             row = cursor.fetchone()
             if not row:
@@ -258,6 +277,63 @@ class SupplierMasterRepository(BaseRepository):
                     "WHERE id = (SELECT id FROM supplier_konto_config "
                     "            WHERE supplier_id = %s AND company_id = %s ORDER BY lower(name) LIMIT 1)",
                     (row['supplier_id'], row['company_id']))
+            self._log_audit(
+                cursor, 'schema', preset_id, 'delete', actor_user_id, actor_name, row.get('company_id'),
+                {'name': row.get('name'), 'supplier_id': row.get('supplier_id'),
+                 'konto': {f: row.get(f) for f in KONTO_FIELDS}})
+            return 1
+        return self.execute_many(_work)
+
+    # ---- soft delete (Furnizori) + deletion audit ----
+    def _log_audit(self, cursor, entity_type, entity_id, action, actor_user_id, actor_name,
+                   company_id, details):
+        """Append a supplier_audit_log row inside the caller's transaction (shared cursor)."""
+        import json
+        cursor.execute(
+            "INSERT INTO supplier_audit_log "
+            "(entity_type, entity_id, action, actor_user_id, actor_name, company_id, details) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)",
+            (entity_type, entity_id, action, actor_user_id, actor_name, company_id,
+             json.dumps(details) if details is not None else None))
+
+    def soft_delete_supplier(self, supplier_id, actor_user_id=None, actor_name=None):
+        """Soft-delete a Furnizor: stamp deleted_at/deleted_by (orthogonal to is_active) and
+        record an audit snapshot. No-op (returns 0) if the supplier is missing or already
+        deleted. Excluded from every resolver lookup and the active list thereafter."""
+        def _work(cursor):
+            cursor.execute(
+                "SELECT id, name, cui, company_id FROM suppliers WHERE id = %s AND deleted_at IS NULL",
+                (supplier_id,))
+            row = cursor.fetchone()
+            if not row:
+                return 0
+            cursor.execute(
+                "UPDATE suppliers SET deleted_at = CURRENT_TIMESTAMP, deleted_by = %s, "
+                "updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                (actor_user_id, supplier_id))
+            self._log_audit(cursor, 'supplier', supplier_id, 'delete', actor_user_id, actor_name,
+                            row.get('company_id'), {'name': row.get('name'), 'cui': row.get('cui')})
+            return 1
+        return self.execute_many(_work)
+
+    def restore_supplier(self, supplier_id, actor_user_id=None, actor_name=None):
+        """Restore a soft-deleted Furnizor (deleted_at→NULL) and record an audit row. No-op
+        (returns 0) if the supplier is missing or not deleted. May raise a UniqueViolation if
+        another active supplier has since claimed this one's normalized CUI — the caller should
+        surface that as a conflict."""
+        def _work(cursor):
+            cursor.execute(
+                "SELECT id, name, cui, company_id FROM suppliers WHERE id = %s AND deleted_at IS NOT NULL",
+                (supplier_id,))
+            row = cursor.fetchone()
+            if not row:
+                return 0
+            cursor.execute(
+                "UPDATE suppliers SET deleted_at = NULL, deleted_by = NULL, "
+                "updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                (supplier_id,))
+            self._log_audit(cursor, 'supplier', supplier_id, 'restore', actor_user_id, actor_name,
+                            row.get('company_id'), {'name': row.get('name'), 'cui': row.get('cui')})
             return 1
         return self.execute_many(_work)
 
@@ -500,7 +576,7 @@ class SupplierMasterRepository(BaseRepository):
                    (ov.konto_config_id IS NOT NULL) AS konto_overridden
             FROM invoices i
             JOIN allocations a ON a.invoice_id = i.id AND lower(a.company) = lower(%s)
-            JOIN suppliers s ON (
+            JOIN suppliers s ON s.deleted_at IS NULL AND (
                 lower(s.name) = lower(i.supplier)
                 OR EXISTS (
                     SELECT 1 FROM supplier_aliases al
@@ -568,7 +644,7 @@ class SupplierMasterRepository(BaseRepository):
             FROM invoices i
             JOIN allocations a ON a.invoice_id = i.id
             JOIN companies co ON lower(co.company) = lower(a.company)
-            JOIN suppliers s ON (
+            JOIN suppliers s ON s.deleted_at IS NULL AND (
                 lower(s.name) = lower(i.supplier)
                 OR EXISTS (SELECT 1 FROM supplier_aliases al
                            WHERE al.supplier_id = s.id AND lower(al.alias_name) = lower(i.supplier))
@@ -598,8 +674,9 @@ class SupplierMasterRepository(BaseRepository):
                          FROM invoices i
                          JOIN allocations a ON a.invoice_id = i.id AND lower(a.company) = lower(%s)
                          WHERE i.deleted_at IS NULL
-                           AND NOT EXISTS (SELECT 1 FROM suppliers s WHERE lower(s.name) = lower(i.supplier) AND s.is_active)
-                           AND NOT EXISTS (SELECT 1 FROM supplier_aliases al WHERE lower(al.alias_name) = lower(i.supplier))
+                           AND NOT EXISTS (SELECT 1 FROM suppliers s WHERE lower(s.name) = lower(i.supplier) AND s.is_active AND s.deleted_at IS NULL)
+                           AND NOT EXISTS (SELECT 1 FROM supplier_aliases al JOIN suppliers s2 ON s2.id = al.supplier_id
+                                           WHERE lower(al.alias_name) = lower(i.supplier) AND s2.deleted_at IS NULL)
                      ) sub
                      GROUP BY partner_name ORDER BY n DESC LIMIT %s"""
             return self.query_all(sql, (company_name, limit))
@@ -607,6 +684,7 @@ class SupplierMasterRepository(BaseRepository):
             """SELECT i.supplier AS partner_name, count(*) AS n
                FROM invoices i
                WHERE i.deleted_at IS NULL
-                 AND NOT EXISTS (SELECT 1 FROM suppliers s WHERE lower(s.name) = lower(i.supplier) AND s.is_active)
-                 AND NOT EXISTS (SELECT 1 FROM supplier_aliases a WHERE lower(a.alias_name) = lower(i.supplier))
+                 AND NOT EXISTS (SELECT 1 FROM suppliers s WHERE lower(s.name) = lower(i.supplier) AND s.is_active AND s.deleted_at IS NULL)
+                 AND NOT EXISTS (SELECT 1 FROM supplier_aliases a JOIN suppliers s2 ON s2.id = a.supplier_id
+                                 WHERE lower(a.alias_name) = lower(i.supplier) AND s2.deleted_at IS NULL)
                GROUP BY i.supplier ORDER BY n DESC LIMIT %s""", (limit,))

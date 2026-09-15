@@ -31,6 +31,8 @@ export interface MasterSupplier extends Partial<KontoConfig> {
   ref_no?: string | null
   is_active?: boolean
   has_company_config?: boolean
+  deleted_at?: string | null
+  deleted_by_name?: string | null
   aliases?: { id: number; alias_name: string | null; alias_cui_normalized: string | null; source: string }[]
 }
 
@@ -121,10 +123,11 @@ async function _downloadPost(path: string, body: unknown, fallbackFilename: stri
 }
 
 export const suppliersApi = {
-  list: (companyId?: number, search?: string) => {
+  list: (companyId?: number, search?: string, opts?: { deleted?: boolean }) => {
     const params = new URLSearchParams()
     if (companyId !== undefined) params.set('company_id', String(companyId))
     if (search) params.set('search', search)
+    if (opts?.deleted) params.set('deleted', '1')
     const qs = params.toString()
     return api.get<{ success: boolean; suppliers: MasterSupplier[] }>(`/api/suppliers${qs ? `?${qs}` : ''}`)
   },
@@ -134,6 +137,12 @@ export const suppliersApi = {
     api.post<{ success: boolean; id: number }>(`/api/suppliers`, data),
   update: (id: number, data: Partial<MasterSupplier>) =>
     api.put<{ success: boolean }>(`/api/suppliers/${id}`, data),
+  /** Soft-delete a Furnizor (recoverable via restore; recorded in the deletion audit log). */
+  remove: (id: number) =>
+    api.delete<{ success: boolean }>(`/api/suppliers/${id}`),
+  /** Restore a soft-deleted Furnizor. 409 if another active supplier now holds its CUI. */
+  restore: (id: number) =>
+    api.post<{ success: boolean }>(`/api/suppliers/${id}/restore`, {}),
   addAlias: (id: number, alias_name?: string, alias_cui?: string) =>
     api.post<{ success: boolean; id: number }>(`/api/suppliers/${id}/aliases`, { alias_name, alias_cui }),
   merge: (survivor_id: number, duplicate_id: number) =>
