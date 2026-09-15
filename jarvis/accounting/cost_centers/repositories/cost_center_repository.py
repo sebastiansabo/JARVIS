@@ -47,3 +47,46 @@ class CostCenterRepository(BaseRepository):
 
     def delete(self, cc_id):
         self.execute("DELETE FROM cost_centers WHERE id = %s", (cc_id,))  # cascades map row
+
+    def list_structure_nodes(self, company_id):
+        return self.query_all(
+            "SELECT id, name, level FROM structure_nodes WHERE company_id = %s ORDER BY level, name",
+            (company_id,),
+        )
+
+    def set_map(self, cc_id, structure_node_id):
+        if structure_node_id is None:
+            self.execute("DELETE FROM cost_center_structure_map WHERE cost_center_id = %s", (cc_id,))
+            return
+        self.execute("""
+            INSERT INTO cost_center_structure_map (cost_center_id, structure_node_id)
+            VALUES (%s, %s)
+            ON CONFLICT (cost_center_id)
+            DO UPDATE SET structure_node_id = EXCLUDED.structure_node_id
+        """, (cc_id, int(structure_node_id)))
+
+    def auto_seed_map_exact(self, company_id):
+        """Map each still-unmapped cost center to the ONLY structure node in the
+        same company whose name matches case-insensitively. Skips ambiguous/none."""
+        rows = self.query_all("""
+            SELECT cc.id AS cc_id,
+                   (SELECT sn.id FROM structure_nodes sn
+                     WHERE sn.company_id = cc.company_id
+                       AND LOWER(sn.name) = LOWER(cc.name)) AS node_id,
+                   (SELECT COUNT(*) FROM structure_nodes sn
+                     WHERE sn.company_id = cc.company_id
+                       AND LOWER(sn.name) = LOWER(cc.name)) AS match_count
+            FROM cost_centers cc
+            WHERE cc.company_id = %s
+              AND NOT EXISTS (SELECT 1 FROM cost_center_structure_map m WHERE m.cost_center_id = cc.id)
+        """, (company_id,))
+        inserted = 0
+        for r in rows:
+            if r['match_count'] == 1 and r['node_id'] is not None:
+                self.execute(
+                    "INSERT INTO cost_center_structure_map (cost_center_id, structure_node_id) "
+                    "VALUES (%s, %s) ON CONFLICT (cost_center_id) DO NOTHING",
+                    (r['cc_id'], r['node_id']),
+                )
+                inserted += 1
+        return inserted
