@@ -74,6 +74,8 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   const [previewId, setPreviewId] = useState<number | null>(null)
   const [editInvoice, setEditInvoice] = useState<InvoiceRow | null>(null)
   const [schemaId, setSchemaId] = useState<number | null>(null)
+  const [schemaMode, setSchemaMode] = useState<'invoice' | 'line'>('invoice')
+  const [lineSchemas, setLineSchemas] = useState<Record<number, number | null>>({})
   const [overrides, setOverrides] = useState({
     type_override: '',
     department_override: '',
@@ -164,12 +166,17 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
     enabled: !!editInvoice,
   })
   const schemaCount = schemaData?.count ?? 0
+  const schemaLineItems = schemaData?.line_items ?? []
   useEffect(() => {
     if (!schemaData) return
     setSchemaId((prev) => {
       if (prev != null && schemaData.presets.some((p) => p.id === prev)) return prev
       return schemaData.selected_id ?? (schemaData.count === 1 ? schemaData.presets[0].id : null)
     })
+    setSchemaMode(schemaData.per_line ? 'line' : 'invoice')
+    const sel: Record<number, number | null> = {}
+    for (const [k, v] of Object.entries(schemaData.line_selected || {})) sel[Number(k)] = v
+    setLineSchemas(sel)
   }, [schemaData])
 
   // ── Mutations ─────────────────────────────────────────────
@@ -445,6 +452,8 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
     setSplitDept(!!(inv.department_override_2 || inv.subdepartment_override_2))
     setEditObserverIds(inv.observer_user_ids ?? [])
     setSchemaId(null) // re-initialized from schemasForEfactura once it loads
+    setSchemaMode('invoice')
+    setLineSchemas({})
     setEditInvoice(inv)
   }
 
@@ -461,6 +470,10 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
         subdepartment_override_2: splitDept ? (overrides.subdepartment_override_2 || null) : null,
         observer_user_ids: editObserverIds,
         konto_config_id: schemaId,
+        konto_per_line: schemaMode === 'line',
+        konto_line_map: schemaMode === 'line'
+          ? Object.fromEntries(Object.entries(lineSchemas).filter(([, v]) => v != null).map(([k, v]) => [k, v as number]))
+          : {},
       },
     })
   }
@@ -985,9 +998,9 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
         </DialogContent>
       </Dialog>
 
-      {/* Edit Overrides Dialog */}
+      {/* Edit Overrides Dialog — widens in per-line schema mode */}
       <Dialog open={!!editInvoice} onOpenChange={() => setEditInvoice(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className={cn('sm:max-w-md', schemaMode === 'line' && schemaCount > 0 && 'sm:max-w-3xl')}>
           <DialogHeader>
             <DialogTitle>Edit Invoice Overrides</DialogTitle>
           </DialogHeader>
@@ -1008,30 +1021,61 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                 </div>
               </div>
 
-              {/* EuroFib schema — first step. Required (gated at Send-to-Module) when >1 schema. */}
+              {/* EuroFib schema — Per factură / Per linie. Required (gated at Send) when >1 schema. */}
               {schemaCount > 0 && (
-                <div className={cn('space-y-1 rounded-md border p-3',
-                  schemaCount > 1 && schemaId == null && 'border-amber-400 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-950/20')}>
-                  <Label className="text-xs font-medium">
-                    Schemă EuroFib{schemaCount > 1 && <span className="text-destructive"> *</span>}
-                  </Label>
+                <div className={cn('space-y-2.5 rounded-md border p-3',
+                  schemaMode === 'invoice' && schemaCount > 1 && schemaId == null && 'border-amber-400 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-950/20')}>
+                  <div className="flex items-center justify-between gap-3">
+                    <Label className="text-xs font-medium">
+                      {schemaMode === 'line' ? 'Schemă de bază (credit)' : 'Schemă EuroFib'}
+                      {schemaMode === 'invoice' && schemaCount > 1 && <span className="text-destructive"> *</span>}
+                    </Label>
+                    {schemaCount > 1 && schemaLineItems.length > 0 && (
+                      <div className="inline-flex rounded-md border bg-muted/40 p-0.5 text-[11px] font-medium">
+                        <button type="button" onClick={() => setSchemaMode('invoice')}
+                          className={cn('rounded px-2 py-1', schemaMode === 'invoice' ? 'bg-background shadow-sm' : 'text-muted-foreground')}>Per factură</button>
+                        <button type="button" onClick={() => setSchemaMode('line')}
+                          className={cn('rounded px-2 py-1', schemaMode === 'line' ? 'bg-background shadow-sm' : 'text-muted-foreground')}>Per linie</button>
+                      </div>
+                    )}
+                  </div>
                   <Select value={schemaId != null ? String(schemaId) : ''} onValueChange={(v) => setSchemaId(Number(v))}>
                     <SelectTrigger>
-                      <SelectValue placeholder={schemaCount > 1 ? 'Selectează schema...' : 'Schema activă'} />
+                      <SelectValue placeholder={schemaMode === 'line' ? 'Schema activă (implicit)' : (schemaCount > 1 ? 'Selectează schema...' : 'Schema activă')} />
                     </SelectTrigger>
                     <SelectContent>
                       {(schemaData?.presets ?? []).map((p) => (
-                        <SelectItem key={p.id} value={String(p.id)}>
-                          {p.name}{p.is_active ? ' · activă' : ''}
-                        </SelectItem>
+                        <SelectItem key={p.id} value={String(p.id)}>{p.name}{p.is_active ? ' · activă' : ''}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-[11px] text-muted-foreground">
-                    {schemaCount > 1
-                      ? 'Acest furnizor are mai multe scheme — alege una înainte de a trimite în Accounting.'
-                      : 'Schema EuroFib pentru acest furnizor.'}
-                  </p>
+
+                  {schemaMode === 'line' ? (
+                    <div className="space-y-1.5 border-t pt-2.5">
+                      <p className="text-[11px] text-muted-foreground">Fiecare linie postează net+TVA în schema ei; liniile nealese folosesc schema de bază.</p>
+                      {schemaLineItems.map((li, idx) => (
+                        <div key={idx} className="grid grid-cols-[1fr_auto] items-center gap-2">
+                          <div className="min-w-0">
+                            <div className="truncate text-xs">{li.name || li.description || `Linia ${idx + 1}`}</div>
+                            <div className="font-mono text-[10.5px] text-muted-foreground">net {li.amount != null ? Number(li.amount).toFixed(2) : '—'}</div>
+                          </div>
+                          <Select value={lineSchemas[idx] != null ? String(lineSchemas[idx]) : ''}
+                            onValueChange={(v) => setLineSchemas((m) => ({ ...m, [idx]: v ? Number(v) : null }))}>
+                            <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Schema de bază" /></SelectTrigger>
+                            <SelectContent>
+                              {(schemaData?.presets ?? []).map((p) => (<SelectItem key={p.id} value={String(p.id)}>{p.name}{p.is_active ? ' · activă' : ''}</SelectItem>))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-muted-foreground">
+                      {schemaCount > 1
+                        ? 'Acest furnizor are mai multe scheme — alege una înainte de a trimite în Accounting.'
+                        : 'Schema EuroFib pentru acest furnizor.'}
+                    </p>
+                  )}
                 </div>
               )}
 
