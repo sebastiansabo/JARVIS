@@ -273,7 +273,14 @@ def export_vouchers():
 @login_required
 @handle_api_errors
 def edit_voucher(voucher_id):
-    """Edit voucher details (client, contract, VIN, notes)."""
+    """Edit voucher details.
+
+    Regular users with ``vouchers.accounting.edit`` may edit a limited set of
+    fields (client, contract, VIN, notes) on active/pending vouchers only.
+    Admins get full-edit power — every field including status, benefit and
+    dates, on a voucher in ANY status. Each admin edit is recorded in
+    voucher_audit_log.
+    """
     if not _check_voucher_perm('accounting', 'edit'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
@@ -282,6 +289,23 @@ def edit_voucher(voucher_id):
     if not voucher:
         return error_response('Voucher not found', 404)
 
+    is_admin = getattr(current_user, 'role_name', '').lower() in ('admin', 'superadmin')
+
+    if is_admin:
+        from accounting.vouchers.edit_logic import build_admin_voucher_edit
+        try:
+            updates, changes = build_admin_voucher_edit(voucher, data)
+        except ValueError as e:
+            return error_response(str(e), 400)
+        if not updates:
+            return error_response('No valid fields to update', 400)
+        _repo.update_fields(voucher_id, updates)
+        if changes:
+            action = 'status_change' if 'status' in changes else 'edit'
+            _repo.log_edit(voucher_id, current_user.id, action, changes)
+        return jsonify({'success': True, 'voucher': _repo.get_by_id(voucher_id)})
+
+    # Non-admin: limited edit, active/pending only (unchanged behavior).
     if voucher['status'] not in ('active', 'pending_approval'):
         return error_response('Can only edit active or pending vouchers', 400)
 

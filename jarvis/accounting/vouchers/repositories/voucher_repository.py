@@ -241,6 +241,45 @@ class VoucherRepository(BaseRepository):
             tuple(params), returning=True
         )
 
+    # Columns an admin full-edit may write. Column names come from
+    # edit_logic.build_admin_voucher_edit (a fixed whitelist), but we
+    # re-guard here so a stray key can never reach the SQL string.
+    _EDITABLE_COLS = frozenset({
+        'client_name', 'contract_number', 'car_vin', 'notes', 'redemption_notes',
+        'client_email', 'client_cif', 'validity_months', 'voucher_type',
+        'value_lei', 'discount_code', 'discount_percentage', 'service_items',
+        'start_date', 'issued_at', 'expires_at', 'status',
+    })
+
+    def update_fields(self, voucher_id: int, updates: dict) -> dict | None:
+        """Apply a dict of column->value updates to a voucher (admin edit).
+
+        Only whitelisted columns are written; ``service_items`` is JSON-encoded;
+        ``updated_at`` is always bumped. Returns the refreshed row.
+        """
+        cols = {k: v for k, v in updates.items() if k in self._EDITABLE_COLS}
+        if not cols:
+            return self.get_by_id(voucher_id)
+        sets, params = [], []
+        for col, val in cols.items():
+            if col == 'service_items':
+                val = json.dumps(val) if val is not None else None
+            sets.append(f'{col} = %s')
+            params.append(val)
+        sets.append('updated_at = CURRENT_TIMESTAMP')
+        params.append(voucher_id)
+        self.execute(f"UPDATE vouchers SET {', '.join(sets)} WHERE id = %s", tuple(params))
+        return self.get_by_id(voucher_id)
+
+    def log_edit(self, voucher_id: int, actor_user_id: int,
+                 action: str, changes: dict) -> None:
+        """Record an admin edit in voucher_audit_log (who/when/what changed)."""
+        self.execute(
+            '''INSERT INTO voucher_audit_log (voucher_id, actor_user_id, action, changes)
+               VALUES (%s, %s, %s, %s)''',
+            (voucher_id, actor_user_id, action, json.dumps(changes)),
+        )
+
     def redeem(self, voucher_id: int, redeemed_by_user_id: int,
                redemption_notes: str = None) -> dict | None:
         """Mark voucher as redeemed. Returns updated row."""
