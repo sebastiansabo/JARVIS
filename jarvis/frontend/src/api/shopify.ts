@@ -6,6 +6,7 @@ export interface ShopifyAccount {
   id: number; name: string; store_domain: string; client_id: string
   status: string; last_error?: string | null
   credential_fields: { client_secret: string }
+  autosync_enabled?: boolean
 }
 
 export interface TaxonomyPayload {
@@ -45,6 +46,7 @@ export const shopifyApi = {
   saveAccount: (data: { id?: number; store_domain: string; client_id: string; client_secret?: string }) =>
     api.post<{ success: boolean; account: ShopifyAccount }>(`${BASE}/config`, data),
   deleteAccount: (id: number) => api.delete<{ success: boolean }>(`${BASE}/config/${id}`),
+  setAutosync: (enabled: boolean) => api.post<{ success: boolean; autosync_enabled: boolean }>(`${BASE}/autosync`, { enabled }),
   testConnection: () => api.post<{ success: boolean; data?: { name: string; currencyCode: string }; error?: string }>(`${BASE}/test-connection`, {}),
   getTaxonomy: () => api.get<{ success: boolean } & TaxonomyPayload>(`${BASE}/taxonomy`),
   saveTaxonomy: (mappings: Array<{ dimension: string; source_value: string; target_gid?: string; target_label?: string; shopify_attribute_gid?: string }>) =>

@@ -20,7 +20,7 @@ from datetime import datetime, timezone, timedelta
 from carpark.connectors.listing_freshness import compute_listing_freshness
 from carpark.connectors.cadence import cadence_to_minutes
 from carpark.connectors.shopify.service import build_shopify_connector
-from carpark.connectors.shopify.routes import _pub_repo, _get_single_account, _config
+from carpark.connectors.shopify.routes import _pub_repo, _get_single_account, _config, _parse_json
 from carpark.connectors.shopify.schema_repository import SchemaRepository
 from carpark.repositories.listing_schedule_repository import ListingScheduleRepository
 from carpark.repositories.vehicle_repository import VehicleRepository
@@ -31,8 +31,32 @@ logger = logging.getLogger('jarvis.carpark.listing_autosync')
 PLATFORM_TYPE = 'shopify'
 
 
-def autosync_enabled() -> bool:
+def _env_gate() -> bool:
+    """Platform-level gate: env var only. Controls whether the autosync job is
+    even registered/reachable in this environment (see cleanup._register_listing_autosync,
+    which must stay env-only so the job is scheduled whenever this is on)."""
     return os.environ.get('ENABLE_LISTING_AUTOSYNC', '').lower() == 'true'
+
+
+def _config_autosync_enabled() -> bool:
+    """Runtime kill switch: the Shopify connector's config flag, DB-backed so it can
+    be flipped without a redeploy. Fails open (True) on any error — the env gate above
+    is what keeps autosync off by default; this must never be the thing that silently
+    re-enables a platform-disabled sync, but a transient DB hiccup here shouldn't be
+    what blocks an otherwise-enabled sync either."""
+    try:
+        account = _get_single_account()
+        if not account:
+            return True
+        cfg = _parse_json(account, 'config')
+        return cfg.get('autosync_enabled', True)
+    except Exception:
+        logger.exception('_config_autosync_enabled: failed to read connector config; failing open')
+        return True
+
+
+def autosync_enabled() -> bool:
+    return _env_gate() and _config_autosync_enabled()
 
 
 def _taxo_map() -> dict:
