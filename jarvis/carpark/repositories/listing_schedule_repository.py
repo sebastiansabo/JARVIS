@@ -20,3 +20,18 @@ class ListingScheduleRepository(BaseRepository):
                     next_run_at = EXCLUDED.next_run_at, updated_at = NOW()
             RETURNING *
         ''', (vehicle_id, platform_type, cadence, enabled, next_run_at), returning=True)
+
+    def list_due(self, platform_type: str, now) -> list:
+        return self.query_all('''
+            SELECT * FROM carpark_listing_schedules
+            WHERE platform_type = %s AND enabled
+              AND cadence NOT IN ('manual', 'instant')
+              AND (next_run_at IS NULL OR next_run_at <= %s)
+        ''', (platform_type, now))
+
+    def mark_run(self, schedule_id: int, next_run_at, last_result: str):
+        return self.execute('''
+            UPDATE carpark_listing_schedules
+            SET next_run_at = %s, last_run_at = NOW(), last_result = %s, updated_at = NOW()
+            WHERE id = %s RETURNING *
+        ''', (next_run_at, last_result, schedule_id), returning=True)
