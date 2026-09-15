@@ -692,9 +692,21 @@ def start_scheduler():
         coalesce=True,
     )
 
+    _register_listing_autosync()
+
     scheduler.start()
     atexit.register(lambda: scheduler.shutdown(wait=False))
     logger.info(f"Background scheduler started (pid={os.getpid()})")
+
+
+def _register_listing_autosync():
+    from tasks.listing_autosync import autosync_enabled, listing_autosync_tick
+    if not autosync_enabled():
+        return
+    scheduler.add_job(listing_autosync_tick, 'interval', hours=4,
+                      id='listing_autosync', replace_existing=True,
+                      misfire_grace_time=300, coalesce=True)
+    logger.info('listing_autosync scheduled (interval 4h)')
 
 
 def is_scheduler_ok():
