@@ -223,6 +223,9 @@ def _register_blueprints(flask_app: Flask):
     from core.suppliers import suppliers_bp
     flask_app.register_blueprint(suppliers_bp)
 
+    from accounting.cost_centers import cost_centers_bp
+    flask_app.register_blueprint(cost_centers_bp)
+
     from core.drive import drive_bp
     flask_app.register_blueprint(drive_bp)
 
