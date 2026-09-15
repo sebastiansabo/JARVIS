@@ -48,3 +48,29 @@ def test_update_and_delete(cc_fixture):
     assert row['name'] == 'IT & Systems' and row['active'] is False
     _repo.delete(cc)
     assert all(r['id'] != cc for r in _repo.list_by_company(cid))
+
+
+def test_set_and_clear_map(cc_fixture):
+    cid = cc_fixture['company_id']
+    cc = _repo.create(cid, '0281', 'IT')
+    _repo.set_map(cc, cc_fixture['node_IT'])
+    row = next(r for r in _repo.list_by_company(cid) if r['id'] == cc)
+    assert row['structure_node_id'] == cc_fixture['node_IT']
+    assert row['structure_node_name'] == 'IT'
+    _repo.set_map(cc, None)
+    row = next(r for r in _repo.list_by_company(cid) if r['id'] == cc)
+    assert row['structure_node_id'] is None
+
+
+def test_auto_seed_map_exact_matches_only(cc_fixture):
+    cid = cc_fixture['company_id']
+    it = _repo.create(cid, '0281', 'IT')                    # matches node 'IT'
+    rep = _repo.create(cid, '0231', 'Reparatii generale VW')  # matches node 'Reparatii generale VW'
+    none = _repo.create(cid, '0291', 'Conducere')           # no node -> stays unmapped
+    n = _repo.auto_seed_map_exact(cid)
+    assert n == 2
+    by_id = {r['id']: r for r in _repo.list_by_company(cid)}
+    assert by_id[it]['structure_node_id'] == cc_fixture['node_IT']
+    assert by_id[rep]['structure_node_id'] == cc_fixture['node_Re']
+    assert by_id[none]['structure_node_id'] is None
+    assert _repo.auto_seed_map_exact(cid) == 0              # idempotent: nothing new
