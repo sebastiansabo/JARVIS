@@ -94,3 +94,23 @@ def test_tick_continues_after_one_schedule_fails(monkeypatch):
         A.listing_autosync_tick()
         assert RS.call_count == 2
         assert SR.return_value.mark_run.call_count == 2
+
+
+def test_tick_registered_only_when_enabled(monkeypatch):
+    from apscheduler.schedulers.background import BackgroundScheduler
+    import tasks.cleanup as C
+    sched = BackgroundScheduler()
+    monkeypatch.setattr(C, 'scheduler', sched)
+    monkeypatch.setenv('ENABLE_LISTING_AUTOSYNC', 'true')
+    C._register_listing_autosync()       # small helper added in Step 3
+    assert sched.get_job('listing_autosync') is not None
+
+
+def test_tick_not_registered_when_disabled(monkeypatch):
+    from apscheduler.schedulers.background import BackgroundScheduler
+    import tasks.cleanup as C
+    sched = BackgroundScheduler()
+    monkeypatch.setattr(C, 'scheduler', sched)
+    monkeypatch.delenv('ENABLE_LISTING_AUTOSYNC', raising=False)
+    C._register_listing_autosync()
+    assert sched.get_job('listing_autosync') is None
