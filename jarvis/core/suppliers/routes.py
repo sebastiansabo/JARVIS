@@ -437,6 +437,62 @@ def api_set_invoice_preset(invoice_id):
     return jsonify({'success': True})
 
 
+def _preset_owner_error(konto_config_id, data):
+    """Validate a preset belongs to the body's (supplier_id, company_id). Returns an error
+    response tuple, or None if valid. Assumes konto_config_id is truthy."""
+    company_id, err = _parse_company_id(data.get('company_id'))
+    if err:
+        return err
+    owner = _repo.get_preset_owner(konto_config_id)
+    if not owner:
+        return jsonify({'success': False, 'error': 'Preset not found'}), 404
+    supplier_id = data.get('supplier_id')
+    if owner['company_id'] != company_id or (supplier_id and owner['supplier_id'] != int(supplier_id)):
+        return jsonify({'success': False, 'error': 'Preset does not belong to this supplier/company'}), 400
+    return None
+
+
+@suppliers_bp.route('/api/suppliers/invoices/<int:invoice_id>/per-line', methods=['POST'])
+@login_required
+def api_set_invoice_per_line(invoice_id):
+    """Enable/disable per-line schema mode for an invoice. Body: {per_line, konto_config_id?,
+    supplier_id, company_id}. konto_config_id is the base (credit) schema — null = supplier active.
+    Disabling clears all line overrides."""
+    if not _check_supplier_perm('edit'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(force=True) or {}
+    per_line = bool(data.get('per_line'))
+    konto_config_id = data.get('konto_config_id') or None
+    if konto_config_id:
+        err = _preset_owner_error(konto_config_id, data)
+        if err:
+            return err
+    _repo.set_invoice_per_line(invoice_id, per_line, konto_config_id=konto_config_id,
+                               created_by=getattr(current_user, 'id', None))
+    return jsonify({'success': True})
+
+
+@suppliers_bp.route('/api/suppliers/invoices/<int:invoice_id>/line-preset', methods=['POST'])
+@login_required
+def api_set_invoice_line_preset(invoice_id):
+    """Pin (or clear) the EuroFib schema for one line of a per-line invoice. Body:
+    {line_index, konto_config_id|null, supplier_id, company_id}."""
+    if not _check_supplier_perm('edit'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(force=True) or {}
+    if data.get('line_index') is None:
+        return jsonify({'success': False, 'error': 'line_index is required'}), 400
+    line_index = int(data['line_index'])
+    konto_config_id = data.get('konto_config_id') or None
+    if konto_config_id:
+        err = _preset_owner_error(konto_config_id, data)
+        if err:
+            return err
+    _repo.set_invoice_line_preset(invoice_id, line_index, konto_config_id,
+                                  created_by=getattr(current_user, 'id', None))
+    return jsonify({'success': True})
+
+
 @suppliers_bp.route('/api/suppliers/<int:supplier_id>/aliases', methods=['POST'])
 @login_required
 def api_add_alias(supplier_id):
@@ -643,10 +699,18 @@ def api_schemas_for_invoice():
     company_id = crow['id']
     presets = _repo.list_presets(res.supplier_id, company_id)
     active_id = next((p['id'] for p in presets if p['is_active']), None)
+    ov = _repo.get_invoice_override_full(invoice_id) or {}
+    li_row = _repo.query_one("SELECT line_items FROM invoices WHERE id = %s", (invoice_id,))
+    raw_items = li_row.get('line_items') if li_row else None
+    try:
+        line_items = raw_items if isinstance(raw_items, list) else (json.loads(raw_items) if raw_items else [])
+    except (TypeError, ValueError):
+        line_items = []
     return jsonify({
         'success': True, 'presets': presets, 'active_id': active_id,
-        'selected_id': _repo.get_invoice_override(invoice_id), 'count': len(presets),
-        'supplier_id': res.supplier_id, 'company_id': company_id,
+        'selected_id': ov.get('konto_config_id'), 'per_line': bool(ov.get('per_line')),
+        'count': len(presets), 'supplier_id': res.supplier_id, 'company_id': company_id,
+        'line_items': line_items, 'line_selected': _repo.list_line_overrides(invoice_id),
     })
 
 
