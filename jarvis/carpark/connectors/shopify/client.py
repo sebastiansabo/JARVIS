@@ -177,3 +177,28 @@ class ShopifyClient:
     def fetch_attribute_values(self, attribute_gid: str) -> List[Dict[str, str]]:
         """Value list for a single car-category attribute (delegates to the batch fetch)."""
         return self.fetch_car_attribute_values().get(attribute_gid, [])
+
+    _METAFIELD_DEFS = '''
+    query defs($after: String) {
+      metafieldDefinitions(first: 250, ownerType: PRODUCT, after: $after) {
+        edges { node { namespace key type { name } } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }'''
+
+    def fetch_metafield_definitions(self) -> Dict[str, str]:
+        out: Dict[str, str] = {}
+        after = None
+        while True:
+            data = self.graphql(self._METAFIELD_DEFS, {'after': after})
+            conn = (data or {}).get('metafieldDefinitions') or {}
+            for e in conn.get('edges', []) or []:
+                n = e.get('node') or {}
+                ns, key, typ = n.get('namespace'), n.get('key'), (n.get('type') or {}).get('name')
+                if ns and key and typ:
+                    out[f'{ns}.{key}'] = typ
+            pi = conn.get('pageInfo') or {}
+            if not pi.get('hasNextPage'):
+                break
+            after = pi.get('endCursor')
+        return out

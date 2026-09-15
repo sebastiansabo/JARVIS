@@ -19,11 +19,15 @@ class FakePub:
 VEH = {'id': 7, 'vin': 'WBA1234567890XYZ1', 'brand': 'BMW', 'model': 'X5',
        'status': 'LISTED', 'current_price': 45000, 'vehicle_type': 'Autoturism'}
 PHOTOS = [{'url': 'https://cdn/1.jpg', 'is_primary': True, 'sort_order': 0}]
+FIELD_MAP = [{'source_expr': 'brand', 'target_namespace': 'custom', 'target_key': 'marca',
+              'target_type': 'single_line_text_field', 'transform': 'raw'}]
+VALUE_MAP = {}
+CONFIG = {'vendor': 'Autoworld', 'template_suffix': 'produs_servicii_stoc'}
 
 def test_publish_creates_listing_when_none_exists():
     pub = FakePub()
     conn = ShopifyConnector(FakeClient(), pub, platform_id=3)
-    out = conn.publish(VEH, PHOTOS, taxo_map={})
+    out = conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
     assert out['success'] is True
     assert out['external_id'] == 'gid://shopify/Product/55'
     assert pub.created and pub.created[0]['vehicle_id'] == 7
@@ -34,7 +38,7 @@ def test_publish_updates_listing_when_exists():
     pub = FakePub(); pub._listing = {'id': 9, 'external_listing_id': 'gid://shopify/Product/55'}
     fc = FakeClient()
     conn = ShopifyConnector(fc, pub, platform_id=3)
-    out = conn.publish(VEH, PHOTOS, taxo_map={})
+    out = conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
     assert out['success'] is True
     assert fc.last_input['id'] == 'gid://shopify/Product/55'
     assert pub.updated and pub.updated[0][0] == 9
@@ -44,7 +48,7 @@ def test_publish_updates_listing_when_exists():
 
 def test_publish_rejects_ineligible():
     conn = ShopifyConnector(FakeClient(), FakePub(), platform_id=3)
-    out = conn.publish({**VEH, 'status': 'SOLD'}, PHOTOS, taxo_map={})
+    out = conn.publish({**VEH, 'status': 'SOLD'}, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
     assert out['success'] is False and 'status' in out['error']
 
 def test_deactivate_archives():
