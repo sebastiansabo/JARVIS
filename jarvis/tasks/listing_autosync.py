@@ -14,6 +14,7 @@ TaxonomyMapRepository used only by the manual taxonomy-editor UI). See
 """
 import logging
 import os
+import threading
 from datetime import datetime, timezone, timedelta
 
 from carpark.connectors.listing_freshness import compute_listing_freshness
@@ -59,6 +60,29 @@ def resync_shopify_vehicle(connector, pub_repo, photo_repo, taxo_map, vehicle, n
     ctx = taxo_map or {}
     result = connector.publish(vehicle, photos, ctx.get('field_map'), ctx.get('value_map'), ctx.get('config'))
     return 'pushed' if result.get('success') else f"error: {result.get('error')}"
+
+
+def _instant_resync_worker(vehicle_id: int) -> None:
+    try:
+        connector = build_shopify_connector()
+        if not connector:
+            return
+        vehicle = VehicleRepository().get_by_id(vehicle_id)
+        if not vehicle:
+            return
+        resync_shopify_vehicle(connector, _pub_repo, PhotoRepository(),
+                               _taxo_map(), vehicle, datetime.now(timezone.utc))
+    except Exception:
+        logger.exception('instant resync failed for vehicle %s', vehicle_id)
+
+
+def maybe_instant_resync(vehicle_id: int) -> None:
+    if not autosync_enabled():
+        return
+    sch = ListingScheduleRepository().get(vehicle_id, 'shopify')
+    if not sch or not sch.get('enabled') or sch.get('cadence') != 'instant':
+        return
+    threading.Thread(target=_instant_resync_worker, args=(vehicle_id,), daemon=True).start()
 
 
 def listing_autosync_tick() -> None:
