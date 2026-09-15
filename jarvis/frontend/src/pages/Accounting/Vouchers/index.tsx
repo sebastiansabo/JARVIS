@@ -49,6 +49,37 @@ function fmtDate(value: string | null | undefined): string {
   return `${dd}/${mm}/${d.getUTCFullYear()}`
 }
 
+/** Convert a voucher date (ISO or RFC-1123) to a yyyy-mm-dd value for
+ *  <input type="date">. Read in UTC so the stored day never shifts. */
+function toDateInput(value: string | null | undefined): string {
+  if (!value) return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  const yyyy = d.getUTCFullYear()
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+const STATUS_OPTIONS = ['draft', 'pending_approval', 'approved', 'active', 'rejected', 'redeemed', 'expired', 'archived']
+const VALIDITY_OPTIONS = ['1', '3', '6', '12', '24']
+
+type EditForm = {
+  client_name: string; contract_number: string; car_vin: string; notes: string
+  status: string; voucher_type: string
+  value_lei: string; discount_code: string; discount_percentage: string; service_items: string
+  validity_months: string; start_date: string; issued_at: string; expires_at: string
+  client_email: string; client_cif: string
+}
+
+const EMPTY_EDIT: EditForm = {
+  client_name: '', contract_number: '', car_vin: '', notes: '',
+  status: 'active', voucher_type: 'value',
+  value_lei: '', discount_code: '', discount_percentage: '', service_items: '',
+  validity_months: '12', start_date: '', issued_at: '', expires_at: '',
+  client_email: '', client_cif: '',
+}
+
 const STATUS_COLORS: Record<string, string> = {
   draft: 'bg-gray-100 text-gray-700',
   pending_approval: 'bg-yellow-100 text-yellow-800',
@@ -148,7 +179,7 @@ export default function Vouchers() {
   const archivedCount = deletedView ? 0 : allVouchers.filter((v) => v.status === 'archived').length
 
   const [editVoucher, setEditVoucher] = useState<Voucher | null>(null)
-  const [editForm, setEditForm] = useState({ client_name: '', contract_number: '', car_vin: '', notes: '' })
+  const [editForm, setEditForm] = useState<EditForm>(EMPTY_EDIT)
 
   const user = useAuthStore((s) => s.user)
   const perms = user?.permissions || {}
@@ -157,6 +188,55 @@ export default function Vouchers() {
   const canReissue = isAdmin || perms['vouchers.accounting.reissue']
   // Delete is admin-only (soft delete). Matches backend gate on role_name.
   const canDelete = ['admin', 'superadmin'].includes(user?.role_name?.toLowerCase() ?? '')
+
+  const openEdit = (v: Voucher) => {
+    setEditVoucher(v)
+    setEditForm({
+      client_name: v.client_name,
+      contract_number: v.contract_number,
+      car_vin: v.car_vin,
+      notes: v.notes || '',
+      status: v.status,
+      voucher_type: v.voucher_type,
+      value_lei: v.value_lei != null ? String(v.value_lei) : '',
+      discount_code: v.discount_code || '',
+      discount_percentage: v.discount_percentage != null ? String(v.discount_percentage) : '',
+      service_items: Array.isArray(v.service_items) ? v.service_items.join('\n') : '',
+      validity_months: String(v.validity_months),
+      start_date: toDateInput(v.start_date),
+      issued_at: toDateInput(v.issued_at),
+      expires_at: toDateInput(v.expires_at),
+      client_email: v.client_email || '',
+      client_cif: v.client_cif || '',
+    })
+  }
+
+  // Non-admins may only touch the 4 base fields; admins send the full set.
+  const buildEditPayload = (): Record<string, unknown> => {
+    const base = {
+      client_name: editForm.client_name,
+      contract_number: editForm.contract_number,
+      car_vin: editForm.car_vin,
+      notes: editForm.notes,
+    }
+    if (!isAdmin) return base
+    const p: Record<string, unknown> = {
+      ...base,
+      client_email: editForm.client_email,
+      client_cif: editForm.client_cif,
+      status: editForm.status,
+      voucher_type: editForm.voucher_type,
+      validity_months: editForm.validity_months,
+      start_date: editForm.start_date,
+      issued_at: editForm.issued_at,
+      expires_at: editForm.expires_at,
+    }
+    if (editForm.voucher_type === 'value') p.value_lei = editForm.value_lei
+    else if (editForm.voucher_type === 'accessory_discount_code') p.discount_code = editForm.discount_code
+    else if (editForm.voucher_type === 'accessory_percentage') p.discount_percentage = editForm.discount_percentage
+    else if (editForm.voucher_type === 'service_items') p.service_items = editForm.service_items.split('\n').map((s) => s.trim()).filter(Boolean)
+    return p
+  }
 
   const redeemMutation = useMutation({
     mutationFn: ({ id, notes }: { id: number; notes?: string }) => vouchersApi.redeem(id, notes),
@@ -172,7 +252,7 @@ export default function Vouchers() {
   })
 
   const editMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Record<string, string> }) => vouchersApi.editVoucher(id, data),
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) => vouchersApi.editVoucher(id, data),
     onSuccess: () => {
       toast.success('Voucher updated')
       setEditVoucher(null)
@@ -233,8 +313,8 @@ export default function Vouchers() {
         {v.status === 'active' && (
           <Button size="sm" variant="outline" onClick={() => { setRedeemVoucher(v); setRedeemNotes('') }}>Redeem</Button>
         )}
-        {canEdit && (v.status === 'active' || v.status === 'pending_approval') && (
-          <Button size="sm" variant="ghost" onClick={() => { setEditVoucher(v); setEditForm({ client_name: v.client_name, contract_number: v.contract_number, car_vin: v.car_vin, notes: v.notes || '' }) }}>
+        {(isAdmin || (canEdit && (v.status === 'active' || v.status === 'pending_approval'))) && (
+          <Button size="sm" variant="ghost" onClick={() => openEdit(v)}>
             <Pencil className="h-3.5 w-3.5" />
           </Button>
         )}
@@ -412,10 +492,10 @@ export default function Vouchers() {
 
       {/* Edit Modal */}
       <Dialog open={!!editVoucher} onOpenChange={() => setEditVoucher(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className={isAdmin ? 'sm:max-w-lg max-h-[85vh] overflow-y-auto' : 'sm:max-w-md'}>
           <DialogHeader>
             <DialogTitle>Edit Voucher {editVoucher?.voucher_code}</DialogTitle>
-            <DialogDescription>Update voucher details</DialogDescription>
+            <DialogDescription>{isAdmin ? 'Admin full edit — every field, including status' : 'Update voucher details'}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -430,6 +510,98 @@ export default function Vouchers() {
               <Label>Car VIN</Label>
               <Input value={editForm.car_vin} onChange={(e) => setEditForm((f) => ({ ...f, car_vin: e.target.value }))} maxLength={17} className="font-mono" />
             </div>
+
+            {isAdmin && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Status</Label>
+                    <Select value={editForm.status} onValueChange={(val) => setEditForm((f) => ({ ...f, status: val }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {STATUS_OPTIONS.map((s) => (
+                          <SelectItem key={s} value={s}>{s.replace(/_/g, ' ')}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Validity (months)</Label>
+                    <Select value={editForm.validity_months} onValueChange={(val) => setEditForm((f) => ({ ...f, validity_months: val }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {VALIDITY_OPTIONS.map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div>
+                  <Label>Type</Label>
+                  <Select value={editForm.voucher_type} onValueChange={(val) => setEditForm((f) => ({ ...f, voucher_type: val }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="value">Value (LEI)</SelectItem>
+                      <SelectItem value="accessory_discount_code">Discount Code</SelectItem>
+                      <SelectItem value="accessory_percentage">Percentage</SelectItem>
+                      <SelectItem value="service_items">Service Items</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {editForm.voucher_type === 'value' && (
+                  <div>
+                    <Label>Value (LEI)</Label>
+                    <Input type="number" step="0.01" value={editForm.value_lei} onChange={(e) => setEditForm((f) => ({ ...f, value_lei: e.target.value }))} />
+                  </div>
+                )}
+                {editForm.voucher_type === 'accessory_discount_code' && (
+                  <div>
+                    <Label>Discount Code</Label>
+                    <Input value={editForm.discount_code} onChange={(e) => setEditForm((f) => ({ ...f, discount_code: e.target.value }))} />
+                  </div>
+                )}
+                {editForm.voucher_type === 'accessory_percentage' && (
+                  <div>
+                    <Label>Percentage (%)</Label>
+                    <Input type="number" step="0.01" value={editForm.discount_percentage} onChange={(e) => setEditForm((f) => ({ ...f, discount_percentage: e.target.value }))} />
+                  </div>
+                )}
+                {editForm.voucher_type === 'service_items' && (
+                  <div>
+                    <Label>Service Items (one per line)</Label>
+                    <Textarea rows={3} value={editForm.service_items} onChange={(e) => setEditForm((f) => ({ ...f, service_items: e.target.value }))} />
+                  </div>
+                )}
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label>Start</Label>
+                    <Input type="date" value={editForm.start_date} onChange={(e) => setEditForm((f) => ({ ...f, start_date: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Issued</Label>
+                    <Input type="date" value={editForm.issued_at} onChange={(e) => setEditForm((f) => ({ ...f, issued_at: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Expires</Label>
+                    <Input type="date" value={editForm.expires_at} onChange={(e) => setEditForm((f) => ({ ...f, expires_at: e.target.value }))} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Client Email</Label>
+                    <Input type="email" value={editForm.client_email} onChange={(e) => setEditForm((f) => ({ ...f, client_email: e.target.value }))} />
+                  </div>
+                  <div>
+                    <Label>Client CIF</Label>
+                    <Input value={editForm.client_cif} onChange={(e) => setEditForm((f) => ({ ...f, client_cif: e.target.value }))} />
+                  </div>
+                </div>
+              </>
+            )}
+
             <div>
               <Label>Notes</Label>
               <Textarea value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} rows={2} />
@@ -437,7 +609,7 @@ export default function Vouchers() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditVoucher(null)}>Cancel</Button>
-            <Button onClick={() => editVoucher && editMutation.mutate({ id: editVoucher.id, data: editForm })} disabled={editMutation.isPending}>
+            <Button onClick={() => editVoucher && editMutation.mutate({ id: editVoucher.id, data: buildEditPayload() })} disabled={editMutation.isPending}>
               {editMutation.isPending ? 'Saving...' : 'Save'}
             </Button>
           </DialogFooter>
