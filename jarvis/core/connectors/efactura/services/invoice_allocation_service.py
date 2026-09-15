@@ -250,7 +250,7 @@ class InvoiceAllocationService:
             resolver = SupplierResolver(sup_repo)
             needs_schema = []
             for inv in invoices:
-                if inv.get('konto_config_id') or not inv.get('company_id'):
+                if inv.get('konto_config_id') or inv.get('konto_per_line') or not inv.get('company_id'):
                     continue
                 res = resolver.resolve(name=inv.get('partner_name'), cui=inv.get('partner_cif'))
                 if not res.supplier_id:

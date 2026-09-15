@@ -36,6 +36,9 @@ export type EFacturaOverridesPayload = {
   subdepartment_override_2?: string | null
   observer_user_ids?: number[]
   konto_config_id?: number | null
+  /** Per-line schema mode + the line→schema map ({line_index: konto_config_id}). */
+  konto_per_line?: boolean
+  konto_line_map?: Record<string, number>
 }
 
 export const efacturaApi = {
