@@ -39,6 +39,8 @@ export type EFacturaOverridesPayload = {
   /** Per-line schema mode + the line→schema map ({line_index: konto_config_id}). */
   konto_per_line?: boolean
   konto_line_map?: Record<string, number>
+  /** Per-allocation zones: {line_index: [{department, subdepartment, value, konto_config_id}]}. */
+  konto_alloc_map?: Record<string, { department: string; subdepartment?: string | null; value: number; konto_config_id: number | null }[]>
 }
 
 export const efacturaApi = {
