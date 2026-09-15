@@ -322,6 +322,11 @@ def update_vehicle(vehicle_id):
         )
         if not vehicle:
             return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+        try:
+            from tasks.listing_autosync import maybe_instant_resync
+            maybe_instant_resync(vehicle_id)
+        except Exception:
+            pass  # never let auto-sync break the save
         return jsonify({'vehicle': _serialize(vehicle)})
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
