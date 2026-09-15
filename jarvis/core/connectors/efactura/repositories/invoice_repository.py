@@ -155,6 +155,7 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
         konto_config_id='__keep__',
         konto_per_line='__keep__',
         konto_line_map='__keep__',
+        konto_alloc_map='__keep__',
     ) -> bool:
         """Update invoice-level overrides for Type, Department, Subdepartment, Observers, and the
         EuroFib schema (konto_config_id / per-line mode).
@@ -193,6 +194,9 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
             if konto_line_map != self._KEEP:
                 sets.append("konto_line_map = %s")
                 params.append(json.dumps(konto_line_map) if konto_line_map else None)
+            if konto_alloc_map != self._KEEP:
+                sets.append("konto_alloc_map = %s")
+                params.append(json.dumps(konto_alloc_map) if konto_alloc_map else None)
             sets.append("updated_at = NOW()")
             params.append(invoice_id)
             self.execute(f"UPDATE efactura_invoices SET {', '.join(sets)} WHERE id = %s", tuple(params))
@@ -1028,6 +1032,7 @@ class EFacturaInvoiceRepository(_EFacturaInvoiceBase):
                 i.konto_config_id,
                 i.konto_per_line,
                 i.konto_line_map,
+                i.konto_alloc_map,
                 i.xml_content,
                 sm.department as mapping_department,
                 sm.subdepartment as mapping_subdepartment,

@@ -181,6 +181,22 @@ def update_invoice_overrides(invoice_id):
             raw_map = data.get('konto_line_map') or {}
             konto_line_map = {str(int(k)): int(v) for k, v in raw_map.items() if v} if isinstance(raw_map, dict) else {}
 
+        # Per-allocation zones {line_index: [{department, subdepartment, value, konto_config_id}]}.
+        konto_alloc_map = '__keep__'
+        if 'konto_alloc_map' in data:
+            raw_alloc = data.get('konto_alloc_map') or {}
+            konto_alloc_map = {}
+            if isinstance(raw_alloc, dict):
+                for k, zones in raw_alloc.items():
+                    clean = [{
+                        'department': str(z['department']),
+                        'subdepartment': str(z['subdepartment']) if z.get('subdepartment') else None,
+                        'value': float(z.get('value') or 0),
+                        'konto_config_id': int(z['konto_config_id']) if z.get('konto_config_id') else None,
+                    } for z in zones if isinstance(z, dict) and z.get('department')] if isinstance(zones, list) else []
+                    if clean:
+                        konto_alloc_map[str(int(k))] = clean
+
         success = _invoice_repo.update_overrides(
             invoice_id=invoice_id,
             type_override=type_override,
@@ -192,6 +208,7 @@ def update_invoice_overrides(invoice_id):
             konto_config_id=konto_config_id,
             konto_per_line=konto_per_line,
             konto_line_map=konto_line_map,
+            konto_alloc_map=konto_alloc_map,
         )
 
         if success:
