@@ -2101,6 +2101,19 @@ function ListingsTab({
         </Card>
       )}
 
+      {/* Shopify direct publish — mirrors the Autovit panel; reuses the header control. */}
+      {canEdit && (
+        <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+          <div>
+            <h4 className="text-sm font-medium">Shopify — publicare în magazin</h4>
+            <p className="text-xs text-muted-foreground">
+              Publică acest vehicul în magazinul Shopify conectat.
+            </p>
+          </div>
+          <ShopifyPublishControl vehicleId={vehicleId} canEdit={canEdit} />
+        </Card>
+      )}
+
       {/* Actions bar */}
       {canEdit && (
         <div className="flex items-center gap-2">
