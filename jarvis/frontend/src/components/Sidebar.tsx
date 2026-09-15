@@ -48,7 +48,7 @@ const navItemsDef: NavItem[] = [
       { path: '/app/accounting/facturare', label: 'Comenzi Externe', icon: Receipt, moduleKey: 'accounting_facturare', permission: 'can_access_facturare' },
       { path: '/app/accounting/controlling', label: 'Controlling', icon: BarChart3, moduleKey: 'accounting_controlling', permission: 'can_access_controlling', v2Permission: 'controlling.bab.view' },
       { path: '/app/accounting/vouchers', label: 'Vouchers', icon: Tag, moduleKey: 'accounting_vouchers', permission: 'can_access_vouchers', v2Permission: 'vouchers.accounting.view' },
-      { path: '/app/accounting/cost-centers', label: 'Centre de cost', icon: Coins, moduleKey: 'accounting_cost_centers', permission: 'can_access_accounting' },
+      { path: '/app/accounting/cost-centers', label: 'Centre de cost', icon: Coins, permission: 'can_access_accounting' },
       { path: '/app/dms/suppliers', label: 'Suppliers', icon: Building2, moduleKey: 'dms_suppliers', permission: 'can_access_dms' },
     ],
   },
