@@ -700,8 +700,8 @@ def start_scheduler():
 
 
 def _register_listing_autosync():
-    from tasks.listing_autosync import autosync_enabled, listing_autosync_tick
-    if not autosync_enabled():
+    from tasks.listing_autosync import _env_gate, listing_autosync_tick
+    if not _env_gate():
         return
     scheduler.add_job(listing_autosync_tick, 'interval', hours=4,
                       id='listing_autosync', replace_existing=True,

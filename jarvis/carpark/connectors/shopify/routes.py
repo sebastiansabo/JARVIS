@@ -80,6 +80,7 @@ def _safe_account(row):
         'status': row.get('status', 'disconnected'),
         'last_error': row.get('last_error'),
         'credential_fields': {'client_secret': '••••••' if creds.get('client_secret') else ''},
+        'autosync_enabled': cfg.get('autosync_enabled', True),
     }
 
 
@@ -179,6 +180,24 @@ def delete_account(account_id):
         return jsonify({'success': False, 'error': 'Account not found'}), 404
     _repo.delete(account_id)
     return jsonify({'success': True})
+
+
+@shopify_bp.route('/api/autosync', methods=['POST'])
+@admin_required
+def set_autosync():
+    """Runtime kill switch for listing autosync — DB-backed so it can be flipped
+    without a redeploy (see tasks/listing_autosync.py::_config_autosync_enabled).
+    Merges into the existing config; must not wipe store_domain/credentials."""
+    account = _get_single_account()
+    if not account:
+        return jsonify({'success': False, 'error': 'Shopify not configured'}), 400
+    data = request.get_json(silent=True) or {}
+    enabled = bool(data.get('enabled'))
+    config = _parse_json(account, 'config')
+    config['autosync_enabled'] = enabled
+    _repo.update(account['id'], name=account.get('name'), config=config,
+                 credentials=_parse_json(account, 'credentials'))
+    return jsonify({'success': True, 'autosync_enabled': enabled})
 
 
 @shopify_bp.route('/api/test-connection', methods=['POST'])
