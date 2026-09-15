@@ -40,6 +40,20 @@ def test_duplicate_code_same_company_rejected(cc_fixture):
         _repo.create(cid, '0281', 'IT again')   # UNIQUE(company_id, code)
 
 
+def test_list_companies_includes_company_with_zero_cost_centers(cc_fixture):
+    # The cc_fixture company starts with zero cost centers. list_companies() must
+    # still surface it (count 0) so the FE company selector can offer its FIRST
+    # cost center; a LEFT JOIN is required (INNER JOIN would hide it).
+    cid = cc_fixture['company_id']
+    row = next((r for r in _repo.list_companies() if r['company_id'] == cid), None)
+    assert row is not None                      # present even with no cost centers
+    assert row['count'] == 0
+    _repo.create(cid, '0281', 'IT')
+    row = next((r for r in _repo.list_companies() if r['company_id'] == cid), None)
+    assert row is not None
+    assert row['count'] == 1
+
+
 def test_update_and_delete(cc_fixture):
     cid = cc_fixture['company_id']
     cc = _repo.create(cid, '0281', 'IT')
