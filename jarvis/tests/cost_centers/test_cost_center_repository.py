@@ -74,3 +74,44 @@ def test_auto_seed_map_exact_matches_only(cc_fixture):
     assert by_id[rep]['structure_node_id'] == cc_fixture['node_Re']
     assert by_id[none]['structure_node_id'] is None
     assert _repo.auto_seed_map_exact(cid) == 0              # idempotent: nothing new
+
+
+def test_auto_seed_map_exact_skips_ambiguous(cc_fixture):
+    """A cost center whose name matches >1 structure node (case-insensitively) is
+    ambiguous and must be SKIPPED silently — it must not raise a CardinalityViolation
+    that aborts auto-seed for the whole company, and it must stay unmapped while an
+    unambiguous cost center in the same company still gets mapped."""
+    cid = cc_fixture['company_id']
+    # cc_fixture only seeds unique node names; add a duplicate-named pair here so
+    # one cost center matches TWO structure_nodes (LOWER('Marketing')==LOWER('marketing')).
+    extra_node_ids = []
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        for nm in ('Marketing', 'marketing'):
+            cur.execute(
+                "INSERT INTO structure_nodes (company_id, parent_id, name, level) "
+                "VALUES (%s, NULL, %s, 1) RETURNING id",
+                (cid, nm),
+            )
+            extra_node_ids.append(cur.fetchone()['id'])
+        conn.commit()
+    finally:
+        release_db(conn)
+
+    try:
+        amb = _repo.create(cid, '0261', 'Marketing')   # matches TWO nodes -> ambiguous -> skip
+        it = _repo.create(cid, '0281', 'IT')           # matches single node 'IT'  -> map
+        n = _repo.auto_seed_map_exact(cid)             # must NOT raise despite ambiguity
+        assert n == 1
+        by_id = {r['id']: r for r in _repo.list_by_company(cid)}
+        assert by_id[amb]['structure_node_id'] is None
+        assert by_id[it]['structure_node_id'] == cc_fixture['node_IT']
+    finally:
+        conn2 = get_db()
+        try:
+            cur2 = get_cursor(conn2)
+            cur2.execute("DELETE FROM structure_nodes WHERE id = ANY(%s)", (extra_node_ids,))
+            conn2.commit()
+        finally:
+            release_db(conn2)
