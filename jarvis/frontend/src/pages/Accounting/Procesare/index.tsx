@@ -620,8 +620,17 @@ export default function Procesare() {
                           <TableCell className="text-right"><CurrencyDisplay value={Number(inv.invoice_value)} currency={inv.currency} /></TableCell>
                           <TableCell>{inv.currency}</TableCell>
                           <TableCell>
-                            {companyId != null && (
-                              <InvoicePresetPicker inv={inv} companyId={companyId} disabled={isProcessedView} />
+                            {inv.per_line ? (
+                              <span
+                                title="Fiecare linie are schema ei — se editează în dialogul de bugetare"
+                                className="inline-flex items-center rounded border border-violet-400/60 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-300"
+                              >
+                                pe linie
+                              </span>
+                            ) : (
+                              companyId != null && (
+                                <InvoicePresetPicker inv={inv} companyId={companyId} disabled={isProcessedView} />
+                              )
                             )}
                           </TableCell>
                           <TableCell />
