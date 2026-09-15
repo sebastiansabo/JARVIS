@@ -344,3 +344,41 @@ class TestBuildMedlineRowsUsesConfig:
         assert credit_b[_COL_INDEX['konto']] == '40100001'
         # amounts identical, only the accounts differ with the preset
         assert debit_a[_COL_INDEX['betrag']] == debit_b[_COL_INDEX['betrag']] == '100.00'
+
+
+class TestBuildMedlineRowsPerLine:
+    def _invoice(self):
+        return {'supplier': 'A24', 'invoice_number': '2195', 'invoice_date': '2026-08-31',
+                'due_date': '2026-09-30'}
+
+    def test_one_credit_n_debits(self):
+        from core.suppliers.eurofib_export import build_medline_rows_per_line, _COL_INDEX, _MARKER_INDEX
+        base = {'konto_credit': '40102793', 'klient': '140', 'belegart': 'JC',
+                'gegenkonto_credit': '', 'text_template': ''}
+        lines = [
+            {'net': 100.0, 'vat': 21.0, 'text': 'Gaze naturale',
+             'config': {'konto_debit': '628701', 'steuercode': '621', 'gegenkonto_debit': '', 'kostenstelle_debit': '0393'}},
+            {'net': 50.0, 'vat': 10.5, 'text': 'Acciza',
+             'config': {'konto_debit': '635000', 'steuercode': '622', 'gegenkonto_debit': '', 'kostenstelle_debit': '0393'}},
+        ]
+        rows = build_medline_rows_per_line(self._invoice(), base, lines)
+        assert len(rows) == 3  # 1 credit + 2 debits
+        credit, d1, d2 = rows
+        assert credit[_MARKER_INDEX] == 'x'
+        assert credit[_COL_INDEX['soll_haben']] == 'h'
+        assert credit[_COL_INDEX['konto']] == '40102793'
+        assert credit[_COL_INDEX['betrag']] == '181.50'   # (100+21)+(50+10.5)
+        assert credit[_COL_INDEX['klient']] == '140'
+        assert d1[_COL_INDEX['soll_haben']] == 's'
+        assert d1[_COL_INDEX['konto']] == '628701'
+        assert d1[_COL_INDEX['betrag']] == '100.00'
+        assert d1[_COL_INDEX['steuerbetrag']] == '21.00'
+        assert d1[_COL_INDEX['steuercode']] == '621'
+        assert d1[_COL_INDEX['text']] == 'Gaze naturale'
+        assert d2[_COL_INDEX['konto']] == '635000'
+        assert d2[_COL_INDEX['betrag']] == '50.00'
+        assert d1[_MARKER_INDEX] == '' and d2[_MARKER_INDEX] == ''
+
+    def test_empty_line_configs_returns_empty(self):
+        from core.suppliers.eurofib_export import build_medline_rows_per_line
+        assert build_medline_rows_per_line(self._invoice(), {'konto_credit': '4'}, []) == []
