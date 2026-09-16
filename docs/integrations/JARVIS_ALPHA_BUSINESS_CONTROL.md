@@ -115,53 +115,117 @@ login. Rate limits: `/api/auth/token` and `/api/auth/verify-otp` are throttled t
 
 ---
 
-## 4. Authorization request
+## 4. Authorization request (multi-tenant)
 
-### `GET /api/integrations/business-control/authorize`
+Both methods authenticate via the JARVIS **session cookie** *or* an
+`Authorization: Bearer <access_token>` (the recommended server-to-server path;
+OTP/2FA is handled upstream when that token is minted at `POST /api/auth/token`).
+Authorization is the `permissions_v2` permission **`business_control.access`**
+(role grant or admin bypass) — never a hard-coded role name.
 
-Authenticates via the JARVIS **session cookie** *or* an
-`Authorization: Bearer <access_token>` (the recommended server-to-server path).
-JARVIS decides authorization through its `permissions_v2` model using the
-**`business_control.access`** permission.
+**Tenant model — uses the existing JARVIS company structure:**
+- **admin** (`can_access_settings`) → **all active companies**.
+- **non-admin** with the permission → **only their registered company**
+  (`users.company_id`), if active.
 
-**200 — authorized:**
+### 4.1 `GET …/authorize` — who am I + which tenants can I use
+
+**200 — single tenant (non-admin):** no selection needed.
 
 ```json
 {
+  "success": true,
   "authorized": true,
-  "user": { "id": 123, "email": "user@example.com", "full_name": "Ada Lovelace" },
-  "scope": { "tenant_id": null, "company_id": 2, "company": "DWA" },
-  "permission": "business_control.access"
+  "user": { "id": 123, "email": "user@example.com", "full_name": "Nume Utilizator", "role": "Manager" },
+  "permission": "business_control.access",
+  "tenant_selection_required": false,
+  "default_company_id": 101,
+  "available_tenants": [
+    { "company_id": 101, "company_name": "Autoworld SRL", "company_code": "AUTOWORLD", "is_default": true }
+  ],
+  "scope": { "tenant_id": 101, "company_id": 101, "company": "Autoworld SRL" }
 }
 ```
 
-The response echoes **only** id / email / full_name and the scope. It never
-returns password hashes, session secrets, tokens, or unrelated personal data.
+**200 — multiple tenants (admin):** alpha must show a picker, then `POST` the choice.
 
-**403 — insufficient permission** (authenticated but no grant, or a disabled
-account), standard JARVIS envelope:
+```json
+{
+  "success": true,
+  "authorized": true,
+  "user": { "id": 123, "email": "user@example.com", "full_name": "Nume Utilizator", "role": "Admin" },
+  "permission": "business_control.access",
+  "tenant_selection_required": true,
+  "default_company_id": 101,
+  "available_tenants": [
+    { "company_id": 101, "company_name": "Autoworld SRL", "company_code": "AUTOWORLD", "is_default": true },
+    { "company_id": 205, "company_name": "Compania B SRL", "company_code": "COMPANIA_B", "is_default": false }
+  ],
+  "scope": { "tenant_id": 101, "company_id": 101, "company": "Autoworld SRL" }
+}
+```
+
+`scope` mirrors the default tenant and is kept for backward compatibility with the
+first (single-tenant) release. Alpha should isolate its `jarvis_alpha` data by the
+**selected** `company_id`.
+
+**403 — no access** (no permission, disabled account, or zero eligible companies):
 
 ```json
 { "success": false, "error": "Permission denied" }
 ```
 
-**401 — missing / invalid / expired authentication**, standard JARVIS envelope:
+**401 — missing / invalid / expired authentication:**
 
 ```json
 { "success": false, "error": "Authentication required" }
 ```
 
-Alpha MUST treat only `HTTP 200` with `"authorized": true` as access. On `401`,
-re-authenticate (refresh the token or send the user back to login). On `403`,
-show "no access to Business Control" and do **not** create an alpha session.
+### 4.2 `POST …/authorize` — select one tenant (server-verified)
 
-### 4.1 Scope / isolation
+Request body:
+
+```json
+{ "company_id": 205 }
+```
+
+JARVIS re-derives the eligible set **server-side** and authorizes only if the
+posted `company_id` is in it and active — the posted value is **never** trusted as
+proof, and a `company_id` from alpha's own cookie is not accepted.
+
+**200 — selected:**
+
+```json
+{
+  "success": true,
+  "authorized": true,
+  "user": { "id": 123, "email": "user@example.com", "full_name": "Nume Utilizator", "role": "Manager" },
+  "scope": { "tenant_id": 205, "company_id": 205, "company": "Compania B SRL" },
+  "permission": "business_control.access"
+}
+```
+
+**403 — tenant not permitted / inactive / not authorized** (uniform, leaks nothing
+about other companies):
+
+```json
+{ "success": false, "authorized": false, "error": "Tenant access denied" }
+```
+
+**401 — unauthenticated**, **400 — missing/invalid `company_id`** (standard envelope).
+
+Alpha MUST treat only `HTTP 200` with `"authorized": true` as access, and create
+its own Secure/HttpOnly/SameSite session cookie scoped to the returned
+`company_id`. On `401`, re-authenticate; on `403`, deny and create no session.
+
+### 4.3 Scope / isolation
 
 JARVIS has **no separate tenant tier** — the **company** is the isolation
-boundary. `tenant_id` is therefore always `null`; **isolate alpha's data by
-`company_id`**. `company` is the human-readable company name for display. A caller
-only ever receives their own company; there is no cross-company data in the
-response.
+boundary — so `tenant_id` mirrors `company_id`. **Isolate alpha's data by
+`company_id`.** A non-admin only ever receives their registered company; an admin
+receives all active companies and must pick one via `POST`. `company_code` is a
+display-only slug **derived from the company name** (there is no code column in
+JARVIS), so it is not guaranteed stable — key on `company_id`.
 
 ---
 
@@ -183,9 +247,43 @@ any role afterward.
 account type; an "administrator" is a role with `can_access_settings`. JARVIS's
 permission model treats such admins as all-access for every permission, and this
 endpoint **honors that documented behavior** — an admin is authorized for
-Business Control even without an explicit grant. To restrict Business Control to
-specific people, use a dedicated non-admin role that holds `business_control.access`
-and assign users to it.
+Business Control even without an explicit grant, and (per the multi-tenant rule)
+sees **all active companies**. To restrict Business Control to specific people,
+use a dedicated non-admin role that holds `business_control.access`.
+
+**Which company a user gets:** a non-admin's tenant is the company they're
+registered on (`users.company_id`), managed via **Settings → Users**. There is no
+separate per-user multi-company membership — admins see all, everyone else sees
+their registered company. `companies.is_active` (added by this change, default
+`TRUE`) controls whether a company is selectable.
+
+### 5.1 Admin read-only view
+
+`GET /api/integrations/business-control/admin/users/<user_id>/access` (admin-only,
+gated by `can_access_settings`) returns, for auditing/support, whether a user has
+Business Control access and their company — without exposing secrets:
+
+```json
+{
+  "success": true,
+  "user": { "id": 5, "email": "t@x.com", "full_name": "Nume", "role": "Manager" },
+  "has_business_control_access": true,
+  "sees_all_companies": false,
+  "registered_company": { "company_id": 101, "company_name": "Autoworld SRL" }
+}
+```
+
+Non-admin caller → `403`; unauthenticated → `401`.
+
+### 5.2 Audit
+
+`user_events` records (best-effort, never blocking, no secrets): a granted tenant
+selection (`business_control.tenant_selected`), a successful authorize
+(`business_control.authorize`), and every denied attempt
+(`business_control.tenant_denied` / `business_control.authorize_denied`) — each
+with the actor `user_id`/email, the `company_id`, the action and a timestamp.
+Grant/revoke of `business_control.access` and changes to a user's registered
+company happen through the existing Settings → Roles / Settings → Users screens.
 
 ---
 
