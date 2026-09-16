@@ -30,10 +30,22 @@ def test_td_label_none_distance_defaults_to_test_drive():
     assert _td_traseu(None, 'MG HS') == 'Test Drive MG HS'
 
 
+# ── B2) the 50 km split is the company's configured TD max, not a literal ────
+def test_td_label_uses_configured_threshold_over():
+    # Company with td_max=40 → a 45 km drive is a courtesy loan, not a plain TD.
+    assert _td_traseu(45, 'MG HS', 40) == 'Comodat / Test Drive MG HS'
+
+
+def test_td_label_uses_configured_threshold_boundary():
+    # The configured max is inclusive: exactly td_max stays a plain Test Drive.
+    assert _td_traseu(40, 'MG HS', 40) == 'Test Drive MG HS'
+
+
 # ── A) include_internal + integration of the label into aggregate_month ─────
 class _FakeFpRepo:
-    def __init__(self, rows):
+    def __init__(self, rows, td_km_max=None):
         self._rows = rows
+        self._td_km_max = td_km_max
 
     def get_contracts(self, **_):
         return list(self._rows), len(self._rows)
@@ -41,11 +53,18 @@ class _FakeFpRepo:
     def query_all(self, *_a, **_k):
         return []
 
+    def query_one(self, sql, _params=None):
+        # Per-company TD/Comodat threshold lookup (fp_km_configs.td_km_max).
+        if 'fp_km_configs' in sql and self._td_km_max is not None:
+            return {'td_km_max': self._td_km_max}
+        return None
 
-def _contract(cid, km_start, km_end, *, is_internal=False, itinerary='', day=5):
+
+def _contract(cid, km_start, km_end, *, is_internal=False, itinerary='', day=5,
+              company_id=None):
     return {
         'id': cid,
-        'company_id': None,          # falsy → skips the CompanyRepository DB lookup
+        'company_id': company_id,    # None → skips the CompanyRepository DB lookup
         'company_name': 'Autoworld',
         'departure_datetime': f'2026-09-{day:02d}T10:00:00',
         'return_datetime': f'2026-09-{day:02d}T12:00:00',
@@ -63,8 +82,8 @@ def _contract(cid, km_start, km_end, *, is_internal=False, itinerary='', day=5):
     }
 
 
-def _setup(monkeypatch, rows):
-    monkeypatch.setattr(rss, '_fp_repo', _FakeFpRepo(rows))
+def _setup(monkeypatch, rows, td_km_max=None):
+    monkeypatch.setattr(rss, '_fp_repo', _FakeFpRepo(rows, td_km_max=td_km_max))
     monkeypatch.setattr(rss, '_veh_repo',
                         type('V', (), {'get_by_vin': staticmethod(lambda vin: {'mark': 'MG', 'model': 'HS'})})())
 
@@ -99,6 +118,15 @@ def test_aggregate_excludes_internal_but_keeps_km_span(monkeypatch):
     assert data['totals']['km_start'] == 1000
     assert data['totals']['km_end'] == 1260
     assert data['totals']['km'] == 260
+
+
+def test_aggregate_applies_company_td_max_threshold(monkeypatch):
+    # Company 7 is configured with td_km_max=40, so a 45 km client drive reads
+    # as a courtesy loan even though it's under the legacy hard-coded 50.
+    rows = [_contract(1, 1000, 1045, day=3, company_id=7)]   # 45 km client drive
+    _setup(monkeypatch, rows, td_km_max=40)
+    data = rss.aggregate_month('VF1X', 2026, 9)
+    assert data['trips'][0]['traseu'] == 'Comodat / Test Drive MG HS'
 
 
 def test_excluded_internal_km_surfaces_as_gap_row(monkeypatch):
