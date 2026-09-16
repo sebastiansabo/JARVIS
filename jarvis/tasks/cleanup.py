@@ -41,6 +41,24 @@ logger = get_logger('jarvis.tasks')
 scheduler = BackgroundScheduler(daemon=True)
 _lock_file = None
 _scheduler_deferred = False  # True when another worker holds the lock
+_scheduler_disabled = False  # True when this environment intentionally runs no jobs
+
+
+def _scheduler_enabled():
+    """Whether this environment should run the background jobs.
+
+    The scheduler drives autonomous jobs that email / push REAL users
+    (overdue-return alerts, doc-expiry warnings, digests). Environments with a
+    stale DB — notably the staging service, which was re-emailing real advisors
+    from months-old FILLED test-drive sessions — must be able to switch it off.
+
+    Returns False only when ENABLE_SCHEDULER is explicitly a falsy string, so
+    the flag defaults ON: prod and local dev keep running even when it is unset,
+    and only staging carries ENABLE_SCHEDULER=false.
+    """
+    return os.environ.get('ENABLE_SCHEDULER', 'true').strip().lower() not in (
+        'false', '0', 'no', 'off',
+    )
 
 
 def _acquire_scheduler_lock():
@@ -68,6 +86,13 @@ def start_scheduler():
     """
     if scheduler.running:
         return
+
+    global _scheduler_disabled
+    if not _scheduler_enabled():
+        _scheduler_disabled = True
+        logger.info(f"Background scheduler disabled via ENABLE_SCHEDULER (pid={os.getpid()})")
+        return
+    _scheduler_disabled = False
 
     global _scheduler_deferred
     if not _acquire_scheduler_lock():
@@ -712,9 +737,12 @@ def _register_listing_autosync():
 def is_scheduler_ok():
     """Check if the scheduler is healthy across all workers.
 
-    Returns True if this worker runs the scheduler OR another worker holds the lock.
+    Returns True if this worker runs the scheduler OR another worker holds the lock
+    OR the scheduler is intentionally disabled for this environment.
     Returns False only if start_scheduler() was never called or genuinely failed.
     """
+    if _scheduler_disabled:
+        return True  # intentionally off for this environment (e.g. staging)
     if scheduler.running:
         return True
     if _scheduler_deferred:
