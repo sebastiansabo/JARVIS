@@ -19,4 +19,13 @@ describe('resolveScop', () => {
   it('client → Test Drive {model}', () => {
     expect(resolveScop(s({ is_internal: false, source: 'td_form' }), 'VW Golf', undefined)).toBe('Test Drive VW Golf')
   })
+  it('client drive over the TD max → Comodat / Test Drive {model}', () => {
+    expect(resolveScop(s({ is_internal: false, distance_km: 60 }), 'VW Golf', undefined, 50)).toBe('Comodat / Test Drive VW Golf')
+  })
+  it('client drive exactly at the TD max stays a plain Test Drive', () => {
+    expect(resolveScop(s({ is_internal: false, distance_km: 50 }), 'VW Golf', undefined, 50)).toBe('Test Drive VW Golf')
+  })
+  it('respects a per-company TD max below 50', () => {
+    expect(resolveScop(s({ is_internal: false, distance_km: 45 }), 'VW Golf', undefined, 40)).toBe('Comodat / Test Drive VW Golf')
+  })
 })

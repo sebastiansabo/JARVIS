@@ -572,14 +572,14 @@ function KmCell({ c, canEdit }: { c: FoiContract; canEdit: boolean }) {
 
 /** Inline-editable "Locul / Scopul" cell. Shows the resolved text (override →
  *  event/internal/client base); editing saves a per-session override. */
-function ScopCell({ c, vehLabel, override, canEdit, vin, year, month }: {
+function ScopCell({ c, vehLabel, override, canEdit, vin, year, month, tdMax = 50 }: {
   c: FoiContract; vehLabel: string; override?: string; canEdit: boolean
-  vin: string; year: number; month: number
+  vin: string; year: number; month: number; tdMax?: number
 }) {
   const queryClient = useQueryClient()
   const [editing, setEditing] = useState(false)
   const [text, setText] = useState('')
-  const display = resolveScop(c, vehLabel, override)
+  const display = resolveScop(c, vehLabel, override, tdMax)
 
   const save = useMutation({
     mutationFn: (t: string) => foiParcursApi.saveScop(vin, year, month, c.id, t),
@@ -690,6 +690,19 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
   const vinMap = React.useMemo(
     () => new Map((vehData?.vehicles ?? []).map((v) => [v.vin, v])),
     [vehData],
+  )
+
+  // Per-company TD max (fp_km_configs.td_km_max) → the largest client drive still
+  // labelled a plain "Test Drive"; longer ones read "Comodat / Test Drive" in the
+  // Locul/Scopul column, matching the exported sheet. Falls back to 50 per company.
+  const { data: kmCfgData } = useQuery({
+    queryKey: ['fp-km-configs'],
+    queryFn: () => foiParcursApi.getKmConfigs(),
+    staleTime: 300_000,
+  })
+  const tdMaxByCompany = React.useMemo(
+    () => new Map((kmCfgData?.configs ?? []).map((k) => [k.company_id, k.td_km_max])),
+    [kmCfgData],
   )
 
   // Which cars already have a stored (generated) sheet for the selected period.
@@ -1033,6 +1046,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                         <ScopCell
                                           c={c}
                                           vehLabel={[veh?.mark, veh?.model].filter(Boolean).join(' ')}
+                                          tdMax={(veh?.company_id != null ? tdMaxByCompany.get(veh.company_id) : undefined) ?? 50}
                                           override={stored?.scop_overrides?.[String(c.id)]}
                                           canEdit={canCorrect}
                                           vin={sheet.vin} year={filterYear} month={filterMonth}

@@ -76,13 +76,30 @@ def _iso_date(v) -> str:
     return dt.strftime('%Y-%m-%d') if dt else ''
 
 
-def _td_traseu(distance_km, model_label: str) -> str:
-    """Locul/Scopul label for a client test-drive row. A drive over 50 km reads as
-    a courtesy loan ('Comodat / Test Drive {model}') rather than a plain
-    'Test Drive {model}' — purely cosmetic on the exported sheet; the session
-    itself stays a test drive (is_td, counts and totals unchanged)."""
-    prefix = 'Comodat / Test Drive' if (distance_km or 0) > 50 else 'Test Drive'
+def _td_traseu(distance_km, model_label: str, td_max: int = 50) -> str:
+    """Locul/Scopul label for a client test-drive row. A drive past the company's
+    configured TD max (fp_km_configs.td_km_max, default 50) reads as a courtesy
+    loan ('Comodat / Test Drive {model}') rather than a plain 'Test Drive {model}'
+    — the threshold is inclusive (== td_max stays a plain Test Drive). Purely
+    cosmetic on the exported sheet; the session itself stays a test drive
+    (is_td, counts and totals unchanged)."""
+    prefix = 'Comodat / Test Drive' if (distance_km or 0) > (td_max or 50) else 'Test Drive'
     return f'{prefix} {model_label}'.strip()
+
+
+def _company_td_max(company_id) -> int:
+    """The company's configured TD max in km (fp_km_configs.td_km_max), i.e. the
+    largest drive still labelled a plain Test Drive; anything longer reads as a
+    Comodat. Falls back to 50 when unset or unreadable."""
+    if not company_id:
+        return 50
+    try:
+        km_cfg = _fp_repo.query_one('SELECT td_km_max FROM fp_km_configs WHERE company_id=%s', (company_id,))
+        if km_cfg and km_cfg.get('td_km_max'):
+            return int(km_cfg['td_km_max'])
+    except Exception:
+        logger.warning('td_km_max lookup failed', exc_info=True)
+    return 50
 
 
 def aggregate_month(vin: str, year: int, month: int, include_internal: bool = True) -> dict:
@@ -141,6 +158,7 @@ def aggregate_month(vin: str, year: int, month: int, include_internal: bool = Tr
         logger.warning('mkt_project lookup failed', exc_info=True)
 
     model_label = ' '.join(x for x in (veh.get('mark'), veh.get('model')) if x) or 'vehicul'
+    td_max = _company_td_max(company_id)
     trips = []
     for c in sessions:
         dist = c.get('distance_km') or 0
@@ -157,7 +175,7 @@ def aggregate_month(vin: str, year: int, month: int, include_internal: bool = Tr
         if is_event:
             traseu = f'Eveniment: {comment}' if comment else 'Eveniment'
         elif is_td:
-            traseu = _td_traseu(dist, model_label)
+            traseu = _td_traseu(dist, model_label, td_max)
         else:
             traseu = comment or 'Deplasare în interes de serviciu'
         trips.append({
