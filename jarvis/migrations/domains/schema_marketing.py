@@ -420,10 +420,12 @@ def create_schema_marketing(conn, cursor):
         conn.commit()
 
     # ── Migration: Add missing permissions_v2 for uncovered modules ──
-    from .schema_roles import _seed_missing_permissions_v2, _seed_mobile_permissions_v2, _seed_checkin_bypass_permission, _seed_sidebar_permissions_v2
+    from .schema_roles import _seed_missing_permissions_v2, _seed_mobile_permissions_v2, _seed_checkin_bypass_permission, _seed_business_control_permissions_v2, _seed_sidebar_permissions_v2
     _seed_missing_permissions_v2(cursor, conn)
     _seed_mobile_permissions_v2(cursor, conn)
     _seed_checkin_bypass_permission(cursor, conn)
+    # Must run BEFORE the sidebar sweep so its explicit User/Viewer deny rows exist.
+    _seed_business_control_permissions_v2(cursor, conn)
     _seed_sidebar_permissions_v2(cursor, conn)
 
     # Seed marketing dropdown_options if not present

@@ -196,6 +196,13 @@ def _register_blueprints(flask_app: Flask):
     from core.auth import auth_bp
     flask_app.register_blueprint(auth_bp)
 
+    # First-party integrations (JARVIS alpha | BUSINESS CONTROL authorize).
+    # No url_prefix — routes declare the full '/api/integrations/...' path. The
+    # unique prefix avoids colliding with auth/mobile current-user routes, and
+    # the global _jwt_session_bridge already authenticates Bearer callers.
+    from core.integrations import integrations_bp
+    flask_app.register_blueprint(integrations_bp)
+
     from core.organization import org_bp
     flask_app.register_blueprint(org_bp)
 
