@@ -196,6 +196,173 @@ function Field({ label, value, className }: { label: string; value: React.ReactN
   )
 }
 
+// ── Inline per-card editing ─────────────────────────────────
+// EditableCard wraps a detail card: it shows the read-only view (children) plus
+// a pencil for editors; clicking it swaps to a field grid with Save/Cancel that
+// PATCHes only this card's fields via updateVehicle (partial payload supported).
+type EditFieldType = 'text' | 'number' | 'date' | 'bool' | 'textarea' | 'select'
+interface EditFieldDef {
+  key: keyof Vehicle
+  label: string
+  type: EditFieldType
+  options?: { value: string; label: string }[]
+  step?: string
+}
+
+function FieldEditor({
+  def,
+  value,
+  onChange,
+}: {
+  def: EditFieldDef
+  value: unknown
+  onChange: (v: unknown) => void
+}) {
+  if (def.type === 'bool') {
+    return (
+      <label className="flex items-center gap-2 py-1 text-sm">
+        <input
+          type="checkbox"
+          checked={!!value}
+          onChange={(e) => onChange(e.target.checked)}
+          className="h-4 w-4 rounded border-input accent-primary"
+        />
+        <span>{def.label}</span>
+      </label>
+    )
+  }
+  const strValue = value == null ? '' : String(value)
+  return (
+    <div className={def.type === 'textarea' ? 'sm:col-span-2 lg:col-span-4' : 'min-w-0'}>
+      <Label className="text-xs text-muted-foreground">{def.label}</Label>
+      {def.type === 'select' ? (
+        <select
+          value={strValue}
+          onChange={(e) => onChange(e.target.value)}
+          className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+        >
+          <option value="">—</option>
+          {def.options?.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      ) : def.type === 'textarea' ? (
+        <Textarea
+          value={strValue}
+          onChange={(e) => onChange(e.target.value)}
+          rows={5}
+          className="mt-1"
+        />
+      ) : (
+        <Input
+          type={def.type === 'number' ? 'number' : def.type === 'date' ? 'date' : 'text'}
+          step={def.type === 'number' ? (def.step ?? 'any') : undefined}
+          value={strValue}
+          onChange={(e) => onChange(e.target.value)}
+          className="mt-1"
+        />
+      )}
+    </div>
+  )
+}
+
+function EditableCard({
+  title,
+  canEdit,
+  vehicleId,
+  vehicle,
+  fields,
+  children,
+  className,
+  editGridClassName,
+}: {
+  title: string
+  canEdit: boolean
+  vehicleId: number
+  vehicle: Vehicle
+  fields: EditFieldDef[]
+  children: React.ReactNode
+  className?: string
+  editGridClassName?: string
+}) {
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<Record<string, unknown>>({})
+
+  const mutation = useMutation({
+    mutationFn: (data: Partial<Vehicle>) => carparkApi.updateVehicle(vehicleId, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] })
+      toast.success('Modificări salvate')
+      setEditing(false)
+    },
+    onError: () => toast.error('Salvarea a eșuat'),
+  })
+
+  const startEdit = () => {
+    const d: Record<string, unknown> = {}
+    for (const f of fields) {
+      const cur = (vehicle as unknown as Record<string, unknown>)[f.key as string]
+      d[f.key as string] = f.type === 'bool' ? !!cur : cur ?? ''
+    }
+    setDraft(d)
+    setEditing(true)
+  }
+
+  const submit = () => {
+    const payload: Record<string, unknown> = {}
+    for (const f of fields) {
+      const raw = draft[f.key as string]
+      if (f.type === 'number') payload[f.key as string] = raw === '' || raw == null ? null : Number(raw)
+      else if (f.type === 'bool') payload[f.key as string] = !!raw
+      else payload[f.key as string] = raw === '' ? null : raw
+    }
+    mutation.mutate(payload as Partial<Vehicle>)
+  }
+
+  return (
+    <Card className={`p-4 ${className ?? ''}`}>
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        {canEdit && !editing && (
+          <button
+            type="button"
+            onClick={startEdit}
+            className="-mt-0.5 rounded-md p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            aria-label={`Editează ${title}`}
+          >
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {editing && (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)} disabled={mutation.isPending}>
+              Anulează
+            </Button>
+            <Button type="button" size="sm" onClick={submit} disabled={mutation.isPending}>
+              {mutation.isPending ? 'Se salvează…' : 'Salvează'}
+            </Button>
+          </div>
+        )}
+      </div>
+      {editing ? (
+        <div className={editGridClassName ?? 'grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-4'}>
+          {fields.map((f) => (
+            <FieldEditor
+              key={f.key as string}
+              def={f}
+              value={draft[f.key as string]}
+              onChange={(val) => setDraft((p) => ({ ...p, [f.key as string]: val }))}
+            />
+          ))}
+        </div>
+      ) : (
+        children
+      )}
+    </Card>
+  )
+}
+
 // ── Main Detail Page ───────────────────────────────────────
 export default function CarParkDetail() {
   const { vehicleId } = useParams<{ vehicleId: string }>()
@@ -1246,8 +1413,34 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           </Card>
 
           {/* Technical */}
-          <Card className="p-4 h-fit">
-            <h3 className="text-sm font-semibold mb-3">Specificații tehnice</h3>
+          <EditableCard
+            title="Specificații tehnice"
+            canEdit={canEdit}
+            vehicleId={v.id}
+            vehicle={v}
+            className="h-fit"
+            fields={[
+              { key: 'engine_displacement_cc', label: 'Motor (cc)', type: 'number' },
+              { key: 'engine_power_hp', label: 'Putere (HP)', type: 'number' },
+              { key: 'engine_power_kw', label: 'Putere (kW)', type: 'number' },
+              { key: 'engine_torque_nm', label: 'Cuplu (Nm)', type: 'number' },
+              { key: 'drive_type', label: 'Tracțiune', type: 'text' },
+              { key: 'co2_emissions', label: 'CO2 (g/km)', type: 'number' },
+              { key: 'euro_standard', label: 'Normă poluare', type: 'text' },
+              { key: 'fuel_consumption', label: 'Consum', type: 'text' },
+              { key: 'seats', label: 'Locuri', type: 'number' },
+              { key: 'fuel_tank_capacity_liters', label: 'Capacitate rezervor (L)', type: 'number' },
+              { key: 'battery_capacity_kwh', label: 'Capacitate baterie (kWh)', type: 'number' },
+              { key: 'electric_range_km', label: 'Autonomie electrică (km)', type: 'number' },
+              { key: 'consum_urban', label: 'Consum urban', type: 'number' },
+              { key: 'consum_extraurban', label: 'Consum extraurban', type: 'number' },
+              { key: 'consum_mixt', label: 'Consum mixt', type: 'number' },
+              { key: 'norma_combustibil', label: 'Normă consum', type: 'text' },
+              { key: 'norma_energie', label: 'Normă energie', type: 'text' },
+              { key: 'interior_material', label: 'Tapițerie', type: 'text' },
+              { key: 'color_finish', label: 'Tip culoare', type: 'text' },
+            ]}
+          >
             <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
               <Field label="Motor" value={v.engine_displacement_cc ? `${v.engine_displacement_cc} cc` : null} />
               <Field label="Putere" value={v.engine_power_hp ? `${v.engine_power_hp} HP${v.engine_power_kw ? ` (${v.engine_power_kw} kW)` : ''}` : null} />
@@ -1268,7 +1461,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
               <Field label="Tapițerie" value={v.interior_material} />
               <Field label="Tip culoare" value={v.color_finish} />
             </dl>
-          </Card>
+          </EditableCard>
 
           {/* Cargo (Utilitară) — only for vans */}
           {v.body_type === 'van' && (
@@ -1338,8 +1531,30 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
       {/* Detail cards */}
       <div className="grid gap-6 md:grid-cols-2">
       {/* Condition */}
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold mb-3">Stare & Garanție</h3>
+      <EditableCard
+        title="Stare & Garanție"
+        canEdit={canEdit}
+        vehicleId={v.id}
+        vehicle={v}
+        fields={[
+          { key: 'is_first_owner', label: 'Primul proprietar', type: 'bool' },
+          { key: 'has_accident_history', label: 'Istoric accidente', type: 'bool' },
+          { key: 'has_service_book', label: 'Carte service', type: 'bool' },
+          { key: 'has_tuning', label: 'Tuning', type: 'bool' },
+          { key: 'has_manufacturer_warranty', label: 'Garanție producător', type: 'bool' },
+          { key: 'manufacturer_warranty_date', label: 'Garanție producător până la', type: 'date' },
+          { key: 'has_dealer_warranty', label: 'Garanție dealer', type: 'bool' },
+          { key: 'dealer_warranty_months', label: 'Garanție dealer (luni)', type: 'number' },
+          { key: 'is_right_hand_drive', label: 'Volan pe dreapta', type: 'bool' },
+          { key: 'has_particle_filter', label: 'Filtru de particule', type: 'bool' },
+          { key: 'is_vintage', label: 'Vehicul de epocă', type: 'bool' },
+          { key: 'is_damaged', label: 'Avariat', type: 'bool' },
+          { key: 'certified_mileage', label: 'Rulaj certificat', type: 'bool' },
+          { key: 'is_registered', label: 'Înmatriculat', type: 'bool' },
+          { key: 'previous_owners', label: 'Nr. proprietari', type: 'number' },
+          { key: 'country_of_origin', label: 'Țara de origine', type: 'text' },
+        ]}
+      >
         <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           <Field label="Primul proprietar" value={v.is_first_owner ? 'Da' : null} />
           <Field label="Istoric accidente" value={v.has_accident_history ? 'Da' : null} />
@@ -1355,11 +1570,25 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           <Field label="Nr. proprietari" value={v.previous_owners} />
           <Field label="Țara de origine" value={v.country_of_origin} />
         </dl>
-      </Card>
+      </EditableCard>
 
       {/* Source & Acquisition */}
-      <Card className="p-4">
-        <h3 className="text-sm font-semibold mb-3">Sursă & Achiziție</h3>
+      <EditableCard
+        title="Sursă & Achiziție"
+        canEdit={canEdit}
+        vehicleId={v.id}
+        vehicle={v}
+        fields={[
+          { key: 'supplier_name', label: 'Furnizor', type: 'text' },
+          { key: 'supplier_cif', label: 'CIF furnizor', type: 'text' },
+          { key: 'purchase_contract_number', label: 'Nr. contract', type: 'text' },
+          { key: 'purchase_contract_date', label: 'Dată contract', type: 'date' },
+          { key: 'owner_name', label: 'Proprietar', type: 'text' },
+          { key: 'acquisition_document_number', label: 'Nr. factură intrare', type: 'text' },
+          { key: 'acquisition_price', label: 'Preț achiziție (RON)', type: 'number' },
+          { key: 'acquisition_exchange_rate', label: 'Curs BNR', type: 'number' },
+        ]}
+      >
         <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           <Field label="Sursă" value={sourceLabel(v.source)} />
           <Field label="Furnizor" value={v.supplier_name} />
@@ -1368,7 +1597,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           <Field label="Dată contract" value={formatDate(v.purchase_contract_date)} />
           <Field label="Proprietar" value={v.owner_name} />
         </dl>
-      </Card>
+      </EditableCard>
 
       {/* Acquisition cost lines (vehicle.cost_lines JSON) */}
       {acqCostLines.length > 0 && (
@@ -1432,10 +1661,52 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
         </Card>
       )}
 
+      {/* Announcement / listing */}
+      {(canEdit || v.listing_title || v.listing_description) && (
+        <EditableCard
+          title="Anunț"
+          canEdit={canEdit}
+          vehicleId={v.id}
+          vehicle={v}
+          className="md:col-span-2"
+          editGridClassName="grid grid-cols-1 gap-3"
+          fields={[
+            { key: 'listing_title', label: 'Titlu anunț', type: 'text' },
+            { key: 'listing_description', label: 'Descriere anunț', type: 'textarea' },
+          ]}
+        >
+          {v.listing_title && (
+            <div className="mb-3">
+              <div className="text-xs text-muted-foreground mb-1">Titlu anunț</div>
+              <p className="text-sm whitespace-pre-wrap">{v.listing_title}</p>
+            </div>
+          )}
+          {v.listing_description && (
+            <div>
+              <div className="text-xs text-muted-foreground mb-1">Descriere anunț</div>
+              <p className="text-sm whitespace-pre-wrap">{v.listing_description}</p>
+            </div>
+          )}
+          {!v.listing_title && !v.listing_description && (
+            <p className="text-sm text-muted-foreground">Fără anunț — apasă creionul pentru a adăuga.</p>
+          )}
+        </EditableCard>
+      )}
+
       {/* Notes */}
-      {(v.notes || v.internal_notes) && (
-        <Card className="p-4 md:col-span-2">
-          <h3 className="text-sm font-semibold mb-3">Note</h3>
+      {(canEdit || v.notes || v.internal_notes) && (
+        <EditableCard
+          title="Note"
+          canEdit={canEdit}
+          vehicleId={v.id}
+          vehicle={v}
+          className="md:col-span-2"
+          editGridClassName="grid grid-cols-1 gap-3"
+          fields={[
+            { key: 'notes', label: 'Note publice', type: 'textarea' },
+            { key: 'internal_notes', label: 'Note interne', type: 'textarea' },
+          ]}
+        >
           {v.notes && (
             <div className="mb-3">
               <div className="text-xs text-muted-foreground mb-1">Note publice</div>
@@ -1448,7 +1719,10 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
               <p className="text-sm whitespace-pre-wrap">{v.internal_notes}</p>
             </div>
           )}
-        </Card>
+          {!v.notes && !v.internal_notes && (
+            <p className="text-sm text-muted-foreground">Fără note — apasă creionul pentru a adăuga.</p>
+          )}
+        </EditableCard>
       )}
       </div>
     </div>
