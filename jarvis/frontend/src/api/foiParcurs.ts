@@ -691,6 +691,13 @@ export const foiParcursApi = {
       `${BASE}/route-sheet/retile-gap`, payload,
     ),
 
+  // Undo a mistaken gap absorb: restore a soft-superseded internal drive so it
+  // returns to the foaie (and its gap reappears). 423 if the sheet is finalized.
+  restoreAbsorbed: (id: number) =>
+    api.post<{ success: boolean; restored: boolean }>(
+      `${BASE}/route-sheet/restore-absorbed`, { id },
+    ),
+
   // ── Bulk session import (tenant-scoped Excel) ──
   getSessionImportTemplateUrl: (companyId: number) =>
     `${BASE}/sessions/import-template${qs({ company_id: companyId })}`,

@@ -113,8 +113,12 @@ def aggregate_month(vin: str, year: int, month: int, include_internal: bool = Tr
     # This set INCLUDES internal drives: they define the month's true odometer span
     # (km_month_min/max) so an internal drive at the month edge still contributes
     # its KM as a boundary gap, even though it isn't listed as a client trip.
+    # `absorbed_at` rows were soft-superseded when their gap was redistributed —
+    # the client/gap-fill km now covers that stretch, so they're dropped from
+    # BOTH the listing and the odometer span (else the KM double-counts).
     in_month = [c for c in rows
-                if _period(c) == (year, month) and (c.get('td_status') or '') != 'missed']
+                if _period(c) == (year, month) and (c.get('td_status') or '') != 'missed'
+                and not c.get('absorbed_at')]
     km_month_min = min((int(c.get('km_start') or 0) for c in in_month), default=0)
     km_month_max = max((int(c.get('km_end') or 0) for c in in_month), default=0)
     # Internal (company) drives are LISTED alongside client drives — their
@@ -727,11 +731,37 @@ def _insert_gap_fill(vin, year, month, ctx, item, user_name) -> int:
     return 1
 
 
+def _absorb_internal_in_range(vin: str, km_lo, km_hi, user_name=None) -> int:
+    """Soft-supersede the internal (company) drives whose odometer range falls
+    inside a just-redistributed gap [km_lo, km_hi]. They stay in the DB (audit +
+    Restaurează) but drop out of the foaie so their KM isn't double-counted
+    against the client km that now covers the same stretch. Client drives
+    (is_internal=FALSE) are never touched, nor are already-absorbed rows. A no-op
+    for a gap with no internal drives (a genuinely unexplained odometer jump).
+    Returns the number of drives absorbed."""
+    try:
+        lo, hi = int(km_lo), int(km_hi)
+    except (TypeError, ValueError):
+        return 0
+    if hi <= lo:
+        return 0
+    return _fp_repo.execute(
+        '''UPDATE foi_de_parcurs
+             SET absorbed_at = NOW(), absorbed_by = %s
+           WHERE vin = %s AND is_internal = TRUE AND absorbed_at IS NULL
+             AND km_start >= %s AND km_end <= %s''',
+        (user_name, vin, lo, hi)) or 0
+
+
 def redistribute_gap(vin: str, year: int, month: int, items: list, user_name=None) -> int:
     """Insert up to 3 documented "client extra" gap-fill sessions. Each item:
     {date, client_name, km_start, km_end} and OPTIONALLY {advisor_name,
     client_signature, driver_license_photo, driver_license_number,
-    driver_license_expiry}. Returns the number inserted. Idempotent per km range."""
+    driver_license_expiry}. Returns the number inserted. Idempotent per km range.
+
+    The internal drives inside the closed gap ([min km_start, max km_end] of the
+    items) are soft-superseded so their KM isn't double-counted (see
+    `_absorb_internal_in_range`)."""
     items = [it for it in (items or []) if it][:3]
     if not items:
         return 0
@@ -742,7 +772,32 @@ def redistribute_gap(vin: str, year: int, month: int, items: list, user_name=Non
             inserted += _insert_gap_fill(vin, year, month, ctx, it, user_name)
         except (KeyError, TypeError, ValueError):
             continue
+    km_starts = [it.get('km_start') for it in items if it.get('km_start') is not None]
+    km_ends = [it.get('km_end') for it in items if it.get('km_end') is not None]
+    if km_starts and km_ends:
+        _absorb_internal_in_range(vin, min(km_starts), max(km_ends), user_name)
     return inserted
+
+
+def restore_absorbed(contract_id: int, user_name=None) -> dict:
+    """Undo a mistaken absorb: clear absorbed_at/by so the internal drive returns
+    to the foaie (and its gap reappears). Blocked while the car-month sheet is
+    finalized. Does NOT rewind the client km the absorb may have extended — that
+    stays a manual re-correction. Returns {'restored': bool, vin, year, month}."""
+    row = _fp_repo.query_one(
+        'SELECT id, vin, km_start, km_end, departure_datetime, created_at, absorbed_at '
+        'FROM foi_de_parcurs WHERE id=%s', (contract_id,))
+    if not row:
+        raise ValueError('Sesiunea nu a fost găsită')
+    year, month = _period(row)
+    if not row.get('absorbed_at'):
+        return {'restored': False, 'vin': row.get('vin'), 'year': year, 'month': month}
+    if is_finalized(row['vin'], year, month):
+        raise PermissionError('Foaia de parcurs este finalizată (blocată)')
+    _fp_repo.execute(
+        'UPDATE foi_de_parcurs SET absorbed_at = NULL, absorbed_by = NULL WHERE id=%s',
+        (contract_id,))
+    return {'restored': True, 'vin': row['vin'], 'year': year, 'month': month}
 
 
 def absorb_gap(vin: str, year: int, month: int, before_id: int, after_id: int,
@@ -869,6 +924,9 @@ def retile_gap(vin: str, year: int, month: int, allocations: list, user_name=Non
             (new_start, new_end, dist, rtype, note, r['id']))
         cursor = new_end
         updated += 1
+    # The internal drives inside the closed window are soft-superseded so their
+    # KM isn't double-counted against the client km that now covers the stretch.
+    _absorb_internal_in_range(vin, first_start, last_end, user_name)
     return {'sessions': updated, 'span': span}
 
 
