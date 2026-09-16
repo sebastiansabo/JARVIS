@@ -806,7 +806,6 @@ function PhotoGallery({
           vehicleId={vehicleId}
           canEdit={canEdit}
           onClose={() => setGridOpen(false)}
-          onSelect={(i) => { setGridOpen(false); onPhotoClick(i) }}
         />
       )}
     </div>
@@ -878,19 +877,20 @@ function PhotoGridOverlay({
   vehicleId,
   canEdit,
   onClose,
-  onSelect,
 }: {
   photos: VehiclePhoto[]
   vehicleId: number
   canEdit: boolean
   onClose: () => void
-  onSelect: (index: number) => void
 }) {
   const queryClient = useQueryClient()
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [confirming, setConfirming] = useState(false)
-
+  // Clicking a photo opens a simple single-photo preview (not the full lightbox).
+  const [preview, setPreview] = useState<number | null>(null)
+  const previewRef = useRef<number | null>(null)
+  useEffect(() => { previewRef.current = preview }, [preview])
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
@@ -924,14 +924,23 @@ function PhotoGridOverlay({
   }
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const onKey = (e: KeyboardEvent) => {
+      // While the single-photo preview is open, keys drive it (not the grid).
+      if (previewRef.current !== null) {
+        if (e.key === 'Escape') setPreview(null)
+        else if (e.key === 'ArrowRight') setPreview((i) => (i === null ? null : (i + 1) % photos.length))
+        else if (e.key === 'ArrowLeft') setPreview((i) => (i === null ? null : (i - 1 + photos.length) % photos.length))
+        return
+      }
+      if (e.key === 'Escape') onClose()
+    }
     document.addEventListener('keydown', onKey)
     document.body.style.overflow = 'hidden'
     return () => {
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = ''
     }
-  }, [onClose])
+  }, [onClose, photos.length])
 
   const deleteMut = useMutation({
     mutationFn: () => carparkApi.bulkDeletePhotos(vehicleId, Array.from(selected)),
@@ -1016,7 +1025,7 @@ function PhotoGridOverlay({
           <SortableContext items={photos.map((p) => p.id)} strategy={rectSortingStrategy}>
             <div className="mx-auto grid max-w-5xl grid-cols-2 gap-2 p-6 sm:grid-cols-3">
               {photos.map((p, i) => (
-                <SortablePhotoTile key={p.id} photo={p} index={i} onSelect={onSelect} />
+                <SortablePhotoTile key={p.id} photo={p} index={i} onSelect={setPreview} />
               ))}
             </div>
           </SortableContext>
@@ -1029,7 +1038,7 @@ function PhotoGridOverlay({
               <button
                 type="button"
                 key={p.id}
-                onClick={() => (selectMode ? toggle(p.id) : onSelect(i))}
+                onClick={() => (selectMode ? toggle(p.id) : setPreview(i))}
                 className={`group relative aspect-[3/2] overflow-hidden rounded-lg border-2 bg-muted ${sel ? 'border-primary' : 'border-transparent'}`}
               >
                 <img
@@ -1045,6 +1054,49 @@ function PhotoGridOverlay({
               </button>
             )
           })}
+        </div>
+      )}
+      {/* Single-photo preview — simple viewer with prev/next, NOT the full lightbox. */}
+      {preview !== null && photos[preview] && (
+        <div className="fixed inset-0 z-[60] flex flex-col bg-black/95" onClick={() => setPreview(null)}>
+          <div className="flex items-center justify-between px-5 py-3" onClick={(e) => e.stopPropagation()}>
+            <span className="text-sm tabular-nums text-white/70">{preview + 1} / {photos.length}</span>
+            <button
+              type="button"
+              onClick={() => setPreview(null)}
+              className="rounded-md bg-white/10 p-2 text-white transition hover:bg-white/20"
+              aria-label="Închide"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4" onClick={(e) => e.stopPropagation()}>
+            {photos.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setPreview((i) => (i === null ? null : (i - 1 + photos.length) % photos.length))}
+                className="absolute left-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/25"
+                aria-label="Poza anterioară"
+              >
+                <ChevronLeft className="h-6 w-6" />
+              </button>
+            )}
+            <img
+              src={mediaUrl(photos[preview].url)}
+              alt={`Photo ${preview + 1}`}
+              className="max-h-full max-w-full object-contain"
+            />
+            {photos.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setPreview((i) => (i === null ? null : (i + 1) % photos.length))}
+                className="absolute right-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/25"
+                aria-label="Poza următoare"
+              >
+                <ChevronRight className="h-6 w-6" />
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
