@@ -1105,6 +1105,57 @@ def _seed_missing_permissions_v2(cursor, conn):
     conn.commit()
 
 
+def _seed_business_control_permissions_v2(cursor, conn):
+    """Seed the JARVIS alpha | BUSINESS CONTROL access permission.
+
+    Adds ``business_control.access`` (stored as the business_control/module/access
+    triple) — the permission checked by the first-party authorize endpoint
+    ``GET /api/integrations/business-control/authorize`` that lets JARVIS alpha
+    authorize JARVIS accounts through JARVIS's own permissions_v2 model.
+
+    Default grants: Admin and Manager. User and Viewer are seeded as EXPLICIT
+    ``deny`` rows so the generic module.access sweep in
+    ``_seed_sidebar_permissions_v2`` (which would otherwise widen any ungranted
+    ``*.access`` permission to User='own') cannot broaden this one. Operators can
+    reassign it to any role from Settings -> Roles (PUT /api/roles/<id>/permissions/v2).
+
+    Idempotent (ON CONFLICT DO NOTHING) — safe to run on every boot. Must be
+    called BEFORE _seed_sidebar_permissions_v2 so the explicit rows already exist.
+    """
+    cursor.execute('''
+        INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label,
+                                    action_key, action_label, description, is_scope_based, sort_order)
+        VALUES ('business_control', 'JARVIS alpha | BUSINESS CONTROL', 'bi-graph-up-arrow',
+                'module', 'BUSINESS CONTROL', 'access', 'Access',
+                'Acces la aplicația JARVIS alpha | BUSINESS CONTROL (planificare de business: Vânzări, Venituri, Cheltuieli, BAB)',
+                FALSE, 0)
+        ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+    ''')
+
+    # Explicit per-role grants for ALL roles (Admin/Manager = granted; User/Viewer
+    # = explicit deny) so the generic module.access sweep leaves this untouched.
+    role_scopes = [
+        ('Admin',   'all',  True),
+        ('Manager', 'all',  True),
+        ('User',    'deny', False),
+        ('Viewer',  'deny', False),
+    ]
+    for role_name, scope, granted in role_scopes:
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, %s, %s
+            FROM roles r
+            CROSS JOIN permissions_v2 p
+            WHERE r.name = %s
+              AND p.module_key = 'business_control'
+              AND p.entity_key = 'module'
+              AND p.action_key = 'access'
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''', (scope, granted, role_name))
+
+    conn.commit()
+
+
 def _seed_sidebar_permissions_v2(cursor, conn):
     """Add module.access entries for modules missing them and seed controlling/vouchers/facturare/service permissions.
 
