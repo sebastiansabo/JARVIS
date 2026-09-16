@@ -92,22 +92,31 @@ def test_debit_row_has_blank_klient_and_marker():
     assert _col(debit, 'klient') == ''
 
 
-def test_text_uses_line_description_when_present():
+def test_text_prefers_template_over_line_description():
+    # Schema Text Template is primary — it wins even when the invoice article is present.
     invoice = dict(_SAMPLE_INVOICE, line_description='Servicii mentenanta lift august 2026')
     credit, debit = build_medline_rows(invoice, _SAMPLE_CONFIG)
-    assert _col(credit, 'text') == 'Servicii mentenanta lift august 2026'
+    assert _col(credit, 'text') == _SAMPLE_CONFIG['text_template']
 
 
-def test_text_falls_back_to_text_template_when_no_line_description():
+def test_text_uses_template_when_no_line_description():
     credit, debit = build_medline_rows(_SAMPLE_INVOICE, _SAMPLE_CONFIG)
     assert _col(credit, 'text') == _SAMPLE_CONFIG['text_template']
 
 
-def test_text_falls_back_when_line_description_is_none_or_blank():
+def test_text_falls_back_to_line_description_when_template_empty():
+    config = dict(_SAMPLE_CONFIG, text_template='')
+    invoice = dict(_SAMPLE_INVOICE, line_description='Servicii transport — Cursă BV-CJ')
+    credit, _ = build_medline_rows(invoice, config)
+    assert _col(credit, 'text') == 'Servicii transport — Cursă BV-CJ'
+
+
+def test_text_empty_when_no_template_and_no_line_description():
+    config = dict(_SAMPLE_CONFIG, text_template='')
     for blank in (None, ''):
         invoice = dict(_SAMPLE_INVOICE, line_description=blank)
-        credit, _ = build_medline_rows(invoice, _SAMPLE_CONFIG)
-        assert _col(credit, 'text') == _SAMPLE_CONFIG['text_template']
+        credit, _ = build_medline_rows(invoice, config)
+        assert _col(credit, 'text') == ''
 
 
 # ── line_item_text / first_line_text: article name + description from the e-Factura line ──
