@@ -296,6 +296,11 @@ export interface FoiContract {
   // → drives the "Modificat" badge + who/when tooltip.
   corrected_at?: string | null
   corrected_by?: string | null
+  // Set when an internal drive was soft-superseded by a gap redistribution — its
+  // KM is now covered by client/gap-fill km, so it drops out of the foaie + KM
+  // totals but stays here (badged "Absorbit", restorable) for audit.
+  absorbed_at?: string | null
+  absorbed_by?: string | null
   departure_damage?: TdDamageItem[] | null
   // Optional marketing project (campaign/event) this session is tied to.
   mkt_project_id?: number | null

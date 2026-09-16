@@ -2697,6 +2697,11 @@ def _create_schema_incremental_continued(conn, cursor):
     # hasn't received the Service migration (e.g. prod before JAR-1307).
     cursor.execute("ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS document_type VARCHAR(16) NOT NULL DEFAULT 'sales'")
     cursor.execute('ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS svc_total_eur NUMERIC(12,2)')
+    # Soft-supersede marker: set when an internal drive is absorbed by a gap
+    # redistribution (its KM now covered by client/gap-fill km). Absorbed rows
+    # stay in the DB (audit + Restaurează) but drop out of the foaie + KM totals.
+    cursor.execute('ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS absorbed_at TIMESTAMP WITH TIME ZONE')
+    cursor.execute('ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS absorbed_by VARCHAR(255)')
     # Migrate: drop FK on client_id if exists, make nullable, add new columns
     cursor.execute('''
         DO $$ BEGIN

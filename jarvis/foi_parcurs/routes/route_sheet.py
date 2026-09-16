@@ -10,7 +10,7 @@ from core.roles.decorators import v2_permission_required
 from ..services.route_sheet_service import (
     generate_and_store, render_xlsx, list_stored, redistribute_gap, absorb_gap, retile_gap,
     set_scop_override, add_attachment, remove_attachment, upload_receipt, vin_exists,
-    finalize_sheet, unlock_sheet, get_lock_events, is_finalized,
+    finalize_sheet, unlock_sheet, get_lock_events, is_finalized, restore_absorbed,
 )
 
 _MAX_UPLOAD = 10 * 1024 * 1024  # 10 MB
@@ -176,6 +176,30 @@ def api_retile_gap():
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
         logger.exception('Gap retile failed for %s %s-%s', vin, year, month)
+        return jsonify({'success': False, 'error': str(e)[:200]}), 500
+    return jsonify({'success': True, **result})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/route-sheet/restore-absorbed', methods=['POST'])
+@login_required
+def api_restore_absorbed():
+    """Undo a mistaken gap absorb: clear the absorbed flag on an internal drive so
+    it returns to the foaie (and its gap reappears). Blocked (423) while the
+    car-month sheet is finalized."""
+    data = request.get_json(silent=True) or {}
+    contract_id = data.get('id')
+    if not contract_id:
+        return jsonify({'success': False, 'error': 'id este obligatoriu'}), 400
+    try:
+        result = restore_absorbed(
+            int(contract_id),
+            user_name=(getattr(current_user, 'name', None) or getattr(current_user, 'email', None)))
+    except PermissionError as e:
+        return jsonify({'success': False, 'error': str(e)}), 423
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        logger.exception('Restore absorbed failed for id=%s', contract_id)
         return jsonify({'success': False, 'error': str(e)[:200]}), 500
     return jsonify({'success': True, **result})
 
