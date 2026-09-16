@@ -680,6 +680,20 @@ class SupplierMasterRepository(BaseRepository):
         """
         return self.query_all(sql, (company_name, company_id, company_id, status, start_date, end_date, limit))
 
+    def fetch_efactura_xml_map(self, invoice_ids):
+        """Return {jarvis_invoice_id: xml_content} for the given invoice ids that have a linked
+        e-Factura XML. Powers the EuroFib export's `text` fallback: when an invoice's stored
+        line_items are empty, its article name/description are parsed live from this XML. One
+        linked e-Factura per invoice is assumed; if several exist, an arbitrary non-null one
+        wins (they carry the same article lines)."""
+        if not invoice_ids:
+            return {}
+        rows = self.query_all(
+            "SELECT jarvis_invoice_id, xml_content FROM efactura_invoices "
+            "WHERE jarvis_invoice_id = ANY(%s) AND xml_content IS NOT NULL",
+            (list(invoice_ids),))
+        return {r['jarvis_invoice_id']: r['xml_content'] for r in rows}
+
     def mark_invoices_imported(self, invoice_ids):
         """Flip the given invoices from 'Bugetata' to 'Importat' after a successful EuroFib
         export. Only rows still in 'Bugetata' are touched — any invoice that changed status in

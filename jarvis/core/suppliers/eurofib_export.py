@@ -71,6 +71,39 @@ def _date_str(value):
     return s
 
 
+def line_item_text(item):
+    """EuroFib `text` for one e-Factura line: its article name (cbc:Name) joined with its
+    description (cbc:Description) as 'name — description'. When only one field carries text that
+    one is used; a name-less/desc-less item yields ''."""
+    if not isinstance(item, dict):
+        return ''
+    name = (item.get('name') or '').strip()
+    desc = (item.get('description') or '').strip()
+    parts = [p for p in (name, desc) if p]
+    # The XML parser collapses a name-less line into `name`, so name==desc can only happen on odd
+    # source data; guard against emitting "X — X".
+    if len(parts) == 2 and parts[0] == parts[1]:
+        parts = parts[:1]
+    return ' — '.join(parts)
+
+
+def first_line_text(line_items):
+    """EuroFib `text` sourced from the invoice's FIRST line (see line_item_text).
+
+    `line_items` is the invoices.line_items shape — a list of {name, description, ...} dicts (or
+    its JSON string). An empty/absent first line yields ''. Callers fall back to the schema's
+    text_template when this returns ''."""
+    if isinstance(line_items, str):
+        import json
+        try:
+            line_items = json.loads(line_items)
+        except (ValueError, TypeError):
+            return ''
+    if not line_items or not isinstance(line_items, (list, tuple)):
+        return ''
+    return line_item_text(line_items[0])
+
+
 def _resolve_text(template, invoice):
     """Resolve {invoice_number}/{supplier} placeholders in a text_template; if the template
     doesn't parse (unknown placeholder) or is empty, fall back to the literal template."""
