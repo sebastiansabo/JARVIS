@@ -236,6 +236,34 @@ class TestExportPairWiring:
         assert fake.effective_calls == [(5, 2)]
         assert fake.by_id_calls == []
 
+    def test_text_built_from_first_line_name_and_description(self):
+        from core.suppliers import routes
+        row = self._row(line_items_json=[{'name': 'Transport', 'description': 'Cursă BV-CJ'}])
+        with patch.object(routes, '_repo', _FakeRepo()):
+            pairs = routes._to_invoice_config_pairs([row], company_id=2, skipped=[])
+        invoice, _konto = pairs[0]
+        assert invoice['line_description'] == 'Transport — Cursă BV-CJ'
+
+    def test_text_falls_back_to_efactura_xml_when_line_items_empty(self):
+        from core.suppliers import routes
+        row = self._row(line_items_json=None)  # no stored line_items → XML fallback
+        xml_map = {1: '<xml/>'}
+        target = 'core.connectors.efactura.services.invoice_allocation_service.xml_to_line_items'
+        with patch.object(routes, '_repo', _FakeRepo()), \
+             patch(target, return_value=[{'name': 'Din XML', 'description': 'detaliu'}]) as parse:
+            pairs = routes._to_invoice_config_pairs([row], company_id=2, skipped=[], xml_map=xml_map)
+        invoice, _konto = pairs[0]
+        assert invoice['line_description'] == 'Din XML — detaliu'
+        parse.assert_called_once_with('<xml/>')
+
+    def test_text_empty_when_no_line_items_and_no_xml(self):
+        from core.suppliers import routes
+        row = self._row(line_items_json=None)
+        with patch.object(routes, '_repo', _FakeRepo()):
+            pairs = routes._to_invoice_config_pairs([row], company_id=2, skipped=[], xml_map={})
+        invoice, _konto = pairs[0]
+        assert invoice['line_description'] == ''
+
 
 # ═══════════════════════════════════════════════
 # Pure export: the chosen preset's accounts drive the rows
