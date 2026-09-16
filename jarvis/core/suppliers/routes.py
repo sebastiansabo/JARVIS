@@ -8,7 +8,7 @@ from psycopg2 import errors as pg_errors
 
 from core.organization.repositories.company_repository import CompanyRepository
 from core.roles.repositories.permission_repository import PermissionRepository
-from core.suppliers.eurofib_export import build_csv, build_xlsx
+from core.suppliers.eurofib_export import build_csv, build_xlsx, first_line_text, line_item_text
 from core.suppliers.normalize import normalize_cui
 from core.suppliers.repository import (
     SupplierMasterRepository, KONTO_FIELDS, MAX_PRESETS_PER_SUPPLIER_COMPANY, PresetLimitError)
@@ -70,10 +70,28 @@ def _resolve_amounts(row):
     return net, gross
 
 
-def _to_invoice_config_pairs(rows, company_id, skipped):
+def _invoice_line_text(row, xml_map):
+    """EuroFib `text` for an invoice: the first line's article name + description (see
+    eurofib_export.first_line_text). Prefer the invoice's stored line_items (line_items_json);
+    when those are empty (e.g. older imports whose line_items were never persisted) fall back to
+    parsing the linked e-Factura XML from `xml_map` ({invoice_id: xml_content}). Returns '' when
+    neither yields text, so build_medline_rows falls back to the schema's text_template."""
+    text = first_line_text(row.get('line_items_json'))
+    if text:
+        return text
+    xml = (xml_map or {}).get(row.get('id'))
+    if not xml:
+        return ''
+    from core.connectors.efactura.services.invoice_allocation_service import xml_to_line_items
+    return first_line_text(xml_to_line_items(xml))
+
+
+def _to_invoice_config_pairs(rows, company_id, skipped, xml_map=None):
     """Map raw list_budgeted_invoices rows to (invoice, konto) pairs consumable by
     build_csv, appending {'invoice_number', 'supplier', 'reason': 'missing_amounts'} to
-    `skipped` (mutated in place) for any row whose amounts can't be posted."""
+    `skipped` (mutated in place) for any row whose amounts can't be posted. `xml_map`
+    ({invoice_id: xml_content}) supplies the e-Factura XML fallback for the EuroFib `text`
+    when a row's stored line_items are empty."""
     pairs = []
     for row in rows:
         net, gross = _resolve_amounts(row)
@@ -100,7 +118,9 @@ def _to_invoice_config_pairs(rows, company_id, skipped):
             'net_amount': net,
             'vat_amount': vat,
             'gross_amount': gross,
-            'line_description': row.get('line_description'),
+            # EuroFib `text`: first-line article name + description, from stored line_items or
+            # (fallback) the linked e-Factura XML. build_medline_rows falls back to text_template.
+            'line_description': _invoice_line_text(row, xml_map),
         }
         if row.get('per_line') or row.get('alloc_mode'):
             line_configs = _build_line_configs(row, konto, company_id)
@@ -148,7 +168,7 @@ def _build_line_configs(row, base_konto, company_id):
             cfg_id = line_over.get(idx, base_id)
             cfg = (_repo.get_konto_by_id(cfg_id) or {}).get('konto') if cfg_id else None
             configs.append({'net': net, 'vat': vat,
-                            'text': li.get('name') or li.get('description') or '',
+                            'text': line_item_text(li),
                             'config': cfg or base_konto})
     if not configs:
         return []
@@ -597,8 +617,9 @@ _EXPORT_FORMATS = {
 
 
 def _export_format(fmt):
-    """Resolve an export-format token to (mimetype, extension, builder). Unknown/blank -> csv."""
-    return _EXPORT_FORMATS.get((fmt or 'csv').lower(), _EXPORT_FORMATS['csv'])
+    """Resolve an export-format token to (mimetype, extension, builder). Unknown/blank -> xlsx
+    (the primary EuroFib format); CSV stays available as an explicit option."""
+    return _EXPORT_FORMATS.get((fmt or 'xlsx').lower(), _EXPORT_FORMATS['xlsx'])
 
 
 @suppliers_bp.route('/api/suppliers/export', methods=['POST'])
@@ -606,8 +627,10 @@ def _export_format(fmt):
 def api_export():
     """Batch EuroFib (MEDLINE) export of budgeted invoices for a company + period, as a single
     file (grouped/ordered by supplier). Body: {company_id, start_date, end_date, invoice_ids?,
-    format?}. format is 'csv' (default) or 'xlsx'. When invoice_ids is given, only those
-    invoices are exported (the general export passes the checked rows, or all shown if none)."""
+    format?, reexport?}. format is 'xlsx' (default) or 'csv'. When invoice_ids is given, only
+    those invoices are exported (the general export passes the checked rows, or all shown if
+    none). reexport=true re-downloads invoices already 'Importat' (the Importate tab) — it does
+    NOT change status or touch the auto-archive, so users can re-export as often as they like."""
     if not _check_supplier_perm('view'):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
@@ -625,8 +648,12 @@ def api_export():
         return jsonify({'success': False, 'error': 'Company not found'}), 404
 
     mimetype, ext, builder = _export_format(data.get('format'))
+    reexport = bool(data.get('reexport'))
 
-    rows = _repo.list_budgeted_invoices(company_id, company['company'], start_date, end_date, limit=5000)
+    # reexport pulls the already-exported ('Importat') history; a fresh export pulls 'Bugetata'.
+    source_status = 'Importat' if reexport else 'Bugetata'
+    rows = _repo.list_budgeted_invoices(
+        company_id, company['company'], start_date, end_date, limit=5000, status=source_status)
 
     invoice_ids = data.get('invoice_ids')
     if invoice_ids:
@@ -636,8 +663,13 @@ def api_export():
             return jsonify({'success': False, 'error': 'invoice_ids must be integers'}), 400
         rows = [r for r in rows if r['id'] in wanted]
 
+    # e-Factura XML fallback for the `text` column: only fetch XML for rows whose stored
+    # line_items yield no article text (older imports), keeping the batch query lean.
+    need_xml = [r['id'] for r in rows if not first_line_text(r.get('line_items_json'))]
+    xml_map = _repo.fetch_efactura_xml_map(need_xml) if need_xml else {}
+
     skipped = []
-    invoices_with_configs = _to_invoice_config_pairs(rows, company_id, skipped)
+    invoices_with_configs = _to_invoice_config_pairs(rows, company_id, skipped, xml_map=xml_map)
 
     skipped_before = len(skipped)
     output = builder(invoices_with_configs, skipped=skipped)
@@ -647,10 +679,13 @@ def api_export():
     if written == 0:
         return jsonify({'success': False, 'skipped': skipped}), 200
 
-    skipped_numbers = {s['invoice_number'] for s in skipped}
-    exported_ids = [r['id'] for r in rows if r.get('invoice_number') not in skipped_numbers]
-    _repo.mark_invoices_imported(exported_ids)
-    _schedule_export_archive(exported_ids)
+    # A fresh export flips Bugetata → Importat and schedules auto-archive; a reexport leaves the
+    # already-Importat invoices (and their archive timers) untouched.
+    if not reexport:
+        skipped_numbers = {s['invoice_number'] for s in skipped}
+        exported_ids = [r['id'] for r in rows if r.get('invoice_number') not in skipped_numbers]
+        _repo.mark_invoices_imported(exported_ids)
+        _schedule_export_archive(exported_ids)
 
     filename = f"eurofib_{company['company']}_{start_date}_{end_date}.{ext}"
     filename = re.sub(r'[^A-Za-z0-9_.\-]+', '_', filename)

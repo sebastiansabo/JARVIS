@@ -381,19 +381,35 @@ export default function Procesare() {
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Acțiunea a eșuat'),
   })
 
-  // General export: a single CSV/XLSX of the checked invoices across all suppliers, or all shown
-  // invoices when none are checked.
+  // Re-export a single supplier's already-processed (Importate) invoices — XLSX, without
+  // changing their status, so it can be repeated freely.
+  const reexportSupplierMut = useMutation({
+    mutationFn: async (group: SupplierGroup) => {
+      if (companyId === null) throw new Error('Nicio companie selectată')
+      await suppliersApi.exportCsv(companyId, startDate, endDate, group.invoices.map((inv) => inv.id), 'xlsx', true)
+    },
+    onSuccess: (_res, group) => toast.success(`Reexportat (${group.supplierName})`),
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Reexportul a eșuat'),
+  })
+
+  // General export: a single XLSX/CSV of the checked invoices across all suppliers, or all shown
+  // invoices when none are checked. In the Importate view (reexport) it re-downloads without
+  // changing status; in the worklist it flips the invoices to Importat.
   const exportGeneralMut = useMutation({
-    mutationFn: async (format: 'csv' | 'xlsx') => {
+    mutationFn: async ({ format, reexport }: { format: 'csv' | 'xlsx'; reexport: boolean }) => {
       if (companyId === null) throw new Error('Nicio companie selectată')
       const selected = shownInvoiceIds.filter((id) => selectedInvoiceIds.has(id))
       const invoiceIds = selected.length > 0 ? selected : shownInvoiceIds
-      await suppliersApi.exportCsv(companyId, startDate, endDate, invoiceIds, format)
+      await suppliersApi.exportCsv(companyId, startDate, endDate, invoiceIds, format, reexport)
     },
-    onSuccess: () => {
+    onSuccess: (_res, { reexport }) => {
       qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] })
-      setWorklistView('procesate')
-      toast.success('Exportat — facturile au fost marcate procesate')
+      if (reexport) {
+        toast.success('Reexportat')
+      } else {
+        setWorklistView('procesate')
+        toast.success('Exportat — facturile au fost marcate procesate')
+      }
     },
     onError: (err) => toast.error(err instanceof Error ? err.message : 'Exportul a eșuat'),
   })
@@ -512,26 +528,26 @@ export default function Procesare() {
                   onRangeChange={(start, end) => { setCustomFrom(start); setCustomTo(end) }}
                 />
               )}
-              {!isProcessedView && (
+              {shownInvoiceIds.length > 0 && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
                       size="sm"
                       variant="outline"
                       className="ml-auto h-8 gap-1"
-                      title={selectedShownCount > 0 ? `Export selecție (${exportCount})` : 'Export toate'}
-                      disabled={exportGeneralMut.isPending || shownInvoiceIds.length === 0}
+                      title={isProcessedView ? 'Reexportă toate' : (selectedShownCount > 0 ? `Export selecție (${exportCount})` : 'Export toate')}
+                      disabled={exportGeneralMut.isPending}
                     >
                       <Download className="h-4 w-4" />
                       <span className="text-xs">
-                        {selectedShownCount > 0 ? `Export selecție (${exportCount})` : 'Export toate'}
+                        {isProcessedView ? 'Reexportă toate' : (selectedShownCount > 0 ? `Export selecție (${exportCount})` : 'Export toate')}
                       </span>
                       <ChevronDown className="h-3 w-3 opacity-60" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => exportGeneralMut.mutate('csv')}>CSV</DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => exportGeneralMut.mutate('xlsx')}>Excel (XLSX)</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => exportGeneralMut.mutate({ format: 'xlsx', reexport: isProcessedView })}>Excel (XLSX)</DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => exportGeneralMut.mutate({ format: 'csv', reexport: isProcessedView })}>CSV</DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
@@ -585,19 +601,31 @@ export default function Procesare() {
                               disabled={exportSupplierMut.isPending}
                             >
                               <Download className="mr-1.5 h-3.5 w-3.5" />
-                              Export CSV
+                              Export
                             </Button>
                           )}
                           {isProcessedView && (
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => { e.stopPropagation(); unprocessMut.mutate(group) }}
-                              disabled={unprocessMut.isPending}
-                            >
-                              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-                              Înapoi în lucru
-                            </Button>
+                            <div className="inline-flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => { e.stopPropagation(); reexportSupplierMut.mutate(group) }}
+                                disabled={reexportSupplierMut.isPending}
+                                title="Reexportă (XLSX) — nu schimbă statusul"
+                              >
+                                <Download className="mr-1.5 h-3.5 w-3.5" />
+                                Reexportă
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => { e.stopPropagation(); unprocessMut.mutate(group) }}
+                                disabled={unprocessMut.isPending}
+                              >
+                                <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
+                                Înapoi în lucru
+                              </Button>
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>
