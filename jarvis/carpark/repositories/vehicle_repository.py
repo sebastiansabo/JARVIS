@@ -96,9 +96,16 @@ CATALOG_SELECT = """
     v.is_consignment, v.is_test_drive, v.total_cost,
     v.location_text, v.company_id, v.days_listed,
     (CURRENT_DATE - COALESCE(v.arrival_date, v.acquisition_date)) AS stationary_days,
-    (SELECT url FROM carpark_vehicle_photos p
-     WHERE p.vehicle_id = v.id AND p.is_primary = TRUE LIMIT 1) AS primary_photo_url,
-    (SELECT COUNT(*) FROM carpark_vehicle_photos p WHERE p.vehicle_id = v.id) AS photo_count
+    -- List thumbnail = the gallery's FIRST photo (lowest sort_order), so
+    -- drag-reordering the gallery cover updates this thumbnail too. Mirrors
+    -- the gallery's own `ORDER BY sort_order, id` and its "1 = cover" rule,
+    -- excludes soft-deleted photos, and prefers the small thumbnail variant,
+    -- falling back to the full original for legacy photos without one.
+    (SELECT COALESCE(p.thumbnail_url, p.url) FROM carpark_vehicle_photos p
+     WHERE p.vehicle_id = v.id AND p.deleted_at IS NULL
+     ORDER BY p.sort_order, p.id LIMIT 1) AS primary_photo_url,
+    (SELECT COUNT(*) FROM carpark_vehicle_photos p
+     WHERE p.vehicle_id = v.id AND p.deleted_at IS NULL) AS photo_count
 """
 
 

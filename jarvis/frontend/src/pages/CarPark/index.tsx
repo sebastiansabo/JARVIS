@@ -602,7 +602,10 @@ function VehicleRow({ vehicle: v, columns }: { vehicle: VehicleCatalogItem; colu
             src={mediaUrl(v.primary_photo_url)}
             alt={`${v.brand} ${v.model}`}
             className="h-10 w-14 rounded object-cover"
+            width={56}
+            height={40}
             loading="lazy"
+            decoding="async"
           />
         ) : (
           <div className="flex h-10 w-14 items-center justify-center rounded bg-muted">
@@ -662,7 +665,10 @@ function MobileCardList({ items }: { items: VehicleCatalogItem[] }) {
                   src={mediaUrl(v.primary_photo_url)}
                   alt={`${v.brand} ${v.model}`}
                   className="h-16 w-20 shrink-0 rounded object-cover"
+                  width={80}
+                  height={64}
                   loading="lazy"
+                  decoding="async"
                 />
               ) : (
                 <div className="flex h-16 w-20 shrink-0 items-center justify-center rounded bg-muted">
