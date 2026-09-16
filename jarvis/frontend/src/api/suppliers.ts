@@ -227,10 +227,12 @@ export const suppliersApi = {
   /** EuroFib MEDLINE single-file download (CSV or XLSX) — one supplier's invoices, an explicit
    * invoiceIds set, or all budgeted invoices for the period when invoiceIds is omitted;
    * grouped/ordered per build_csv. */
-  exportCsv: (companyId: number, startDate: string, endDate: string, invoiceIds?: number[], format: 'csv' | 'xlsx' = 'csv') =>
+  // XLSX is the primary EuroFib format; CSV stays available as an explicit option. `reexport`
+  // re-downloads invoices already marked Importate without changing their status.
+  exportCsv: (companyId: number, startDate: string, endDate: string, invoiceIds?: number[], format: 'csv' | 'xlsx' = 'xlsx', reexport = false) =>
     _downloadPost(
       '/api/suppliers/export',
-      { company_id: companyId, start_date: startDate, end_date: endDate, invoice_ids: invoiceIds, format },
+      { company_id: companyId, start_date: startDate, end_date: endDate, invoice_ids: invoiceIds, format, reexport },
       `eurofib_${companyId}_${startDate}_${endDate}.${format}`),
   /** Revert exported invoices back to 'Bugetata' (send to In lucru). */
   unprocess: (invoiceIds: number[]) =>

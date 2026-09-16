@@ -42,12 +42,21 @@ def test_export_format_is_case_insensitive():
     assert ext == 'xlsx'
 
 
-def test_export_format_defaults_to_csv_for_unknown_or_blank():
+def test_export_format_resolves_csv_when_explicit():
     import core.suppliers.routes as r
     from core.suppliers.eurofib_export import build_csv
-    for fmt in ('csv', None, '', 'bogus'):
+    mime, ext, builder = r._export_format('csv')
+    assert (mime, ext, builder) == ('text/csv', 'csv', build_csv)
+
+
+def test_export_format_defaults_to_xlsx_for_unknown_or_blank():
+    # XLSX is the primary EuroFib format; CSV stays available as an explicit option only.
+    import core.suppliers.routes as r
+    from core.suppliers.eurofib_export import build_xlsx
+    for fmt in (None, '', 'bogus'):
         mime, ext, builder = r._export_format(fmt)
-        assert (mime, ext, builder) == ('text/csv', 'csv', build_csv)
+        assert (mime, ext, builder) == (
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx', build_xlsx)
 
 
 # ── _to_invoice_config_pairs: valuta = invoice due date (data scadență), fallback invoice_date ──

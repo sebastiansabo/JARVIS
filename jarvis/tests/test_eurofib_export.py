@@ -2,7 +2,8 @@ import io
 
 import openpyxl
 
-from core.suppliers.eurofib_export import HEADER, build_csv, build_medline_rows, build_xlsx
+from core.suppliers.eurofib_export import (
+    HEADER, build_csv, build_medline_rows, build_xlsx, first_line_text, line_item_text)
 
 _SAMPLE_CONFIG = {
     'klient': '140',
@@ -107,6 +108,47 @@ def test_text_falls_back_when_line_description_is_none_or_blank():
         invoice = dict(_SAMPLE_INVOICE, line_description=blank)
         credit, _ = build_medline_rows(invoice, _SAMPLE_CONFIG)
         assert _col(credit, 'text') == _SAMPLE_CONFIG['text_template']
+
+
+# ── line_item_text / first_line_text: article name + description from the e-Factura line ──
+
+def test_line_item_text_joins_name_and_description():
+    assert line_item_text({'name': 'Servicii transport', 'description': 'Cursă BV-CJ'}) == 'Servicii transport — Cursă BV-CJ'
+
+
+def test_line_item_text_name_only():
+    assert line_item_text({'name': 'Doar nume', 'description': ''}) == 'Doar nume'
+
+
+def test_line_item_text_description_only():
+    assert line_item_text({'name': '', 'description': 'Doar descriere'}) == 'Doar descriere'
+
+
+def test_line_item_text_dedupes_identical():
+    assert line_item_text({'name': 'X', 'description': 'X'}) == 'X'
+
+
+def test_line_item_text_empty_or_bad():
+    assert line_item_text({'name': '', 'description': ''}) == ''
+    assert line_item_text(None) == ''
+
+
+def test_first_line_text_uses_first_line_only():
+    items = [
+        {'name': 'Abonament OLX', 'description': 'Pachet Premium'},
+        {'name': 'Alt serviciu', 'description': 'ignorat'},
+    ]
+    assert first_line_text(items) == 'Abonament OLX — Pachet Premium'
+
+
+def test_first_line_text_accepts_json_string():
+    assert first_line_text('[{"name": "N", "description": "D"}]') == 'N — D'
+
+
+def test_first_line_text_empty_or_bad_input():
+    assert first_line_text(None) == ''
+    assert first_line_text([]) == ''
+    assert first_line_text('not json') == ''
 
 
 def test_extbeleg_same_on_both_when_configured_either_side():
