@@ -621,7 +621,11 @@ def api_update_anexa_line(line_id):
     if not updates:
         return error_response("No valid fields to update")
 
-    row = _repo.update_anexa_line(line_id, **updates)
+    # Price edits (selling/list) are logged to facturare_price_change_log so the
+    # change is never silent — even after a proforma was issued. Reason optional.
+    reason = (data.get("reason") or "").strip() or None
+    row = _repo.update_anexa_line_audited(
+        line_id, updates, actor_id=current_user.id, reason=reason)
     if not row:
         return error_response("Line not found", 404)
     return jsonify({"success": True, "line": _line_to_dict(row)})
