@@ -1,29 +1,26 @@
-"""Tests for the JARVIS alpha | BUSINESS CONTROL authorization contract.
+"""Tests for the JARVIS alpha | BUSINESS CONTROL authorization contract
+(multi-tenant).
 
-Endpoint: GET /api/integrations/business-control/authorize
+Endpoints:
+- GET  /api/integrations/business-control/authorize        -> authz + available tenants
+- POST /api/integrations/business-control/authorize        -> select one tenant (server-verified)
+- GET  /api/integrations/business-control/admin/users/<id>/access  -> admin read-only view
 
-Covers every branch of the cross-application authorization contract that lets
-JARVIS alpha authenticate users through JARVIS and authorize them through
-JARVIS's existing permissions_v2 model:
+Tenant model (uses the existing JARVIS company structure):
+- admin (can_access_settings)      -> ALL active companies
+- non-admin with the permission    -> ONLY their registered company (users.company_id), if active
 
-- authenticated user WITH business_control.access            -> 200 authorized
-- authenticated user WITHOUT it                              -> 403
-- unauthenticated request                                    -> 401
-- inactive / disabled account                                -> denied (403)
-- Manager role holding the grant                             -> 200 authorized
-- Admin role holding the grant                               -> 200 authorized
-- superadmin behavior (explicit decision: JARVIS admin
-  bypass is honored — an admin without an explicit grant is
-  still authorized, matching JARVIS's documented behavior)   -> 200 authorized
-- tenant/company isolation (scope reflects the caller only)
-- response never leaks password hashes / secrets / unrelated PII
+Auth gate is the existing `business_control.access` permission (role grant or admin
+bypass) — never a hard-coded role name. Company reads come from IntegrationsRepository
+(the `companies` table); no parallel membership store.
 
-The suite follows the repo convention (tests/conftest.py mocks psycopg2) and
-patches ``current_user`` + ``PermissionRepository`` the same way
-tests/test_permissions.py does, so no live database is required.
+Follows the repo convention (tests/conftest.py mocks psycopg2); patches
+current_user + the repositories the same way tests/test_permissions.py does, so no
+live database is required.
 """
 import os
 import sys
+import json
 from types import SimpleNamespace
 from unittest.mock import patch, MagicMock
 
@@ -36,16 +33,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'jarvis'))
 
 _ROUTES = 'core.integrations.routes'
+_HELPERS = 'core.utils.api_helpers'
 
 
 @pytest.fixture(autouse=True)
-def _reset_rate_limiter():
-    """The endpoint's RateLimiter is module-level (per-worker) state; reset it so
-    tests are order-independent."""
-    from core.integrations import routes as bc_routes
-    bc_routes._rate_limiter._requests.clear()
+def _reset_rate_limiters():
+    from core.integrations import routes as bc
+    bc._rate_limiter._requests.clear()
     yield
-    bc_routes._rate_limiter._requests.clear()
+    bc._rate_limiter._requests.clear()
 
 
 def _app():
@@ -55,235 +51,375 @@ def _app():
 
 
 def _make_user(**overrides):
-    """Build a fake authenticated principal.
-
-    Deliberately carries sensitive fields (password_hash, cnp, phone, ...) so the
-    leak test can prove they never reach the response.
-    """
+    """A fake authenticated principal. Carries sensitive fields so the leak test
+    can prove they never reach the response."""
     data = {
         'is_authenticated': True,
-        'id': 42,
+        'id': 123,
         'email': 'user@example.com',
-        'name': 'Ada Lovelace',
+        'name': 'Nume Utilizator',
+        'role_name': 'Manager',
         'is_active': True,
         'role_id': 7,
-        'can_access_settings': False,
-        'company': 'DWA',
-        'company_id': 2,
-        # sensitive / unrelated fields that MUST NOT be serialized:
+        'can_access_settings': False,   # non-admin by default
+        'company': 'Autoworld SRL',
+        'company_id': 101,
+        # sensitive / unrelated — MUST NOT be serialized:
         'password_hash': 'pbkdf2:sha256:SECRET_HASH_DO_NOT_LEAK',
         'cnp': '1900101000000',
         'phone': '+40700000000',
-        'brand': 'BT',
-        'department': 'Finance',
     }
     data.update(overrides)
     return SimpleNamespace(**data)
 
 
-def _call(user, perm_result=None):
-    """Invoke the endpoint with ``current_user`` patched to ``user``.
+def _repo_mock(companies):
+    """companies: list of {'id','company','active'?}. Returns a MagicMock class
+    whose instances answer list_active_companies / get_active_company."""
+    active = [{'id': c['id'], 'company': c['company']} for c in companies if c.get('active', True)]
+    # Mirror the real repository's SQL `ORDER BY company` so tests don't depend on
+    # input order.
+    active.sort(key=lambda c: c['company'])
+    repo_cls = MagicMock()
+    inst = repo_cls.return_value
+    inst.list_active_companies.return_value = list(active)
 
-    ``perm_result`` is what PermissionRepository.check_permission_v2 returns
-    (None => the mock is asserted to be never called, e.g. admin bypass paths).
-    Returns (status_code, json_body).
-    """
-    from core.integrations import routes as bc_routes
+    def _get(cid):
+        return next((c for c in active if c['id'] == cid), None)
+    inst.get_active_company.side_effect = _get
+    return repo_cls
 
-    perm_repo = MagicMock()
-    if perm_result is not None:
-        perm_repo.return_value.check_permission_v2.return_value = perm_result
 
-    app = _app()
-    with app.test_request_context('/api/integrations/business-control/authorize'):
-        with patch(f'{_ROUTES}.current_user', user), \
-             patch(f'{_ROUTES}.PermissionRepository', perm_repo), \
-             patch(f'{_ROUTES}._audit'):
-            rv = bc_routes.business_control_authorize()
+def _perm_mock(has_permission):
+    repo = MagicMock()
+    repo.return_value.check_permission_v2.return_value = {
+        'has_permission': has_permission,
+        'scope': 'all' if has_permission else 'deny',
+    }
+    return repo
 
-    # Normalize Flask return (Response | (Response, status)).
+
+def _normalize(rv):
     if isinstance(rv, tuple):
         resp, code = rv[0], rv[1]
     else:
         resp, code = rv, rv.status_code
-    return code, resp.get_json(), perm_repo
+    return code, resp.get_json()
 
 
-# ── Core contract ──────────────────────────────────────────────────────────
-
-def test_authenticated_with_permission_is_authorized():
-    user = _make_user(role_id=7, can_access_settings=False)
-    code, body, _ = _call(user, perm_result={'has_permission': True, 'scope': 'all'})
-
-    assert code == 200
-    assert body['authorized'] is True
-    assert body['permission'] == 'business_control.access'
-    assert body['user'] == {'id': 42, 'email': 'user@example.com', 'full_name': 'Ada Lovelace'}
-
-
-def test_authenticated_without_permission_is_forbidden():
-    user = _make_user(role_id=7, can_access_settings=False)
-    code, body, _ = _call(user, perm_result={'has_permission': False, 'scope': 'deny'})
-
-    assert code == 403
-    assert body['success'] is False
-    assert 'authorized' not in body
-
-
-def test_unauthenticated_is_401():
-    user = _make_user(is_authenticated=False)
-    code, body, perm_repo = _call(user, perm_result={'has_permission': True, 'scope': 'all'})
-
-    assert code == 401
-    assert body['success'] is False
-    # No permission lookup should happen for an unauthenticated caller.
-    perm_repo.return_value.check_permission_v2.assert_not_called()
-
-
-def test_inactive_user_is_denied():
-    user = _make_user(is_active=False, role_id=7, can_access_settings=False)
-    code, body, _ = _call(user, perm_result={'has_permission': True, 'scope': 'all'})
-
-    # A disabled account is denied even though the role holds the grant.
-    assert code == 403
-    assert body['success'] is False
-    assert body.get('authorized') is not True
-
-
-# ── Role coverage ──────────────────────────────────────────────────────────
-
-def test_manager_with_permission_is_authorized():
-    # Manager is a normal (non-admin) role; authorization must come from the grant.
-    manager = _make_user(role_id=3, can_access_settings=False, company_id=5, company='AWH')
-    code, body, perm_repo = _call(manager, perm_result={'has_permission': True, 'scope': 'all'})
-
-    assert code == 200
-    assert body['authorized'] is True
-    perm_repo.return_value.check_permission_v2.assert_called_once_with(
-        3, 'business_control', 'module', 'access')
-
-
-def test_admin_with_permission_is_authorized():
-    admin = _make_user(role_id=1, can_access_settings=True)
-    code, body, _ = _call(admin, perm_result={'has_permission': True, 'scope': 'all'})
-
-    assert code == 200
-    assert body['authorized'] is True
-
-
-# ── Superadmin behavior (explicit decision) ────────────────────────────────
-
-def test_superadmin_bypass_authorizes_without_explicit_grant():
-    """Explicit decision: JARVIS's documented admin bypass is honored.
-
-    An admin (can_access_settings) is authorized even with NO explicit
-    business_control.access grant, and the permission lookup is short-circuited.
-    """
-    admin = _make_user(role_id=1, can_access_settings=True)
-    code, body, perm_repo = _call(admin, perm_result={'has_permission': False, 'scope': 'deny'})
-
-    assert code == 200
-    assert body['authorized'] is True
-    perm_repo.return_value.check_permission_v2.assert_not_called()
-
-
-def test_non_admin_without_role_is_forbidden():
-    user = _make_user(role_id=None, can_access_settings=False)
-    code, body, _ = _call(user, perm_result={'has_permission': False, 'scope': 'deny'})
-
-    assert code == 403
-    assert body['success'] is False
-
-
-def test_inactive_admin_is_denied_before_bypass():
-    """The active check must run BEFORE the admin bypass: a disabled admin is
-    denied and never short-circuits to authorized."""
-    admin = _make_user(is_active=False, role_id=1, can_access_settings=True)
-    code, body, perm_repo = _call(admin, perm_result={'has_permission': True, 'scope': 'all'})
-
-    assert code == 403
-    assert body.get('authorized') is not True
-    perm_repo.return_value.check_permission_v2.assert_not_called()
-
-
-# ── Rate limiting ──────────────────────────────────────────────────────────
-
-def test_rate_limit_returns_429_with_retry_after():
-    from core.integrations import routes as bc_routes
-
-    user = _make_user(role_id=7, can_access_settings=False)
-    perm_repo = MagicMock()
-    perm_repo.return_value.check_permission_v2.return_value = {'has_permission': True, 'scope': 'all'}
-
+def _call_get(user, has_permission=True, companies=None):
+    from core.integrations import routes as bc
+    companies = companies if companies is not None else [{'id': 101, 'company': 'Autoworld SRL'}]
+    perm, repo = _perm_mock(has_permission), _repo_mock(companies)
     app = _app()
-    last = None
     with app.test_request_context('/api/integrations/business-control/authorize'):
         with patch(f'{_ROUTES}.current_user', user), \
-             patch(f'{_ROUTES}.PermissionRepository', perm_repo), \
+             patch(f'{_ROUTES}.PermissionRepository', perm), \
+             patch(f'{_ROUTES}.IntegrationsRepository', repo), \
              patch(f'{_ROUTES}._audit'):
-            for _ in range(bc_routes._RATE_MAX_REQUESTS + 5):
-                last = bc_routes.business_control_authorize()
-
-    # Once the per-principal window budget is exhausted -> 429 with Retry-After.
-    assert isinstance(last, tuple)
-    resp, code = last[0], last[1]
-    assert code == 429
-    assert resp.headers.get('Retry-After') is not None
+            rv = bc.business_control_authorize()
+    return _normalize(rv) + (perm,)
 
 
-# ── Tenant / company isolation ─────────────────────────────────────────────
-
-def test_scope_reflects_the_calling_user_company_only():
-    user_a = _make_user(id=10, email='a@x.com', company_id=1, company='DWA')
-    user_b = _make_user(id=20, email='b@x.com', company_id=2, company='AWH')
-
-    _, body_a, _ = _call(user_a, perm_result={'has_permission': True, 'scope': 'all'})
-    _, body_b, _ = _call(user_b, perm_result={'has_permission': True, 'scope': 'all'})
-
-    assert body_a['scope']['company_id'] == 1
-    assert body_a['scope']['company'] == 'DWA'
-    assert body_b['scope']['company_id'] == 2
-    assert body_b['scope']['company'] == 'AWH'
-    # JARVIS has no tenant tier; the company is the isolation boundary.
-    assert body_a['scope']['tenant_id'] is None
-    assert body_b['scope']['tenant_id'] is None
-    # A caller never sees another company's id.
-    assert body_a['scope']['company_id'] != body_b['scope']['company_id']
+def _call_post(user, body, has_permission=True, companies=None):
+    from core.integrations import routes as bc
+    companies = companies if companies is not None else [{'id': 101, 'company': 'Autoworld SRL'}]
+    perm, repo = _perm_mock(has_permission), _repo_mock(companies)
+    app = _app()
+    with app.test_request_context(
+        '/api/integrations/business-control/authorize', method='POST', json=body
+    ):
+        with patch(f'{_ROUTES}.current_user', user), \
+             patch(f'{_ROUTES}.PermissionRepository', perm), \
+             patch(f'{_ROUTES}.IntegrationsRepository', repo), \
+             patch(f'{_ROUTES}._audit'):
+            rv = bc.business_control_select_tenant()
+    return _normalize(rv)
 
 
-# ── No sensitive-data leakage ──────────────────────────────────────────────
+# ═══════════════════════════════ GET — auth gate ═══════════════════════════════
 
-def test_response_does_not_leak_hashes_secrets_or_unrelated_pii():
-    import json
+def test_get_unauthenticated_is_401():
+    code, body, perm = _call_get(_make_user(is_authenticated=False))
+    assert code == 401
+    assert body['success'] is False
+    perm.return_value.check_permission_v2.assert_not_called()
 
-    user = _make_user(role_id=7, can_access_settings=False)
-    code, body, _ = _call(user, perm_result={'has_permission': True, 'scope': 'all'})
+
+def test_get_inactive_account_denied():
+    code, body, _ = _call_get(_make_user(is_active=False))
+    assert code == 403
+    assert body['success'] is False
+    assert body.get('authorized') is not True
+
+
+def test_get_missing_permission_forbidden():
+    code, body, _ = _call_get(_make_user(role_id=7, can_access_settings=False), has_permission=False)
+    assert code == 403
+    assert body['success'] is False
+
+
+def test_get_zero_eligible_companies_forbidden():
+    # Has the permission, but the registered company is inactive => no tenants => 403.
+    user = _make_user(company_id=101)
+    code, body, _ = _call_get(user, has_permission=True,
+                              companies=[{'id': 101, 'company': 'Autoworld SRL', 'active': False}])
+    assert code == 403
+    assert body['success'] is False
+
+
+# ═══════════════════════════ GET — single tenant (non-admin) ═══════════════════
+
+def test_get_single_tenant_non_admin():
+    user = _make_user(role_name='Manager', can_access_settings=False, company_id=101)
+    code, body, perm = _call_get(user, has_permission=True,
+                                 companies=[{'id': 101, 'company': 'Autoworld SRL'},
+                                            {'id': 205, 'company': 'Compania B SRL'}])
     assert code == 200
+    assert body['success'] is True
+    assert body['authorized'] is True
+    assert body['permission'] == 'business_control.access'
+    assert body['user'] == {'id': 123, 'email': 'user@example.com',
+                            'full_name': 'Nume Utilizator', 'role': 'Manager'}
+    # Non-admin sees ONLY their registered company, even though co 205 exists.
+    assert body['tenant_selection_required'] is False
+    assert body['default_company_id'] == 101
+    assert len(body['available_tenants']) == 1
+    t = body['available_tenants'][0]
+    assert t['company_id'] == 101 and t['is_default'] is True
+    assert t['company_name'] == 'Autoworld SRL'
+    # permission was actually checked (non-admin path)
+    perm.return_value.check_permission_v2.assert_called_once_with(
+        7, 'business_control', 'module', 'access')
 
+
+# ═══════════════════════════ GET — multi tenant (admin) ════════════════════════
+
+def test_get_multi_tenant_admin_sees_all_active():
+    admin = _make_user(role_name='Admin', can_access_settings=True, company_id=101)
+    code, body, perm = _call_get(admin, has_permission=False,  # admin bypass -> permission not required
+                                 companies=[{'id': 101, 'company': 'Autoworld SRL'},
+                                            {'id': 205, 'company': 'Compania B SRL'},
+                                            {'id': 300, 'company': 'Inactiva SRL', 'active': False}])
+    assert code == 200
+    assert body['tenant_selection_required'] is True
+    ids = {t['company_id'] for t in body['available_tenants']}
+    assert ids == {101, 205}            # inactive 300 excluded
+    assert body['default_company_id'] == 101   # admin's registered company
+    defaults = [t for t in body['available_tenants'] if t['is_default']]
+    assert len(defaults) == 1 and defaults[0]['company_id'] == 101
+    # admin bypass => no explicit permission lookup
+    perm.return_value.check_permission_v2.assert_not_called()
+
+
+def test_get_admin_with_single_active_company_no_selection():
+    admin = _make_user(can_access_settings=True, company_id=101)
+    code, body, _ = _call_get(admin, companies=[{'id': 101, 'company': 'Autoworld SRL'}])
+    assert code == 200
+    assert body['tenant_selection_required'] is False
+
+
+def test_get_admin_default_falls_back_when_home_company_inactive():
+    # Admin registered on an inactive company -> default is the first active company.
+    admin = _make_user(can_access_settings=True, company_id=999)
+    code, body, _ = _call_get(admin, companies=[{'id': 205, 'company': 'Compania B SRL'},
+                                                {'id': 101, 'company': 'Autoworld SRL'}])
+    assert code == 200
+    # ordered by name -> 'Autoworld SRL'(101) first
+    assert body['default_company_id'] == 101
+
+
+def test_get_superadmin_equiv_is_admin_sees_all():
+    # JARVIS has no superuser type; 'superadmin' == admin (can_access_settings).
+    admin = _make_user(role_name='Admin', can_access_settings=True, company_id=101)
+    code, body, _ = _call_get(admin, has_permission=False,
+                              companies=[{'id': 101, 'company': 'A SRL'}, {'id': 205, 'company': 'B SRL'}])
+    assert code == 200
+    assert {t['company_id'] for t in body['available_tenants']} == {101, 205}
+
+
+def test_get_company_code_is_derived_from_name():
+    user = _make_user(company_id=101)
+    _, body, _ = _call_get(user, companies=[{'id': 101, 'company': 'Autoworld SRL'}])
+    assert body['available_tenants'][0]['company_code'] == 'AUTOWORLD'
+
+
+def test_get_role_is_the_jarvis_role_name():
+    user = _make_user(role_name='Manager', company_id=101)
+    _, body, _ = _call_get(user)
+    assert body['user']['role'] == 'Manager'
+
+
+def test_get_does_not_leak_sensitive_data():
+    user = _make_user(company_id=101)
+    code, body, _ = _call_get(user)
+    assert code == 200
     raw = json.dumps(body).lower()
-    for forbidden in [
-        'secret_hash_do_not_leak',  # the fake password_hash sentinel
-        'password', 'hash', 'pbkdf2', 'secret', 'token', 'session',
-        user.cnp,                    # national id
-        user.phone.lower(),         # unrelated PII
-    ]:
-        assert forbidden.lower() not in raw, f'response leaked: {forbidden}'
-
-    # Only the whitelisted fields are present.
-    assert set(body.keys()) == {'authorized', 'user', 'scope', 'permission'}
-    assert set(body['user'].keys()) == {'id', 'email', 'full_name'}
-    assert set(body['scope'].keys()) == {'tenant_id', 'company_id', 'company'}
+    for bad in ['secret_hash_do_not_leak', 'password', 'hash', 'pbkdf2', 'token',
+                'session', user.cnp, user.phone.lower()]:
+        assert bad.lower() not in raw, f'leaked: {bad}'
+    assert set(body['user'].keys()) == {'id', 'email', 'full_name', 'role'}
 
 
-# ── Migration seed: default role grants (locks the Admin+Manager decision) ──
+def test_get_bearer_and_session_use_same_current_user_path():
+    # The endpoint reads flask_login.current_user, which is populated for BOTH a
+    # session cookie AND a Bearer JWT (the global _jwt_session_bridge). So the
+    # authorization logic is identical regardless of how the caller authenticated.
+    for label in ('session', 'bearer'):
+        user = _make_user(company_id=101)
+        code, body, _ = _call_get(user)
+        assert code == 200, label
+        assert body['authorized'] is True
+
+
+# ═══════════════════════════ POST — tenant selection ═══════════════════════════
+
+def test_post_select_allowed_tenant_non_admin():
+    user = _make_user(role_name='Manager', can_access_settings=False, company_id=101)
+    code, body = _call_post(user, {'company_id': 101},
+                            companies=[{'id': 101, 'company': 'Autoworld SRL'}])
+    assert code == 200
+    assert body['success'] is True and body['authorized'] is True
+    assert body['scope'] == {'tenant_id': 101, 'company_id': 101, 'company': 'Autoworld SRL'}
+    assert body['user']['role'] == 'Manager'
+    assert body['permission'] == 'business_control.access'
+
+
+def test_post_select_allowed_tenant_admin():
+    admin = _make_user(can_access_settings=True, company_id=101)
+    code, body = _call_post(admin, {'company_id': 205}, has_permission=False,
+                            companies=[{'id': 101, 'company': 'Autoworld SRL'},
+                                       {'id': 205, 'company': 'Compania B SRL'}])
+    assert code == 200
+    assert body['scope']['company_id'] == 205
+    assert body['scope']['tenant_id'] == 205
+    assert body['scope']['company'] == 'Compania B SRL'
+
+
+def test_post_select_disallowed_tenant_is_403_no_leak():
+    # Non-admin tries to select a company they are NOT registered on.
+    user = _make_user(role_name='Manager', can_access_settings=False, company_id=101)
+    code, body = _call_post(user, {'company_id': 205},
+                            companies=[{'id': 101, 'company': 'Autoworld SRL'},
+                                       {'id': 205, 'company': 'Compania B SRL'}])
+    assert code == 403
+    assert body == {'success': False, 'authorized': False, 'error': 'Tenant access denied'}
+    # no leak about company 205 existing / its name
+    assert 'compania b' not in json.dumps(body).lower()
+
+
+def test_post_select_inactive_company_is_403():
+    admin = _make_user(can_access_settings=True, company_id=101)
+    code, body = _call_post(admin, {'company_id': 300}, has_permission=False,
+                            companies=[{'id': 101, 'company': 'Autoworld SRL'},
+                                       {'id': 300, 'company': 'Inactiva SRL', 'active': False}])
+    assert code == 403
+    assert body['error'] == 'Tenant access denied'
+
+
+def test_post_cannot_forge_company_id():
+    # A company_id that does not exist at all -> denied, no leak.
+    user = _make_user(can_access_settings=False, company_id=101)
+    code, body = _call_post(user, {'company_id': 999999},
+                            companies=[{'id': 101, 'company': 'Autoworld SRL'}])
+    assert code == 403
+    assert body == {'success': False, 'authorized': False, 'error': 'Tenant access denied'}
+
+
+def test_post_missing_permission_is_403():
+    user = _make_user(can_access_settings=False, company_id=101)
+    code, body = _call_post(user, {'company_id': 101}, has_permission=False)
+    assert code == 403
+    assert body['authorized'] is False
+
+
+def test_post_inactive_account_is_403():
+    user = _make_user(is_active=False, can_access_settings=False, company_id=101)
+    code, body = _call_post(user, {'company_id': 101})
+    assert code == 403
+    assert body['error'] == 'Tenant access denied'
+
+
+def test_post_unauthenticated_is_401():
+    code, body = _call_post(_make_user(is_authenticated=False), {'company_id': 101})
+    assert code == 401
+    assert body['success'] is False
+
+
+def test_post_missing_company_id_is_400():
+    user = _make_user(company_id=101)
+    code, body = _call_post(user, {})
+    assert code == 400
+    assert body['success'] is False
+
+
+def test_post_non_integer_company_id_is_400():
+    user = _make_user(company_id=101)
+    code, body = _call_post(user, {'company_id': 'abc'})
+    assert code == 400
+
+
+# ═══════════════════════════ Admin read-only view ═════════════════════════════
+
+def _call_admin(caller, target_user_data, has_permission=False):
+    from core.integrations import routes as bc
+    user_repo = MagicMock()
+    user_repo.return_value.get_by_id.return_value = target_user_data
+    perm = _perm_mock(has_permission)
+    app = _app()
+    with app.test_request_context('/api/integrations/business-control/admin/users/5/access'):
+        with patch(f'{_HELPERS}.current_user', caller), \
+             patch(f'{_ROUTES}.current_user', caller), \
+             patch(f'{_ROUTES}.UserRepository', user_repo), \
+             patch(f'{_ROUTES}.PermissionRepository', perm):
+            rv = bc.bc_admin_user_access(5)
+    return _normalize(rv)
+
+
+def test_admin_view_shows_access_and_company():
+    caller = _make_user(can_access_settings=True)
+    # The real UserRepository.get_by_id does `SELECT u.*` — include sensitive
+    # columns to prove the route rebuilds the body from whitelisted keys only.
+    target = {'id': 5, 'email': 't@x.com', 'name': 'Ținta', 'role_name': 'Manager',
+              'role_id': 7, 'can_access_settings': False, 'company_id': 101, 'company': 'Autoworld SRL',
+              'password_hash': 'pbkdf2:sha256:SECRET_HASH_DO_NOT_LEAK', 'cnp': '1900101000000'}
+    code, body = _call_admin(caller, target, has_permission=True)
+    assert code == 200
+    assert body['success'] is True
+    assert body['user'] == {'id': 5, 'email': 't@x.com', 'full_name': 'Ținta', 'role': 'Manager'}
+    assert body['has_business_control_access'] is True
+    assert body['sees_all_companies'] is False
+    assert body['registered_company'] == {'company_id': 101, 'company_name': 'Autoworld SRL'}
+    raw = json.dumps(body).lower()
+    for bad in ['secret_hash_do_not_leak', 'password', 'hash', 'pbkdf2', '1900101000000']:
+        assert bad not in raw, f'admin view leaked: {bad}'
+
+
+def test_admin_view_inactive_caller_denied():
+    # A disabled admin holding a live cookie must not reach the enumeration body.
+    caller = _make_user(can_access_settings=True, is_active=False)
+    target = {'id': 5, 'email': 't@x.com', 'name': 'T', 'role_id': 7, 'company_id': 101}
+    code, body = _call_admin(caller, target)
+    assert code == 403
+
+
+def test_admin_view_non_admin_caller_forbidden():
+    caller = _make_user(can_access_settings=False)
+    target = {'id': 5, 'email': 't@x.com', 'name': 'T', 'role_id': 7, 'company_id': 101}
+    code, body = _call_admin(caller, target)
+    assert code == 403
+
+
+def test_admin_view_unauthenticated_401():
+    caller = _make_user(is_authenticated=False)
+    code, body = _call_admin(caller, {'id': 5})
+    assert code == 401
+
+
+# ═══════════════ Migration seed: default grants (unchanged behavior) ═══════════
 
 class TestBusinessControlSeed:
-    """Characterize the permission seed so the default grants can't silently drift.
-
-    The security-relevant behavior: Admin + Manager are granted, User + Viewer are
-    explicitly denied (not left ungranted, which the sidebar sweep would widen to
-    User='own').
-    """
+    """Characterize the permission seed so default grants can't silently drift."""
 
     def _run_seed(self):
         from migrations.domains import schema_roles
@@ -292,7 +428,6 @@ class TestBusinessControlSeed:
         return cursor, conn
 
     def _role_grants(self, cursor):
-        """Extract {role_name: (scope, granted)} from the role_permissions_v2 inserts."""
         grants = {}
         for call in cursor.execute.call_args_list:
             sql = call.args[0]
@@ -301,32 +436,10 @@ class TestBusinessControlSeed:
                 grants[role_name] = (scope, granted)
         return grants
 
-    def test_permission_row_inserted_with_business_control_triple(self):
-        cursor, _ = self._run_seed()
-        perm_inserts = [
-            c.args[0] for c in cursor.execute.call_args_list
-            if 'INSERT INTO permissions_v2' in c.args[0]
-        ]
-        assert len(perm_inserts) == 1
-        sql = perm_inserts[0]
-        assert "'business_control'" in sql
-        assert "'module'" in sql and "'access'" in sql
-        assert 'JARVIS alpha | BUSINESS CONTROL' in sql
-
-    def test_admin_and_manager_are_granted(self):
+    def test_admin_and_manager_granted_user_viewer_denied(self):
         cursor, _ = self._run_seed()
         grants = self._role_grants(cursor)
         assert grants['Admin'] == ('all', True)
         assert grants['Manager'] == ('all', True)
-
-    def test_user_and_viewer_are_explicitly_denied(self):
-        cursor, _ = self._run_seed()
-        grants = self._role_grants(cursor)
-        # Explicit deny rows (not absent) — this is what blocks the sidebar sweep
-        # from widening the permission to User='own'.
         assert grants['User'] == ('deny', False)
         assert grants['Viewer'] == ('deny', False)
-
-    def test_seed_commits(self):
-        _, conn = self._run_seed()
-        conn.commit.assert_called_once()

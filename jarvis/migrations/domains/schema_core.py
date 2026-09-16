@@ -220,6 +220,18 @@ def create_schema_core(conn, cursor):
         END $$;
     ''')
 
+    # Active/inactive flag — lets a company be excluded from selectable tenants
+    # (e.g. the JARVIS alpha | BUSINESS CONTROL multi-tenant selector). Additive:
+    # DEFAULT TRUE keeps every existing company active, so no consumer changes.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'companies' AND column_name = 'is_active') THEN
+                ALTER TABLE companies ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT TRUE;
+            END IF;
+        END $$;
+    ''')
+
     # Company aliases — normalise names across BioStar, Sincron, etc.
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS company_aliases (
