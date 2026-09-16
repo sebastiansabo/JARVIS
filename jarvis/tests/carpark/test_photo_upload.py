@@ -72,16 +72,19 @@ def test_upload_stores_key_and_creates_row(client, monkeypatch):
         r = client.post('/api/carpark/vehicles/18/photos/upload',
                         data=data, content_type='multipart/form-data')
     assert r.status_code in (200, 201)
-    # key was stored, not raw bytes / public URL
-    assert up.call_args.args[1].startswith('private/carpark/18/')
-    assert up.call_args.args[1].endswith('.jpg')
-    assert up.call_args.args[2] == 'image/jpeg'
+    # The main image (not its `_thumb.jpg` sibling) is stored as a key —
+    # never raw bytes / a public URL.
+    main_call = next(c for c in up.call_args_list if not c.args[1].endswith('_thumb.jpg'))
+    assert main_call.args[1].startswith('private/carpark/18/')
+    assert main_call.args[1].endswith('.jpg')
+    assert main_call.args[2] == 'image/jpeg'
     stored_url = create.call_args.kwargs.get('url') or create.call_args.args[1]
     assert stored_url.startswith('private/carpark/18/')
     # first photo on a vehicle with none yet -> primary
     assert create.call_args.kwargs.get('is_primary') is True
-    # what got uploaded is the compressed JPEG, never the raw bytes
-    uploaded_bytes = up.call_args.args[0]
+    # what got uploaded is the compressed JPEG, never the raw bytes; file_size
+    # tracks the MAIN image, not the thumbnail.
+    uploaded_bytes = main_call.args[0]
     assert isinstance(uploaded_bytes, bytes)
     assert uploaded_bytes != _jpeg_bytes()
     assert create.call_args.kwargs.get('file_size') == len(uploaded_bytes)
@@ -101,6 +104,57 @@ def test_upload_compresses_to_max_1600px(client, monkeypatch):
     out = Image.open(io.BytesIO(up.call_args.args[0]))
     assert max(out.size) <= 1600
     assert out.format == 'JPEG'
+
+
+def test_upload_generates_and_stores_thumbnail(client, monkeypatch):
+    """Each uploaded photo also gets a small thumbnail variant: a second
+    Spaces object (`…_thumb.jpg`) whose key is persisted in the row's
+    `thumbnail_url`, so the catalog list can serve ~20 KB instead of the
+    full ~300 KB original for the tiny row thumbnail."""
+    _login(client, monkeypatch, uid=90020)
+    with mock.patch('carpark.routes.photos.spaces_service.is_enabled', return_value=True), \
+         mock.patch('carpark.routes.photos.spaces_service.upload', side_effect=lambda data, key, ct: key) as up, \
+         mock.patch('carpark.routes.photos._photo_repo.create',
+                    side_effect=lambda **kw: dict(kw, id=1)) as create, \
+         mock.patch('carpark.routes.photos._photo_repo.get_by_vehicle', return_value=[]), \
+         mock.patch('carpark.routes.photos._verify_vehicle_ownership', return_value=({'id': 18}, None)):
+        data = {'file': (io.BytesIO(_jpeg_bytes()), 'photo.jpg')}
+        r = client.post('/api/carpark/vehicles/18/photos/upload',
+                        data=data, content_type='multipart/form-data')
+    assert r.status_code == 201
+    # Two objects uploaded for one photo: the main image and its thumbnail.
+    assert up.call_count == 2
+    keys = [c.args[1] for c in up.call_args_list]
+    main_keys = [k for k in keys if not k.endswith('_thumb.jpg')]
+    thumb_keys = [k for k in keys if k.endswith('_thumb.jpg')]
+    assert len(main_keys) == 1 and len(thumb_keys) == 1
+    # main + thumb share the same uuid stem under the vehicle's prefix
+    assert thumb_keys[0] == main_keys[0][:-len('.jpg')] + '_thumb.jpg'
+    # the row stores the ORIGINAL as url and the thumbnail key separately
+    assert create.call_args.kwargs.get('url') == main_keys[0]
+    assert create.call_args.kwargs.get('thumbnail_url') == thumb_keys[0]
+
+
+def test_thumbnail_is_smaller_than_main(client, monkeypatch):
+    from PIL import Image
+    _login(client, monkeypatch, uid=90021)
+    with mock.patch('carpark.routes.photos.spaces_service.is_enabled', return_value=True), \
+         mock.patch('carpark.routes.photos.spaces_service.upload', side_effect=lambda data, key, ct: key) as up, \
+         mock.patch('carpark.routes.photos._photo_repo.create', return_value={'id': 1}), \
+         mock.patch('carpark.routes.photos._photo_repo.get_by_vehicle', return_value=[]), \
+         mock.patch('carpark.routes.photos._verify_vehicle_ownership', return_value=({'id': 18}, None)):
+        data = {'file': (io.BytesIO(_jpeg_bytes(size=(3000, 2000))), 'big.jpg')}
+        client.post('/api/carpark/vehicles/18/photos/upload',
+                    data=data, content_type='multipart/form-data')
+    by_key = {c.args[1]: c.args[0] for c in up.call_args_list}
+    main_bytes = next(v for k, v in by_key.items() if not k.endswith('_thumb.jpg'))
+    thumb_bytes = next(v for k, v in by_key.items() if k.endswith('_thumb.jpg'))
+    main = Image.open(io.BytesIO(main_bytes))
+    thumb = Image.open(io.BytesIO(thumb_bytes))
+    assert max(main.size) <= 1600
+    assert max(thumb.size) <= 400
+    assert len(thumb_bytes) < len(main_bytes)
+    assert thumb.format == 'JPEG'
 
 
 def test_upload_multiple_files_only_first_is_primary(client, monkeypatch):
@@ -261,11 +315,14 @@ def test_upload_rejects_too_many_files_with_400(client, monkeypatch):
 
 def test_upload_rolls_back_this_requests_writes_on_midbatch_failure(client, monkeypatch):
     _login(client, monkeypatch, uid=90012)
+    # Each file uploads TWO objects (main + thumb) before its row is created,
+    # so file A = calls 1(main)+2(thumb)+row, file B main = call 3. Fail on
+    # call 3 so file A is fully persisted and must be fully rolled back.
     upload_calls = {'n': 0}
 
     def _upload(data, key, ct):
         upload_calls['n'] += 1
-        if upload_calls['n'] == 2:
+        if upload_calls['n'] == 3:
             raise RuntimeError('spaces down')
         return key
 
@@ -284,8 +341,11 @@ def test_upload_rolls_back_this_requests_writes_on_midbatch_failure(client, monk
         r = client.post('/api/carpark/vehicles/18/photos/upload',
                         data=data, content_type='multipart/form-data')
     assert r.status_code == 500
-    # File 1's object was uploaded and its row created before file 2 failed —
-    # both must be rolled back for this request to be all-or-nothing.
-    first_key = up.call_args_list[0].args[1]
+    # File A's main + thumb objects were uploaded and its row created before
+    # file B failed — the row and BOTH Spaces objects must be rolled back.
+    file_a_main = up.call_args_list[0].args[1]
+    file_a_thumb = up.call_args_list[1].args[1]
     repo_delete.assert_called_once_with(101)
-    sp_delete.assert_called_once_with(first_key)
+    assert sp_delete.call_count == 2
+    deleted_keys = {c.args[0] for c in sp_delete.call_args_list}
+    assert deleted_keys == {file_a_main, file_a_thumb}
