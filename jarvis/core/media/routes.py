@@ -59,7 +59,10 @@ def get_media(key):
         abort(404)
 
     headers = dict(_SECURITY_HEADERS)
-    headers['Cache-Control'] = 'private, max-age=86400'
+    # Keys are content-addressed (uuid stems) and never mutate, so the object
+    # at a key is safe to cache immutably — skips the Flask→Spaces proxy
+    # round-trip on every repeat view.
+    headers['Cache-Control'] = 'private, max-age=31536000, immutable'
 
     ctype = (content_type or '').split(';', 1)[0].strip().lower()
     if ctype in _INLINE_IMAGE_TYPES:

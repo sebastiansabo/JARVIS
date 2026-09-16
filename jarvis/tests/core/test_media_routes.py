@@ -74,6 +74,20 @@ def test_media_streams_allowed_key(client):
     assert 'max-age' in r.headers.get('Cache-Control', '')
 
 
+def test_media_image_cache_is_long_lived_immutable(client):
+    # Media keys are content-addressed (uuid stems) and never mutate, so the
+    # object at a key is safe to cache immutably for a year — cutting the
+    # slow Flask→Spaces proxy round-trip out of every repeat view.
+    _login(client)
+    with mock.patch('core.media.routes.spaces_service.fetch',
+                    return_value=(b'JPEGDATA', 'image/jpeg')):
+        r = client.get('/api/media/private/carpark/18/01.jpg')
+    cache = r.headers.get('Cache-Control', '')
+    assert 'immutable' in cache
+    assert 'max-age=31536000' in cache
+    assert 'private' in cache
+
+
 def test_media_image_sets_security_headers(client):
     # Every response — including a legitimate inline image — must carry the
     # anti-sniff + locked-down CSP defense-in-depth headers.
