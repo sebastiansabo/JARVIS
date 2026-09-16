@@ -2222,6 +2222,26 @@ def _create_carpark_incremental(conn, cursor):
             END $$;
         """)
 
+    # ── Widen enum columns that predate the Autovit taxonomy values ──
+    # drive_type/euro_standard shipped as VARCHAR(10) in the original CarPark
+    # schema. Commit 4e1edfa9 widened the CREATE TABLE to 30/20 to fit Autovit
+    # enums ('all-wheel-permanent' = 19, 'euro-6d-temp' = 12) but added no
+    # ALTER, so pre-existing tables (i.e. production) still reject those values
+    # with "value too long for type character varying(10)" on import. Widen in
+    # place — increasing a varchar length limit is a catalog-only change in
+    # Postgres (no table rewrite). Guarded on current length so it's a strict
+    # no-op once already wide.
+    for _col, _len in [('drive_type', 30), ('euro_standard', 20)]:
+        cursor.execute(f"""
+            DO $$ BEGIN
+              IF EXISTS (SELECT 1 FROM information_schema.columns
+                         WHERE table_name='carpark_vehicles' AND column_name='{_col}'
+                           AND character_maximum_length < {_len}) THEN
+                ALTER TABLE carpark_vehicles ALTER COLUMN {_col} TYPE VARCHAR({_len});
+              END IF;
+            END $$;
+        """)
+
     # ── CarPark specs: fuel-tank / battery capacity + consumption norms ──
     # Mirrors the Driving-Park (fp_vehicles) capacity/norm model so the
     # car-profile form can capture battery capacity for EV/hybrid/PHEV and the
