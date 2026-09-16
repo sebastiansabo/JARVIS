@@ -23,6 +23,10 @@ MAX_BATCH_PHOTOS = 50
 # Upload hardening (multipart /photos/upload route only):
 MAX_PHOTO_SIZE = 15 * 1024 * 1024  # 15 MB per file (matches DMS/statements norm)
 MAX_PHOTO_PIXELS = 50_000_000      # decompression-bomb guard (~50 MP source)
+# Thumbnail variant served in the catalog list view (rows render at ~40-80px).
+# 400px covers hi-DPI; ~15-25 KB vs the full ~300 KB original.
+THUMB_MAX_PX = 400
+THUMB_QUALITY = 70
 
 
 def _validate_url(url: str) -> bool:
@@ -171,7 +175,9 @@ def _compress_jpeg(raw: bytes, max_px: int = 1600, q: int = 80) -> bytes:
 def upload_photos(vehicle_id):
     """Accept multipart image file(s), compress, upload PRIVATE to Spaces,
     and store the returned key (never raw bytes or a public URL) in
-    carpark_vehicle_photos.url.
+    carpark_vehicle_photos.url. A small thumbnail variant is uploaded
+    alongside each image and its key stored in .thumbnail_url, so the
+    catalog list can serve ~20 KB instead of the full original.
 
     Multipart fields: `files` (list) and/or `file` (single).
 
@@ -201,6 +207,8 @@ def upload_photos(vehicle_id):
     # ── Phase 1: read + validate + compress EVERY file first. Writes NOTHING
     # to Spaces or the DB until all files pass, so one bad file in a batch can
     # never orphan a half-uploaded set. Client-input errors return a 4xx here.
+    # Each entry is (main_bytes, thumb_bytes): the full-size image plus a small
+    # thumbnail the catalog list serves instead of the ~300 KB original.
     payloads = []
     for fs in files:
         raw = fs.read()
@@ -208,9 +216,11 @@ def upload_photos(vehicle_id):
             return jsonify({'success': False,
                             'error': f'File too large (max {MAX_PHOTO_SIZE // (1024 * 1024)} MB)'}), 413
         try:
-            payloads.append(_compress_jpeg(raw))
+            main = _compress_jpeg(raw)
+            thumb = _compress_jpeg(raw, max_px=THUMB_MAX_PX, q=THUMB_QUALITY)
         except _InvalidImage as e:
             return jsonify({'success': False, 'error': e.message}), e.status
+        payloads.append((main, thumb))
 
     # Only the first photo uploaded for a vehicle with no existing photos
     # becomes primary — never overrides an already-set primary photo.
@@ -223,16 +233,21 @@ def upload_photos(vehicle_id):
     created = []
     uploaded_keys = []
     try:
-        for i, data in enumerate(payloads):
-            key = f'private/carpark/{vehicle_id}/{uuid.uuid4().hex}.jpg'
-            spaces_service.upload(data, key, 'image/jpeg')
+        for i, (main, thumb) in enumerate(payloads):
+            stem = f'private/carpark/{vehicle_id}/{uuid.uuid4().hex}'
+            key = f'{stem}.jpg'
+            thumb_key = f'{stem}_thumb.jpg'
+            spaces_service.upload(main, key, 'image/jpeg')
             uploaded_keys.append(key)
+            spaces_service.upload(thumb, thumb_key, 'image/jpeg')
+            uploaded_keys.append(thumb_key)
             photo = _photo_repo.create(
                 vehicle_id=vehicle_id,
                 url=key,
+                thumbnail_url=thumb_key,
                 photo_type='gallery',
                 is_primary=(make_primary and i == 0),
-                file_size=len(data),
+                file_size=len(main),
             )
             created.append(photo)
     except Exception:
