@@ -1,6 +1,26 @@
 """Vehicle Repository — Data access for carpark_vehicles and related tables."""
 from typing import Optional, Dict, Any, List
+from psycopg2.extras import Json
 from core.base_repository import BaseRepository
+
+
+# JSONB columns on carpark_vehicles. psycopg2 cannot adapt a raw Python
+# dict/list into JSONB (it raises "can't adapt type 'dict'"), so any dict/list
+# value bound for one of these columns must be wrapped in Json(). The Autovit
+# importer (advert_to_vehicle) is the first caller to write `equipment` as a
+# real dict, which surfaced this. NOTE: cost_lines/pricing_sheets are TEXT
+# columns (the frontend sends already-serialized JSON strings) and
+# equipment_options is TEXT[] (a real Python list psycopg2 adapts natively),
+# so none of those belong here.
+VEHICLE_JSONB_FIELDS = {'equipment', 'optional_packages'}
+
+
+def _adapt_jsonb(column: str, value: Any) -> Any:
+    """Wrap a dict/list bound for a JSONB column in Json() so psycopg2 can
+    adapt it. Strings (already-serialized JSON) and None pass through."""
+    if column in VEHICLE_JSONB_FIELDS and isinstance(value, (dict, list)):
+        return Json(value)
+    return value
 
 
 # Fields safe for client-submitted updates (whitelist)
@@ -256,7 +276,7 @@ class VehicleRepository(BaseRepository):
 
         placeholders = ', '.join(['%s'] * len(columns))
         col_names = ', '.join(columns)
-        values = [safe_data[c] for c in columns]
+        values = [_adapt_jsonb(c, safe_data[c]) for c in columns]
 
         return self.execute(
             f'INSERT INTO carpark_vehicles ({col_names}) VALUES ({placeholders}) RETURNING *',
@@ -276,7 +296,7 @@ class VehicleRepository(BaseRepository):
         params = []
         for key, value in safe_data.items():
             sets.append(f'{key} = %s')
-            params.append(value)
+            params.append(_adapt_jsonb(key, value))
 
         sets.append('updated_at = CURRENT_TIMESTAMP')
         if updated_by is not None:
