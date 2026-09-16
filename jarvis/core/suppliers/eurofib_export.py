@@ -132,9 +132,9 @@ def build_medline_rows(invoice: dict, config: dict) -> list:
     """Build the two MEDLINE rows (credit/Haben then debit/Soll) for a single invoice.
 
     invoice: {supplier, invoice_number, invoice_date, due_date, net_amount, vat_amount,
-              gross_amount, line_description?}. When line_description is present (the
-              invoice's first line_items entry description), it is used verbatim as the
-              MEDLINE `text` field; otherwise `text` falls back to config['text_template'].
+              gross_amount, line_description?}. MEDLINE `text` is the schema's text_template
+              (primary); when the template is empty it falls back to line_description (the
+              invoice's first-line article name + description).
     config: an effective Table-2 konto dict (konto_debit, konto_credit, klient,
             gegenkonto_debit, gegenkonto_credit, kostenstelle_debit, kostenstelle_credit,
             extbeleg_debit, extbeleg_credit, steuercode, text_template, belegart).
@@ -152,7 +152,9 @@ def build_medline_rows(invoice: dict, config: dict) -> list:
     extbeleg_val = _belegnummer(invoice_number) if (
         config.get('extbeleg_credit') == 'invoice_number' or config.get('extbeleg_debit') == 'invoice_number'
     ) else ''
-    text = _s(invoice.get('line_description')) or _resolve_text(config.get('text_template'), invoice)
+    # The schema's Text Template is the primary EuroFib `text`; the invoice's first-line article
+    # (name + description) is the fallback used only when the schema has no template.
+    text = _resolve_text(config.get('text_template'), invoice) or _s(invoice.get('line_description'))
 
     credit = _new_row()
     credit[_MARKER_INDEX] = 'x'
@@ -221,7 +223,7 @@ def build_medline_rows_per_line(invoice: dict, base_config: dict, line_configs: 
          soll_haben='h', buchdatum=invoice_date, belegart=belegart, belegdatum=invoice_date,
          belegnummer=_belegnummer(invoice_number), betrag=_money(gross_total),
          gegenkonto=_s(base_config.get('gegenkonto_credit')),
-         text=_s(line_configs[0].get('text')) or _resolve_text(base_config.get('text_template'), invoice),
+         text=_resolve_text(base_config.get('text_template'), invoice) or _s(line_configs[0].get('text')),
          brutto_netto='B', valuta=due_date, extbeleg=extbeleg_val)
 
     rows = [credit]
