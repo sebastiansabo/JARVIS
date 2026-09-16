@@ -26,6 +26,7 @@ _LIST_COLUMNS = (
     'fp.inspection_acceptance, fp.inspection_id, fp.general_conditions_accepted, '
     'fp.general_conditions_accepted_at, fp.pdf_legal_path, fp.pdf_custom_path, '
     'fp.corrected_at, fp.corrected_by, '
+    'fp.absorbed_at, fp.absorbed_by, '
     'fp.is_internal, '
     'fp.driver_name, fp.driver_contact_id, fp.event_id, '
     'fp.document_type, fp.service_order_ref'

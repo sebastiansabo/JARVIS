@@ -742,6 +742,10 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
       // Ratate (no-show) sessions never drove — excluded from the sheet entirely.
       // Covers explicit MISSED + PLANNED past its grace window.
       if (c.td_status === 'missed') continue
+      // Absorbed internal drives (soft-superseded by a gap redistribution) drop
+      // out of the foaie in BOTH toggle states and out of the KM span — the
+      // client/gap-fill km now covers their stretch (mirrors aggregate_month).
+      if (c.absorbed_at) continue
       // Make filter (header dropdown): keep only cars whose catalog brand matches
       // the selected make. Brand is read from the full vehicle catalog
       // (getVehicles(false)), so archived/blocked cars of that make stay visible.
@@ -2305,6 +2309,17 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
     },
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Schimbarea tipului a eșuat'),
   })
+  // Undo a mistaken gap absorb: bring a soft-superseded internal drive back into
+  // the foaie (its gap reappears). Blocked (423) if the car-month is finalized.
+  const restoreAbsorbedMutation = useMutation({
+    mutationFn: (id: number) => foiParcursApi.restoreAbsorbed(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      queryClient.invalidateQueries({ queryKey: ['fp-route-sheets'] })
+      toast.success('Sesiune restaurată în foaie')
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Restaurarea a eșuat'),
+  })
   const [search, setSearch] = useState('')
   const [filterVin, setFilterVin] = useState<string>('all')
   const [filterStatus, setFilterStatus] = useState<string>('all')
@@ -2643,6 +2658,13 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                               Intern
                             </span>
                           )}
+                          {c.absorbed_at && (
+                            <span
+                              className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"
+                              title={`Absorbită într-o redistribuire de gap${c.absorbed_by ? ' de ' + c.absorbed_by : ''} — ascunsă din foaie`}>
+                              Absorbit
+                            </span>
+                          )}
                           <ModifiedBadge session={c} />
                         </div>
                       </TableCell>}
@@ -2834,6 +2856,18 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                               <History className="mr-1.5 h-3.5 w-3.5" />
                               Istoric
                             </Button>
+                            {c.absorbed_at && (
+                              <Button variant="outline" size="sm"
+                                disabled={restoreAbsorbedMutation.isPending}
+                                onClick={() => {
+                                  if (confirm('Restaurezi această sesiune internă absorbită? Va reapărea în foaie și gap-ul redistribuit va reveni. KM-ul deja mutat pe client NU se anulează automat.'))
+                                    restoreAbsorbedMutation.mutate(c.id)
+                                }}
+                                title="Restaurează sesiunea absorbită în foaie">
+                                <ArrowLeftRight className="mr-1.5 h-3.5 w-3.5" />
+                                Restaurează
+                              </Button>
+                            )}
                             {canCorrect && (
                               <Button variant="outline" size="sm"
                                 onClick={() => sessionStatus(c).key === 'planificat' ? navigate(`/app/foi-parcurs/test-drive?edit=${c.id}`) : setCorrecting(c)}
