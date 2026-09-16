@@ -615,10 +615,10 @@ class SupplierMasterRepository(BaseRepository):
                                 status='Bugetata'):
         """Invoices in the given `status` (default 'Bugetata') allocated to `company_name`,
         within [start_date, end_date] on invoice_date, whose free-text supplier resolves (by
-        exact name or alias) to a master supplier with a COMPLETE Table-2 konto config for
-        `company_id` (all key posting fields non-empty). GROUP BY i.id collapses the allocation
-        fan-out (an invoice can have multiple allocation rows for the same company, split
-        across departments)."""
+        exact name, alias, or CUI via the e-Factura link) to a master supplier with a COMPLETE
+        Table-2 konto config for `company_id` (all key posting fields non-empty). GROUP BY i.id
+        collapses the allocation fan-out (an invoice can have multiple allocation rows for the
+        same company, split across departments)."""
         # kc = the EFFECTIVE preset for each invoice: the per-invoice override if one is pinned
         # (invoice_konto_override), otherwise the supplier's active preset. The completeness gate
         # and the returned konto_config_id/konto_name all reflect that chosen preset.
@@ -646,6 +646,14 @@ class SupplierMasterRepository(BaseRepository):
                     SELECT 1 FROM supplier_aliases al
                     WHERE al.supplier_id = s.id AND lower(al.alias_name) = lower(i.supplier)
                 )
+                -- CUI is the reliable identity key: match the master's cui_normalized against
+                -- the invoice's e-Factura partner_cif (digits only). Catches name-spelling
+                -- drift like "ATUU ... SRL" vs "ATUU ... S.R.L." that the name/alias arms miss.
+                OR (s.cui_normalized IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM efactura_invoices efc
+                    WHERE efc.jarvis_invoice_id = i.id
+                      AND regexp_replace(COALESCE(efc.partner_cif, ''), '\\D', '', 'g') = s.cui_normalized
+                ))
             )
             LEFT JOIN invoice_konto_override ov ON ov.invoice_id = i.id
             JOIN supplier_konto_config kc
@@ -696,7 +704,7 @@ class SupplierMasterRepository(BaseRepository):
 
     def import_ready_ids(self, invoice_ids, company_id=None):
         """Of the given invoice ids, return those that are READY to export to EuroFib: status
-        'Bugetata', not deleted, whose free-text supplier resolves (name/alias) to a master
+        'Bugetata', not deleted, whose free-text supplier resolves (name/alias/CUI) to a master
         supplier with a COMPLETE active konto preset for a company the invoice is allocated to.
         When company_id is given, only that company counts; otherwise any allocated company does.
         Powers the Accounting "Pregătită de import" badge. Returns a list of invoice ids."""
@@ -712,6 +720,12 @@ class SupplierMasterRepository(BaseRepository):
                 lower(s.name) = lower(i.supplier)
                 OR EXISTS (SELECT 1 FROM supplier_aliases al
                            WHERE al.supplier_id = s.id AND lower(al.alias_name) = lower(i.supplier))
+                -- CUI match (master.cui_normalized == invoice e-Factura partner_cif, digits only)
+                OR (s.cui_normalized IS NOT NULL AND EXISTS (
+                    SELECT 1 FROM efactura_invoices efc
+                    WHERE efc.jarvis_invoice_id = i.id
+                      AND regexp_replace(COALESCE(efc.partner_cif, ''), '\\D', '', 'g') = s.cui_normalized
+                ))
             )
             JOIN supplier_konto_config kc
                 ON kc.supplier_id = s.id AND kc.company_id = co.id AND kc.is_active
@@ -729,6 +743,10 @@ class SupplierMasterRepository(BaseRepository):
         return [r['id'] for r in rows]
 
     def unresolved_invoice_suppliers(self, limit=200, company_name=None):
+        """Distinct invoice supplier free-text names that DON'T resolve to a master supplier —
+        the remap worklist. An invoice counts as resolved (and is excluded) when its supplier
+        matches a live master by exact name, alias, OR CUI (the e-Factura partner_cif), matching
+        how list_budgeted_invoices resolves — so a CUI-resolvable invoice never shows up here."""
         if company_name is not None:
             # allocations can hold multiple rows per invoice for the same company (split across
             # departments) — DISTINCT (i.id, partner_name) before the count(*) so the JOIN's
@@ -741,6 +759,10 @@ class SupplierMasterRepository(BaseRepository):
                            AND NOT EXISTS (SELECT 1 FROM suppliers s WHERE lower(s.name) = lower(i.supplier) AND s.is_active AND s.deleted_at IS NULL)
                            AND NOT EXISTS (SELECT 1 FROM supplier_aliases al JOIN suppliers s2 ON s2.id = al.supplier_id
                                            WHERE lower(al.alias_name) = lower(i.supplier) AND s2.deleted_at IS NULL)
+                           AND NOT EXISTS (SELECT 1 FROM efactura_invoices efc
+                                           JOIN suppliers s3 ON s3.deleted_at IS NULL AND s3.cui_normalized IS NOT NULL
+                                                AND s3.cui_normalized = regexp_replace(COALESCE(efc.partner_cif,''),'\\D','','g')
+                                           WHERE efc.jarvis_invoice_id = i.id)
                      ) sub
                      GROUP BY partner_name ORDER BY n DESC LIMIT %s"""
             return self.query_all(sql, (company_name, limit))
@@ -751,4 +773,8 @@ class SupplierMasterRepository(BaseRepository):
                  AND NOT EXISTS (SELECT 1 FROM suppliers s WHERE lower(s.name) = lower(i.supplier) AND s.is_active AND s.deleted_at IS NULL)
                  AND NOT EXISTS (SELECT 1 FROM supplier_aliases a JOIN suppliers s2 ON s2.id = a.supplier_id
                                  WHERE lower(a.alias_name) = lower(i.supplier) AND s2.deleted_at IS NULL)
+                 AND NOT EXISTS (SELECT 1 FROM efactura_invoices efc
+                                 JOIN suppliers s3 ON s3.deleted_at IS NULL AND s3.cui_normalized IS NOT NULL
+                                      AND s3.cui_normalized = regexp_replace(COALESCE(efc.partner_cif,''),'\\D','','g')
+                                 WHERE efc.jarvis_invoice_id = i.id)
                GROUP BY i.supplier ORDER BY n DESC LIMIT %s""", (limit,))
