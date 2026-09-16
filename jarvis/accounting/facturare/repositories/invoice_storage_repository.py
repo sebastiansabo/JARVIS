@@ -109,6 +109,44 @@ class InvoiceStorageRepository(BaseRepository):
             f"UPDATE facturare_anexa_lines SET {sets} WHERE id = %s RETURNING *",
             tuple(vals), returning=True)
 
+    # Price fields whose edits are recorded in facturare_price_change_log.
+    _PRICE_AUDIT_FIELDS = {"selling_price_eur": "selling", "list_price_eur": "list"}
+
+    def update_anexa_line_audited(self, line_id, updates, actor_id=None, reason=None):
+        """Update an anexa line and record an audit row for every changed price
+        field (selling/list) — atomically, in one transaction. A price is only
+        audited when it actually changes value. Returns the updated row, or None
+        if the line does not exist."""
+        def _txn(cur):
+            cur.execute(
+                "SELECT * FROM facturare_anexa_lines WHERE id = %s FOR UPDATE",
+                (line_id,))
+            old = cur.fetchone()
+            if not old:
+                return None
+
+            sets = ", ".join(f"{k} = %s" for k in updates)
+            vals = list(updates.values()) + [line_id]
+            cur.execute(
+                f"UPDATE facturare_anexa_lines SET {sets} WHERE id = %s RETURNING *",
+                tuple(vals))
+            row = cur.fetchone()
+
+            for field, label in self._PRICE_AUDIT_FIELDS.items():
+                if field not in updates:
+                    continue
+                old_price, new_price = old.get(field), row.get(field)
+                if old_price == new_price:
+                    continue
+                cur.execute(
+                    """INSERT INTO facturare_price_change_log
+                       (anexa_line_id, field, old_price, new_price, change_reason, changed_by)
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (line_id, label, old_price, new_price, reason, actor_id))
+            return row
+
+        return self.execute_many(_txn)
+
     # ── Invoice CRUD ─────────────────────────────────────────────
 
     def create_invoice(self, anexa_id, invoice_type, invoice_state,

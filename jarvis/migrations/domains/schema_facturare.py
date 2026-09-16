@@ -67,5 +67,24 @@ def create_schema_facturare(conn, cursor):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fa_archive_after ON facturare_anexas(archive_after) WHERE archive_after IS NOT NULL")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_fc_archive_after ON facturare_contracts(archive_after) WHERE archive_after IS NOT NULL")
 
+    # ── Sale-price change audit (comenzi) ──
+    # Every edit to an anexa line's selling/list price is recorded here so the
+    # change is never silent — even after a proforma/invoice was issued. Reason
+    # is optional. Mirrors the carpark_pricing_history pattern (no FK on the
+    # actor). ON DELETE CASCADE keeps history tied to the line's lifecycle.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS facturare_price_change_log (
+            id            SERIAL PRIMARY KEY,
+            anexa_line_id INTEGER NOT NULL REFERENCES facturare_anexa_lines(id) ON DELETE CASCADE,
+            field         VARCHAR(10) NOT NULL,          -- 'selling' | 'list'
+            old_price     NUMERIC(12,2),
+            new_price     NUMERIC(12,2),
+            change_reason TEXT,
+            changed_by    INTEGER,
+            created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_fpcl_line ON facturare_price_change_log(anexa_line_id)")
+
     conn.commit()
     logger.info('Facturare generations schema created/verified')

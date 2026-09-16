@@ -621,6 +621,9 @@ function EditableAnexaLine({ line, canDelete, onUpdated }: { line: AnexaLine; ca
   const [vin, setVin] = useState(line.vin || '')
   const [editingNr, setEditingNr] = useState(false)
   const [nrComanda, setNrComanda] = useState(line.nr_comanda || '')
+  const [editingPrice, setEditingPrice] = useState(false)
+  const [priceVal, setPriceVal] = useState(String(line.selling_price_eur ?? ''))
+  const [priceReason, setPriceReason] = useState('')
 
   const saveVin = async () => {
     const trimmed = vin.trim().toUpperCase()
@@ -649,6 +652,20 @@ function EditableAnexaLine({ line, canDelete, onUpdated }: { line: AnexaLine; ca
       if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed') }
       toast.success('Nr. comandă updated')
       setEditingNr(false); onUpdated()
+    } catch (err: any) { toast.error(err.message) }
+  }
+
+  const savePrice = async () => {
+    const parsed = parseFloat(priceVal)
+    if (!isFinite(parsed) || parsed <= 0) { toast.error('Preț invalid'); return }
+    try {
+      const res = await fetch(`/facturare/api/anexa-lines/${line.id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selling_price_eur: parsed, reason: priceReason.trim() || undefined }),
+      })
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Failed') }
+      toast.success('Preț actualizat')
+      setEditingPrice(false); setPriceReason(''); onUpdated()
     } catch (err: any) { toast.error(err.message) }
   }
 
@@ -687,7 +704,21 @@ function EditableAnexaLine({ line, canDelete, onUpdated }: { line: AnexaLine; ca
       </span>
       {line.status === 'INVOICED' && <Badge className="bg-emerald-100 text-emerald-800 text-[9px] px-1 py-0 shrink-0">Invoiced</Badge>}
       {line.status === 'PROFORMA' && <Badge className="bg-blue-100 text-blue-800 text-[9px] px-1 py-0 shrink-0">Proforma</Badge>}
-      <span className="font-mono shrink-0 text-right ml-auto">{fmtEur(line.selling_price_eur)} EUR</span>
+      {editingPrice ? (
+        <span className="flex items-center gap-1 ml-auto shrink-0">
+          <Input className="h-6 w-24 text-xs text-right font-mono" type="number" step="0.01" value={priceVal}
+            onChange={e => setPriceVal(e.target.value)} onKeyDown={e => e.key === 'Enter' && savePrice()} autoFocus />
+          <Input className="h-6 w-36 text-xs" placeholder="motiv (opțional)" value={priceReason}
+            onChange={e => setPriceReason(e.target.value)} onKeyDown={e => e.key === 'Enter' && savePrice()} />
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={savePrice}><CheckCircle2 className="h-3 w-3 text-emerald-500" /></Button>
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { setEditingPrice(false); setPriceVal(String(line.selling_price_eur ?? '')); setPriceReason('') }}>
+            <span className="text-xs text-muted-foreground">✕</span>
+          </Button>
+        </span>
+      ) : (
+        <span className="font-mono shrink-0 text-right ml-auto cursor-pointer hover:underline" title="Editează prețul de vânzare"
+          onClick={() => setEditingPrice(true)}>{fmtEur(line.selling_price_eur)} EUR</span>
+      )}
       {canDelete && (
         <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" title="Remove vehicle"
           onClick={async () => {
