@@ -33,7 +33,26 @@ import {
   ShoppingBag,
   AlertTriangle,
   Loader2,
+  GripVertical,
 } from 'lucide-react'
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  rectSortingStrategy,
+  arrayMove,
+  useSortable,
+  sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { mediaUrl } from '@/lib/media'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
@@ -794,7 +813,66 @@ function PhotoGallery({
   )
 }
 
+// ── Sortable Photo Tile ─────────────────────────────────────
+// One draggable tile in the "Toate pozele" grid. Tap the image to open the
+// lightbox; drag the grip handle (top-right) to reorder. A separate handle
+// keeps tap-to-open clean and lets the grid scroll on touch devices.
+function SortablePhotoTile({
+  photo,
+  index,
+  onSelect,
+}: {
+  photo: VehiclePhoto
+  index: number
+  onSelect: (index: number) => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: photo.id,
+  })
+  const style = { transform: CSS.Transform.toString(transform), transition }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`group relative aspect-[3/2] overflow-hidden rounded-lg border bg-muted ${
+        isDragging ? 'z-10 opacity-80 shadow-xl ring-2 ring-primary' : ''
+      }`}
+    >
+      <button
+        type="button"
+        onClick={() => onSelect(index)}
+        className="block h-full w-full"
+        aria-label={`Deschide poza ${index + 1}`}
+      >
+        <img
+          src={mediaUrl(photo.thumbnail_url || photo.url)}
+          alt={`Photo ${index + 1}`}
+          draggable={false}
+          className="h-full w-full object-cover transition group-hover:scale-105"
+        />
+      </button>
+      {/* Position badge — makes the first → last order visible (1 = cover) */}
+      <div className="pointer-events-none absolute left-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-white backdrop-blur">
+        {index + 1}
+      </div>
+      {/* Drag handle */}
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        aria-label="Trage pentru a reordona"
+        className="absolute right-1.5 top-1.5 flex touch-none cursor-grab items-center justify-center rounded-md bg-black/60 p-1.5 text-white opacity-0 backdrop-blur transition hover:bg-black/80 focus:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+    </div>
+  )
+}
+
 // ── Photo Grid Overlay ("Toate pozele") ────────────────────
+// Fullscreen photo grid. For editors it becomes drag-and-drop sortable: drop
+// auto-saves the new order via the existing reorder endpoint (optimistic).
 function PhotoGridOverlay({
   photos,
   vehicleId,
@@ -812,6 +890,38 @@ function PhotoGridOverlay({
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [confirming, setConfirming] = useState(false)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+
+  const reorderMutation = useMutation({
+    mutationFn: (orderedIds: number[]) => carparkApi.reorderPhotos(vehicleId, orderedIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] })
+    },
+    onError: () => {
+      // Roll back to server truth and tell the user it didn't stick.
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] })
+      toast.error('Reordonarea pozelor a eșuat')
+    },
+  })
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = photos.findIndex((p) => p.id === active.id)
+    const newIndex = photos.findIndex((p) => p.id === over.id)
+    if (oldIndex < 0 || newIndex < 0) return
+    const newPhotos = arrayMove(photos, oldIndex, newIndex)
+    // Optimistic: reorder the cached vehicle so the grid updates instantly.
+    queryClient.setQueryData<{ vehicle: Vehicle }>(['carpark', 'vehicle', vehicleId], (old) =>
+      old?.vehicle ? { ...old, vehicle: { ...old.vehicle, photos: newPhotos } } : old,
+    )
+    reorderMutation.mutate(newPhotos.map((p) => p.id))
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -845,15 +955,25 @@ function PhotoGridOverlay({
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(photos.map((p) => p.id)))
   const exitSelect = () => { setSelectMode(false); setSelected(new Set()); setConfirming(false) }
 
+  // Drag-to-reorder is available to editors only when not selecting for deletion.
+  const sortable = canEdit && !selectMode && photos.length > 1
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-background">
       <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-background/85 px-6 py-4 backdrop-blur">
-        <h2 className="text-base font-semibold">
-          Toate pozele · {photos.length}
-          {selectMode && (
-            <span className="ml-2 text-sm font-normal text-muted-foreground">{selected.size} selectate</span>
+        <div className="flex min-w-0 items-baseline gap-3">
+          <h2 className="text-base font-semibold">
+            Toate pozele · {photos.length}
+            {selectMode && (
+              <span className="ml-2 text-sm font-normal text-muted-foreground">{selected.size} selectate</span>
+            )}
+          </h2>
+          {sortable && (
+            <span className="hidden truncate text-xs text-muted-foreground sm:inline">
+              Trage de <GripVertical className="mx-0.5 inline h-3 w-3 align-text-bottom" /> pentru a reordona · prima poză = coperta
+            </span>
           )}
-        </h2>
+        </div>
         <div className="flex items-center gap-2">
           {canEdit && selectMode && (
             <>
@@ -891,30 +1011,42 @@ function PhotoGridOverlay({
           {selected.size} poze vor fi ascunse acum și șterse definitiv după 24h.
         </div>
       )}
-      <div className="mx-auto grid max-w-5xl grid-cols-2 gap-2 p-6 sm:grid-cols-3">
-        {photos.map((p, i) => {
-          const sel = selected.has(p.id)
-          return (
-            <button
-              type="button"
-              key={p.id}
-              onClick={() => (selectMode ? toggle(p.id) : onSelect(i))}
-              className={`group relative aspect-[3/2] overflow-hidden rounded-lg border-2 bg-muted ${sel ? 'border-primary' : 'border-transparent'}`}
-            >
-              <img
-                src={mediaUrl(p.thumbnail_url || p.url)}
-                alt={`Photo ${i + 1}`}
-                className="h-full w-full object-cover transition group-hover:scale-105"
-              />
-              {selectMode && (
-                <span className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 ${sel ? 'border-primary bg-primary text-primary-foreground' : 'border-white/80 bg-black/30'}`}>
-                  {sel && <Check className="h-4 w-4" />}
-                </span>
-              )}
-            </button>
-          )
-        })}
-      </div>
+      {sortable ? (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={photos.map((p) => p.id)} strategy={rectSortingStrategy}>
+            <div className="mx-auto grid max-w-5xl grid-cols-2 gap-2 p-6 sm:grid-cols-3">
+              {photos.map((p, i) => (
+                <SortablePhotoTile key={p.id} photo={p} index={i} onSelect={onSelect} />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      ) : (
+        <div className="mx-auto grid max-w-5xl grid-cols-2 gap-2 p-6 sm:grid-cols-3">
+          {photos.map((p, i) => {
+            const sel = selected.has(p.id)
+            return (
+              <button
+                type="button"
+                key={p.id}
+                onClick={() => (selectMode ? toggle(p.id) : onSelect(i))}
+                className={`group relative aspect-[3/2] overflow-hidden rounded-lg border-2 bg-muted ${sel ? 'border-primary' : 'border-transparent'}`}
+              >
+                <img
+                  src={mediaUrl(p.thumbnail_url || p.url)}
+                  alt={`Photo ${i + 1}`}
+                  className="h-full w-full object-cover transition group-hover:scale-105"
+                />
+                {selectMode && (
+                  <span className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 ${sel ? 'border-primary bg-primary text-primary-foreground' : 'border-white/80 bg-black/30'}`}>
+                    {sel && <Check className="h-4 w-4" />}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
