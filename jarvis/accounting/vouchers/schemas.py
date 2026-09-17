@@ -56,8 +56,8 @@ class VoucherCreate(BaseModel):
     @field_validator('validity_months')
     @classmethod
     def validate_validity(cls, v: int) -> int:
-        if v not in (1, 3, 6, 12, 24):
-            raise ValueError('validity_months must be 1, 3, 6, 12, or 24')
+        if v not in (1, 3, 6, 12, 24, 36, 48):
+            raise ValueError('validity_months must be 1, 3, 6, 12, 24, 36, or 48')
         return v
 
     @field_validator('voucher_type')

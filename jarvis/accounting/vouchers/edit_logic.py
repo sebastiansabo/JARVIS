@@ -24,7 +24,7 @@ VALID_STATUSES = (
     'rejected', 'redeemed', 'expired', 'archived',
 )
 VALID_TYPES = ('value', 'accessory_discount_code', 'accessory_percentage', 'service_items')
-VALID_VALIDITY = (1, 3, 6, 12, 24)
+VALID_VALIDITY = (1, 3, 6, 12, 24, 36, 48)
 
 # voucher_type -> the single benefit column it uses
 BENEFIT_FIELD = {
@@ -135,7 +135,7 @@ def build_admin_voucher_edit(existing: dict, payload: dict) -> tuple[dict, dict]
     if 'validity_months' in payload:
         v = int(payload['validity_months'])
         if v not in VALID_VALIDITY:
-            raise ValueError('validity_months must be 1, 3, 6, 12, or 24')
+            raise ValueError('validity_months must be 1, 3, 6, 12, 24, 36, or 48')
         updates['validity_months'] = v
 
     # --- type + benefit ---
