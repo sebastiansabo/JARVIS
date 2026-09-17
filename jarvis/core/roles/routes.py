@@ -195,6 +195,7 @@ def api_set_single_permission_v2(permission_id, role_id):
         'efactura':   'can_access_efactura',
         'settings':   'can_access_settings',
         'sales':      'can_access_crm',
+        'carpark':    'can_access_carpark',
     }
     try:
         scope = data.get('scope')
