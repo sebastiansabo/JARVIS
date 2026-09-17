@@ -103,3 +103,39 @@ def test_schema_cascade_route_unresolved_supplier_returns_empty(monkeypatch):
     assert body['presets'] == []
     assert body['mode'] == 'none'
     assert body['lines'] == []
+
+
+def _fake_cursor_recorder():
+    calls = []
+    class Cur:
+        def execute(self, sql, params=None):
+            calls.append((' '.join(sql.split()), params))
+    return Cur(), calls
+
+
+def test_apply_cascade_alloc_updates_and_clears(monkeypatch):
+    from core.suppliers.repository import SupplierMasterRepository
+    repo = SupplierMasterRepository()
+    cur, calls = _fake_cursor_recorder()
+    monkeypatch.setattr(repo, 'execute_many', lambda work: work(cur))
+    repo.apply_cascade_alloc(42, {'11': 5, '12': None}, created_by=7)
+    joined = ' || '.join(sql for sql, _ in calls)
+    assert 'UPDATE allocations SET konto_config_id = %s WHERE id = %s AND invoice_id = %s' in joined
+    assert ('UPDATE allocations SET konto_config_id = %s WHERE id = %s AND invoice_id = %s', (5, 11, 42)) in calls
+    assert ('UPDATE allocations SET konto_config_id = %s WHERE id = %s AND invoice_id = %s', (None, 12, 42)) in calls
+    assert any('DELETE FROM invoice_line_konto_override WHERE invoice_id = %s' in sql for sql, _ in calls)
+    assert any('per_line = FALSE' in sql for sql, _ in calls)
+
+
+def test_apply_cascade_line_upserts_and_clears_allocs(monkeypatch):
+    from core.suppliers.repository import SupplierMasterRepository
+    repo = SupplierMasterRepository()
+    cur, calls = _fake_cursor_recorder()
+    monkeypatch.setattr(repo, 'execute_many', lambda work: work(cur))
+    repo.apply_cascade_line(42, {'0': 5, '1': None}, created_by=7)
+    joined = ' || '.join(sql for sql, _ in calls)
+    assert 'per_line' in joined and 'invoice_konto_override' in joined
+    assert any('INSERT INTO invoice_line_konto_override' in sql and p == (42, 0, 5, 7) for sql, p in calls)
+    assert any('DELETE FROM invoice_line_konto_override WHERE invoice_id = %s AND line_index = %s' in sql
+               and p == (42, 1) for sql, p in calls)
+    assert any('UPDATE allocations SET konto_config_id = NULL WHERE invoice_id = %s' in sql for sql, _ in calls)
