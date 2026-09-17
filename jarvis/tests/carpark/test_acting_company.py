@@ -1,9 +1,12 @@
-"""Tests for the permissive tenant-switcher backend in
+"""Tests for the authorized tenant-switcher backend in
 `carpark/routes/vehicles.py`:
 
 - `_acting_company_id()` — the company the caller is acting as. Honors a
-  request-provided `company_id` with NO authorization (by design — see the
-  Slice A design doc), falling back to `current_user.company_id`.
+  request-provided `company_id` only if the caller may act on it (own +
+  org-responsable companies via `get_actable_company_ids`; Admin =
+  `can_access_settings` bypasses the check and may act on any company),
+  aborting 403 otherwise. Falls back to `current_user.company_id` when
+  absent.
 - `_verify_vehicle_ownership()` — now exists-only: 404 only when the
   vehicle does not exist, never on a company mismatch.
 
@@ -62,19 +65,36 @@ def _login(client, monkeypatch, uid, company_id=1, **perm_overrides):
 
 
 # ═══════════════════════════════════════════════
-# list_vehicles: request-provided company_id vs. fallback
+# list_vehicles: request-provided company_id vs. fallback vs. authorization
 # ═══════════════════════════════════════════════
 
-def test_list_vehicles_uses_requested_company_id(client, monkeypatch):
-    """?company_id=11 from a user in company 1 must be honored (permissive
-    tenant switch — no authorization check)."""
+def test_list_vehicles_allows_permitted_company(client, monkeypatch):
+    """?company_id=11 honored when the caller may act on company 11."""
     _login(client, monkeypatch, uid=91001, company_id=1)
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', lambda _u: {1, 11})
     with mock.patch.object(vehicles_module._vehicle_service, 'get_catalog',
                             return_value={'vehicles': [], 'total': 0}) as get_catalog:
         r = client.get('/api/carpark/vehicles?company_id=11')
     assert r.status_code == 200
-    filters = get_catalog.call_args.args[0]
-    assert filters['company_id'] == '11'
+    assert get_catalog.call_args.args[0]['company_id'] == '11'
+
+
+def test_list_vehicles_forbids_unpermitted_company(client, monkeypatch):
+    """?company_id=11 rejected with 403 when the caller may not act on it."""
+    _login(client, monkeypatch, uid=91011, company_id=1)
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', lambda _u: {1})
+    r = client.get('/api/carpark/vehicles?company_id=11')
+    assert r.status_code == 403
+
+
+def test_admin_may_act_on_any_company(client, monkeypatch):
+    """Admin (can_access_settings) bypasses the actable-set check entirely."""
+    _login(client, monkeypatch, uid=91012, company_id=1, can_access_settings=True)
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_catalog',
+                            return_value={'vehicles': [], 'total': 0}) as get_catalog:
+        r = client.get('/api/carpark/vehicles?company_id=999')
+    assert r.status_code == 200
+    assert get_catalog.call_args.args[0]['company_id'] == '999'
 
 
 def test_list_vehicles_falls_back_to_user_company_id(client, monkeypatch):
@@ -89,18 +109,19 @@ def test_list_vehicles_falls_back_to_user_company_id(client, monkeypatch):
 
 
 # ═══════════════════════════════════════════════
-# create_vehicle: request body company_id wins over the user's own
+# create_vehicle: request body company_id wins over the user's own, subject
+# to authorization
 # ═══════════════════════════════════════════════
 
-def test_create_vehicle_uses_requested_company_id(client, monkeypatch):
+def test_create_vehicle_allows_permitted_company(client, monkeypatch):
     _login(client, monkeypatch, uid=91003, company_id=1)
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', lambda _u: {1, 11})
     with mock.patch.object(vehicles_module._vehicle_service, 'create_vehicle',
                             return_value={'id': 55, 'vin': 'X' * 17, 'company_id': 11}) as create:
-        body = {'vin': 'X' * 17, 'brand': 'BMW', 'model': 'X5', 'company_id': 11}
-        r = client.post('/api/carpark/vehicles', json=body)
+        r = client.post('/api/carpark/vehicles',
+                        json={'vin': 'X' * 17, 'brand': 'BMW', 'model': 'X5', 'company_id': 11})
     assert r.status_code == 201
-    sent_data = create.call_args.args[0]
-    assert sent_data['company_id'] == 11
+    assert create.call_args.args[0]['company_id'] == 11
 
 
 # ═══════════════════════════════════════════════
@@ -131,19 +152,15 @@ def test_verify_ownership_missing_vehicle_404(monkeypatch):
 
 
 # ═══════════════════════════════════════════════
-# analytics_summary: request-provided company_id scopes analytics too
+# analytics_summary: request-provided company_id is authorized too
 # (analytics/pricing/publishing all delegate to the same
 # _acting_company_id() from vehicles.py)
 # ═══════════════════════════════════════════════
 
-def test_analytics_summary_uses_requested_company_id(client, monkeypatch):
-    """?company_id=11 from a user in company 1 must be honored by the
-    analytics routes too (permissive tenant switch — no authorization
-    check), not just by vehicles.py."""
+def test_analytics_summary_forbids_unpermitted_company(client, monkeypatch):
+    """?company_id=11 rejected with 403 by the analytics routes too (they
+    delegate to the same _acting_company_id()), not just by vehicles.py."""
     _login(client, monkeypatch, uid=91004, company_id=1)
-    with mock.patch.object(analytics_module._analytics, 'get_summary',
-                            return_value={'total': 0}) as get_summary:
-        r = client.get('/api/carpark/analytics/summary?company_id=11')
-    assert r.status_code == 200
-    cid = get_summary.call_args.args[0]
-    assert cid == 11
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', lambda _u: {1})
+    r = client.get('/api/carpark/analytics/summary?company_id=11')
+    assert r.status_code == 403

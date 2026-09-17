@@ -2,7 +2,7 @@
 import logging
 from functools import wraps
 
-from flask import request, jsonify
+from flask import request, jsonify, abort, make_response
 from flask_login import login_required, current_user
 
 from carpark import carpark_bp
@@ -69,19 +69,26 @@ def _user_company_id():
 
 
 def _acting_company_id():
-    """Company the caller is acting as: request-provided company_id (permissive —
-    NO authorization) else the user's own company."""
-    cid = None
+    """Company the caller is acting as: a request-provided company_id if the
+    caller may act on it (own + org-responsable companies; Admin = any), else
+    aborts 403. Absent company_id falls back to the user's own company."""
     if request.method == 'GET':
         cid = request.args.get('company_id')
     else:
         body = request.get_json(silent=True) or request.form
         cid = body.get('company_id') if body else None
+
     if cid not in (None, ''):
         try:
-            return int(cid)
+            cid_int = int(cid)
         except (TypeError, ValueError):
-            pass
+            cid_int = None
+        if cid_int is not None:
+            is_admin = getattr(current_user, 'can_access_settings', False)
+            if not is_admin and cid_int not in get_actable_company_ids(current_user.id):
+                abort(make_response(
+                    jsonify({'success': False, 'error': 'Company not permitted'}), 403))
+            return cid_int
     return getattr(current_user, 'company_id', None)
 
 

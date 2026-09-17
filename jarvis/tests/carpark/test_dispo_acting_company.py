@@ -10,11 +10,18 @@ access: _dispo_repo's summary/kpis are monkeypatched per test so only the
 route layer (arg wiring) is exercised.
 
 Slice B / Task 1: dispo_summary and dispo_kpis must resolve company_id via
-_acting_company_id() (request-provided company_id else the user's own),
-consistent with the vehicles.py list/detail routes from Slice A. The intent
-endpoints (reserve/sell/deliver/remove-from-stock) and dispo_import
-deliberately stay on _user_company_id() and are NOT covered here — see
-test_dispo_routes.py for those.
+_acting_company_id() (request-provided company_id if the caller may act on
+it, else the user's own), consistent with the vehicles.py list/detail
+routes from Slice A. The intent endpoints (reserve/sell/deliver/
+remove-from-stock) and dispo_import deliberately stay on
+_user_company_id() and are NOT covered here — see test_dispo_routes.py for
+those.
+
+Task 5 (carpark-permissions-matrix): _acting_company_id() now authorizes
+the requested company_id against get_actable_company_ids() (Admin
+bypasses), aborting 403 otherwise. Tests that request a company_id other
+than the caller's own must grant it via
+`monkeypatch.setattr(vehicles_mod, 'get_actable_company_ids', ...)`.
 """
 import os
 
@@ -87,13 +94,16 @@ def _canned_kpis_result():
 
 def test_summary_with_company_id_uses_acting_company(client, monkeypatch):
     """?company_id=11 for a user whose own company is 10 must query as 11,
-    not 10 — the acting/tenant-switcher company wins."""
+    not 10 — the acting/tenant-switcher company wins, when the caller may
+    act on company 11."""
     calls = {}
 
     def _summary(company_id, *a, **k):
         calls['company_id'] = company_id
         return _canned_summary_result()
     monkeypatch.setattr(dispo_mod._dispo_repo, 'summary', _summary)
+    monkeypatch.setattr(vehicles_mod, 'get_actable_company_ids',
+                         lambda _u: {COMPANY_ID, ACTING_COMPANY_ID})
 
     resp = client.get(f'/api/carpark/dispo/summary?company_id={ACTING_COMPANY_ID}')
     assert resp.status_code == 200
@@ -117,12 +127,15 @@ def test_summary_without_company_id_falls_back_to_own_company(client, monkeypatc
 # ── KPIS — acting company ────────────────────────────────────────────────
 
 def test_kpis_with_company_id_uses_acting_company(client, monkeypatch):
+    """?company_id=11 honored when the caller may act on company 11."""
     calls = {}
 
     def _kpis(company_id, *a, **k):
         calls['company_id'] = company_id
         return _canned_kpis_result()
     monkeypatch.setattr(dispo_mod._dispo_repo, 'kpis', _kpis)
+    monkeypatch.setattr(vehicles_mod, 'get_actable_company_ids',
+                         lambda _u: {COMPANY_ID, ACTING_COMPANY_ID})
 
     resp = client.get(f'/api/carpark/dispo/kpis?company_id={ACTING_COMPANY_ID}')
     assert resp.status_code == 200
