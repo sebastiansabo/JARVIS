@@ -493,9 +493,16 @@ class VehicleRepository(BaseRepository):
 
     # ── COMPANIES / BRANDS (tenant-switcher selectors) ──
 
-    def list_companies(self) -> List[Dict[str, Any]]:
-        """All companies, for the tenant-switcher company selector."""
-        return self.query_all('SELECT id, company AS name FROM companies ORDER BY company')
+    def list_companies(self, company_ids=None) -> List[Dict[str, Any]]:
+        """Companies for the tenant-switcher selector. company_ids=None returns
+        all (Admin); an empty/other set restricts to those ids."""
+        if company_ids is None:
+            return self.query_all('SELECT id, company AS name FROM companies ORDER BY company')
+        if not company_ids:
+            return []
+        return self.query_all(
+            'SELECT id, company AS name FROM companies WHERE id = ANY(%s) ORDER BY company',
+            (list(company_ids),))
 
     def list_brands(self, company_id: int) -> List[str]:
         """Car brands carried by a company (from the company_brands catalog),
