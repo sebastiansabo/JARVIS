@@ -15,7 +15,6 @@ from ..repositories import (
 )
 from ..parser import parse_statement
 from ..vendors import match_transactions, reload_patterns
-from ..invoice_matcher import auto_match_transactions, score_candidates
 
 logger = logging.getLogger('jarvis.statements.service')
 
@@ -102,9 +101,6 @@ class StatementsService:
                 duplicate_transactions=save_result['duplicate_count']
             )
 
-            # Auto-match new transactions to invoices
-            invoice_matched_count = self._auto_match_new_transactions(save_result['new_ids'])
-
             # Count vendor-matched (has supplier) - for reporting
             vendor_matched_count = sum(1 for t in transactions if t.get('matched_supplier'))
 
@@ -119,7 +115,7 @@ class StatementsService:
                     'new_transactions': save_result['new_count'],
                     'duplicate_transactions': save_result['duplicate_count'],
                     'vendor_matched_count': vendor_matched_count,
-                    'invoice_matched_count': invoice_matched_count,
+                    'invoice_matched_count': 0,  # auto-match removed; invoices are linked manually
                     'period': period,
                     'summary': parsed.get('summary')
                 }
@@ -128,51 +124,6 @@ class StatementsService:
         except Exception as e:
             logger.exception(f'Error processing statement {filename}')
             return ServiceResult(success=False, error=str(e))
-
-    def _auto_match_new_transactions(self, new_ids: List[int]) -> int:
-        """Auto-match newly saved transactions to invoices.
-
-        Args:
-            new_ids: List of new transaction IDs
-
-        Returns:
-            Number of transactions matched to invoices
-        """
-        if not new_ids:
-            return 0
-
-        try:
-            # Get the newly saved transactions for matching
-            new_txns = [self.transaction_repo.get_by_id(txn_id) for txn_id in new_ids]
-            new_txns = [t for t in new_txns if t and t.get('status') not in ('ignored',)]
-
-            if not new_txns:
-                return 0
-
-            # Get candidate invoices
-            invoices = self.transaction_repo.get_candidate_invoices(limit=200)
-            if not invoices:
-                return 0
-
-            # Run auto-match
-            match_results = auto_match_transactions(
-                transactions=new_txns,
-                invoices=invoices,
-                use_ai=False,
-                min_confidence=0.5
-            )
-
-            # Save match results
-            if match_results['results']:
-                self.transaction_repo.bulk_update_matches(match_results['results'])
-
-            matched_count = match_results.get('matched', 0) + match_results.get('suggested', 0)
-            logger.info(f'Auto-matched {matched_count} transactions to invoices')
-            return matched_count
-
-        except Exception as e:
-            logger.warning(f'Auto-match failed: {e}')
-            return 0
 
     # ============== Statements ==============
 
@@ -272,6 +223,25 @@ class StatementsService:
 
         return transactions
 
+    def count_transactions(
+        self,
+        status: str = None,
+        company_cui: str = None,
+        supplier: str = None,
+        date_from: str = None,
+        date_to: str = None,
+        search: str = None,
+    ) -> int:
+        """Total transactions matching the filters, ignoring limit/offset."""
+        return self.transaction_repo.count(
+            status=status,
+            company_cui=company_cui,
+            supplier=supplier,
+            date_from=date_from,
+            date_to=date_to,
+            search=search,
+        )
+
     def get_transaction(self, transaction_id: int) -> Optional[Dict[str, Any]]:
         """Get a single transaction by ID."""
         txn = self.transaction_repo.get_by_id(transaction_id)
@@ -290,14 +260,27 @@ class StatementsService:
         vendor_name: str = None,
         invoice_id: int = None
     ) -> ServiceResult:
-        """Update a transaction."""
-        success = self.transaction_repo.update(
-            transaction_id,
-            matched_supplier=matched_supplier,
-            status=status,
-            vendor_name=vendor_name,
-            invoice_id=invoice_id
-        )
+        """Update a transaction.
+
+        Only fields the caller actually provided (non-None) are forwarded, so an
+        unrelated column is never overwritten. A None here means "not provided"
+        (the PUT route sends data.get(...) for absent keys); to clear a column
+        pass an empty string.
+        """
+        fields = {
+            key: value
+            for key, value in (
+                ('matched_supplier', matched_supplier),
+                ('status', status),
+                ('vendor_name', vendor_name),
+                ('invoice_id', invoice_id),
+            )
+            if value is not None
+        }
+        if not fields:
+            return ServiceResult(success=False, error='No fields to update')
+
+        success = self.transaction_repo.update(transaction_id, **fields)
         if success:
             return ServiceResult(success=True)
         return ServiceResult(success=False, error='Transaction not found or no changes made')
@@ -355,10 +338,12 @@ class StatementsService:
         if not invoice:
             return ServiceResult(success=False, error='Invoice not found')
 
+        # Only set the link + status. Keep the transaction's own vendor_name and
+        # matched_supplier (the parsed/normalized values, e.g. "Meta") so linking
+        # an invoice doesn't erase the on-screen Vendor/Supplier columns.
         success = self.transaction_repo.update(
             transaction_id,
             invoice_id=invoice_id,
-            matched_supplier=invoice.get('supplier'),
             status='resolved'
         )
 
@@ -392,161 +377,6 @@ class StatementsService:
                 'new_status': 'pending'
             })
         return ServiceResult(success=False, error='Failed to update transaction')
-
-    # ============== Auto-Match ==============
-
-    def auto_match_invoices(
-        self,
-        transaction_ids: List[int] = None,
-        use_ai: bool = True,
-        min_confidence: float = 0.7
-    ) -> ServiceResult:
-        """Run automatic invoice matching on transactions."""
-        try:
-            # Get transactions to match
-            if transaction_ids:
-                transactions = []
-                for txn_id in transaction_ids:
-                    txn = self.transaction_repo.get_by_id(txn_id)
-                    if txn and txn.get('status') not in ('resolved', 'ignored'):
-                        transactions.append(txn)
-            else:
-                transactions = self.transaction_repo.get_for_matching(status='pending', limit=100)
-
-            if not transactions:
-                return ServiceResult(success=True, data={
-                    'matched': 0,
-                    'suggested': 0,
-                    'unmatched': 0,
-                    'results': [],
-                    'message': 'No transactions to match'
-                })
-
-            # Get candidate invoices
-            invoices = self.transaction_repo.get_candidate_invoices(limit=200)
-
-            if not invoices:
-                return ServiceResult(success=True, data={
-                    'matched': 0,
-                    'suggested': 0,
-                    'unmatched': len(transactions),
-                    'results': [],
-                    'message': 'No invoices available for matching'
-                })
-
-            # Run the matching algorithm
-            match_results = auto_match_transactions(
-                transactions=transactions,
-                invoices=invoices,
-                use_ai=use_ai,
-                min_confidence=min_confidence
-            )
-
-            # Save results to database
-            if match_results['results']:
-                self.transaction_repo.bulk_update_matches(match_results['results'])
-
-            return ServiceResult(success=True, data=match_results)
-
-        except Exception as e:
-            logger.exception('Error in auto-match')
-            return ServiceResult(success=False, error=str(e))
-
-    def get_invoice_suggestions(self, transaction_id: int) -> ServiceResult:
-        """Get invoice suggestions for a transaction."""
-        txn = self.transaction_repo.get_by_id(transaction_id)
-        if not txn:
-            return ServiceResult(success=False, error='Transaction not found')
-
-        try:
-            amount = abs(txn.get('amount', 0))
-            currency = txn.get('currency', 'RON')
-
-            # Get candidate invoices
-            invoices = self.transaction_repo.get_candidate_invoices(
-                supplier=None,
-                amount=amount,
-                amount_tolerance=0.2,
-                currency=currency,
-                limit=50
-            )
-
-            # Score candidates
-            candidates = score_candidates(txn, invoices, limit=5)
-
-            # Format for response
-            suggestions = []
-            for c in candidates:
-                inv = c['invoice']
-                suggestions.append({
-                    'invoice_id': inv.get('id'),
-                    'invoice_number': inv.get('invoice_number'),
-                    'supplier': inv.get('supplier'),
-                    'amount': inv.get('invoice_value'),
-                    'currency': inv.get('currency'),
-                    'date': inv.get('invoice_date'),
-                    'score': c['score'],
-                    'confidence': c['confidence'],
-                    'reasons': c['reasons']
-                })
-
-            return ServiceResult(success=True, data={
-                'transaction': {
-                    'id': txn.get('id'),
-                    'amount': txn.get('amount'),
-                    'currency': txn.get('currency'),
-                    'date': str(txn.get('transaction_date')) if txn.get('transaction_date') else None,
-                    'vendor': txn.get('vendor_name'),
-                    'supplier': txn.get('matched_supplier'),
-                    'description': txn.get('description')
-                },
-                'suggestions': suggestions
-            })
-
-        except Exception as e:
-            logger.exception(f'Error getting suggestions for transaction {transaction_id}')
-            return ServiceResult(success=False, error=str(e))
-
-    def accept_match(self, transaction_id: int, override_invoice_id: int = None) -> ServiceResult:
-        """Accept a suggested match."""
-        txn = self.transaction_repo.get_by_id(transaction_id)
-        if not txn:
-            return ServiceResult(success=False, error='Transaction not found')
-
-        try:
-            if override_invoice_id:
-                success = self.transaction_repo.update_match(
-                    transaction_id,
-                    invoice_id=override_invoice_id,
-                    match_method='manual',
-                    status='resolved'
-                )
-            else:
-                success = self.transaction_repo.accept_match(transaction_id)
-
-            if success:
-                return ServiceResult(success=True)
-            return ServiceResult(success=False, error='No suggestion to accept or update failed')
-
-        except Exception as e:
-            logger.exception(f'Error accepting match for transaction {transaction_id}')
-            return ServiceResult(success=False, error=str(e))
-
-    def reject_match(self, transaction_id: int) -> ServiceResult:
-        """Reject a suggested match."""
-        txn = self.transaction_repo.get_by_id(transaction_id)
-        if not txn:
-            return ServiceResult(success=False, error='Transaction not found')
-
-        try:
-            success = self.transaction_repo.reject_match(transaction_id)
-            if success:
-                return ServiceResult(success=True)
-            return ServiceResult(success=False, error='No suggestion to reject')
-
-        except Exception as e:
-            logger.exception(f'Error rejecting match for transaction {transaction_id}')
-            return ServiceResult(success=False, error=str(e))
 
     # ============== Transaction Merging ==============
 

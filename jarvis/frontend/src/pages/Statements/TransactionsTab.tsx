@@ -9,12 +9,14 @@ import {
   ArrowLeftRight,
   Link2,
   Link2Off,
-  Wand2,
   Merge,
   Split,
   Eye,
   EyeOff,
+  Check,
+  AlertTriangle,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   SlidersHorizontal,
   CheckSquare,
@@ -65,10 +67,63 @@ function formatAmount(amount: number, currency: string) {
   return new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount) + ' ' + currency
 }
 
+const RO_MONTHS = [
+  'Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie',
+  'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie',
+]
+
+function isoDate(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** First/last calendar day of the month containing `d`, as YYYY-MM-DD strings. */
+function monthBounds(d: Date): { from: string; to: string } {
+  const from = new Date(d.getFullYear(), d.getMonth(), 1)
+  const to = new Date(d.getFullYear(), d.getMonth() + 1, 0)
+  return { from: isoDate(from), to: isoDate(to) }
+}
+
 const statusColors: Record<string, string> = {
   pending: 'bg-yellow-500/10 text-yellow-600 border-yellow-500/30',
   resolved: 'bg-green-500/10 text-green-600 border-green-500/30',
   ignored: 'bg-muted text-muted-foreground',
+}
+
+/**
+ * Shows the linked invoice's value next to the invoice chip so the value can be
+ * eyeballed against the transaction amount. When the currencies match, a green
+ * check (values agree to the cent) or amber ≠ (mismatch) is shown; when they
+ * differ we show the value neutrally (no numeric comparison across currencies).
+ */
+function InvoiceValueCompare({
+  amount, currency, value, valueCurrency,
+}: {
+  amount: number
+  currency: string
+  value?: number | null
+  valueCurrency?: string | null
+}) {
+  if (value == null) return null
+  const txnAbs = Math.abs(amount)
+  const cur = valueCurrency || currency
+  const sameCurrency = cur === currency
+  const matches = sameCurrency && Math.abs(txnAbs - value) < 0.01
+  const tone = !sameCurrency ? 'text-muted-foreground' : matches ? 'text-green-600' : 'text-amber-600'
+  return (
+    <span
+      className={cn('inline-flex items-center gap-1 tabular-nums text-[11px]', tone)}
+      title={
+        !sameCurrency
+          ? `Invoice ${formatAmount(value, cur)} — different currency from transaction (${formatAmount(txnAbs, currency)})`
+          : matches
+            ? 'Invoice value matches the transaction amount'
+            : `Invoice ${formatAmount(value, cur)} ≠ transaction ${formatAmount(txnAbs, currency)}`
+      }
+    >
+      {sameCurrency && (matches ? <Check className="h-3 w-3" /> : <AlertTriangle className="h-3 w-3" />)}
+      {formatAmount(value, cur)}
+    </span>
+  )
 }
 
 export default function TransactionsTab({ showFilters = false, search = '' }: { showFilters?: boolean; search?: string }) {
@@ -83,6 +138,7 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
   const [supplier, setSupplier] = useState('__all__')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  const [monthDate, setMonthDate] = useState<Date | null>(null)
   const [sort, setSort] = useState('newest')
   const [hideIgnored, setHideIgnored] = useState(false)
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
@@ -127,7 +183,9 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
   })
 
   const transactions = data?.transactions ?? []
-  const totalCount = data?.count ?? 0
+  // `total` = all rows matching the filters (across pages); `count` is just this
+  // page's length. Drive pagination off total so Next/Prev actually work.
+  const totalCount = data?.total ?? data?.count ?? 0
 
   // Filter out ignored if hidden
   const visibleTxns = useMemo(() => {
@@ -199,20 +257,6 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
     onError: () => toast.error('Failed to unlink'),
   })
 
-  const autoMatchMutation = useMutation({
-    mutationFn: () => statementsApi.autoMatch({
-      transaction_ids: selected.size > 0 ? Array.from(selected) : undefined,
-      use_ai: false,
-    }),
-    onSuccess: (result) => {
-      toast.success(result.message || `Matched: ${result.matched}, Suggested: ${result.suggested}`)
-      setSelected(new Set())
-      queryClient.invalidateQueries({ queryKey: ['statements-transactions'] })
-      queryClient.invalidateQueries({ queryKey: ['statements-summary'] })
-    },
-    onError: () => toast.error('Auto-match failed'),
-  })
-
   const mergeMutation = useMutation({
     mutationFn: (ids: number[]) => statementsApi.mergeTransactions(ids),
     onSuccess: () => {
@@ -231,24 +275,6 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
       queryClient.invalidateQueries({ queryKey: ['statements-transactions'] })
     },
     onError: () => toast.error('Unmerge failed'),
-  })
-
-  const acceptMatchMutation = useMutation({
-    mutationFn: (id: number) => statementsApi.acceptMatch(id),
-    onSuccess: () => {
-      toast.success('Match accepted')
-      queryClient.invalidateQueries({ queryKey: ['statements-transactions'] })
-    },
-    onError: () => toast.error('Failed to accept match'),
-  })
-
-  const rejectMatchMutation = useMutation({
-    mutationFn: (id: number) => statementsApi.rejectMatch(id),
-    onSuccess: () => {
-      toast.success('Match rejected')
-      queryClient.invalidateQueries({ queryKey: ['statements-transactions'] })
-    },
-    onError: () => toast.error('Failed to reject match'),
   })
 
   // Selection helpers
@@ -275,8 +301,29 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
     setSupplier('__all__')
     setDateFrom('')
     setDateTo('')
+    setMonthDate(null)
     setSort('newest')
     setPage(0)
+  }
+
+  // Month navigation — sets the date range to a single month's bounds. Passing
+  // null clears the month filter (and the range). Works alongside the free-form
+  // range picker, which clears the month highlight when used directly.
+  const applyMonth = (d: Date | null) => {
+    setMonthDate(d)
+    if (d) {
+      const { from, to } = monthBounds(d)
+      setDateFrom(from)
+      setDateTo(to)
+    } else {
+      setDateFrom('')
+      setDateTo('')
+    }
+    setPage(0)
+  }
+  const stepMonth = (delta: number) => {
+    const base = monthDate ?? new Date()
+    applyMonth(new Date(base.getFullYear(), base.getMonth() + delta, 1))
   }
 
   // Can merge: 2+ selected, all pending
@@ -329,9 +376,7 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
       render: (t) =>
         t.invoice_id
           ? <Badge variant="secondary" className="text-xs cursor-pointer hover:bg-primary/20" onClick={() => navigate(`/app/accounting?highlight=${t.invoice_id}`)}>{t.invoice_number || `#${t.invoice_id}`}</Badge>
-          : t.suggested_invoice_id
-            ? <Badge variant="outline" className="text-xs border-yellow-500/50 text-yellow-600">Suggested ({Math.round((t.suggested_confidence ?? 0) * 100)}%)</Badge>
-            : <span className="text-muted-foreground">—</span>,
+          : <span className="text-muted-foreground">—</span>,
     },
     {
       key: 'description',
@@ -351,8 +396,6 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
   const handleLink = useCallback((id: number) => setLinkTxnId(id), [])
   const handleUnlink = useCallback((id: number) => unlinkMutation.mutate(id), [unlinkMutation])
   const handleUnmerge = useCallback((id: number) => unmergeMutation.mutate(id), [unmergeMutation])
-  const handleAcceptMatch = useCallback((id: number) => acceptMatchMutation.mutate(id), [acceptMatchMutation])
-  const handleRejectMatch = useCallback((id: number) => rejectMatchMutation.mutate(id), [rejectMatchMutation])
   const handleToggleExpand = useCallback((id: number) => {
     setExpandedMerged((prev) => {
       const next = new Set(prev)
@@ -429,8 +472,30 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
               mode="range"
               startDate={dateFrom}
               endDate={dateTo}
-              onRangeChange={(s, e) => { setDateFrom(s); setDateTo(e); setPage(0) }}
+              onRangeChange={(s, e) => { setDateFrom(s); setDateTo(e); setMonthDate(null); setPage(0) }}
             />
+
+            {/* Month stepper — alongside the free range picker */}
+            <div className={cn('flex items-center gap-1', isMobile && 'col-span-2')}>
+              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => stepMonth(-1)} title="Luna anterioară">
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <button
+                type="button"
+                onClick={() => applyMonth(monthDate ? null : new Date())}
+                className={cn(
+                  'h-9 flex-1 rounded-md border px-2 text-sm transition-colors',
+                  isMobile ? 'min-w-0' : 'min-w-[140px]',
+                  monthDate ? 'border-primary/40 bg-primary/10 font-medium' : 'text-muted-foreground hover:bg-accent',
+                )}
+                title={monthDate ? 'Șterge filtrul de lună' : 'Filtrează pe luna curentă'}
+              >
+                {monthDate ? `${RO_MONTHS[monthDate.getMonth()]} ${monthDate.getFullYear()}` : 'Lună'}
+              </button>
+              <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => stepMonth(1)} title="Luna următoare">
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
 
           </>
         )
@@ -526,10 +591,6 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
                 {!isMobile && 'Merge'}
               </Button>
             )}
-            <Button size="sm" variant="outline" onClick={() => autoMatchMutation.mutate()} disabled={autoMatchMutation.isPending}>
-              <Wand2 className="mr-1 h-3.5 w-3.5" />
-              {!isMobile && 'Auto-Match'}
-            </Button>
             {!isMobile && (
               <TagPickerButton
                 entityType="transaction"
@@ -606,14 +667,14 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
       ) : (
         <Card>
           <div className="overflow-x-auto">
-            <Table className="min-w-[1600px]" style={{ tableLayout: 'fixed' }}>
+            <Table className="min-w-[1660px]" style={{ tableLayout: 'fixed' }}>
               <colgroup>
                 <col className="w-[40px]" />
                 <col className="w-[95px]" />
                 <col className="w-[150px]" />
                 <col className="w-[140px]" />
                 <col className="w-[130px]" />
-                <col className="w-[300px]" />
+                <col className="w-[360px]" />
                 <col className="w-[115px]" />
                 <col className="w-[85px]" />
                 <col className="w-[65px]" />
@@ -652,8 +713,6 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
                     onLink={handleLink}
                     onUnlink={handleUnlink}
                     onUnmerge={handleUnmerge}
-                    onAcceptMatch={handleAcceptMatch}
-                    onRejectMatch={handleRejectMatch}
                     isExpanded={expandedMerged.has(txn.id)}
                     onToggleExpand={handleToggleExpand}
                   />
@@ -676,7 +735,7 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {[25, 50, 100, 200].map((n) => (
+                    {[25, 50, 100, 200, 500].map((n) => (
                       <SelectItem key={n} value={String(n)}>{n}</SelectItem>
                     ))}
                   </SelectContent>
@@ -728,7 +787,7 @@ export default function TransactionsTab({ showFilters = false, search = '' }: { 
 
 const TransactionRow = memo(function TransactionRow({
   txn, isSelected, tags, onToggleSelect, onStatusChange, onLink, onUnlink, onUnmerge,
-  onAcceptMatch, onRejectMatch, isExpanded, onToggleExpand,
+  isExpanded, onToggleExpand,
 }: {
   txn: Transaction
   isSelected: boolean
@@ -738,8 +797,6 @@ const TransactionRow = memo(function TransactionRow({
   onLink: (id: number) => void
   onUnlink: (id: number) => void
   onUnmerge: (id: number) => void
-  onAcceptMatch: (id: number) => void
-  onRejectMatch: (id: number) => void
   isExpanded: boolean
   onToggleExpand: (id: number) => void
 }) {
@@ -782,7 +839,7 @@ const TransactionRow = memo(function TransactionRow({
         </TableCell>
         <TableCell className="text-sm whitespace-normal break-words">{txn.vendor_name ?? '—'}</TableCell>
         <TableCell className="text-sm font-medium whitespace-normal break-words">{txn.matched_supplier ?? '—'}</TableCell>
-        <TableCell className="text-xs text-muted-foreground whitespace-normal" style={{ width: 300, maxWidth: 300, wordBreak: 'break-word' }}>
+        <TableCell className="text-xs text-muted-foreground whitespace-normal" style={{ width: 360, maxWidth: 360, wordBreak: 'break-word' }} title={txn.description || ''}>
           {txn.description}
         </TableCell>
         <TableCell className={cn('text-right text-sm font-medium whitespace-nowrap', txn.amount < 0 ? 'text-red-500' : 'text-green-500')}>
@@ -800,30 +857,26 @@ const TransactionRow = memo(function TransactionRow({
         </TableCell>
         <TableCell className="text-xs">
           {txn.invoice_id ? (
-            <div className="flex items-center gap-1">
-              <Badge
-                variant="secondary"
-                className="text-xs cursor-pointer hover:bg-primary/20"
-                onClick={(e) => { e.stopPropagation(); navigate(`/app/accounting?highlight=${txn.invoice_id}`) }}
-                title="View in Accounting"
-              >
-                {txn.invoice_number || `#${txn.invoice_id}`}
-              </Badge>
-              <button onClick={() => onUnlink(txn.id)} className="text-muted-foreground hover:text-destructive" title="Unlink">
-                <Link2Off className="h-3 w-3" />
-              </button>
-            </div>
-          ) : txn.suggested_invoice_id ? (
-            <div className="flex items-center gap-1">
-              <Badge variant="outline" className="text-xs border-yellow-500/50 text-yellow-600">
-                Suggested ({Math.round((txn.suggested_confidence ?? 0) * 100)}%)
-              </Badge>
-              <button onClick={() => onAcceptMatch(txn.id)} className="text-green-600 hover:text-green-700" title="Accept">
-                <Link2 className="h-3 w-3" />
-              </button>
-              <button onClick={() => onRejectMatch(txn.id)} className="text-muted-foreground hover:text-destructive" title="Reject">
-                <Link2Off className="h-3 w-3" />
-              </button>
+            <div className="flex flex-col gap-0.5">
+              <div className="flex items-center gap-1">
+                <Badge
+                  variant="secondary"
+                  className="text-xs cursor-pointer hover:bg-primary/20"
+                  onClick={(e) => { e.stopPropagation(); navigate(`/app/accounting?highlight=${txn.invoice_id}`) }}
+                  title="View in Accounting"
+                >
+                  {txn.invoice_number || `#${txn.invoice_id}`}
+                </Badge>
+                <button onClick={() => onUnlink(txn.id)} className="text-muted-foreground hover:text-destructive" title="Unlink">
+                  <Link2Off className="h-3 w-3" />
+                </button>
+              </div>
+              <InvoiceValueCompare
+                amount={txn.amount}
+                currency={txn.currency}
+                value={txn.linked_invoice_value}
+                valueCurrency={txn.linked_invoice_currency}
+              />
             </div>
           ) : (
             <span className="text-muted-foreground">—</span>

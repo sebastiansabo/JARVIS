@@ -133,6 +133,7 @@ export default function Accounting() {
   const [highlightedInvoiceId, setHighlightedInvoiceId] = useState<number | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const highlightScrolledRef = useRef(false)
+  const highlightBroadenedRef = useRef(false)
 
   const toggleBinSelected = useCallback((id: number) => {
     setBinSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id])
@@ -154,6 +155,8 @@ export default function Accounting() {
   const setVisibleColumns = useAccountingStore((s) => s.setVisibleColumns)
   // Accounting tenant switcher (shared across accounting pages). Drives the company filter below.
   const selectedCompanyId = useAccountingStore((s) => s.selectedCompanyId)
+  const clearAccountingFilters = useAccountingStore((s) => s.clearFilters)
+  const setSelectedCompanyId = useAccountingStore((s) => s.setSelectedCompanyId)
 
   // Data queries
   const apiFilters: InvoiceFilters & { include_allocations?: boolean; archive_view?: string } = {
@@ -162,7 +165,7 @@ export default function Accounting() {
     archive_view: archiveView,
   }
 
-  const { data: invoices = [], isLoading, isError: invoicesError, error: invoicesErrorObj, refetch: refetchInvoices } = useQuery({
+  const { data: invoices = [], isLoading, isFetching, isError: invoicesError, error: invoicesErrorObj, refetch: refetchInvoices } = useQuery({
     queryKey: ['invoices', filters, archiveView],
     queryFn: () => invoicesApi.getInvoices(apiFilters),
   })
@@ -179,34 +182,52 @@ export default function Accounting() {
     enabled: showBin,
   })
 
-  // Handle ?highlight=<invoiceId> from notification clicks
+  // Handle ?highlight=<invoiceId> from links (notifications, Statements → invoice chip).
+  // If the invoice isn't in the current view (archived, filtered out, or scoped to
+  // another company via the tenant switcher), broaden the view once so it can be
+  // found, then scroll to it. `isFetching` gates the "not found" verdict so we don't
+  // fire it against stale data while the broadened query is still loading.
   useEffect(() => {
     const highlightParam = searchParams.get('highlight')
-    if (!highlightParam || isLoading || invoices.length === 0) return
+    if (!highlightParam || isLoading || isFetching) return
     const invoiceId = Number(highlightParam)
     if (!invoiceId) return
 
-    // Check if this invoice exists in the current list
-    const exists = invoices.some((inv) => inv.id === invoiceId)
-    if (exists && !highlightScrolledRef.current) {
-      setExpandedRow(invoiceId)
-      setHighlightedInvoiceId(invoiceId)
-      highlightScrolledRef.current = true
-
-      // Clean up the URL param
+    const clearHighlightParam = () => {
       searchParams.delete('highlight')
       setSearchParams(searchParams, { replace: true })
-
-      // Scroll to the row after a brief render delay
-      requestAnimationFrame(() => {
-        const row = document.querySelector(`[data-invoice-id="${invoiceId}"]`)
-        row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      })
-
-      // Clear highlight after animation
-      setTimeout(() => setHighlightedInvoiceId(null), 3000)
     }
-  }, [searchParams, invoices, isLoading])
+
+    if (invoices.some((inv) => inv.id === invoiceId)) {
+      if (!highlightScrolledRef.current) {
+        setExpandedRow(invoiceId)
+        setHighlightedInvoiceId(invoiceId)
+        highlightScrolledRef.current = true
+        clearHighlightParam()
+        requestAnimationFrame(() => {
+          const row = document.querySelector(`[data-invoice-id="${invoiceId}"]`)
+          row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        })
+        setTimeout(() => setHighlightedInvoiceId(null), 3000)
+      }
+      return
+    }
+
+    // Not in the current list — broaden the view once (drop filters + company scope,
+    // show every archive state) so a linked-but-hidden invoice becomes visible.
+    if (!highlightBroadenedRef.current) {
+      highlightBroadenedRef.current = true
+      clearAccountingFilters()
+      setSelectedCompanyId(null)
+      setSearch('')
+      setArchiveView('all')
+      return
+    }
+
+    // Already broadened and still absent → the invoice is likely deleted / in the bin.
+    toast.error('Factura nu a fost găsită în Contabilitate (posibil ștearsă sau în coșul de gunoi).')
+    clearHighlightParam()
+  }, [searchParams, invoices, isLoading, isFetching])
 
   // Entity tags for invoices
   const invoiceIds = useMemo(() => invoices.map((i) => i.id), [invoices])
