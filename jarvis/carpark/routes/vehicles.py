@@ -6,7 +6,7 @@ from flask import request, jsonify, abort, make_response
 from flask_login import login_required, current_user
 
 from carpark import carpark_bp
-from carpark.finance_guard import strip_finance_fields
+from carpark.finance_guard import strip_finance_fields, FINANCE_VEHICLE_TABLE_FIELDS
 from carpark.services.vehicle_service import VehicleService
 from core.organization.manager_utils import get_actable_company_ids
 from field_sales.repositories.client_fs_repository import ClientFSRepository
@@ -214,8 +214,11 @@ def get_vehicle(vehicle_id):
     vehicle, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err
+    # SECURITY: the detail payload is `SELECT v.*` from carpark_vehicles, so we
+    # strip the TABLE column names (not the Dispo alias names) — see
+    # carpark/finance_guard.py FINANCE_VEHICLE_TABLE_FIELDS.
     if not getattr(current_user, 'can_view_carpark_finance', False):
-        strip_finance_fields(vehicle)
+        strip_finance_fields(vehicle, FINANCE_VEHICLE_TABLE_FIELDS)
     return jsonify({'vehicle': _serialize(vehicle)})
 
 
@@ -341,10 +344,14 @@ def update_vehicle(vehicle_id):
     data.pop('transferred_from_company_id', None)
 
     # SECURITY: a non-finance editor can't use this generic PUT to set/
-    # overwrite acquisition price or other money fields (mirrors the
-    # company_id strip above) — see carpark/finance_guard.py.
+    # overwrite acquisition/purchase cost, cost components, total_cost, the
+    # floor minimum_price, or the cost/margin JSON blobs (mirrors the
+    # company_id strip above). We drop the carpark_vehicles TABLE column names
+    # (not the Dispo alias names) — see carpark/finance_guard.py
+    # FINANCE_VEHICLE_TABLE_FIELDS. Selling-side prices (current/list/promo/
+    # sale) stay writable.
     if not getattr(current_user, 'can_view_carpark_finance', False):
-        strip_finance_fields(data)
+        strip_finance_fields(data, FINANCE_VEHICLE_TABLE_FIELDS)
 
     try:
         vehicle = _vehicle_service.update_vehicle(
