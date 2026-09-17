@@ -1,4 +1,5 @@
 """Shared supplier-master data access: identity lookup, master CRUD, aliases, merge."""
+import json
 from core.base_repository import BaseRepository
 from core.suppliers.normalize import normalize_cui, normalize_nr_reg
 
@@ -421,6 +422,36 @@ class SupplierMasterRepository(BaseRepository):
             WHERE a.invoice_id = %s
             ORDER BY a.line_item_index NULLS FIRST, a.id
         """, (invoice_id,))
+
+    def list_allocations_for_cascade(self, invoice_id):
+        """Every allocation zone for an invoice, for the worklist schema cascade: its id, the
+        line it belongs to (line_item_index, may be NULL for invoice-level allocations), its
+        department/subdepartment, net value and current per-zone schema (konto_config_id)."""
+        rows = self.query_all("""
+            SELECT a.id, a.line_item_index AS line_index, a.department, a.subdepartment,
+                   a.allocation_value AS value, a.konto_config_id
+            FROM allocations a
+            WHERE a.invoice_id = %s
+            ORDER BY a.line_item_index NULLS FIRST, a.id
+        """, (invoice_id,))
+        return [{
+            'id': r['id'], 'line_index': r['line_index'], 'department': r['department'],
+            'subdepartment': r['subdepartment'],
+            'value': float(r['value']) if r['value'] is not None else None,
+            'konto_config_id': r['konto_config_id'],
+        } for r in rows]
+
+    def invoice_line_items(self, invoice_id):
+        """The invoice's line_items JSON parsed to a list (empty when null/unparseable). Keeps the
+        SELECT out of the route layer (architecture rule: routes contain no SQL)."""
+        row = self.query_one("SELECT line_items FROM invoices WHERE id = %s", (invoice_id,))
+        raw = row.get('line_items') if row else None
+        if isinstance(raw, list):
+            return raw
+        try:
+            return json.loads(raw) if raw else []
+        except (TypeError, ValueError):
+            return []
 
     # ---- back-compat single-config writers (target the ACTIVE preset) ----
     def upsert_konto(self, supplier_id, company_id, created_by=None, **fields):
