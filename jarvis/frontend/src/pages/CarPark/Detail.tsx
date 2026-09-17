@@ -426,28 +426,32 @@ export default function CarParkDetail() {
     enabled: !!id,
   })
 
+  // Finance-gated queries: /cost-lines, /revenues, /profitability and
+  // /pricing-history are all @carpark_finance_required on the backend, so
+  // firing them for a non-finance user only yields 403s + retry noise. Gate
+  // on canViewFinance to match the server permission.
   const { data: costLinesData } = useQuery({
     queryKey: ['carpark', 'cost-lines', id],
     queryFn: () => carparkApi.getCostLines(id),
-    enabled: !!id,
+    enabled: !!id && canViewFinance,
   })
 
   const { data: revenuesData } = useQuery({
     queryKey: ['carpark', 'revenues', id],
     queryFn: () => carparkApi.getRevenues(id),
-    enabled: !!id,
+    enabled: !!id && canViewFinance,
   })
 
   const { data: profitData } = useQuery({
     queryKey: ['carpark', 'profitability', id],
     queryFn: () => carparkApi.getProfitability(id),
-    enabled: !!id,
+    enabled: !!id && canViewFinance,
   })
 
   const { data: pricingHistoryData } = useQuery({
     queryKey: ['carpark', 'pricing-history', id],
     queryFn: () => carparkApi.getPricingHistory(id),
-    enabled: !!id,
+    enabled: !!id && canViewFinance,
   })
 
   const { data: vehiclePromosData } = useQuery({
