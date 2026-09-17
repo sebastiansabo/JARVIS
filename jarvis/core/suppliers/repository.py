@@ -453,6 +453,48 @@ class SupplierMasterRepository(BaseRepository):
         except (TypeError, ValueError):
             return []
 
+    def apply_cascade_alloc(self, invoice_id, alloc_map, created_by=None):
+        """Per-allocation mode: pin each allocation's konto (guarded to this invoice), then clear
+        per-line overrides and per_line so the export uses alloc_mode exclusively. Atomic."""
+        def _work(cursor):
+            for alloc_id, kc in alloc_map.items():
+                cursor.execute(
+                    "UPDATE allocations SET konto_config_id = %s WHERE id = %s AND invoice_id = %s",
+                    (kc, int(alloc_id), invoice_id))
+            cursor.execute(
+                "DELETE FROM invoice_line_konto_override WHERE invoice_id = %s", (invoice_id,))
+            cursor.execute(
+                "UPDATE invoice_konto_override SET per_line = FALSE, updated_at = CURRENT_TIMESTAMP "
+                "WHERE invoice_id = %s", (invoice_id,))
+        return self.execute_many(_work)
+
+    def apply_cascade_line(self, invoice_id, line_map, created_by=None):
+        """Per-line mode: enable per_line (without touching the base schema), upsert each line's
+        konto (None clears that line), then clear every per-allocation konto so the export uses
+        per_line, not alloc_mode. Atomic."""
+        def _work(cursor):
+            cursor.execute(
+                """INSERT INTO invoice_konto_override (invoice_id, konto_config_id, per_line, created_by)
+                   VALUES (%s, NULL, TRUE, %s)
+                   ON CONFLICT (invoice_id) DO UPDATE SET per_line = TRUE, updated_at = CURRENT_TIMESTAMP""",
+                (invoice_id, created_by))
+            for line_index, kc in line_map.items():
+                li = int(line_index)
+                if kc is None:
+                    cursor.execute(
+                        "DELETE FROM invoice_line_konto_override WHERE invoice_id = %s AND line_index = %s",
+                        (invoice_id, li))
+                else:
+                    cursor.execute(
+                        """INSERT INTO invoice_line_konto_override (invoice_id, line_index, konto_config_id, created_by)
+                           VALUES (%s, %s, %s, %s)
+                           ON CONFLICT (invoice_id, line_index) DO UPDATE SET
+                               konto_config_id = EXCLUDED.konto_config_id, updated_at = CURRENT_TIMESTAMP""",
+                        (invoice_id, li, kc, created_by))
+            cursor.execute(
+                "UPDATE allocations SET konto_config_id = NULL WHERE invoice_id = %s", (invoice_id,))
+        return self.execute_many(_work)
+
     # ---- back-compat single-config writers (target the ACTIVE preset) ----
     def upsert_konto(self, supplier_id, company_id, created_by=None, **fields):
         """Back-compat: create/update the ACTIVE preset for (supplier, company). Creates the
