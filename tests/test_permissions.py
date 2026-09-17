@@ -68,6 +68,30 @@ class TestPermissionRepository:
         perms = repo.get_role_permissions(role_id=1)
         assert isinstance(perms, dict)
 
+    @patch(f'{_B}.release_db')
+    @patch(f'{_B}.get_cursor')
+    @patch(f'{_B}.get_db')
+    def test_sync_writes_carpark_booleans(self, mock_get_db, mock_get_cursor, mock_release):
+        mock_conn, mock_cursor = _mock_db()
+        mock_get_db.return_value = mock_conn
+        mock_get_cursor.return_value = mock_cursor
+        mock_cursor.fetchall.return_value = [
+            {'module_key': 'carpark', 'entity_key': 'module',   'action_key': 'access', 'scope': 'all',  'granted': True},
+            {'module_key': 'carpark', 'entity_key': 'vehicles', 'action_key': 'edit',   'scope': 'all',  'granted': True},
+            {'module_key': 'carpark', 'entity_key': 'vehicles', 'action_key': 'delete', 'scope': 'deny', 'granted': False},
+            {'module_key': 'carpark', 'entity_key': 'finance',  'action_key': 'view',   'scope': 'deny', 'granted': False},
+        ]
+        from core.roles.repositories.permission_repository import PermissionRepository
+        PermissionRepository()._sync_v2_permissions_to_booleans(mock_cursor, role_id=5)
+
+        sql, values = mock_cursor.execute.call_args.args  # last call = the UPDATE
+        cols = [c.split('=')[0].strip() for c in sql.split('SET', 1)[1].split('WHERE')[0].split(',')]
+        mapping = dict(zip(cols, values[:-1]))
+        assert mapping['can_access_carpark'] is True
+        assert mapping['can_edit_carpark'] is True
+        assert mapping['can_delete_carpark'] is False
+        assert mapping['can_view_carpark_finance'] is False
+
 
 # ═══════════════════════════════════════════════
 # API Helper Decorators Tests
