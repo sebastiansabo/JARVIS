@@ -79,6 +79,33 @@ export interface BudgetedInvoice {
   per_line: boolean
 }
 
+export interface SchemaCascadeAllocation {
+  id: number
+  department: string
+  subdepartment: string | null
+  value: number | null
+  konto_config_id: number | null
+}
+export interface SchemaCascadeLine {
+  index: number
+  name: string | null
+  amount: number | null
+  vat_rate: number | null
+  line_konto_config_id: number | null
+  allocations: SchemaCascadeAllocation[]
+}
+export interface SchemaCascadeData {
+  success: boolean
+  supplier_id: number | null
+  company_id: number | null
+  presets: KontoPreset[]
+  active_id: number | null
+  invoice_konto_config_id: number | null
+  per_line: boolean
+  mode: 'alloc' | 'line' | 'none'
+  lines: SchemaCascadeLine[]
+}
+
 /** Trigger a browser download for a raw fetch Response that carries a file (blob) body,
  * using the filename from its Content-Disposition header (falling back to `fallbackFilename`).
  * Mirrors the download helpers in api/bilant.ts and Hub/Profile's handleDownloadPdf. */
@@ -213,6 +240,18 @@ export const suppliersApi = {
       line_items: { name?: string | null; description?: string | null; amount: number | null; vat_rate: number | null }[]
       line_selected: Record<string, number>
     }>(`/api/suppliers/schemas-for-invoice?invoice_id=${invoiceId}&company=${encodeURIComponent(company)}`),
+  /** Invoice→lines→allocations EuroFib schema tree for the worklist cascade (multi-schema suppliers). */
+  getSchemaCascade: (invoiceId: number, company: string) =>
+    api.get<SchemaCascadeData>(
+      `/api/suppliers/invoices/${invoiceId}/schema-cascade?company=${encodeURIComponent(company)}`),
+  /** Batch-persist the worklist cascade for one invoice. `mode` picks which map is written; the
+   * backend clears the other level so the export never sees a mixed per-line/per-allocation state. */
+  saveSchemaCascade: (
+    invoiceId: number,
+    body: { mode: 'alloc' | 'line'; supplier_id: number; company_id: number
+            line_map?: Record<string, number | null>; alloc_map?: Record<string, number | null> },
+  ) => api.post<{ success: boolean; mode: string }>(
+      `/api/suppliers/invoices/${invoiceId}/schema-cascade`, body),
   /** EuroFib schemas for an unallocated e-Factura invoice's supplier (× the invoice's company).
    * Drives the schema selector in the e-Factura "Edit Invoice Overrides" dialog. */
   schemasForEfactura: (efacturaInvoiceId: number) =>
