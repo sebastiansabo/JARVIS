@@ -4,7 +4,7 @@ from flask import request, jsonify
 from flask_login import login_required, current_user
 
 from carpark import carpark_bp
-from carpark.routes.vehicles import carpark_required, _acting_company_id
+from carpark.routes.vehicles import carpark_required, carpark_finance_required, _acting_company_id
 from carpark.services.analytics_service import AnalyticsService
 
 logger = logging.getLogger('jarvis.carpark.analytics')
@@ -112,7 +112,7 @@ def analytics_monthly_sales():
 
 @carpark_bp.route('/analytics/costs', methods=['GET'])
 @login_required
-@carpark_required
+@carpark_finance_required
 def analytics_costs():
     cid = _acting_company_id()
     if not cid:

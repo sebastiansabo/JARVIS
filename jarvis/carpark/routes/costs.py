@@ -7,7 +7,8 @@ from flask_login import login_required, current_user
 from carpark import carpark_bp
 from carpark.services.vehicle_service import VehicleService
 from carpark.routes.vehicles import (
-    carpark_required, carpark_edit_required, _serialize, _verify_vehicle_ownership,
+    carpark_edit_required, carpark_finance_required,
+    _serialize, _verify_vehicle_ownership,
 )
 
 logger = logging.getLogger('jarvis.carpark')
@@ -30,7 +31,7 @@ VALID_REVENUE_TYPES = {
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/costs', methods=['GET'])
 @login_required
-@carpark_required
+@carpark_finance_required
 def list_costs(vehicle_id):
     """List costs for a vehicle. Optional query: ?type=repair|maintenance|..."""
     _, err = _verify_vehicle_ownership(vehicle_id)
@@ -136,7 +137,7 @@ def delete_cost(cost_id):
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/costs/totals', methods=['GET'])
 @login_required
-@carpark_required
+@carpark_finance_required
 def cost_totals(vehicle_id):
     """Get cost totals grouped by type for a vehicle."""
     _, err = _verify_vehicle_ownership(vehicle_id)
@@ -152,7 +153,7 @@ def cost_totals(vehicle_id):
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/cost-lines', methods=['GET'])
 @login_required
-@carpark_required
+@carpark_finance_required
 def list_cost_lines(vehicle_id):
     """List all cost lines for a vehicle."""
     _, err = _verify_vehicle_ownership(vehicle_id)
@@ -248,7 +249,7 @@ def delete_cost_line(line_id):
 
 @carpark_bp.route('/cost-lines/<int:line_id>/costs', methods=['GET'])
 @login_required
-@carpark_required
+@carpark_finance_required
 def list_line_costs(line_id):
     """List cost entries under a cost line."""
     line = _service.get_cost_line(line_id)
@@ -352,7 +353,7 @@ def link_cost_invoice(cost_id):
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/revenues', methods=['GET'])
 @login_required
-@carpark_required
+@carpark_finance_required
 def list_revenues(vehicle_id):
     """List revenues for a vehicle. Optional query: ?type=sale|rental|..."""
     _, err = _verify_vehicle_ownership(vehicle_id)
@@ -457,7 +458,7 @@ def delete_revenue(revenue_id):
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/revenues/totals', methods=['GET'])
 @login_required
-@carpark_required
+@carpark_finance_required
 def revenue_totals(vehicle_id):
     """Get revenue totals grouped by type for a vehicle."""
     _, err = _verify_vehicle_ownership(vehicle_id)
@@ -473,7 +474,7 @@ def revenue_totals(vehicle_id):
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/profitability', methods=['GET'])
 @login_required
-@carpark_required
+@carpark_finance_required
 def vehicle_profitability(vehicle_id):
     """Get profitability summary for a vehicle."""
     _, err = _verify_vehicle_ownership(vehicle_id)
