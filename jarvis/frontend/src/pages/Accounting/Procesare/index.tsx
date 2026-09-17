@@ -274,7 +274,10 @@ function WorklistInvoiceRow({
 }) {
   const qc = useQueryClient()
   const presetCount = usePresetCount(inv.supplier_id, companyId)
-  const canCascade = presetCount > 1 && !inv.per_line && !isProcessedView
+  // Available in BOTH the worklist and the Importate/procesate view: in procesate it surfaces the
+  // per-allocation schema already saved on the invoice (so re-export reflects it) and lets the user
+  // adjust it before a Reexportă. Only the per_line legacy badge and single-schema suppliers opt out.
+  const canCascade = presetCount > 1 && !inv.per_line
   return (
     <>
       <TableRow>
