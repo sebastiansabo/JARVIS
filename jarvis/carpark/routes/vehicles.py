@@ -61,6 +61,21 @@ def carpark_delete_required(f):
     return decorated
 
 
+def carpark_finance_required(f):
+    """Require can_view_carpark_finance for endpoints whose entire payload is
+    financial (costs, revenues, margins, profitability)."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        if not getattr(current_user, 'can_access_carpark', False):
+            return jsonify({'success': False, 'error': 'CarPark access denied'}), 403
+        if not getattr(current_user, 'can_view_carpark_finance', False):
+            return jsonify({'success': False, 'error': 'CarPark finance permission denied'}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
 # ── Tenant isolation helper ──
 
 def _user_company_id():
