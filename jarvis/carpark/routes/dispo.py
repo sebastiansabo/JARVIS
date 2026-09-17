@@ -17,6 +17,10 @@ from flask import request, jsonify, send_file
 from flask_login import login_required, current_user
 
 from carpark import carpark_bp
+from carpark.finance_guard import (
+    FINANCE_VEHICLE_FIELDS as _FINANCE_ROW_FIELDS,
+    FINANCE_KPI_FIELDS as _FINANCE_KPI_FIELDS,
+)
 from carpark.repositories.dispo_repository import DispoRepository
 from carpark.services.dispo_service import DispoService
 from carpark.services.import_service import CentralizatorImporter
@@ -34,11 +38,9 @@ _importer = CentralizatorImporter()
 _MAX_IMPORT_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
 
 # Money fields hidden from the Dispo summary/export/KPIs for users without
-# carpark.view_finance — kept in one place so the JSON and xlsx paths (and
-# kpis()) can never drift from each other.
-_FINANCE_ROW_FIELDS = ('acquisition_price', 'total_costs', 'gross_margin',
-                        'margin_pct', 'bonus_leasing')
-_FINANCE_KPI_FIELDS = ('gross_margin_mtd',)
+# carpark.view_finance — sourced from carpark.finance_guard (see import
+# above) so the JSON and xlsx paths here, the vehicle-detail payload, and
+# analytics can never drift from each other.
 
 # Query-string filter keys accepted by /dispo/summary, passed through
 # verbatim to DispoRepository.summary()/_build_where().

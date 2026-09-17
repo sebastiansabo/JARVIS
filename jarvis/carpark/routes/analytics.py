@@ -4,12 +4,27 @@ from flask import request, jsonify
 from flask_login import login_required, current_user
 
 from carpark import carpark_bp
+from carpark.finance_guard import FINANCE_VEHICLE_FIELDS, FINANCE_KPI_FIELDS, strip_finance_fields
 from carpark.routes.vehicles import carpark_required, carpark_finance_required, _acting_company_id
 from carpark.services.analytics_service import AnalyticsService
 
 logger = logging.getLogger('jarvis.carpark.analytics')
 
 _analytics = AnalyticsService()
+
+
+def _strip_analytics_finance(data):
+    """Remove money fields (carpark.finance_guard) from a dashboard/kpis
+    payload for callers without carpark.view_finance. Fields can appear at
+    the top level or nested under 'profitability' — both /analytics/dashboard
+    (AnalyticsService.get_dashboard) and /analytics/kpis
+    (AnalyticsService.get_kpis) embed a profitability sub-block that carries
+    `total_costs`. Mutates `data` in place; returns it."""
+    strip_finance_fields(data, FINANCE_VEHICLE_FIELDS)
+    strip_finance_fields(data, FINANCE_KPI_FIELDS)
+    strip_finance_fields(data.get('profitability'), FINANCE_VEHICLE_FIELDS)
+    strip_finance_fields(data.get('profitability'), FINANCE_KPI_FIELDS)
+    return data
 
 
 # ── Full dashboard ─────────────────────────────────────────
@@ -28,6 +43,8 @@ def analytics_dashboard():
     except (ValueError, TypeError):
         period_days = 90
     data = _analytics.get_dashboard(cid, profit_period=period_days)
+    if not getattr(current_user, 'can_view_carpark_finance', False):
+        _strip_analytics_finance(data)
     return jsonify(data)
 
 
@@ -52,7 +69,10 @@ def analytics_kpis():
     cid = _acting_company_id()
     if not cid:
         return jsonify({'success': False, 'error': 'No company assigned'}), 400
-    return jsonify(_analytics.get_kpis(cid))
+    data = _analytics.get_kpis(cid)
+    if not getattr(current_user, 'can_view_carpark_finance', False):
+        _strip_analytics_finance(data)
+    return jsonify(data)
 
 
 @carpark_bp.route('/analytics/status-breakdown', methods=['GET'])

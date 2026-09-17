@@ -6,6 +6,7 @@ from flask import request, jsonify, abort, make_response
 from flask_login import login_required, current_user
 
 from carpark import carpark_bp
+from carpark.finance_guard import strip_finance_fields
 from carpark.services.vehicle_service import VehicleService
 from core.organization.manager_utils import get_actable_company_ids
 from field_sales.repositories.client_fs_repository import ClientFSRepository
@@ -213,6 +214,8 @@ def get_vehicle(vehicle_id):
     vehicle, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err
+    if not getattr(current_user, 'can_view_carpark_finance', False):
+        strip_finance_fields(vehicle)
     return jsonify({'vehicle': _serialize(vehicle)})
 
 
@@ -336,6 +339,12 @@ def update_vehicle(vehicle_id):
     # data.pop('company_id', None) guard on PUT /locations/<id> below.
     data.pop('company_id', None)
     data.pop('transferred_from_company_id', None)
+
+    # SECURITY: a non-finance editor can't use this generic PUT to set/
+    # overwrite acquisition price or other money fields (mirrors the
+    # company_id strip above) — see carpark/finance_guard.py.
+    if not getattr(current_user, 'can_view_carpark_finance', False):
+        strip_finance_fields(data)
 
     try:
         vehicle = _vehicle_service.update_vehicle(
