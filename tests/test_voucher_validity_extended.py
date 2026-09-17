@@ -51,3 +51,26 @@ def test_admin_edit_accepts_supported_validity(months):
 def test_admin_edit_rejects_unsupported_validity(months):
     with pytest.raises(ValueError):
         build_admin_voucher_edit({}, {'validity_months': months})
+
+
+def test_db_check_constraint_matches_app_validators():
+    """The DB CHECK on validity_months must allow exactly the app-validated set.
+
+    Regression: the app validators accepted 36/48 while the DB constraint still
+    capped at 24, so writes 500'd at the database layer.
+    """
+    import re
+    from accounting.vouchers.edit_logic import VALID_VALIDITY
+
+    here = os.path.dirname(__file__)
+    ddl_path = os.path.join(here, '..', 'jarvis', 'migrations', 'domains', 'schema_vouchers.py')
+    with open(ddl_path, encoding='utf-8') as fh:
+        ddl = fh.read()
+
+    m = re.search(r'chk_validity_months\s+CHECK \(validity_months IN \(([^)]+)\)\)', ddl)
+    assert m, 'chk_validity_months CHECK clause not found in schema_vouchers.py'
+    db_values = tuple(int(x) for x in m.group(1).split(','))
+    assert set(db_values) == set(VALID_VALIDITY), (
+        f'DB constraint {sorted(db_values)} != app validators {sorted(VALID_VALIDITY)}'
+    )
+    assert {36, 48} <= set(db_values)
