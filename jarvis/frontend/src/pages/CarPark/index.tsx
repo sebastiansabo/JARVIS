@@ -353,7 +353,7 @@ export default function CarPark() {
         breadcrumbs={[{ label: 'CarPark' }]}
         actions={
           <div className="flex items-center gap-2">
-            {effectiveCompanyId != null && (
+            {companies.length > 1 && effectiveCompanyId != null && (
               <Select
                 value={String(effectiveCompanyId)}
                 onValueChange={(v) => handleCompanyChange(Number(v))}
