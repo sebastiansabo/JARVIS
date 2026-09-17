@@ -3,7 +3,8 @@ import io
 import openpyxl
 
 from core.suppliers.eurofib_export import (
-    HEADER, build_csv, build_medline_rows, build_xlsx, first_line_text, line_item_text)
+    HEADER, build_csv, build_medline_rows, build_medline_rows_per_line, build_xlsx,
+    first_line_text, line_item_text)
 
 _SAMPLE_CONFIG = {
     'klient': '140',
@@ -255,3 +256,40 @@ def test_build_csv_skips_incomplete_config_and_missing_amounts():
     assert len(skipped) == 2
     reasons = {s['reason'] for s in skipped}
     assert reasons == {'incomplete_config', 'missing_amounts'}
+
+
+# ── Per-line / per-allocation export: each budgeting line is a balanced credit+debit pair ──
+
+def test_build_medline_rows_per_line_emits_balanced_pair_per_line():
+    """Each budgeting line → its own credit(Haben, gross=net+VAT) + debit(Soll, net) pair, each on
+    that line's own schema; credits carry the 'x' document marker and sum to the invoice gross."""
+    invoice = {'invoice_number': 'INV-1', 'invoice_date': '2026-09-15', 'due_date': '2026-09-30'}
+    base = {'klient': '140', 'belegart': 'JC'}
+    z1 = {'konto_credit': '40101', 'konto_debit': '628701', 'klient': '140', 'steuercode': '621',
+          'belegart': 'JC', 'kostenstelle_debit': '0393', 'text_template': '.A'}
+    z2 = {'konto_credit': '40102', 'konto_debit': '627000', 'klient': '141', 'steuercode': '626',
+          'belegart': 'JC', 'kostenstelle_debit': '0394', 'text_template': '.B'}
+    line_configs = [
+        {'net': 300.0, 'vat': 57.0, 'text': 'Zone1', 'config': z1},
+        {'net': 600.0, 'vat': 114.0, 'text': 'Zone2', 'config': z2},
+    ]
+    rows = build_medline_rows_per_line(invoice, base, line_configs)
+
+    assert len(rows) == 4                                             # 2 lines x (credit + debit)
+    assert [_col(r, 'soll_haben') for r in rows] == ['h', 's', 'h', 's']
+    assert [r[0] for r in rows] == ['x', '', 'x', '']                # marker only on each credit
+    # pair 1 — zone 1's schema
+    assert _col(rows[0], 'konto') == '40101' and _col(rows[0], 'betrag') == '357.00'   # gross
+    assert _col(rows[0], 'brutto_netto') == 'B' and _col(rows[0], 'klient') == '140'
+    assert _col(rows[1], 'konto') == '628701' and _col(rows[1], 'betrag') == '300.00'  # net
+    assert _col(rows[1], 'steuercode') == '621' and _col(rows[1], 'steuerbetrag') == '57.00'
+    # pair 2 — zone 2's schema
+    assert _col(rows[2], 'konto') == '40102' and _col(rows[2], 'betrag') == '714.00'
+    assert _col(rows[3], 'konto') == '627000' and _col(rows[3], 'betrag') == '600.00'
+    assert _col(rows[3], 'steuerbetrag') == '114.00'
+    # credits sum to the invoice gross total (357 + 714 = 1071)
+    assert sum(float(_col(r, 'betrag')) for r in rows if _col(r, 'soll_haben') == 'h') == 1071.00
+
+
+def test_build_medline_rows_per_line_empty_returns_empty():
+    assert build_medline_rows_per_line({'invoice_number': 'X'}, {}, []) == []
