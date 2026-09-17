@@ -7,6 +7,7 @@ from typing import Optional, List, Dict, Any
 from ..database import (
     save_transactions_with_dedup,
     get_transactions,
+    count_transactions,
     get_transaction,
     update_transaction,
     bulk_update_status,
@@ -16,12 +17,6 @@ from ..database import (
     merge_transactions,
     unmerge_transaction,
     get_merged_source_transactions,
-    get_transactions_for_matching,
-    get_candidate_invoices,
-    bulk_update_transaction_matches,
-    accept_suggested_match,
-    reject_suggested_match,
-    update_transaction_match,
 )
 
 
@@ -84,6 +79,25 @@ class TransactionRepository:
             offset=offset
         )
 
+    def count(
+        self,
+        status: str = None,
+        company_cui: str = None,
+        supplier: str = None,
+        date_from: str = None,
+        date_to: str = None,
+        search: str = None,
+    ) -> int:
+        """Total number of transactions matching the filters (ignores paging)."""
+        return count_transactions(
+            status=status,
+            company_cui=company_cui,
+            supplier=supplier,
+            date_from=date_from,
+            date_to=date_to,
+            search=search,
+        )
+
     def get_by_id(self, transaction_id: int) -> Optional[Dict[str, Any]]:
         """Get a single transaction by ID.
 
@@ -95,33 +109,22 @@ class TransactionRepository:
         """
         return get_transaction(transaction_id)
 
-    def update(
-        self,
-        transaction_id: int,
-        matched_supplier: str = None,
-        status: str = None,
-        vendor_name: str = None,
-        invoice_id: int = None
-    ) -> bool:
+    def update(self, transaction_id: int, **fields) -> bool:
         """Update a transaction.
 
-        Args:
-            transaction_id: The transaction ID
-            matched_supplier: Matched supplier name
-            status: Transaction status
-            vendor_name: Vendor name
-            invoice_id: Linked invoice ID
+        Only the fields explicitly passed by the caller are written; any column
+        not passed is left untouched. This prevents wiping vendor_name /
+        matched_supplier when linking an invoice or changing status (previously
+        every column was always sent, so unspecified ones were nulled).
+
+        Accepted fields: matched_supplier, status, vendor_name, invoice_id,
+        transaction_type, amount, currency. Pass invoice_id=None explicitly to
+        clear an existing link.
 
         Returns:
             True if successful
         """
-        return update_transaction(
-            transaction_id,
-            matched_supplier=matched_supplier,
-            status=status,
-            vendor_name=vendor_name,
-            invoice_id=invoice_id
-        )
+        return update_transaction(transaction_id, **fields)
 
     def bulk_update_status(self, transaction_ids: List[int], status: str) -> int:
         """Bulk update status for multiple transactions.
@@ -210,103 +213,3 @@ class TransactionRepository:
             List of source transaction dictionaries
         """
         return get_merged_source_transactions(transaction_id)
-
-    # ============== Invoice Matching ==============
-
-    def get_for_matching(self, status: str = 'pending', limit: int = 100) -> List[Dict[str, Any]]:
-        """Get transactions for invoice matching.
-
-        Args:
-            status: Filter by status
-            limit: Maximum results
-
-        Returns:
-            List of transaction dictionaries
-        """
-        return get_transactions_for_matching(status=status, limit=limit)
-
-    def get_candidate_invoices(
-        self,
-        supplier: str = None,
-        amount: float = None,
-        amount_tolerance: float = 0.05,
-        currency: str = 'RON',
-        limit: int = 200
-    ) -> List[Dict[str, Any]]:
-        """Get candidate invoices for matching.
-
-        Args:
-            supplier: Filter by supplier name
-            amount: Filter by amount
-            amount_tolerance: Amount tolerance percentage
-            currency: Filter by currency
-            limit: Maximum results
-
-        Returns:
-            List of invoice dictionaries
-        """
-        return get_candidate_invoices(
-            supplier=supplier,
-            amount=amount,
-            amount_tolerance=amount_tolerance,
-            currency=currency,
-            limit=limit
-        )
-
-    def bulk_update_matches(self, results: List[Dict[str, Any]]) -> int:
-        """Bulk update transaction match results.
-
-        Args:
-            results: List of match result dictionaries
-
-        Returns:
-            Number of updated transactions
-        """
-        return bulk_update_transaction_matches(results)
-
-    def accept_match(self, transaction_id: int) -> bool:
-        """Accept a suggested match.
-
-        Args:
-            transaction_id: The transaction ID
-
-        Returns:
-            True if successful
-        """
-        return accept_suggested_match(transaction_id)
-
-    def reject_match(self, transaction_id: int) -> bool:
-        """Reject a suggested match.
-
-        Args:
-            transaction_id: The transaction ID
-
-        Returns:
-            True if successful
-        """
-        return reject_suggested_match(transaction_id)
-
-    def update_match(
-        self,
-        transaction_id: int,
-        invoice_id: int = None,
-        match_method: str = None,
-        status: str = None
-    ) -> bool:
-        """Update transaction match.
-
-        Args:
-            transaction_id: The transaction ID
-            invoice_id: The invoice ID to link
-            match_method: Match method (auto, manual)
-            status: New status
-
-        Returns:
-            True if successful
-        """
-        return update_transaction_match(
-            transaction_id,
-            invoice_id=invoice_id,
-            match_method=match_method,
-            status=status
-        )

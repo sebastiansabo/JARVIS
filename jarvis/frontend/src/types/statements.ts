@@ -38,9 +38,8 @@ export interface Transaction {
   status: 'pending' | 'resolved' | 'ignored'
   invoice_id: number | null
   invoice_number?: string | null
-  match_method: string | null
-  suggested_invoice_id: number | null
-  suggested_confidence: number | null
+  linked_invoice_value?: number | null
+  linked_invoice_currency?: string | null
   merged_from_id: number | null
   merged_count?: number
   created_at: string
@@ -104,27 +103,3 @@ export interface UploadResult {
   total_duplicates: number
 }
 
-export interface AutoMatchResult {
-  success: boolean
-  matched: number
-  suggested: number
-  unmatched: number
-  results: {
-    transaction_id: number
-    status: 'matched' | 'suggested' | 'unmatched'
-    invoice_id?: number
-    confidence?: number
-  }[]
-  message: string
-}
-
-export interface InvoiceSuggestion {
-  invoice_id: number
-  invoice_number: string
-  supplier: string
-  amount: number
-  currency: string
-  date: string
-  confidence: number
-  match_reason: string
-}
