@@ -404,6 +404,7 @@ export default function CarParkDetail() {
   const user = useAuthStore((s) => s.user)
   const canEdit = user?.can_edit_carpark ?? false
   const canDelete = user?.can_delete_carpark ?? false
+  const canViewFinance = user?.can_view_carpark_finance ?? false
 
   const id = Number(vehicleId)
 
@@ -615,8 +616,12 @@ export default function CarParkDetail() {
           <TabsTrigger value="details">Detalii</TabsTrigger>
           <TabsTrigger value="vanzare">Vânzare</TabsTrigger>
           <TabsTrigger value="pricing">Pricing</TabsTrigger>
-          <TabsTrigger value="costs">Costuri ({parseCostLines(vehicle.cost_lines).length})</TabsTrigger>
-          <TabsTrigger value="revenues">Venituri ({revenues.length})</TabsTrigger>
+          {canViewFinance && (
+            <TabsTrigger value="costs">Costuri ({parseCostLines(vehicle.cost_lines).length})</TabsTrigger>
+          )}
+          {canViewFinance && (
+            <TabsTrigger value="revenues">Venituri ({revenues.length})</TabsTrigger>
+          )}
           <TabsTrigger value="listings">Anunțuri ({listings.length})</TabsTrigger>
           <TabsTrigger value="links">Linkuri ({vehicleLinks.length})</TabsTrigger>
           <TabsTrigger value="documente">Documente</TabsTrigger>
@@ -645,16 +650,20 @@ export default function CarParkDetail() {
           />
         </TabsContent>
 
-        <TabsContent value="costs" className="mt-4 space-y-4">
-          <AcqCostLines vehicle={vehicle} canEdit={canEdit} />
-          {costLines.length > 0 && (
-            <CostsTab vehicleId={id} costLines={costLines} canEdit={canEdit} currency={vehicle.price_currency || 'EUR'} />
-          )}
-        </TabsContent>
+        {canViewFinance && (
+          <TabsContent value="costs" className="mt-4 space-y-4">
+            <AcqCostLines vehicle={vehicle} canEdit={canEdit} />
+            {costLines.length > 0 && (
+              <CostsTab vehicleId={id} costLines={costLines} canEdit={canEdit} currency={vehicle.price_currency || 'EUR'} />
+            )}
+          </TabsContent>
+        )}
 
-        <TabsContent value="revenues" className="mt-4">
-          <RevenuesTab vehicleId={id} revenues={revenues} canEdit={canEdit} currency={vehicle.price_currency || 'RON'} />
-        </TabsContent>
+        {canViewFinance && (
+          <TabsContent value="revenues" className="mt-4">
+            <RevenuesTab vehicleId={id} revenues={revenues} canEdit={canEdit} currency={vehicle.price_currency || 'RON'} />
+          </TabsContent>
+        )}
 
         <TabsContent value="listings" className="mt-4">
           <ListingsTab vehicleId={id} listings={listings} platforms={platforms} canEdit={canEdit} />
