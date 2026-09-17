@@ -7,8 +7,6 @@ import type {
   TransactionFilters,
   FilterOptions,
   UploadResult,
-  AutoMatchResult,
-  InvoiceSuggestion,
 } from '@/types/statements'
 
 const BASE = '/statements/api'
@@ -44,7 +42,7 @@ export const statementsApi = {
 
   // Transactions
   getTransactions: (filters: TransactionFilters = {}) =>
-    api.get<{ transactions: Transaction[]; count: number }>(`${BASE}/transactions${buildQs(filters)}`),
+    api.get<{ transactions: Transaction[]; count: number; total: number }>(`${BASE}/transactions${buildQs(filters)}`),
   getTransaction: (id: number) => api.get<Transaction>(`${BASE}/transactions/${id}`),
   updateTransaction: (id: number, data: Partial<Pick<Transaction, 'matched_supplier' | 'status' | 'vendor_name'>>) =>
     api.put<{ success: boolean }>(`${BASE}/transactions/${id}`, data),
@@ -66,16 +64,6 @@ export const statementsApi = {
     api.post<{ success: boolean }>(`${BASE}/transactions/link-invoice`, { transaction_id: transactionId, invoice_id: invoiceId }),
   unlinkInvoice: (transactionId: number) =>
     api.post<{ success: boolean }>(`${BASE}/transactions/${transactionId}/unlink`, {}),
-
-  // Auto-matching
-  autoMatch: (data?: { transaction_ids?: number[]; use_ai?: boolean; min_confidence?: number }) =>
-    api.post<AutoMatchResult>(`${BASE}/transactions/auto-match`, data ?? {}),
-  getSuggestions: (transactionId: number) =>
-    api.get<{ transaction: Transaction; suggestions: InvoiceSuggestion[] }>(`${BASE}/transactions/${transactionId}/suggestions`),
-  acceptMatch: (transactionId: number, invoiceId?: number) =>
-    api.post<{ success: boolean }>(`${BASE}/transactions/${transactionId}/accept-match`, invoiceId ? { invoice_id: invoiceId } : {}),
-  rejectMatch: (transactionId: number) =>
-    api.post<{ success: boolean }>(`${BASE}/transactions/${transactionId}/reject-match`, {}),
 
   // Merging
   mergeTransactions: (ids: number[]) =>

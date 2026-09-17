@@ -10,22 +10,28 @@ from ._shared import *  # noqa: F401, F403
 @statements_access_required
 def list_transactions():
     """List transactions with optional filters."""
-    transactions = statements_service.get_all_transactions(
+    filters = dict(
         status=request.args.get('status'),
         company_cui=request.args.get('company_cui'),
         supplier=request.args.get('supplier'),
         date_from=request.args.get('date_from'),
         date_to=request.args.get('date_to'),
         search=request.args.get('search'),
+    )
+    transactions = statements_service.get_all_transactions(
         sort=request.args.get('sort'),
         limit=int(request.args.get('limit', 500)),
-        offset=int(request.args.get('offset', 0))
+        offset=int(request.args.get('offset', 0)),
+        **filters
     )
+    # Total matching the same filters (ignores paging) so the client can page.
+    total = statements_service.count_transactions(**filters)
 
     return jsonify({
         'success': True,
         'transactions': transactions,
-        'count': len(transactions)
+        'count': len(transactions),  # rows in this page (back-compat)
+        'total': total               # total matching rows across all pages
     })
 
 
@@ -296,88 +302,6 @@ def unlink_invoice_from_transaction(transaction_id):
         'success': False,
         'error': result.error
     }), status_code
-
-
-# ============== AUTO-MATCH INVOICES ==============
-
-@statements_bp.route('/api/transactions/auto-match', methods=['POST'])
-@api_login_required
-@statements_access_required
-def auto_match_invoices():
-    """Run automatic invoice matching on pending transactions."""
-    data = request.get_json(silent=True) or {}
-    transaction_ids = data.get('transaction_ids')
-    use_ai = data.get('use_ai', True)
-    min_confidence = data.get('min_confidence', 0.7)
-
-    result = statements_service.auto_match_invoices(
-        transaction_ids=transaction_ids,
-        use_ai=use_ai,
-        min_confidence=min_confidence
-    )
-
-    if result.success:
-        return jsonify({
-            'success': True,
-            **result.data
-        })
-    return jsonify({
-        'success': False,
-        'error': result.error
-    }), 500
-
-
-@statements_bp.route('/api/transactions/<int:transaction_id>/suggestions', methods=['GET'])
-@api_login_required
-@statements_access_required
-def get_invoice_suggestions(transaction_id):
-    """Get invoice suggestions for a specific transaction."""
-    result = statements_service.get_invoice_suggestions(transaction_id)
-
-    if result.success:
-        return jsonify({
-            'success': True,
-            **result.data
-        })
-
-    status_code = 404 if result.error == 'Transaction not found' else 500
-    return jsonify({
-        'success': False,
-        'error': result.error
-    }), status_code
-
-
-@statements_bp.route('/api/transactions/<int:transaction_id>/accept-match', methods=['POST'])
-@api_login_required
-@statements_access_required
-def accept_match(transaction_id):
-    """Accept a suggested invoice match."""
-    data = request.get_json(silent=True) or {}
-    override_invoice_id = data.get('invoice_id')
-
-    result = statements_service.accept_match(transaction_id, override_invoice_id)
-
-    if result.success:
-        return jsonify({'success': True})
-    return jsonify({
-        'success': False,
-        'error': result.error
-    }), 400
-
-
-@statements_bp.route('/api/transactions/<int:transaction_id>/reject-match', methods=['POST'])
-@api_login_required
-@statements_access_required
-def reject_match(transaction_id):
-    """Reject a suggested invoice match."""
-    result = statements_service.reject_match(transaction_id)
-
-    if result.success:
-        return jsonify({'success': True})
-    return jsonify({
-        'success': False,
-        'error': result.error
-    }), 400
 
 
 # ============== TRANSACTION MERGING ==============

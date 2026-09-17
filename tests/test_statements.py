@@ -628,6 +628,85 @@ class TestOcrInlineSummary:
         assert s['debit_total'] == 12299.55
 
 
+class TestUpdateTransactionColumns:
+    """update_transaction() must only touch the columns it is given, so linking
+    an invoice or changing status never wipes vendor_name / matched_supplier."""
+
+    @staticmethod
+    def _run_update(**fields):
+        with patch('accounting.statements.database.release_db'), \
+             patch('accounting.statements.database.get_db') as mock_db, \
+             patch('accounting.statements.database.get_cursor') as mock_cursor:
+            from accounting.statements.database import update_transaction
+            mock_db.return_value = MagicMock()
+            mock_cur = MagicMock()
+            mock_cur.rowcount = 1
+            mock_cursor.return_value = mock_cur
+            update_transaction(42, **fields)
+            sql = mock_cur.execute.call_args[0][0]
+            params = mock_cur.execute.call_args[0][1]
+            return sql, params
+
+    def test_link_sets_only_invoice_and_status(self):
+        sql, params = self._run_update(invoice_id=7, status='resolved')
+        assert 'invoice_id = %s' in sql
+        assert 'status = %s' in sql
+        # The columns that used to get nulled must NOT appear in the SET clause
+        assert 'vendor_name' not in sql
+        assert 'matched_supplier' not in sql
+        assert params == (7, 'resolved', 42)
+
+    def test_status_change_does_not_touch_vendor_or_supplier(self):
+        sql, _ = self._run_update(status='ignored')
+        assert 'status = %s' in sql
+        assert 'vendor_name' not in sql
+        assert 'matched_supplier' not in sql
+        # ignoring still clears suggestions
+        assert 'suggested_invoice_id = NULL' in sql
+
+    def test_unlink_clears_invoice_id_explicitly(self):
+        sql, params = self._run_update(invoice_id=None, status='pending')
+        assert 'invoice_id = %s' in sql
+        assert params == (None, 'pending', 42)
+
+
+class TestCountTransactions:
+    """count_transactions() returns total matching rows and applies filters."""
+
+    @patch('accounting.statements.database.release_db')
+    @patch('accounting.statements.database.get_db')
+    @patch('accounting.statements.database.get_cursor')
+    def test_returns_total(self, mock_cursor, mock_db, _mock_release):
+        from accounting.statements.database import count_transactions
+        mock_db.return_value = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.fetchone.return_value = {'total': 1234}
+        mock_cursor.return_value = mock_cur
+
+        total = count_transactions()
+        assert total == 1234
+        sql = mock_cur.execute.call_args[0][0]
+        assert 'COUNT(*)' in sql
+        assert 'LIMIT' not in sql  # count is not paged
+
+    @patch('accounting.statements.database.release_db')
+    @patch('accounting.statements.database.get_db')
+    @patch('accounting.statements.database.get_cursor')
+    def test_applies_filters(self, mock_cursor, mock_db, _mock_release):
+        from accounting.statements.database import count_transactions
+        mock_db.return_value = MagicMock()
+        mock_cur = MagicMock()
+        mock_cur.fetchone.return_value = {'total': 3}
+        mock_cursor.return_value = mock_cur
+
+        count_transactions(status='resolved', company_cui='123', search='FACEBK')
+        sql, params = mock_cur.execute.call_args[0]
+        assert 't.status = %s' in sql
+        assert 't.company_cui = %s' in sql
+        assert 'ILIKE' in sql
+        assert 'resolved' in params and '123' in params
+
+
 # Run with: pytest tests/test_statements.py -v
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
