@@ -154,7 +154,9 @@ def generate_voucher_pdf(voucher: dict) -> bytes:
         else:
             benefit = str(items)
 
-    y = _label_value('Type:', vt.replace('_', ' ').title(), y)
+    # Percentage vouchers read simply as "Discount" on the printed voucher.
+    type_label = 'Discount' if vt == 'accessory_percentage' else vt.replace('_', ' ').title()
+    y = _label_value('Type:', type_label, y)
     y = _label_value('Benefit:', benefit, y)
 
     # Validity
@@ -162,6 +164,29 @@ def generate_voucher_pdf(voucher: dict) -> bytes:
     y = _label_value('Validity:', validity, y)
     y = _label_value('Issued:', _fmt_date_ro(voucher.get('issued_at')), y)
     y = _label_value('Expires:', _fmt_date_ro(voucher.get('expires_at')), y)
+
+    # Notes (optional, wrapped to the value column width)
+    notes_text = (voucher.get('notes') or '').strip()
+    if notes_text:
+        value_x = 80 * mm
+        max_width = w - 30 * mm - value_x
+        c.setFont('Helvetica', 10)
+        c.setFillColor(HexColor('#718096'))
+        c.drawString(30 * mm, y, 'Notes:')
+        c.setFont('Helvetica-Bold', 11)
+        c.setFillColor(HexColor('#1a202c'))
+        line = ''
+        for word in notes_text.split():
+            candidate = f'{line} {word}'.strip()
+            if c.stringWidth(candidate, 'Helvetica-Bold', 11) <= max_width:
+                line = candidate
+            else:
+                c.drawString(value_x, y, line)
+                y -= 5 * mm
+                line = word
+        if line:
+            c.drawString(value_x, y, line)
+        y -= 10 * mm
 
     # Separator line
     y -= 5 * mm
