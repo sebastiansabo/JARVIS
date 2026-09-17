@@ -23,6 +23,7 @@ import { organizationApi } from '@/api/organization'
 import { suppliersApi, type MasterSupplier, type BudgetedInvoice, type KontoConfig, type KontoPreset, type EfacturaPartner } from '@/api/suppliers'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import type { CompanyWithBrands } from '@/types/organization'
+import { SchemaCascade } from './SchemaCascade'
 
 /* ── worklist grouped by supplier ── */
 interface SupplierGroup {
@@ -187,6 +188,20 @@ function companyLabel(c: CompanyWithBrands): string {
   return `${c.company} · ${c.vat || '—'}`
 }
 
+/** Number of EuroFib presets configured for a (supplier, company) pair — shares the
+ * `['supplier-presets', ...]` query cache with InvoicePresetPicker, so this is free once that
+ * row's picker has fetched. Used to decide whether an invoice row can show the schema-cascade
+ * chevron (only multi-schema suppliers need the per-line reconciliation view). */
+function usePresetCount(supplierId: number, companyId: number | null): number {
+  const { data } = useQuery({
+    queryKey: ['supplier-presets', supplierId, companyId],
+    queryFn: () => suppliersApi.listPresets(supplierId, companyId as number),
+    enabled: companyId != null,
+    staleTime: 5 * 60_000,
+  })
+  return data?.presets?.length ?? 0
+}
+
 /** Per-invoice EuroFib schema picker in the worklist: shows the effective preset (active or a
  * pinned override) and lets the user pin a different one, or revert to the supplier's active
  * preset. Presets are fetched per (supplier, company) and cached, so all rows of one supplier
@@ -238,6 +253,82 @@ function InvoicePresetPicker({
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+/** One worklist invoice row. Multi-schema suppliers (more than one EuroFib preset configured)
+ * get an expand chevron that reveals the per-line/per-allocation SchemaCascade reconciliation
+ * view; single-schema suppliers and per-line-edited invoices behave exactly as before (no
+ * chevron — the schema cell alone drives the effective preset). */
+function WorklistInvoiceRow({
+  inv, companyId, companyName, isProcessedView, selected, onToggleSelected, expanded, onToggleExpanded,
+}: {
+  inv: BudgetedInvoice
+  companyId: number
+  companyName: string
+  isProcessedView: boolean
+  selected: boolean
+  onToggleSelected: () => void
+  expanded: boolean
+  onToggleExpanded: () => void
+}) {
+  const qc = useQueryClient()
+  const presetCount = usePresetCount(inv.supplier_id, companyId)
+  const canCascade = presetCount > 1 && !inv.per_line && !isProcessedView
+  return (
+    <>
+      <TableRow>
+        <TableCell className="w-8">
+          {canCascade && (
+            <button type="button" onClick={onToggleExpanded} className="text-muted-foreground">
+              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </button>
+          )}
+        </TableCell>
+        <TableCell className="pl-8">
+          <div className="flex items-center gap-2">
+            {!isProcessedView && (
+              <Checkbox checked={selected} onCheckedChange={onToggleSelected} />
+            )}
+            {inv.invoice_number}
+          </div>
+        </TableCell>
+        <TableCell className="whitespace-nowrap">{new Date(inv.invoice_date).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}</TableCell>
+        <TableCell className="text-right">
+          {inv.net_value != null ? <CurrencyDisplay value={Number(inv.net_value)} currency={inv.currency} /> : '—'}
+        </TableCell>
+        <TableCell className="text-right"><CurrencyDisplay value={Number(inv.invoice_value)} currency={inv.currency} /></TableCell>
+        <TableCell>{inv.currency}</TableCell>
+        <TableCell>
+          {inv.per_line ? (
+            <span
+              title="Fiecare linie are schema ei — se editează în dialogul de bugetare"
+              className="inline-flex items-center rounded border border-violet-400/60 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-300"
+            >
+              pe linie
+            </span>
+          ) : (
+            companyId != null && (
+              <InvoicePresetPicker inv={inv} companyId={companyId} disabled={isProcessedView} />
+            )
+          )}
+        </TableCell>
+        <TableCell />
+      </TableRow>
+      {expanded && canCascade && (
+        <TableRow>
+          <TableCell colSpan={8} className="p-0">
+            <SchemaCascade
+              invoiceId={inv.id}
+              company={companyName}
+              supplierId={inv.supplier_id}
+              companyId={companyId}
+              onSaved={() => qc.invalidateQueries({ queryKey: ['supplier-worklist-invoices'] })}
+            />
+          </TableCell>
+        </TableRow>
+      )}
+    </>
   )
 }
 
@@ -312,6 +403,15 @@ export default function Procesare() {
       const next = new Set(prev)
       if (next.has(supplierId)) next.delete(supplierId)
       else next.add(supplierId)
+      return next
+    })
+
+  const [expandedInvoices, setExpandedInvoices] = useState<Set<number>>(new Set())
+  const toggleInvoiceExpanded = (id: number) =>
+    setExpandedInvoices((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
       return next
     })
 
@@ -630,41 +730,17 @@ export default function Procesare() {
                         </TableCell>
                       </TableRow>
                       {isExpanded && group.invoices.map((inv) => (
-                        <TableRow key={inv.id}>
-                          <TableCell />
-                          <TableCell className="pl-8">
-                            <div className="flex items-center gap-2">
-                              {!isProcessedView && (
-                                <Checkbox
-                                  checked={selectedInvoiceIds.has(inv.id)}
-                                  onCheckedChange={() => toggleInvoiceSelected(inv.id)}
-                                />
-                              )}
-                              {inv.invoice_number}
-                            </div>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">{new Date(inv.invoice_date).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })}</TableCell>
-                          <TableCell className="text-right">
-                            {inv.net_value != null ? <CurrencyDisplay value={Number(inv.net_value)} currency={inv.currency} /> : '—'}
-                          </TableCell>
-                          <TableCell className="text-right"><CurrencyDisplay value={Number(inv.invoice_value)} currency={inv.currency} /></TableCell>
-                          <TableCell>{inv.currency}</TableCell>
-                          <TableCell>
-                            {inv.per_line ? (
-                              <span
-                                title="Fiecare linie are schema ei — se editează în dialogul de bugetare"
-                                className="inline-flex items-center rounded border border-violet-400/60 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-300"
-                              >
-                                pe linie
-                              </span>
-                            ) : (
-                              companyId != null && (
-                                <InvoicePresetPicker inv={inv} companyId={companyId} disabled={isProcessedView} />
-                              )
-                            )}
-                          </TableCell>
-                          <TableCell />
-                        </TableRow>
+                        <WorklistInvoiceRow
+                          key={inv.id}
+                          inv={inv}
+                          companyId={companyId as number}
+                          companyName={selectedCompany?.company ?? ''}
+                          isProcessedView={isProcessedView}
+                          selected={selectedInvoiceIds.has(inv.id)}
+                          onToggleSelected={() => toggleInvoiceSelected(inv.id)}
+                          expanded={expandedInvoices.has(inv.id)}
+                          onToggleExpanded={() => toggleInvoiceExpanded(inv.id)}
+                        />
                       ))}
                     </Fragment>
                   )
