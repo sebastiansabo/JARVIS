@@ -4,7 +4,11 @@ from flask import request, jsonify
 from flask_login import login_required, current_user
 
 from carpark import carpark_bp
-from carpark.finance_guard import FINANCE_VEHICLE_FIELDS, FINANCE_KPI_FIELDS, strip_finance_fields
+from carpark.finance_guard import (
+    FINANCE_VEHICLE_FIELDS, FINANCE_KPI_FIELDS, FINANCE_SUMMARY_FIELDS,
+    FINANCE_ANALYTICS_KPI_FIELDS, FINANCE_MONTHLY_SALES_ROW_FIELDS,
+    strip_finance_fields,
+)
 from carpark.routes.vehicles import carpark_required, carpark_finance_required, _acting_company_id
 from carpark.services.analytics_service import AnalyticsService
 
@@ -14,35 +18,49 @@ _analytics = AnalyticsService()
 
 
 def _strip_analytics_finance(data):
-    """Redact finance data from a dashboard/kpis payload for callers without
-    carpark.view_finance. Rather than chase individual money field names
-    (whack-a-mole), remove the finance-bearing STRUCTURES wholesale — this
-    mirrors how the standalone /analytics/costs endpoint is fully
-    finance-gated (Task 6). Verified against the real repository output in
-    carpark/repositories/analytics_repository.py:
-      - `profitability` (get_profitability_overview) is entirely money/margin
-        (total_revenue/total_acquisition/total_costs/total_gross_profit/
-        avg_margin_percent/avg_profit_per_unit) — dropped wholesale. Present
-        top-level on both get_dashboard() and get_kpis().
-      - `cost_overview` (get_cost_overview) is a per-cost-type spend
-        breakdown — dropped. Dashboard-only (pop is a no-op on kpis).
-      - `monthly_sales` rows (get_monthly_sales) carry `gross_profit`
-        (= revenue − acquisition − cost); that per-row profit is dropped
-        while month/sold/revenue stay — mirrors how /dispo keeps sale_price
-        (revenue) but strips acquisition/cost/margin. Dashboard-only.
-    The FINANCE_VEHICLE_FIELDS/FINANCE_KPI_FIELDS strips are forward-compat
-    only: no top-level analytics key matches those literal names today, but
-    keeping them means any future field added under those names is covered
-    automatically. Mutates `data` in place; returns it."""
+    """Redact finance data from an analytics payload for callers without
+    carpark.view_finance. One helper covers every analytics shape — the full
+    dashboard, the /kpis payload, the /summary payload and the /monthly-sales
+    payload — so no sibling endpoint can drift. Verified against the real
+    repository output in carpark/repositories/analytics_repository.py:
+      - `profitability` (get_profitability_overview) is entirely money/margin —
+        dropped wholesale. Present top-level on get_dashboard() and get_kpis().
+      - `cost_overview` (get_cost_overview) is a per-cost-type spend breakdown —
+        dropped. Dashboard-only (pop is a no-op elsewhere).
+      - `summary.total_acquisition_value` (get_inventory_summary) is acquisition
+        spend — dropped, whether nested under a dashboard `summary` block or the
+        top-level /analytics/summary payload. total_stock_value (current_price
+        sum) is a selling-side figure and is kept.
+      - `groi` (avg_margin_percent × turn_rate — recoverable margin) — dropped,
+        whether nested under the dashboard `kpis` block or top-level on the
+        /analytics/kpis payload.
+      - monthly-sales rows carry `gross_profit` (= revenue − acquisition − cost);
+        that per-row profit is dropped while month/sold/revenue stay — mirrors
+        how /dispo keeps sale_price (revenue) but strips acquisition/cost/margin.
+        Rows live under `monthly_sales` (dashboard) or `sales` (/monthly-sales).
+    The trailing FINANCE_VEHICLE_FIELDS/FINANCE_KPI_FIELDS strips are
+    forward-compat only. Mutates `data` in place; returns it."""
     if not isinstance(data, dict):
         return data
-    # Structural removal — this is what actually closes the leak.
+    # Structural removal — wholesale finance-bearing blocks.
     data.pop('profitability', None)
     data.pop('cost_overview', None)
-    monthly = data.get('monthly_sales')
-    if isinstance(monthly, list):
-        for row in monthly:
-            strip_finance_fields(row, ('gross_profit',) + FINANCE_VEHICLE_FIELDS)
+    # Inventory-summary acquisition spend — nested (dashboard) + top-level (/summary).
+    summary = data.get('summary')
+    if isinstance(summary, dict):
+        strip_finance_fields(summary, FINANCE_SUMMARY_FIELDS)
+    strip_finance_fields(data, FINANCE_SUMMARY_FIELDS)
+    # GROI margin KPI — nested (dashboard kpis block) + top-level (/kpis).
+    kpis = data.get('kpis')
+    if isinstance(kpis, dict):
+        strip_finance_fields(kpis, FINANCE_ANALYTICS_KPI_FIELDS)
+    strip_finance_fields(data, FINANCE_ANALYTICS_KPI_FIELDS)
+    # Per-row sales profit — dashboard `monthly_sales` + /monthly-sales `sales`.
+    for key in ('monthly_sales', 'sales'):
+        rows = data.get(key)
+        if isinstance(rows, list):
+            for row in rows:
+                strip_finance_fields(row, FINANCE_MONTHLY_SALES_ROW_FIELDS + FINANCE_VEHICLE_FIELDS)
     # Forward-compat literal-name strip (harmless; no top-level match today).
     strip_finance_fields(data, FINANCE_VEHICLE_FIELDS)
     strip_finance_fields(data, FINANCE_KPI_FIELDS)
@@ -80,7 +98,10 @@ def analytics_summary():
     cid = _acting_company_id()
     if not cid:
         return jsonify({'success': False, 'error': 'No company assigned'}), 400
-    return jsonify(_analytics.get_summary(cid))
+    data = _analytics.get_summary(cid)
+    if not getattr(current_user, 'can_view_carpark_finance', False):
+        _strip_analytics_finance(data)
+    return jsonify(data)
 
 
 @carpark_bp.route('/analytics/kpis', methods=['GET'])
@@ -149,7 +170,10 @@ def analytics_monthly_sales():
         m = int(months)
     except (ValueError, TypeError):
         m = 12
-    return jsonify({'sales': _analytics.get_monthly_sales(cid, m)})
+    data = {'sales': _analytics.get_monthly_sales(cid, m)}
+    if not getattr(current_user, 'can_view_carpark_finance', False):
+        _strip_analytics_finance(data)
+    return jsonify(data)
 
 
 @carpark_bp.route('/analytics/costs', methods=['GET'])
