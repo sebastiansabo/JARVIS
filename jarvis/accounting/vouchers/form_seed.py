@@ -38,7 +38,7 @@ VOUCHER_FORM_SCHEMA = [
         'type': 'dropdown',
         'label': 'Validity',
         'required': True,
-        'options': ['1 month', '3 months', '6 months', '12 months', '24 months'],
+        'options': ['1 month', '3 months', '6 months', '12 months', '24 months', '36 months', '48 months'],
         'order': 4,
     },
     {

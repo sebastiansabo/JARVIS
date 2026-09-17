@@ -173,6 +173,10 @@ def send_voucher_to_client(voucher_id):
 
     pdf_bytes = generate_voucher_pdf(voucher)
 
+    from html import escape
+    notes_text = (voucher.get('notes') or '').strip()
+    notes_html = f"\n            <li><strong>Notes:</strong> {escape(notes_text)}</li>" if notes_text else ''
+
     success, err = send_email(
         to_email=to_email,
         subject=f"Your Voucher {voucher['voucher_code']} — AUTOWORLD",
@@ -182,7 +186,7 @@ def send_voucher_to_client(voucher_id):
         <ul>
             <li><strong>Type:</strong> {voucher.get('voucher_type', '').replace('_', ' ').title()}</li>
             <li><strong>Validity:</strong> {voucher.get('validity_months', '')} months</li>
-            <li><strong>Expires:</strong> {voucher.get('expires_at', 'N/A')}</li>
+            <li><strong>Expires:</strong> {voucher.get('expires_at', 'N/A')}</li>{notes_html}
         </ul>
         <p>Please present this voucher (printed or on screen) at your next visit.</p>
         <p>Best regards,<br>AUTOWORLD Group</p>

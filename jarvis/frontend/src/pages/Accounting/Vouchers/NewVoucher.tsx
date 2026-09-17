@@ -26,6 +26,8 @@ const VALIDITY_OPTIONS = [
   { value: '6', label: '6 months' },
   { value: '12', label: '12 months' },
   { value: '24', label: '24 months' },
+  { value: '36', label: '36 months' },
+  { value: '48', label: '48 months' },
 ]
 
 const TYPE_OPTIONS = [
