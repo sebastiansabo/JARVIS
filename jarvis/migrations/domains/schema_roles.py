@@ -1156,6 +1156,72 @@ def _seed_business_control_permissions_v2(cursor, conn):
     conn.commit()
 
 
+def _seed_carpark_permissions_v2(cursor, conn):
+    """Seed CarPark entity permissions (edit/delete/finance) into permissions_v2
+    and grant EXPLICIT per-role defaults, so the permissions matrix drives the
+    can_*_carpark boolean columns via _sync_v2_permissions_to_booleans.
+
+    carpark.module.access is seeded by _seed_sidebar_permissions_v2; this adds
+    vehicles.edit, vehicles.delete and finance.view. Defaults: Admin/Manager = all,
+    User/Viewer = deny (User must NOT get finance.view — hence explicit deny rows
+    rather than relying on any generic view/access sweep).
+
+    MUST run AFTER _seed_sidebar_permissions_v2 so carpark.module.access grants
+    already exist for the boolean backfill below. Idempotent (ON CONFLICT DO NOTHING).
+    """
+    perms = [
+        # entity,     entity_label,      action,   action_label, description,                               sort
+        ('vehicles',  'Vehicles',        'edit',   'Edit',   'Create and edit vehicles',                     1),
+        ('vehicles',  'Vehicles',        'delete', 'Delete', 'Delete vehicles',                              2),
+        ('finance',   'Financial Data',  'view',   'View',   'View acquisition price, costs and margins',    3),
+    ]
+    for entity, entity_label, action, action_label, desc, sort in perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label,
+                                        action_key, action_label, description, is_scope_based, sort_order)
+            VALUES ('carpark', 'CarPark', 'bi-car-front', %s, %s, %s, %s, %s, FALSE, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', (entity, entity_label, action, action_label, desc, sort))
+
+    # Explicit per-(perm, role) grants for ALL roles.
+    role_scopes = [('Admin', 'all', True), ('Manager', 'all', True),
+                   ('User', 'deny', False), ('Viewer', 'deny', False)]
+    for entity, _el, action, _al, _d, _s in perms:
+        for role_name, scope, granted in role_scopes:
+            cursor.execute('''
+                INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+                SELECT r.id, p.id, %s, %s
+                FROM roles r CROSS JOIN permissions_v2 p
+                WHERE r.name = %s AND p.module_key = 'carpark'
+                  AND p.entity_key = %s AND p.action_key = %s
+                ON CONFLICT (role_id, permission_id) DO NOTHING
+            ''', (scope, granted, role_name, entity, action))
+
+    # One-time backfill: derive the boolean columns from current v2 grants for
+    # every role that has carpark rows (seeding does not trigger the write-time
+    # sync). Idempotent — re-affirms the same values on each boot.
+    cursor.execute('''
+        UPDATE roles r SET
+          can_access_carpark       = x.access,
+          can_edit_carpark         = x.edit,
+          can_delete_carpark       = x.del_,
+          can_view_carpark_finance = x.fin
+        FROM (
+          SELECT rp.role_id,
+            bool_or(p.entity_key='module'   AND p.action_key='access' AND rp.scope <> 'deny') AS access,
+            bool_or(p.entity_key='vehicles' AND p.action_key='edit'   AND rp.scope <> 'deny') AS edit,
+            bool_or(p.entity_key='vehicles' AND p.action_key='delete' AND rp.scope <> 'deny') AS del_,
+            bool_or(p.entity_key='finance'  AND p.action_key='view'   AND rp.scope <> 'deny') AS fin
+          FROM role_permissions_v2 rp
+          JOIN permissions_v2 p ON p.id = rp.permission_id
+          WHERE p.module_key = 'carpark'
+          GROUP BY rp.role_id
+        ) x
+        WHERE x.role_id = r.id
+    ''')
+    conn.commit()
+
+
 def _seed_sidebar_permissions_v2(cursor, conn):
     """Add module.access entries for modules missing them and seed controlling/vouchers/facturare/service permissions.
 
