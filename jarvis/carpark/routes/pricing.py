@@ -7,7 +7,7 @@ from flask_login import login_required, current_user
 from carpark import carpark_bp
 from carpark.services.pricing_service import PricingService
 from carpark.routes.vehicles import (
-    carpark_required, carpark_edit_required, _serialize,
+    carpark_required, carpark_edit_required, carpark_finance_required, _serialize,
     _verify_vehicle_ownership, _acting_company_id,
 )
 
@@ -281,7 +281,7 @@ def simulate_pricing():
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/floor-price', methods=['GET'])
 @login_required
-@carpark_required
+@carpark_finance_required
 def vehicle_floor_price(vehicle_id):
     """Get the calculated floor price for a vehicle."""
     _, err = _verify_vehicle_ownership(vehicle_id)
@@ -297,7 +297,7 @@ def vehicle_floor_price(vehicle_id):
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/pricing-history', methods=['GET'])
 @login_required
-@carpark_required
+@carpark_finance_required
 def vehicle_pricing_history(vehicle_id):
     """Get pricing history for a vehicle."""
     _, err = _verify_vehicle_ownership(vehicle_id)
