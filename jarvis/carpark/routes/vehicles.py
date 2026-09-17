@@ -7,6 +7,7 @@ from flask_login import login_required, current_user
 
 from carpark import carpark_bp
 from carpark.services.vehicle_service import VehicleService
+from core.organization.manager_utils import get_actable_company_ids
 from field_sales.repositories.client_fs_repository import ClientFSRepository
 
 logger = logging.getLogger('jarvis.carpark')
@@ -539,8 +540,13 @@ def search_clients():
 @login_required
 @carpark_required
 def list_companies():
-    """All companies, for the tenant-switcher company selector."""
-    companies = _vehicle_service.get_companies()
+    """Companies for the tenant-switcher, scoped to the caller's own +
+    org-responsable companies (Admin sees all)."""
+    if getattr(current_user, 'can_access_settings', False):
+        company_ids = None
+    else:
+        company_ids = get_actable_company_ids(current_user.id)
+    companies = _vehicle_service.get_companies(company_ids=company_ids)
     return jsonify({'companies': _serialize(companies)})
 
 
