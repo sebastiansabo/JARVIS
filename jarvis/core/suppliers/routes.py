@@ -469,6 +469,69 @@ def api_set_invoice_preset(invoice_id):
     return jsonify({'success': True})
 
 
+def _cascade_mode(lines):
+    """One global schema mode for an invoice: 'alloc' if any line has ≥2 allocation zones,
+    else 'line' if there are ≥2 lines, else 'none' (no cascade offered)."""
+    if any(len(l.get('allocations') or []) >= 2 for l in lines):
+        return 'alloc'
+    if len(lines) >= 2:
+        return 'line'
+    return 'none'
+
+
+@suppliers_bp.route('/api/suppliers/invoices/<int:invoice_id>/schema-cascade', methods=['GET'])
+@login_required
+def api_schema_cascade(invoice_id):
+    """Invoice→lines→allocations schema tree for the worklist cascade. Resolves the invoice's
+    supplier × the given company, then returns presets + the current schema at each level and the
+    computed effective mode. Powers the expandable worklist rows for multi-schema suppliers."""
+    if not _check_supplier_perm('view'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    company = request.args.get('company')
+    if not company:
+        return jsonify({'success': False, 'error': 'company is required'}), 400
+    empty = {'success': True, 'presets': [], 'active_id': None, 'invoice_konto_config_id': None,
+             'per_line': False, 'mode': 'none', 'lines': [], 'supplier_id': None, 'company_id': None}
+    supplier_name = _repo.invoice_supplier_name(invoice_id)
+    if not supplier_name:
+        return jsonify(empty)
+    res = _resolver.resolve(name=supplier_name)
+    if not res.supplier_id:
+        return jsonify(empty)
+    crow = _company_repo.query_one("SELECT id FROM companies WHERE lower(company) = lower(%s)", (company,))
+    if not crow:
+        return jsonify(empty)
+    company_id = crow['id']
+    presets = _repo.list_presets(res.supplier_id, company_id)
+    active_id = next((p['id'] for p in presets if p['is_active']), None)
+    ov = _repo.get_invoice_override_full(invoice_id) or {}
+    line_items = _repo.invoice_line_items(invoice_id)
+    line_ov = _repo.list_line_overrides(invoice_id)
+    allocs = _repo.list_allocations_for_cascade(invoice_id)
+    by_line = {}
+    for a in allocs:
+        by_line.setdefault(a['line_index'], []).append(a)
+    lines = []
+    for i, li in enumerate(line_items):
+        lines.append({
+            'index': i,
+            'name': li.get('name') or li.get('description'),
+            'amount': li.get('amount'),
+            'vat_rate': li.get('vat_rate'),
+            'line_konto_config_id': line_ov.get(i),
+            'allocations': [{
+                'id': a['id'], 'department': a['department'], 'subdepartment': a['subdepartment'],
+                'value': a['value'], 'konto_config_id': a['konto_config_id'],
+            } for a in by_line.get(i, [])],
+        })
+    return jsonify({
+        'success': True, 'presets': presets, 'active_id': active_id,
+        'invoice_konto_config_id': ov.get('konto_config_id'), 'per_line': bool(ov.get('per_line')),
+        'mode': _cascade_mode(lines), 'lines': lines,
+        'supplier_id': res.supplier_id, 'company_id': company_id,
+    })
+
+
 def _preset_owner_error(konto_config_id, data):
     """Validate a preset belongs to the body's (supplier_id, company_id). Returns an error
     response tuple, or None if valid. Assumes konto_config_id is truthy."""
