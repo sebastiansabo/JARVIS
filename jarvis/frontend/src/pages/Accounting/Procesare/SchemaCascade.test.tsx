@@ -45,4 +45,16 @@ describe('SchemaCascade', () => {
     await screen.findByText('L0')
     expect(screen.getByRole('button', { name: /Salveaz/ })).toBeDisabled()
   })
+
+  it('shows a hint instead of a dead picker when mode is none', async () => {
+    getSchemaCascade.mockResolvedValue({
+      ...DATA, mode: 'none',
+      lines: [{ index: 0, name: 'L0', amount: 100, vat_rate: 19, line_konto_config_id: null, allocations: [] }],
+    })
+    wrap(<SchemaCascade invoiceId={42} company="ACME" supplierId={9} companyId={3} onSaved={() => {}} />)
+    await screen.findByText('L0')
+    expect(screen.getByText(/Nicio schemă de cascadat pentru această factură/)).toBeInTheDocument()
+    expect(screen.queryAllByRole('combobox')).toHaveLength(0)
+    expect(screen.queryByRole('button', { name: /Salveaz/ })).not.toBeInTheDocument()
+  })
 })
