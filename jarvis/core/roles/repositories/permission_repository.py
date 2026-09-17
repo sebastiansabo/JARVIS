@@ -345,6 +345,10 @@ class PermissionRepository(BaseRepository):
             'can_view_adjusted_punches': perms.get('hr.pontaje.view_adjusted', False),
             'can_adjust_punches': perms.get('hr.pontaje.adjust_punches', False),
             'can_access_digest': perms.get('digest.module.access', False),
+            'can_access_carpark':       perms.get('carpark.module.access', False),
+            'can_edit_carpark':         perms.get('carpark.vehicles.edit', False),
+            'can_delete_carpark':       perms.get('carpark.vehicles.delete', False),
+            'can_view_carpark_finance': perms.get('carpark.finance.view', False),
         }
         updates = ', '.join([f"{col} = %s" for col in bool_updates.keys()])
         values = list(bool_updates.values()) + [role_id]
