@@ -532,6 +532,33 @@ def api_schema_cascade(invoice_id):
     })
 
 
+@suppliers_bp.route('/api/suppliers/invoices/<int:invoice_id>/schema-cascade', methods=['POST'])
+@login_required
+def api_save_schema_cascade(invoice_id):
+    """Batch-persist the worklist schema cascade for one invoice. Body: {mode:'alloc'|'line',
+    supplier_id, company_id, line_map?, alloc_map?}. Validates every non-null preset belongs to
+    (supplier_id, company_id), then writes the chosen mode atomically and clears the other level's
+    storage so the export never sees a mixed state."""
+    if not _check_supplier_perm('edit'):
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+    data = request.get_json(force=True) or {}
+    mode = data.get('mode')
+    if mode not in ('alloc', 'line'):
+        return jsonify({'success': False, 'error': "mode must be 'alloc' or 'line'"}), 400
+    the_map = (data.get('alloc_map') if mode == 'alloc' else data.get('line_map')) or {}
+    for kc in the_map.values():
+        if kc:
+            err = _preset_owner_error(kc, data)
+            if err:
+                return err
+    created_by = getattr(current_user, 'id', None)
+    if mode == 'alloc':
+        _repo.apply_cascade_alloc(invoice_id, the_map, created_by=created_by)
+    else:
+        _repo.apply_cascade_line(invoice_id, the_map, created_by=created_by)
+    return jsonify({'success': True, 'mode': mode})
+
+
 def _preset_owner_error(konto_config_id, data):
     """Validate a preset belongs to the body's (supplier_id, company_id). Returns an error
     response tuple, or None if valid. Assumes konto_config_id is truthy."""
