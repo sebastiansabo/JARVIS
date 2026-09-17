@@ -66,18 +66,22 @@ export function SchemaCascade({ invoiceId, company, supplierId, companyId, onSav
             </div>
           ) : mode === 'alloc' ? (
             <p className="text-[11px] text-muted-foreground">Fără alocare — se exportă cu schema de bază.</p>
-          ) : (
+          ) : mode === 'line' ? (
             <Picker value={l.line_konto_config_id} onChange={(v) => setLineKonto(l.index, v)} />
+          ) : (
+            <p className="text-[11px] text-muted-foreground">Nicio schemă de cascadat pentru această factură — folosește selectorul de schemă din rând.</p>
           )}
         </div>
       ))}
-      <div className="flex justify-end">
-        <Button size="sm" className="h-7 text-xs"
-          disabled={save.isPending || mode === 'none' || !cascadeReconciles(lines)}
-          onClick={() => save.mutate()}>
-          {save.isPending ? 'Se salvează…' : 'Salvează scheme'}
-        </Button>
-      </div>
+      {mode !== 'none' && (
+        <div className="flex justify-end">
+          <Button size="sm" className="h-7 text-xs"
+            disabled={save.isPending || !cascadeReconciles(lines)}
+            onClick={() => save.mutate()}>
+            {save.isPending ? 'Se salvează…' : 'Salvează scheme'}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
