@@ -62,7 +62,7 @@ function toDateInput(value: string | null | undefined): string {
 }
 
 const STATUS_OPTIONS = ['draft', 'pending_approval', 'approved', 'active', 'rejected', 'redeemed', 'expired', 'archived']
-const VALIDITY_OPTIONS = ['1', '3', '6', '12', '24']
+const VALIDITY_OPTIONS = ['1', '3', '6', '12', '24', '36', '48']
 
 type EditForm = {
   client_name: string; contract_number: string; car_vin: string; notes: string
