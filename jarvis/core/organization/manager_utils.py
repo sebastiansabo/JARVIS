@@ -196,6 +196,34 @@ def get_visible_tree(manager_user_id):
         release_db(conn)
 
 
+def get_actable_company_ids(user_id):
+    """Set of company ids a user may act on in CarPark: own company +
+    L0 company_responsables + companies under their Sincron responsable subtree.
+
+    Admin bypass (can_access_settings -> all companies) is the caller's
+    responsibility; this returns only the user's scoped set.
+    """
+    ids = set()
+    conn = get_db()
+    try:
+        cursor = get_cursor(conn)
+        cursor.execute(
+            'SELECT company_id FROM users WHERE id = %s AND company_id IS NOT NULL',
+            (user_id,))
+        row = cursor.fetchone()
+        if row and row.get('company_id'):
+            ids.add(row['company_id'])
+    finally:
+        release_db(conn)
+
+    # get_visible_tree already returns L0 companies + the Sincron responsable subtree,
+    # each element carrying a company_id.
+    tree = get_visible_tree(user_id)
+    ids |= {c['company_id'] for c in tree.get('companies', []) if c.get('company_id')}
+    ids |= {n['company_id'] for n in tree.get('nodes', []) if n.get('company_id')}
+    return ids
+
+
 def get_direct_manager(user_id):
     """The user's DIRECT manager from the Sincron organigram, or None.
 
