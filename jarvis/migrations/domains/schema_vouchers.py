@@ -63,11 +63,15 @@ def create_schema_vouchers(conn, cursor):
     cursor.execute('''
         DO $$
         BEGIN
+            -- Self-healing: recreate only when missing or not yet widened to 36/48.
             IF NOT EXISTS (
-                SELECT 1 FROM pg_constraint WHERE conname = 'chk_validity_months'
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'chk_validity_months'
+                  AND pg_get_constraintdef(oid) LIKE '%36%'
             ) THEN
+                ALTER TABLE vouchers DROP CONSTRAINT IF EXISTS chk_validity_months;
                 ALTER TABLE vouchers ADD CONSTRAINT chk_validity_months
-                CHECK (validity_months IN (1, 3, 6, 12, 24));
+                CHECK (validity_months IN (1, 3, 6, 12, 24, 36, 48));
             END IF;
         END $$;
     ''')
