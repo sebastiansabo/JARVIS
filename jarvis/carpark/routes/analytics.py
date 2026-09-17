@@ -14,16 +14,38 @@ _analytics = AnalyticsService()
 
 
 def _strip_analytics_finance(data):
-    """Remove money fields (carpark.finance_guard) from a dashboard/kpis
-    payload for callers without carpark.view_finance. Fields can appear at
-    the top level or nested under 'profitability' — both /analytics/dashboard
-    (AnalyticsService.get_dashboard) and /analytics/kpis
-    (AnalyticsService.get_kpis) embed a profitability sub-block that carries
-    `total_costs`. Mutates `data` in place; returns it."""
+    """Redact finance data from a dashboard/kpis payload for callers without
+    carpark.view_finance. Rather than chase individual money field names
+    (whack-a-mole), remove the finance-bearing STRUCTURES wholesale — this
+    mirrors how the standalone /analytics/costs endpoint is fully
+    finance-gated (Task 6). Verified against the real repository output in
+    carpark/repositories/analytics_repository.py:
+      - `profitability` (get_profitability_overview) is entirely money/margin
+        (total_revenue/total_acquisition/total_costs/total_gross_profit/
+        avg_margin_percent/avg_profit_per_unit) — dropped wholesale. Present
+        top-level on both get_dashboard() and get_kpis().
+      - `cost_overview` (get_cost_overview) is a per-cost-type spend
+        breakdown — dropped. Dashboard-only (pop is a no-op on kpis).
+      - `monthly_sales` rows (get_monthly_sales) carry `gross_profit`
+        (= revenue − acquisition − cost); that per-row profit is dropped
+        while month/sold/revenue stay — mirrors how /dispo keeps sale_price
+        (revenue) but strips acquisition/cost/margin. Dashboard-only.
+    The FINANCE_VEHICLE_FIELDS/FINANCE_KPI_FIELDS strips are forward-compat
+    only: no top-level analytics key matches those literal names today, but
+    keeping them means any future field added under those names is covered
+    automatically. Mutates `data` in place; returns it."""
+    if not isinstance(data, dict):
+        return data
+    # Structural removal — this is what actually closes the leak.
+    data.pop('profitability', None)
+    data.pop('cost_overview', None)
+    monthly = data.get('monthly_sales')
+    if isinstance(monthly, list):
+        for row in monthly:
+            strip_finance_fields(row, ('gross_profit',) + FINANCE_VEHICLE_FIELDS)
+    # Forward-compat literal-name strip (harmless; no top-level match today).
     strip_finance_fields(data, FINANCE_VEHICLE_FIELDS)
     strip_finance_fields(data, FINANCE_KPI_FIELDS)
-    strip_finance_fields(data.get('profitability'), FINANCE_VEHICLE_FIELDS)
-    strip_finance_fields(data.get('profitability'), FINANCE_KPI_FIELDS)
     return data
 
 
