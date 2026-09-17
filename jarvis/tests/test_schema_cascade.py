@@ -139,3 +139,61 @@ def test_apply_cascade_line_upserts_and_clears_allocs(monkeypatch):
     assert any('DELETE FROM invoice_line_konto_override WHERE invoice_id = %s AND line_index = %s' in sql
                and p == (42, 1) for sql, p in calls)
     assert any('UPDATE allocations SET konto_config_id = NULL WHERE invoice_id = %s' in sql for sql, _ in calls)
+
+
+def test_schema_cascade_write_alloc_validates_and_dispatches(monkeypatch):
+    import core.suppliers.routes as r
+    monkeypatch.setattr(r, '_check_supplier_perm', lambda a: True)
+    monkeypatch.setattr(r, 'current_user', type('U', (), {'id': 7})(), raising=False)
+    monkeypatch.setattr(r, '_preset_owner_error', lambda kc, data: None)  # all valid
+    seen = {}
+    monkeypatch.setattr(r._repo, 'apply_cascade_alloc', lambda inv, m, created_by=None: seen.update(inv=inv, m=m, by=created_by))
+    body = {'mode': 'alloc', 'supplier_id': 9, 'company_id': 3, 'alloc_map': {'11': 5, '12': None}}
+    with _test_app.test_request_context(json=body):
+        resp = r.api_save_schema_cascade.__wrapped__(42)
+    assert resp.get_json() == {'success': True, 'mode': 'alloc'}
+    assert seen == {'inv': 42, 'm': {'11': 5, '12': None}, 'by': 7}
+
+
+def test_schema_cascade_write_rejects_foreign_preset(monkeypatch):
+    import core.suppliers.routes as r
+    from flask import jsonify
+    monkeypatch.setattr(r, '_check_supplier_perm', lambda a: True)
+    monkeypatch.setattr(r, 'current_user', type('U', (), {'id': 7})(), raising=False)
+    monkeypatch.setattr(r, '_preset_owner_error', lambda kc, data: (jsonify({'success': False}), 400))
+    called = {'n': 0}
+    monkeypatch.setattr(r._repo, 'apply_cascade_alloc', lambda *a, **k: called.__setitem__('n', called['n'] + 1))
+    body = {'mode': 'alloc', 'supplier_id': 9, 'company_id': 3, 'alloc_map': {'11': 999}}
+    with _test_app.test_request_context(json=body):
+        _resp, code = r.api_save_schema_cascade.__wrapped__(42)
+    assert code == 400
+    assert called['n'] == 0  # nothing written when a preset is foreign
+
+
+def test_schema_cascade_write_line_dispatches(monkeypatch):
+    import core.suppliers.routes as r
+    monkeypatch.setattr(r, '_check_supplier_perm', lambda a: True)
+    monkeypatch.setattr(r, 'current_user', type('U', (), {'id': 7})(), raising=False)
+    monkeypatch.setattr(r, '_preset_owner_error', lambda kc, data: None)
+    seen = {}
+    monkeypatch.setattr(r._repo, 'apply_cascade_line', lambda inv, m, created_by=None: seen.update(inv=inv, m=m))
+    body = {'mode': 'line', 'supplier_id': 9, 'company_id': 3, 'line_map': {'0': 5, '1': None}}
+    with _test_app.test_request_context(json=body):
+        resp = r.api_save_schema_cascade.__wrapped__(42)
+    assert resp.get_json()['mode'] == 'line'
+    assert seen == {'inv': 42, 'm': {'0': 5, '1': None}}
+
+
+def test_export_precedence_alloc_over_line(monkeypatch):
+    """Regression: when an allocation carries a konto (alloc_mode), _build_line_configs iterates
+    allocation zones and ignores invoice_line_konto_override — unchanged by this feature."""
+    import core.suppliers.routes as r
+    monkeypatch.setattr(r._repo, 'list_invoice_allocations_with_konto', lambda i: [
+        {'value': 60, 'vat_rate': 0, 'department': 'X', 'konto_config_id': 5, 'line_name': 'L0'},
+        {'value': 40, 'vat_rate': 0, 'department': 'Y', 'konto_config_id': None, 'line_name': 'L0'}])
+    monkeypatch.setattr(r._repo, 'get_konto_by_id', lambda cid: {'konto': {'id': cid}})
+    row = {'id': 42, 'alloc_mode': True, 'per_line': True, 'konto_config_id': 88}
+    configs = r._build_line_configs(row, base_konto={'id': 'base'}, company_id=3)
+    assert [c['net'] for c in configs] == [60, 40]
+    assert configs[0]['config'] == {'id': 5}          # zone konto
+    assert configs[1]['config'] == {'id': 88}          # base fallback (base_id), not a line override
