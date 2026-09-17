@@ -281,9 +281,9 @@ class VehicleService:
 
     # ── COMPANIES / BRANDS (tenant-switcher selectors) ──
 
-    def get_companies(self) -> List[Dict[str, Any]]:
-        """All companies, for the tenant-switcher company selector."""
-        return self._repo.list_companies()
+    def get_companies(self, company_ids=None) -> List[Dict[str, Any]]:
+        """Companies for the tenant-switcher selector (None = all)."""
+        return self._repo.list_companies(company_ids)
 
     def get_brands(self, company_id: int) -> List[str]:
         """Car brands carried by a company, for the tenant-switcher brand selector."""
