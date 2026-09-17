@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { SchemaCascadeData } from '@/api/suppliers'
 
@@ -11,13 +11,7 @@ vi.mock('@/api/suppliers', () => ({
     saveSchemaCascade: (...a: unknown[]) => saveSchemaCascade(...a),
   },
 }))
-// NOTE: explicit .tsx extension is required here — this directory also has a
-// sibling `schemaCascade.ts` (helpers) whose name differs from this component's
-// file only by the first letter's case. On case-insensitive filesystems (default
-// on macOS/Windows), Vite/esbuild's default extension-probe order tries `.ts`
-// before `.tsx` and silently resolves the extensionless `./SchemaCascade` to the
-// wrong file (the helpers module) instead of this component. See task-6-report.md.
-import { SchemaCascade } from './SchemaCascade.tsx'
+import { SchemaCascade } from './SchemaCascade'
 
 const DATA: SchemaCascadeData = {
   success: true, supplier_id: 9, company_id: 3,
