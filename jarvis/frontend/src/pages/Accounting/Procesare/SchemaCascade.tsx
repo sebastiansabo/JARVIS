@@ -3,8 +3,8 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { suppliersApi, type SchemaCascadeData, type SchemaCascadeLine } from '@/api/suppliers'
-import { cascadeReconciles, lineReconciles, buildSavePayload } from './schemaCascade'
+import { suppliersApi, type SchemaCascadeLine } from '@/api/suppliers'
+import { cascadeReconciles, lineReconciles, buildSavePayload } from './schemaCascadeUtils'
 
 export function SchemaCascade({ invoiceId, company, supplierId, companyId, onSaved }: {
   invoiceId: number; company: string; supplierId: number; companyId: number; onSaved: () => void

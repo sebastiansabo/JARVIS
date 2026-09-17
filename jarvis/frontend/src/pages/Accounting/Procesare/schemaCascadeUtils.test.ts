@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { zonesSum, lineReconciles, cascadeReconciles, buildSavePayload } from './schemaCascade'
+import { zonesSum, lineReconciles, cascadeReconciles, buildSavePayload } from './schemaCascadeUtils'
 import type { SchemaCascadeLine } from '@/api/suppliers'
 
 const line = (over: Partial<SchemaCascadeLine>): SchemaCascadeLine => ({
