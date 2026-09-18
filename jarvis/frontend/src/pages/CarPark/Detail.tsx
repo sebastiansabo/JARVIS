@@ -60,6 +60,7 @@ import { reductionPct, formatReductionPct } from './priceReduction'
 import { PricingSheet, PriceZone, computePricingModel, type PricingModel, type PricingSheetSnapshot, type SheetInputs } from './PricingSheet'
 import { econ, type EngineParams } from './pricingEngine'
 import { AutofoxSyncModal } from './AutofoxSyncModal'
+import { activeSellingPrice } from './vehicleFormPricing'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -1954,6 +1955,9 @@ function PricingTab({
       payload.list_price = inputs.list_price
       payload.promotional_price = inputs.promotional_price
       if (inputs.price_currency) payload.price_currency = inputs.price_currency
+      // Keep the active price (used by the catalog column + price filter/sort) in
+      // sync with the published price, else it would show the stale create value.
+      payload.current_price = activeSellingPrice(inputs)
     }
     return payload
   }
