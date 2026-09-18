@@ -5,6 +5,7 @@ import { Save, Loader2, Search, RefreshCw, Sparkles, ArrowLeft, Upload } from 'l
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchSelect } from '@/components/shared/SearchSelect'
 import { DecodePreviewDialog } from './DecodePreviewDialog'
+import { validateListPriceOnCreate, seedCurrentPriceOnCreate } from './vehicleFormPricing'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -882,6 +883,13 @@ export default function VehicleForm() {
       toast.error('Please resolve the VIN duplicate error')
       return
     }
+    // A first selling price is mandatory when adding a car (not when editing).
+    const listPriceError = validateListPriceOnCreate(form, !!isEdit)
+    if (listPriceError) {
+      toast.error(listPriceError)
+      handleTabChange('comercial')
+      return
+    }
 
     // Clean empty strings -> null
     const payload: Record<string, unknown> = {}
@@ -928,10 +936,15 @@ export default function VehicleForm() {
     payload.transport_cost = null
     payload.other_costs = null
 
+    // On create, seed the active price (current_price) from the selling price so
+    // the new car shows a price in the catalog list immediately (the profile and
+    // pricing engine already fall back to list_price on their own).
+    const finalPayload = seedCurrentPriceOnCreate(payload, !!isEdit)
+
     if (isEdit) {
-      updateMutation.mutate(payload as Partial<Vehicle>)
+      updateMutation.mutate(finalPayload as Partial<Vehicle>)
     } else {
-      createMutation.mutate(payload as Partial<Vehicle>)
+      createMutation.mutate(finalPayload as Partial<Vehicle>)
     }
   }
 
@@ -1026,7 +1039,7 @@ export default function VehicleForm() {
           <TabsTrigger value="specificatii">Specificații</TabsTrigger>
           <TabsTrigger value="dotari">Dotări</TabsTrigger>
           <TabsTrigger value="anunt">Anunț</TabsTrigger>
-          <TabsTrigger value="comercial">Achiziție</TabsTrigger>
+          <TabsTrigger value="comercial">Preț</TabsTrigger>
         </TabsList>
         <TabsContent value="vehicul" className="space-y-4 pt-4">
       {/* Identification */}
@@ -1542,6 +1555,52 @@ export default function VehicleForm() {
       </Card>
         </TabsContent>
         <TabsContent value="comercial" className="space-y-4 pt-4">
+      {/* Preț de vânzare — first (list) selling price, required when adding a car.
+          Writes the same columns the profile "Fișă de preț" reads. */}
+      <Card className="p-4 space-y-3">
+        <h3 className="text-sm font-semibold">Preț de vânzare</h3>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label>
+              Preț listă ({(form.price_currency as string) || 'EUR'})
+              <span className="text-red-500 ml-0.5">*</span>
+            </Label>
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              value={inputVal(form.list_price)}
+              onChange={(e) => handleNumericChange('list_price', e.target.value)}
+              placeholder="ex. 45000"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Preț promo ({(form.price_currency as string) || 'EUR'})</Label>
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              value={inputVal(form.promotional_price)}
+              onChange={(e) => handleNumericChange('promotional_price', e.target.value)}
+              placeholder="opțional"
+            />
+          </div>
+          <SelectField
+            label="Monedă"
+            name="price_currency"
+            value={(form.price_currency as string) || 'EUR'}
+            options={[
+              { value: 'EUR', label: 'EUR' },
+              { value: 'RON', label: 'RON' },
+            ]}
+            onChange={handleChange}
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Prețul de listă este obligatoriu la adăugarea unei mașini. Prețul critic și
+          versionarea prețului se gestionează ulterior din „Fișă de preț”.
+        </p>
+      </Card>
       {/* Location & Source */}
       <Card className="p-4 space-y-3">
         <h3 className="text-sm font-semibold">Locație & Sursă</h3>
@@ -1565,7 +1624,7 @@ export default function VehicleForm() {
           />
         </div>
       </Card>
-      {/* Achiziție (sale pricing lives on the profile Pricing tab) */}
+      {/* Achiziție — purchase cost basis (further sale-price versioning: profile Fișă de preț) */}
       <div className="grid gap-4">
         {/* Achiziție */}
         <Card className="p-4 space-y-3">
