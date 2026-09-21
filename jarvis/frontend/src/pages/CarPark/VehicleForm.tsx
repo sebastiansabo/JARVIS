@@ -7,6 +7,7 @@ import { SearchSelect } from '@/components/shared/SearchSelect'
 import { DecodePreviewDialog } from './DecodePreviewDialog'
 import { seedCurrentPriceOnCreate } from './vehicleFormPricing'
 import { findMissingRequiredFields } from './vehicleFormValidation'
+import { toCanonical } from './acquisitionCanonical'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -389,6 +390,12 @@ export default function VehicleForm() {
     listing_description: '',
   })
 
+  // Canonical acquisition model: acquisition_price = GROSS EUR, purchase_price_net
+  // = NET EUR, acquisition_currency = 'EUR'. The editor's RON entry UX is kept as
+  // a separate local field (source of truth for the "Preț Achiziție Net (Lei)"
+  // input), driving the conversion (via toCanonical) on every edit.
+  const [netLeiInput, setNetLeiInput] = useState<number | null>(null)
+
   // "Titlu anunț" auto-composes from the specs until the user edits it manually
   // (then titleTouched stays true and we stop overwriting their text).
   const titleTouched = useRef(false)
@@ -735,19 +742,17 @@ export default function VehicleForm() {
   // to EUR via BNR for that date. Sum of EUR feeds the cost total.
   const [costLines, setCostLines] = useState<CostLine[]>([])
   const _num = (v: unknown) => (typeof v === 'number' ? v : 0)
+  const numOrNull = (v: unknown): number | null => (typeof v === 'number' ? v : null)
   const costLinesTotal = costLines.reduce((s, l) => s + (l.eur ?? 0), 0)
-  // Net acquisition cost (VAT is deductible → net is the real cost) + extra costs, in EUR.
-  const totalCost = Math.round((_num(form.purchase_price_net) / (1 + _num(form.purchase_vat_rate) / 100) + costLinesTotal) * 100) / 100
+  // purchase_price_net is the canonical NET EUR value (VAT already excluded) →
+  // cost total is simply net + extra costs, in EUR.
+  const totalCost = Math.round((_num(form.purchase_price_net) + costLinesTotal) * 100) / 100
 
-
-  // Acquisition price is entered in LEI (RON) and converted to EUR using the BNR
-  // rate for the invoice date. The EUR value (purchase_price_net) stays editable.
+  // Acquisition price is entered in LEI (RON, net of VAT). Every edit re-derives
+  // the canonical EUR pair via toCanonical(): acquisition_price = GROSS EUR,
+  // purchase_price_net = NET EUR, acquisition_currency = 'EUR'. The RON entry
+  // itself lives in the separate `netLeiInput` state (not in `form`).
   const [bnrLoading, setBnrLoading] = useState(false)
-  const eurFromLei = (lei: unknown, kurs: unknown) => {
-    const l = _num(lei)
-    const k = _num(kurs)
-    return l > 0 && k > 0 ? Math.round((l / k) * 100) / 100 : null
-  }
   // VAT value (LEI) added on top of the net acquisition price (LEI): net × rate/100.
   const vatFromLei = (lei: unknown, rate: unknown) => {
     const l = _num(lei)
@@ -760,17 +765,30 @@ export default function VehicleForm() {
     const r = _num(rate)
     return n > 0 ? Math.round(n * (1 + r / 100) * 100) / 100 : null
   }
+  // Single save-mapping entry point: given the net LEI entry + VAT rate + BNR kurs,
+  // computes the canonical acquisition_price (GROSS EUR) / purchase_price_net
+  // (NET EUR) pair via the tested toCanonical() helper, and syncs both the
+  // RON-entry mirror (netLeiInput) and the form.
+  const applyAcq = (netLei: number | null, vatRate: number | null, kurs: number | null) => {
+    const c = toCanonical({ netLei, vatRate, kurs })
+    setNetLeiInput(netLei)
+    setForm((prev) => ({
+      ...prev,
+      acquisition_price: c.acquisition_price,
+      purchase_price_net: c.purchase_price_net,
+      acquisition_currency: 'EUR',
+      purchase_vat_rate: vatRate,
+      acquisition_exchange_rate: kurs,
+      acquisition_vat: vatFromLei(netLei, vatRate),
+    }))
+  }
   const fetchBnr = async (date: string) => {
     if (!date) return
     setBnrLoading(true)
     try {
       const r = await carparkApi.getBnrRate(date)
       if (r.kurs) {
-        setForm((prev) => ({
-          ...prev,
-          acquisition_exchange_rate: r.kurs,
-          purchase_price_net: eurFromLei(grossLei(prev.acquisition_price, prev.purchase_vat_rate), r.kurs) ?? prev.purchase_price_net,
-        }))
+        applyAcq(netLeiInput, numOrNull(form.purchase_vat_rate), r.kurs)
         toast.success(`Curs BNR ${r.kurs} (${r.kurs_date})`)
       }
     } catch {
@@ -785,53 +803,35 @@ export default function VehicleForm() {
   }
   const handleAcqLei = (v: string) => {
     const lei = v === '' ? null : Number(v)
-    setForm((prev) => ({
-      ...prev,
-      acquisition_price: lei,
-      acquisition_currency: 'RON',
-      purchase_price_net: eurFromLei(grossLei(lei, prev.purchase_vat_rate), prev.acquisition_exchange_rate) ?? prev.purchase_price_net,
-      acquisition_vat: vatFromLei(lei, prev.purchase_vat_rate),
-    }))
+    applyAcq(lei, numOrNull(form.purchase_vat_rate), numOrNull(form.acquisition_exchange_rate))
   }
   const handleKurs = (v: string) => {
     const kurs = v === '' ? null : Number(v)
-    setForm((prev) => ({
-      ...prev,
-      acquisition_exchange_rate: kurs,
-      purchase_price_net: eurFromLei(grossLei(prev.acquisition_price, prev.purchase_vat_rate), kurs) ?? prev.purchase_price_net,
-    }))
+    applyAcq(netLeiInput, numOrNull(form.purchase_vat_rate), kurs)
   }
   const handleAcqEur = (v: string) => {
+    // This field is GROSS EUR (VAT-inclusive) → back out the net LEI base from
+    // it (gross EUR × kurs = gross LEI; ÷ (1+vat/100) = net LEI), then re-derive
+    // the canonical pair from that net LEI so every field stays consistent.
     const eur = v === '' ? null : Number(v)
-    setForm((prev) => {
-      const kurs = _num(prev.acquisition_exchange_rate)
-      const rate = _num(prev.purchase_vat_rate)
-      // EUR is VAT-inclusive (gross) → gross LEI, then back out the net LEI base.
-      const brut = eur != null && kurs > 0 ? eur * kurs : null
-      const net = brut != null ? Math.round((brut / (1 + rate / 100)) * 100) / 100 : prev.acquisition_price
-      return { ...prev, purchase_price_net: eur, acquisition_price: net, acquisition_vat: vatFromLei(net, rate) }
-    })
+    const kurs = numOrNull(form.acquisition_exchange_rate)
+    const vat = numOrNull(form.purchase_vat_rate) ?? 0
+    const netLei = eur != null && kurs ? Math.round(((eur * kurs) / (1 + vat / 100)) * 100) / 100 : null
+    applyAcq(netLei, vat, kurs)
   }
   const handleVatRate = (v: string) => {
     const rate = v === '' ? null : Number(v)
-    setForm((prev) => ({
-      ...prev,
-      purchase_vat_rate: rate,
-      acquisition_vat: vatFromLei(prev.acquisition_price, rate),
-      purchase_price_net: eurFromLei(grossLei(prev.acquisition_price, rate), prev.acquisition_exchange_rate) ?? prev.purchase_price_net,
-    }))
+    applyAcq(netLeiInput, rate, numOrNull(form.acquisition_exchange_rate))
   }
   // Supplier is a non-VAT payer (e.g. persoană fizică) → no purchase VAT (rate 0).
   const handleNonVatSupplier = (nonVat: boolean) => {
     const rate = nonVat ? 0 : 21
+    applyAcq(netLeiInput, rate, numOrNull(form.acquisition_exchange_rate))
     setForm((prev) => ({
       ...prev,
       vat_deductible: !nonVat,
       // No deductible VAT → prices are entered gross ("Cu TVA"); lock that mode.
       price_includes_vat: nonVat ? true : prev.price_includes_vat,
-      purchase_vat_rate: rate,
-      acquisition_vat: vatFromLei(prev.acquisition_price, rate),
-      purchase_price_net: eurFromLei(grossLei(prev.acquisition_price, rate), prev.acquisition_exchange_rate) ?? prev.purchase_price_net,
     }))
   }
 
@@ -1639,7 +1639,7 @@ export default function VehicleForm() {
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
               <Label>{form.vat_deductible === false ? 'Preț Achiziție (Lei)' : 'Preț Achiziție Net (Lei)'}</Label>
-              <Input type="number" step="0.01" value={inputVal(form.acquisition_price)} onChange={(e) => handleAcqLei(e.target.value)} placeholder="RON" />
+              <Input type="number" step="0.01" value={inputVal(netLeiInput)} onChange={(e) => handleAcqLei(e.target.value)} placeholder="RON" />
             </div>
             {form.vat_deductible !== false && (
               <div className="space-y-1.5">
@@ -1656,7 +1656,7 @@ export default function VehicleForm() {
             {form.vat_deductible !== false && (
               <div className="space-y-1.5">
                 <Label>Preț Achiziție Brut (Lei)</Label>
-                <Input type="number" readOnly value={inputVal(grossLei(form.acquisition_price, form.purchase_vat_rate))} className="bg-muted" />
+                <Input type="number" readOnly value={inputVal(grossLei(netLeiInput, form.purchase_vat_rate))} className="bg-muted" />
               </div>
             )}
             <div className="space-y-1.5">
@@ -1665,12 +1665,12 @@ export default function VehicleForm() {
             </div>
             <div className="space-y-1.5">
               <Label>{form.vat_deductible === false ? 'Preț Achiziție (Eur)' : 'Preț Achiziție Eur (TVA inclus)'}</Label>
-              <Input type="number" step="0.01" value={inputVal(form.purchase_price_net)} onChange={(e) => handleAcqEur(e.target.value)} />
+              <Input type="number" step="0.01" value={inputVal(form.acquisition_price)} onChange={(e) => handleAcqEur(e.target.value)} />
             </div>
             {form.vat_deductible !== false && (
               <div className="space-y-1.5">
                 <Label>Preț Achiziție Eur (fără TVA)</Label>
-                <Input type="number" readOnly value={inputVal(eurFromLei(form.acquisition_price, form.acquisition_exchange_rate))} className="bg-muted" />
+                <Input type="number" readOnly value={inputVal(form.purchase_price_net)} className="bg-muted" />
               </div>
             )}
           </div>
