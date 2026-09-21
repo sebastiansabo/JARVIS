@@ -2,6 +2,8 @@
 import logging
 from functools import wraps
 
+from psycopg2 import errors as _pg_errors
+
 from flask import request, jsonify, abort, make_response
 from flask_login import login_required, current_user
 
@@ -14,6 +16,31 @@ from field_sales.repositories.client_fs_repository import ClientFSRepository
 logger = logging.getLogger('jarvis.carpark')
 
 _vehicle_service = VehicleService()
+
+# Friendly RO labels for NOT NULL columns, so a save that reaches the DB with a
+# required field empty surfaces "Câmp obligatoriu lipsă: <field>" (HTTP 400)
+# instead of a generic 500 traceback the user can't act on.
+_REQUIRED_FIELD_LABELS = {
+    'category': 'Tip stoc (categorie)', 'vin': 'VIN', 'brand': 'Marcă',
+    'model': 'Model', 'list_price': 'Preț listă', 'company_id': 'Companie',
+}
+
+
+def _is_not_null_violation(exc):
+    """True for a psycopg2 NotNullViolation, or any exception class-named
+    'NotNullViolation'. The name check runs first so this stays correct where the
+    driver exception is mocked/stubbed to a non-type (mirrors
+    core/suppliers/routes._is_unique_violation)."""
+    if 'NotNullViolation' in type(exc).__name__:
+        return True
+    not_null = getattr(_pg_errors, 'NotNullViolation', None)
+    return isinstance(not_null, type) and isinstance(exc, not_null)
+
+
+def _missing_field_message(exc):
+    """Turn a psycopg2 NotNullViolation into a user-facing 'what is missing' message."""
+    col = getattr(getattr(exc, 'diag', None), 'column_name', None)
+    return f'Câmp obligatoriu lipsă: {_REQUIRED_FIELD_LABELS.get(col, col or "necunoscut")}'
 # Reused (not duplicated) for the carpark-scoped client search route below —
 # same repo/SQL as /api/field-sales/clients/search, just gated + scoped
 # differently for CarPark callers.
@@ -308,6 +335,8 @@ def create_vehicle():
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
+        if _is_not_null_violation(e):
+            return jsonify({'success': False, 'error': _missing_field_message(e)}), 400
         logger.error(f'Vehicle creation failed: {e}', exc_info=True)
         return jsonify({'success': False, 'error': 'Internal error'}), 500
 
@@ -370,6 +399,8 @@ def update_vehicle(vehicle_id):
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
     except Exception as e:
+        if _is_not_null_violation(e):
+            return jsonify({'success': False, 'error': _missing_field_message(e)}), 400
         logger.error(f'Vehicle update failed: {e}', exc_info=True)
         return jsonify({'success': False, 'error': 'Internal error'}), 500
 

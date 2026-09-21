@@ -323,6 +323,28 @@ def test_put_vehicle_strips_company_id_even_when_sole_field(client, monkeypatch)
     assert 'company_id' not in captured['data']
 
 
+def test_put_vehicle_null_required_field_returns_400_not_500(client, monkeypatch):
+    """A DB NOT NULL violation (e.g. a car whose `category` is null) is mapped to
+    a 400 naming the field in Romanian, instead of an opaque 500."""
+    base = _own_vehicle(1, company_id=COMPANY_ID)
+    monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle', lambda vid: dict(base))
+
+    class _Diag:
+        column_name = 'category'
+
+    class NotNullViolation(Exception):  # matches the name-based detection
+        diag = _Diag()
+
+    def _raise(*a, **k):
+        raise NotNullViolation()
+
+    monkeypatch.setattr(vehicles_mod._vehicle_service, 'update_vehicle', _raise)
+
+    resp = client.put('/api/carpark/vehicles/1', json={'brand': 'Audi'})
+    assert resp.status_code == 400
+    assert 'Tip stoc (categorie)' in resp.get_json()['error']
+
+
 # ── FINANCE GATING ────────────────────────────────────────────────────────
 
 def _canned_summary():

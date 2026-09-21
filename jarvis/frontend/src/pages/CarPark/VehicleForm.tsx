@@ -5,7 +5,8 @@ import { Save, Loader2, Search, RefreshCw, Sparkles, ArrowLeft, Upload } from 'l
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchSelect } from '@/components/shared/SearchSelect'
 import { DecodePreviewDialog } from './DecodePreviewDialog'
-import { validateListPriceOnCreate, seedCurrentPriceOnCreate } from './vehicleFormPricing'
+import { seedCurrentPriceOnCreate } from './vehicleFormPricing'
+import { findMissingRequiredFields } from './vehicleFormValidation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -844,7 +845,7 @@ export default function VehicleForm() {
       navigate(`/app/carpark/${result.vehicle.id}/edit`)
     },
     onError: (err: Error & { data?: { error?: string } }) => {
-      toast.error((err as any).data?.error || 'Failed to create vehicle')
+      toast.error((err as any).data?.error || 'Eroare la adăugarea mașinii')
     },
   })
 
@@ -857,7 +858,7 @@ export default function VehicleForm() {
       toast.success('Modificări salvate')
     },
     onError: (err: Error & { data?: { error?: string } }) => {
-      toast.error((err as any).data?.error || 'Failed to update vehicle')
+      toast.error((err as any).data?.error || 'Eroare la salvarea mașinii')
     },
   })
 
@@ -866,28 +867,17 @@ export default function VehicleForm() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
 
-    // Validation
-    if (!form.vin || (form.vin as string).length < 5) {
-      toast.error('VIN is required (min 5 characters)')
-      return
-    }
-    if (!form.brand) {
-      toast.error('Brand is required')
-      return
-    }
-    if (!form.model) {
-      toast.error('Model is required')
+    // Required fields — name exactly what's missing and jump to its tab, instead
+    // of firing a request that comes back as a generic 500 (e.g. a NOT NULL
+    // violation on `category` when the car has no "Tip stoc").
+    const missing = findMissingRequiredFields(form, !!isEdit)
+    if (missing.length) {
+      toast.error(`Completați câmpurile obligatorii: ${missing.map((m) => m.label).join(', ')}`)
+      handleTabChange(missing[0].tab)
       return
     }
     if (vinError) {
-      toast.error('Please resolve the VIN duplicate error')
-      return
-    }
-    // A first selling price is mandatory when adding a car (not when editing).
-    const listPriceError = validateListPriceOnCreate(form, !!isEdit)
-    if (listPriceError) {
-      toast.error(listPriceError)
-      handleTabChange('comercial')
+      toast.error('Rezolvați eroarea de VIN duplicat')
       return
     }
 
