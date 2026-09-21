@@ -1,5 +1,10 @@
 import { describe, test, expect } from 'vitest'
-import { toCanonical, netLeiFromCanonical, netLeiFromGrossEur } from './acquisitionCanonical'
+import {
+  toCanonical,
+  netLeiFromCanonical,
+  netLeiFromGrossEur,
+  canonicalFromGrossEur,
+} from './acquisitionCanonical'
 
 describe('toCanonical', () => {
   test('net LEI + VAT + kurs → gross EUR acquisition + net EUR ppn', () => {
@@ -39,5 +44,24 @@ describe('netLeiFromGrossEur', () => {
   })
   test('missing grossEur → null', () => {
     expect(netLeiFromGrossEur({ grossEur: null, vatRate: 19, kurs: 5 })).toBeNull()
+  })
+})
+
+describe('canonicalFromGrossEur', () => {
+  test('gross EUR + VAT → canonical pair WITHOUT a kurs', () => {
+    // 57715 gross EUR, 19% VAT → net EUR 48500 (57715 / 1.19). EUR-native path
+    // (import cars: gross EUR only, no RON kurs).
+    expect(canonicalFromGrossEur({ grossEur: 57715, vatRate: 19 }))
+      .toEqual({ acquisition_price: 57715, purchase_price_net: 48500 })
+  })
+  test('margin scheme / zero VAT → net == gross', () => {
+    expect(canonicalFromGrossEur({ grossEur: 12345.67, vatRate: 0 }))
+      .toEqual({ acquisition_price: 12345.67, purchase_price_net: 12345.67 })
+  })
+  test('gross <= 0 → nulls (never manufacture a basis from nothing)', () => {
+    expect(canonicalFromGrossEur({ grossEur: 0, vatRate: 19 }))
+      .toEqual({ acquisition_price: null, purchase_price_net: null })
+    expect(canonicalFromGrossEur({ grossEur: null, vatRate: 19 }))
+      .toEqual({ acquisition_price: null, purchase_price_net: null })
   })
 })

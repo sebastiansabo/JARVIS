@@ -7,7 +7,7 @@ import { SearchSelect } from '@/components/shared/SearchSelect'
 import { DecodePreviewDialog } from './DecodePreviewDialog'
 import { seedCurrentPriceOnCreate } from './vehicleFormPricing'
 import { findMissingRequiredFields } from './vehicleFormValidation'
-import { toCanonical, netLeiFromCanonical, netLeiFromGrossEur } from './acquisitionCanonical'
+import { toCanonical, netLeiFromCanonical, netLeiFromGrossEur, canonicalFromGrossEur } from './acquisitionCanonical'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -444,6 +444,23 @@ export default function VehicleForm() {
         _netLei != null && _netLei > 0 && _vatRate > 0
           ? Math.round(_netLei * (_vatRate / 100) * 100) / 100
           : (populated.acquisition_vat ?? null)
+      // Lossless load for kurs-less canonical cars: an EUR-native car with a
+      // GROSS acquisition_price but no stored purchase_price_net (import cars)
+      // derives its NET EUR from the gross + VAT so the "fără TVA" field isn't
+      // blank and the stored pair stays canonical (net = gross/(1+vat/100)).
+      if (
+        populated.acquisition_currency === 'EUR' &&
+        populated.purchase_price_net == null &&
+        populated.acquisition_price != null
+      ) {
+        const derived = canonicalFromGrossEur({
+          grossEur: Number(populated.acquisition_price),
+          vatRate: _vatRate,
+        })
+        if (derived.purchase_price_net != null) {
+          populated.purchase_price_net = derived.purchase_price_net
+        }
+      }
       setForm((prev) => ({ ...prev, ...populated }))
       // Keep an existing custom title / manual Preț critic — don't auto-overwrite them.
       if (v.listing_title) titleTouched.current = true
@@ -800,13 +817,51 @@ export default function VehicleForm() {
     setNetLeiInput(netLei)
     setForm((prev) => ({
       ...prev,
-      acquisition_price: c.acquisition_price,
-      purchase_price_net: c.purchase_price_net,
+      // Never destroy a stored acquisition basis: when the current inputs can't
+      // produce a valid canonical pair (netLei<=0 or kurs<=0 — e.g. an import
+      // car loaded as GROSS EUR with no net-LEI/kurs), keep what's stored rather
+      // than overwriting it with null (which would zero the cost basis).
+      acquisition_price: c.acquisition_price ?? prev.acquisition_price,
+      purchase_price_net: c.purchase_price_net ?? prev.purchase_price_net,
       acquisition_currency: 'EUR',
       purchase_vat_rate: vatRate,
       acquisition_exchange_rate: kurs,
       acquisition_vat: vatFromLei(netLei, vatRate),
     }))
+  }
+  // EUR-native save path: store the canonical pair straight from a GROSS EUR
+  // amount, no RON kurs required (import cars have gross EUR only; transfers
+  // carry an EUR price). purchase_price_net = gross/(1+vat). The net-LEI mirror
+  // is reconstructed only when a kurs is present (RON round-trip), else blank.
+  const applyAcqEur = (grossEur: number | null, vatRate: number | null, kurs: number | null) => {
+    const c = canonicalFromGrossEur({ grossEur, vatRate })
+    const netLei =
+      kurs != null && kurs > 0
+        ? netLeiFromGrossEur({ grossEur, vatRate: vatRate ?? 0, kurs })
+        : null
+    setNetLeiInput(netLei)
+    setForm((prev) => ({
+      ...prev,
+      // Same never-destroy guard as applyAcq (gross<=0 → preserve stored basis).
+      acquisition_price: c.acquisition_price ?? prev.acquisition_price,
+      purchase_price_net: c.purchase_price_net ?? prev.purchase_price_net,
+      acquisition_currency: 'EUR',
+      purchase_vat_rate: vatRate,
+      acquisition_exchange_rate: kurs,
+      acquisition_vat: netLei != null ? vatFromLei(netLei, vatRate) : null,
+    }))
+  }
+  // Re-derive the canonical pair after a VAT-rate (or supplier-VAT-status)
+  // change, anchoring on whichever value is the source of truth: the net-LEI
+  // entry when a kurs is present (RON round-trip), otherwise the stored GROSS
+  // EUR (EUR-native cars — no kurs needed, so a VAT change never nulls/inflates).
+  const reapplyWithVat = (rate: number | null) => {
+    const kurs = numOrNull(form.acquisition_exchange_rate)
+    if (netLeiInput != null && netLeiInput > 0 && kurs != null && kurs > 0) {
+      applyAcq(netLeiInput, rate, kurs)
+    } else {
+      applyAcqEur(numOrNull(form.acquisition_price), rate, kurs)
+    }
   }
   const fetchBnr = async (date: string) => {
     if (!date) return
@@ -838,23 +893,21 @@ export default function VehicleForm() {
     applyAcq(netLeiInput, numOrNull(form.purchase_vat_rate), kurs)
   }
   const handleAcqEur = (v: string) => {
-    // This field is GROSS EUR (VAT-inclusive) → back out the net LEI base via
-    // the tested netLeiFromGrossEur() helper, then re-derive the canonical pair
-    // from that net LEI so every field stays consistent.
+    // This field is GROSS EUR (VAT-inclusive). Store it canonically straight
+    // from the gross EUR via the EUR-native path — NO kurs required — so an
+    // EUR-native car (import / transfer) is editable without a RON round-trip.
+    // (When a kurs is present the net-LEI mirror is reconstructed too.)
     const eur = v === '' ? null : Number(v)
-    const kurs = numOrNull(form.acquisition_exchange_rate)
     const vat = numOrNull(form.purchase_vat_rate) ?? 0
-    const netLei = netLeiFromGrossEur({ grossEur: eur, vatRate: vat, kurs })
-    applyAcq(netLei, vat, kurs)
+    applyAcqEur(eur, vat, numOrNull(form.acquisition_exchange_rate))
   }
   const handleVatRate = (v: string) => {
-    const rate = v === '' ? null : Number(v)
-    applyAcq(netLeiInput, rate, numOrNull(form.acquisition_exchange_rate))
+    reapplyWithVat(v === '' ? null : Number(v))
   }
   // Supplier is a non-VAT payer (e.g. persoană fizică) → no purchase VAT (rate 0).
   const handleNonVatSupplier = (nonVat: boolean) => {
     const rate = nonVat ? 0 : 21
-    applyAcq(netLeiInput, rate, numOrNull(form.acquisition_exchange_rate))
+    reapplyWithVat(rate)
     setForm((prev) => ({
       ...prev,
       vat_deductible: !nonVat,
