@@ -1,4 +1,5 @@
 # jarvis/tests/carpark/test_shopify_connector.py
+import carpark.connectors.shopify.connector as conn_mod
 from carpark.connectors.shopify.connector import ShopifyConnector, ensure_platform
 
 class FakeClient:
@@ -45,6 +46,26 @@ def test_publish_updates_listing_when_exists():
     data = pub.updated[0][1]
     assert data['status'] == 'published'
     assert 'vehicle_id' not in data and 'platform_id' not in data
+
+def test_publish_presigns_spaces_photo_keys(monkeypatch):
+    # Photos are stored as private Spaces object keys; Shopify fetches originalSource
+    # server-side, so keys must be turned into time-limited public URLs. Already-public
+    # http(s) sources pass through untouched, and primary/sort ordering is preserved.
+    monkeypatch.setattr(conn_mod.spaces_service, 'presigned_url',
+                        lambda key, **kw: f'https://signed.example/{key}')
+    fc = FakeClient()
+    conn = ShopifyConnector(fc, FakePub(), platform_id=3)
+    photos = [{'url': 'private/carpark/7/b.jpg', 'is_primary': False, 'sort_order': 1},
+              {'url': 'private/carpark/7/a.jpg', 'is_primary': True, 'sort_order': 0},
+              {'url': 'https://cdn/already-public.jpg', 'is_primary': False, 'sort_order': 2}]
+    conn.publish(VEH, photos, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
+    sources = [f['originalSource'] for f in fc.last_input['files']]
+    assert sources == [
+        'https://signed.example/private/carpark/7/a.jpg',
+        'https://signed.example/private/carpark/7/b.jpg',
+        'https://cdn/already-public.jpg',
+    ]
+
 
 def test_publish_rejects_ineligible():
     conn = ShopifyConnector(FakeClient(), FakePub(), platform_id=3)
