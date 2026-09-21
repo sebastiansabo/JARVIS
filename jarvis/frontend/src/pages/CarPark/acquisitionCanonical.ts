@@ -13,3 +13,11 @@ export function netLeiFromCanonical({ purchase_price_net, kurs }:
   const p = pos(purchase_price_net), k = pos(kurs)
   return p > 0 && k > 0 ? r2(p * k) : null
 }
+
+// Inverse of toCanonical for the GROSS-EUR entry field: a VAT-inclusive EUR
+// amount → the net LEI base. gross EUR × kurs = gross LEI; ÷ (1 + vat/100) = net LEI.
+export function netLeiFromGrossEur({ grossEur, vatRate, kurs }:
+  { grossEur: unknown; vatRate: unknown; kurs: unknown }): number | null {
+  const g = pos(grossEur), k = pos(kurs), v = typeof vatRate === 'number' ? vatRate : 0
+  return g > 0 && k > 0 ? r2((g * k) / (1 + v / 100)) : null
+}
