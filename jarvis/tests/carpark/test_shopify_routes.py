@@ -86,6 +86,64 @@ def test_publish_forbidden_without_edit_permission(client, monkeypatch):
     assert r.status_code == 403
 
 
+def test_preview_returns_warnings_without_touching_shopify(client, monkeypatch):
+    monkeypatch.setattr(routes_mod._repo, 'get_all_by_type',
+        lambda t: [{'id': 1, 'connector_type': 'shopify',
+                    'config': {'store_domain': 'cb6c17-2.myshopify.com'},
+                    'credentials': {'client_id': 'cid', 'client_secret': 'sec'}}])
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id',
+        lambda vid: {'id': vid, 'vin': 'V1', 'brand': 'Audi', 'model': 'RSQ8',
+                     'status': 'LISTED', 'current_price': 100000, 'vehicle_type': 'SUV'})
+    monkeypatch.setattr(routes_mod._photo_repo, 'get_by_vehicle',
+        lambda vid, photo_type=None: [{'url': 'https://cdn/1.jpg', 'is_primary': True, 'sort_order': 0}])
+    monkeypatch.setattr(routes_mod._schema_repo, 'get_active_field_map',
+        lambda: [{'source_expr': 'co2_emissions', 'target_namespace': 'custom',
+                  'target_key': 'emisii_co2', 'target_type': 'single_line_text_field',
+                  'transform': 'int', 'is_active': True}])
+    monkeypatch.setattr(routes_mod._schema_repo, 'get_value_map', lambda: {})
+
+    def _boom(*a, **k):
+        raise AssertionError('preview must not build a client or hit Shopify')
+    monkeypatch.setattr(routes_mod, 'ShopifyConnector', _boom)
+    monkeypatch.setattr(routes_mod, '_build_client', _boom)
+
+    r = client.get('/shopify/api/vehicles/7/preview')
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['success'] is True
+    assert body['eligible'] is True
+    assert any('emisii_co2' in w for w in body['warnings'])
+
+
+def test_preview_reports_blocking_reason_when_ineligible(client, monkeypatch):
+    monkeypatch.setattr(routes_mod._repo, 'get_all_by_type',
+        lambda t: [{'id': 1, 'connector_type': 'shopify',
+                    'config': {'store_domain': 'x.myshopify.com'},
+                    'credentials': {'client_id': 'c', 'client_secret': 's'}}])
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id',
+        lambda vid: {'id': vid, 'vin': 'V1', 'brand': 'Audi', 'status': 'LISTED',
+                     'current_price': 100000})
+    monkeypatch.setattr(routes_mod._photo_repo, 'get_by_vehicle', lambda vid, photo_type=None: [])
+    r = client.get('/shopify/api/vehicles/7/preview')
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['eligible'] is False
+    assert 'photo' in (body['blocking_reason'] or '').lower()
+    assert body['warnings'] == []
+
+
+def test_preview_forbidden_without_edit_permission(client, monkeypatch):
+    class ViewerUser:
+        is_authenticated = True; id = 2; company_id = 10
+        can_access_carpark = True; can_edit_carpark = False
+        can_access_settings = True
+    viewer = ViewerUser()
+    monkeypatch.setattr(api_helpers, 'current_user', viewer)
+    monkeypatch.setattr(routes_mod, 'current_user', viewer)
+    r = client.get('/shopify/api/vehicles/7/preview')
+    assert r.status_code == 403
+
+
 def test_unpublish_vehicle_archives(client, monkeypatch):
     monkeypatch.setattr(routes_mod._repo, 'get_all_by_type',
         lambda t: [{'id': 1, 'connector_type': 'shopify',
