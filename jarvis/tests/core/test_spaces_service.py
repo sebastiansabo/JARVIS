@@ -58,3 +58,23 @@ def test_resolve_image_bytes_key_calls_fetch(monkeypatch):
                 DO_SPACES_BUCKET='b', DO_SPACES_REGION='fra1')
     monkeypatch.setattr(s, 'fetch', lambda key: (b'raw', 'image/jpeg'))
     assert s.resolve_image_bytes('private/carpark/1/01.jpg') == b'raw'
+
+
+def test_presigned_url_returns_key_unchanged_when_disabled(monkeypatch):
+    s = _reload(monkeypatch)
+    # No creds -> not enabled -> caller keeps the raw value (no signing possible).
+    assert s.presigned_url('private/carpark/1/01.jpg') == 'private/carpark/1/01.jpg'
+
+
+def test_presigned_url_signs_get_object_when_enabled(monkeypatch):
+    s = _reload(monkeypatch, DO_SPACES_KEY='k', DO_SPACES_SECRET='x',
+                DO_SPACES_BUCKET='jrvimagebank', DO_SPACES_REGION='fra1')
+    client = mock.Mock()
+    client.generate_presigned_url.return_value = 'https://jrvimagebank.fra1.digitaloceanspaces.com/private/carpark/1/01.jpg?sig=abc'
+    monkeypatch.setattr(s, '_get_client', lambda: client)
+    url = s.presigned_url('private/carpark/1/01.jpg', expires=1800)
+    assert url.startswith('https://')
+    args, kwargs = client.generate_presigned_url.call_args
+    assert args[0] == 'get_object'
+    assert kwargs['Params'] == {'Bucket': 'jrvimagebank', 'Key': 'private/carpark/1/01.jpg'}
+    assert kwargs['ExpiresIn'] == 1800

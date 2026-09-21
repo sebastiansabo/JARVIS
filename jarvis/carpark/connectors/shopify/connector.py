@@ -5,11 +5,29 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from carpark.connectors.base_connector import BaseConnector
+from core.services import spaces_service
 from . import mapper
 
 logger = logging.getLogger('jarvis.carpark.shopify.connector')
 
 PLATFORM_TYPE = 'shopify'
+
+# Shopify ingests product media asynchronously by fetching `originalSource` from its
+# own servers, so the signed URL must outlive the mutation's processing window.
+PHOTO_PRESIGN_TTL = 24 * 3600
+
+
+def _photo_source(url: str) -> str:
+    """Resolve a stored photo reference into a Shopify-fetchable image URL.
+
+    Photos are persisted as private Spaces object keys (carpark/routes/photos.py),
+    which Shopify cannot fetch — passing a raw key fails with "File URL is invalid".
+    Presign keys into a time-limited GET URL; leave anything already a public
+    http(s) source (or a legacy data: URL) untouched.
+    """
+    if not url or url.startswith(('http://', 'https://', 'data:')):
+        return url
+    return spaces_service.presigned_url(url, expires=PHOTO_PRESIGN_TTL)
 
 
 def ensure_platform(publishing_repo, store_domain: str) -> int:
@@ -44,7 +62,8 @@ class ShopifyConnector(BaseConnector):
             return {'success': False, 'error': reason}
 
         existing = self.pub.get_listing_by_vehicle_platform(vehicle['id'], self.platform_id)
-        product_input, warnings = mapper.vehicle_to_product(vehicle, photos, field_map, value_map, config)
+        resolved_photos = [{**p, 'url': _photo_source(p.get('url'))} for p in photos]
+        product_input, warnings = mapper.vehicle_to_product(vehicle, resolved_photos, field_map, value_map, config)
         if existing and existing.get('external_listing_id'):
             product_input['id'] = existing['external_listing_id']
 
