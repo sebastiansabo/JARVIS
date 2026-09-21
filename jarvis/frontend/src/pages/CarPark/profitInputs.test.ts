@@ -83,6 +83,33 @@ describe('acquisitionProfitInputs', () => {
     expect(out.inputVatEur).toBe(2100)
   })
 
+  test('NORMAL row missing purchase_price_net → net reconstructed from gross', () => {
+    // ppn missing, only GROSS acquisition_price present → divide out the VAT.
+    const out = acquisitionProfitInputs(vehicle({
+      purchase_price_net: null,
+      acquisition_price: 11900,
+      purchase_vat_rate: 19,
+      vat_deductible: true,
+    }))
+    expect(out.regime).toBe('NORMAL')
+    expect(out.grossAcqEur).toBe(11900)
+    expect(out.netAcqEur).toBeCloseTo(11900 / 1.19, 6) // 10000
+    expect(out.inputVatEur).toBeCloseTo(11900 - 11900 / 1.19, 6)
+    expect(out.landedCostEur).toBeCloseTo(11900 / 1.19, 6)
+  })
+
+  test('MARGIN row missing purchase_price_net → net == gross (no VAT division)', () => {
+    const out = acquisitionProfitInputs(vehicle({
+      purchase_price_net: null,
+      acquisition_price: 10000,
+      vat_deductible: false,
+    }))
+    expect(out.regime).toBe('MARGIN')
+    expect(out.grossAcqEur).toBe(10000)
+    expect(out.netAcqEur).toBe(10000) // margin cars carry no purchase-side VAT
+    expect(out.inputVatEur).toBe(0)
+  })
+
   test('unparseable cost_lines → 0 cost, no throw', () => {
     const out = acquisitionProfitInputs(vehicle({
       purchase_price_net: 5000,
