@@ -64,6 +64,35 @@ test('editor LOAD reconstructs the RON entry from a canonical EUR vehicle', asyn
   expect(await screen.findByDisplayValue('40000')).toBeInTheDocument()
 })
 
+test('editing an IMPORT-style canonical car (gross EUR, no kurs) does NOT null the acquisition basis', async () => {
+  // IMPORT cars (the bulk of prod) store acquisition_price = GROSS EUR but have
+  // NO purchase_price_net and NO acquisition_exchange_rate. On load the net-LEI
+  // reconstruction is null, so the OLD applyAcq routed a null net-LEI through
+  // toCanonical (which returns nulls when netLei<=0) and wrote NULL over the
+  // valid GROSS EUR basis → cost basis 0 → profit = full sale price.
+  vi.mocked(carparkApi.getVehicle).mockResolvedValueOnce({
+    vehicle: {
+      acquisition_price: 57715, // GROSS EUR
+      purchase_price_net: null, // import cars carry no stored net
+      acquisition_exchange_rate: null, // no RON kurs
+      purchase_vat_rate: 19,
+      acquisition_currency: 'EUR',
+    },
+  } as never)
+  renderNewVehicleForm('/edit/123?tab=comercial')
+
+  // The gross EUR loads into the "Preț Achiziție Eur (TVA inclus)" field.
+  expect(await screen.findByDisplayValue('57715')).toBeInTheDocument()
+
+  // Change the VAT rate — a routine acquisition edit. Pre-fix this nulled
+  // acquisition_price/purchase_price_net; post-fix the stored gross EUR basis
+  // survives (net EUR is recomputed from the gross via the EUR-native path).
+  const vatInput = screen.getByDisplayValue('19')
+  fireEvent.change(vatInput, { target: { value: '21' } })
+
+  expect(screen.getByDisplayValue('57715')).toBeInTheDocument()
+})
+
 test('editing Net-Lei during an in-flight BNR fetch is not reverted when it resolves', async () => {
   // Regression: fetchBnr must combine the resolved kurs with the CURRENT net-LEI
   // (read from a ref), not the stale value captured when the fetch started.
