@@ -53,12 +53,19 @@ function sumCostLinesEur(raw: string | null | undefined): number {
 export function acquisitionProfitInputs(vehicle: ProfitInputsVehicle): AcquisitionProfitInputs {
   const regime: VatRegime = vehicle.vat_deductible === false ? 'MARGIN' : 'NORMAL'
   const vatRate = regime === 'MARGIN' ? 21 : (Number(vehicle.purchase_vat_rate) || 21)
-  const netAcqEur = Number(vehicle.purchase_price_net) || 0 // canonical NET EUR cost basis
+  let netAcqEur = Number(vehicle.purchase_price_net) || 0 // canonical NET EUR cost basis
   // canonical GROSS EUR column; fall back to deriving gross from net for any
   // legacy row missing acquisition_price. MARGIN cars carry no purchase-side
   // VAT, so their gross == net (no (1+vat) uplift on the fallback).
   const grossAcqEur = Number(vehicle.acquisition_price)
     || (regime === 'MARGIN' ? netAcqEur : netAcqEur * (1 + vatRate / 100))
+  // Symmetric fallback (mirrors PricingSheet.computePricingModel): a row with a
+  // GROSS EUR acquisition_price but missing purchase_price_net still gets a NET
+  // basis, so cost/profit never collapse to zero. NORMAL divides out the VAT;
+  // MARGIN keeps net == gross (no deductible purchase-side VAT).
+  if (netAcqEur <= 0 && grossAcqEur > 0) {
+    netAcqEur = regime === 'MARGIN' ? grossAcqEur : grossAcqEur / (1 + vatRate / 100)
+  }
   const costLinesEur = sumCostLinesEur(vehicle.cost_lines)
   const landedCostEur = netAcqEur + costLinesEur
   const inputVatEur = regime === 'NORMAL' ? grossAcqEur - netAcqEur : 0

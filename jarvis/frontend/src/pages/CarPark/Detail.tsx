@@ -1622,7 +1622,11 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           { key: 'purchase_contract_date', label: 'Dată contract', type: 'date' },
           { key: 'owner_name', label: 'Proprietar', type: 'text' },
           { key: 'acquisition_document_number', label: 'Nr. factură intrare', type: 'text' },
-          { key: 'acquisition_price', label: 'Preț achiziție (EUR)', type: 'number' },
+          // acquisition_price (GROSS EUR) is intentionally NOT inline-editable: editing
+          // gross in isolation would desync purchase_price_net (NET EUR), breaking the
+          // canonical gross/net invariant the PricingSheet + profit strip rely on. It
+          // stays editable only via the full vehicle editor, which keeps gross/net/currency
+          // in sync via toCanonical. The read-only Field below still shows the value.
           { key: 'acquisition_exchange_rate', label: 'Curs BNR', type: 'number' },
         ]}
       >
