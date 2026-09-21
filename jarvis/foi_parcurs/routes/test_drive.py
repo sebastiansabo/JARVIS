@@ -1132,6 +1132,13 @@ def api_create_crm_client():
     is_company = bool(data.get('is_company'))
     company_name = (data.get('company_name') or '').strip() or None
     cui = (data.get('cui') or '').strip() or None
+    # The Test Drive scan captures the driving-licence serie/number + expiry.
+    # ClientRepository.create() doesn't carry these columns, so persist them
+    # after insert (same follow-up-UPDATE pattern as cnp below) — otherwise the
+    # created client comes back without a licence, the drive's client-licence
+    # gate blocks save, and the number isn't reusable on the next drive.
+    driver_license_number = (data.get('driver_license_number') or '').strip() or None
+    driver_license_expiry = (data.get('driver_license_expiry') or '').strip() or None
 
     try:
         row = _crm_client_repo.create(
@@ -1149,10 +1156,22 @@ def api_create_crm_client():
             source_flags={'foi_parcurs': True},
         )
         new_id = row['id'] if row else None
-        if new_id and cnp:
-            _crm_client_repo.execute(
-                'UPDATE crm_clients SET cnp = %s WHERE id = %s', (cnp, new_id)
-            )
+        if new_id:
+            # Columns not carried by create() but captured on the TD form. Column
+            # names are hardcoded constants; every value is parameterised.
+            extra_sets, extra_params = [], []
+            if cnp:
+                extra_sets.append('cnp = %s'); extra_params.append(cnp)
+            if driver_license_number:
+                extra_sets.append('driver_license_number = %s'); extra_params.append(driver_license_number)
+            if driver_license_expiry:
+                extra_sets.append('driver_license_expiry = %s'); extra_params.append(driver_license_expiry)
+            if extra_sets:
+                extra_params.append(new_id)
+                _crm_client_repo.execute(
+                    f'UPDATE crm_clients SET {", ".join(extra_sets)} WHERE id = %s',
+                    tuple(extra_params),
+                )
         client = _crm_client_repo.get_by_id(new_id) if new_id else None
         return jsonify({'success': True, 'client': client})
     except Exception as e:
