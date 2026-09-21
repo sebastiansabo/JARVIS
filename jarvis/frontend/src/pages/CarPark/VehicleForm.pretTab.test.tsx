@@ -3,11 +3,12 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { vi, test, expect } from 'vitest'
 import VehicleForm from './VehicleForm'
+import { carparkApi } from '@/api/carpark'
 
 vi.mock('@/api/carpark', () => ({
   carparkApi: {
     getLocations: () => Promise.resolve({ locations: [] }),
-    getVehicle: () => Promise.resolve({ vehicle: {} }),
+    getVehicle: vi.fn(() => Promise.resolve({ vehicle: {} })),
     getPricingHistory: () => Promise.resolve({ history: [] }),
     getBnrRate: () => Promise.resolve({}),
     checkVin: () => Promise.resolve({ exists: false }),
@@ -44,4 +45,21 @@ test('the Preț tab exposes list-price and promo fields', () => {
   expect(screen.getByText(/Preț listă/)).toBeInTheDocument()
   expect(screen.getByText(/Preț promo/)).toBeInTheDocument()
   expect(screen.getByText(/obligatoriu la adăugarea unei mașini/)).toBeInTheDocument()
+})
+
+test('editor LOAD reconstructs the RON entry from a canonical EUR vehicle', async () => {
+  // Canonical vehicle: acquisition_price = GROSS EUR, purchase_price_net = NET EUR.
+  // 40,000 net LEI @ 19% VAT, kurs 5 → gross EUR 9520, net EUR 8000 (see acquisitionCanonical.test.ts).
+  // The Net-Lei field must reconstruct 40000 via netLeiFromCanonical on load.
+  vi.mocked(carparkApi.getVehicle).mockResolvedValueOnce({
+    vehicle: {
+      acquisition_price: 9520,
+      purchase_price_net: 8000,
+      acquisition_currency: 'EUR',
+      acquisition_exchange_rate: 5,
+      purchase_vat_rate: 19,
+    },
+  } as never)
+  renderNewVehicleForm('/edit/123?tab=comercial')
+  expect(await screen.findByDisplayValue('40000')).toBeInTheDocument()
 })
