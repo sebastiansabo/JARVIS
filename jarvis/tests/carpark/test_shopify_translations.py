@@ -95,10 +95,40 @@ class TestValueTranslationsSeed:
 
     def test_fuel_type_has_multiple_variants(self):
         """fuel_type dimension includes both English and slug variants."""
-        # At least Petrol/petrol → Benzină and Diesel/diesel → Motorină
+        # At least Petrol/petrol → Benzină and Diesel/diesel present
         fuel_type = VALUE_TRANSLATIONS_SEED.get("fuel_type", {})
         assert "Petrol" in fuel_type or "petrol" in fuel_type
         assert "Diesel" in fuel_type or "diesel" in fuel_type
+
+    def test_fuel_type_values_match_store_choice_list(self):
+        """Seed defaults must match the Autoworld custom.fuel CHOICE LIST exactly
+        (Benzină / Benzină (Mild-Hybrid) / Diesel / Diesel (Mild-Hybrid) /
+        Hybrid / Plug-in Hybrid / Electric / LPG) — not the generic RO words
+        (Motorină/Hibrid/GPL), which Shopify rejects as invalid choices."""
+        f = VALUE_TRANSLATIONS_SEED["fuel_type"]
+        allowed = {"Benzină", "Benzină (Mild-Hybrid)", "Diesel", "Diesel (Mild-Hybrid)",
+                   "Hybrid", "Plug-in Hybrid", "Electric", "LPG"}
+        assert set(f.values()) <= allowed, f"seed produces non-choice values: {set(f.values()) - allowed}"
+        assert f["Diesel"] == "Diesel" and f["diesel"] == "Diesel"
+        assert f["Benzina"] == "Benzină"
+        assert f["Hybrid"] == "Hybrid" and f["hybrid"] == "Hybrid"
+        assert f["LPG"] == "LPG" and f["lpg"] == "LPG"
+        assert f["mild-hybrid-diesel"] == "Diesel (Mild-Hybrid)"
+        assert f["mild-hybrid-petrol"] == "Benzină (Mild-Hybrid)"
+        assert f["plugin-hybrid"] == "Plug-in Hybrid"
+        assert f["Hibrid Plug-In"] == "Plug-in Hybrid"
+        assert f["petrol-lpg"] == "LPG"  # canonical Autovit LPG slug, not bare "LPG"
+
+    def test_fuel_type_covers_canonical_autovit_slugs(self):
+        """Every mappable Autovit FUEL_MAP slug resolves to a valid store choice.
+        (petrol-cng / hydrogen / ethanol are intentionally excluded — no store choice.)"""
+        from carpark.connectors.autovit.taxonomy import FUEL_MAP
+        f = VALUE_TRANSLATIONS_SEED["fuel_type"]
+        no_store_choice = {"petrol-cng", "hydrogen", "ethanol"}
+        for slug in FUEL_MAP.values():
+            if slug in no_store_choice:
+                continue
+            assert slug in f, f"canonical Autovit fuel slug {slug!r} is unmapped"
 
     def test_value_translations_has_transmission_dimension(self):
         """VALUE_TRANSLATIONS_SEED has 'transmission' key."""
