@@ -9,17 +9,12 @@ use in this package (990001 dispo_seed, 990002 phase2_e2e/cost_model_profit,
 990003 carpark_scheduler/import_centralizator, 990004 import_centralizator's
 OTHER_COMPANY_ID).
 
-NOTE: `run()` audits/converts every `carpark_vehicles` row with
-acquisition_currency='RON' across the WHOLE table — that's its job (see the
-script's module docstring). This dev DB already has one such row from earlier
-manual editor testing (a real instance of exactly the bug this script fixes),
-so calling `run(apply=True)` here also permanently converts it. That mirrors
-the documented precedent in
-tests/accounting/test_backfill_document_numbers.py: the assertions below only
-pin down OUR seeded rows, and fixing any other real legacy row along the way
-is the intended behavior of an idempotent backfill, not a test-isolation bug.
+Every `run(...)` call here passes `company_id=TEST_COMPANY_ID`, so the audit
+(and therefore the conversion) is scoped to this test's own sentinel rows —
+it never audits or mutates real/other-company data. The unscoped full-table
+behavior (`company_id=None`, the prod backfill path) is deliberately NOT
+exercised against this shared dev DB.
 """
-import importlib.util
 import os
 import sys
 
@@ -32,24 +27,22 @@ import pytest  # noqa: E402
 
 from database import get_db, get_cursor, release_db  # noqa: E402
 
-from .conftest import REAL_DB_AVAILABLE  # noqa: E402
+# jarvis/scripts/ is a real package (has __init__.py, like
+# accounting/facturare/scripts/), and JARVIS_ROOT is pinned at sys.path[0]
+# above, so this resolves to jarvis/scripts even on a machine that has an
+# unrelated top-level `scripts` package further down sys.path.
+from scripts.backfill_acq_currency import run, compute_conversion  # noqa: E402
 
-# Load the script by file path rather than `import scripts.backfill_acq_currency`:
-# jarvis/scripts/ has no __init__.py (matching its sibling scripts), and this
-# machine also has an unrelated top-level `scripts` package earlier on
-# sys.path (a different repo checkout's ops scripts) that would otherwise win
-# the namespace-package resolution and shadow this module entirely.
-_SCRIPT_PATH = os.path.join(JARVIS_ROOT, 'scripts', 'backfill_acq_currency.py')
-_spec = importlib.util.spec_from_file_location('carpark_backfill_acq_currency_script', _SCRIPT_PATH)
-backfill_acq_currency = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(backfill_acq_currency)
+from .conftest import REAL_DB_AVAILABLE  # noqa: E402
 
 TEST_COMPANY_ID = 990005
 
 VIN_CONVERTIBLE = 'TESTACQCUR0000001'
 VIN_NO_KURS = 'TESTACQCUR0000002'
+VIN_ZERO_PRICE = 'TESTACQCUR0000003'
 assert len(VIN_CONVERTIBLE) == 17
 assert len(VIN_NO_KURS) == 17
+assert len(VIN_ZERO_PRICE) == 17
 
 
 @pytest.fixture
@@ -73,7 +66,7 @@ def _delete_seed():
 
 @pytest.fixture
 def ron_seed():
-    """Seeds two RON-convention vehicles under TEST_COMPANY_ID:
+    """Seeds three RON-convention vehicles under TEST_COMPANY_ID:
 
       - 'convertible': acquisition_price=40000 (NET LEI), acquisition_currency='RON',
         acquisition_exchange_rate=5, purchase_vat_rate=19 -> the script must
@@ -83,9 +76,12 @@ def ron_seed():
       - 'no_kurs': same NET LEI price but acquisition_exchange_rate=NULL ->
         the script must leave it alone and report it for manual review
         instead of guessing a rate.
+      - 'zero_price': acquisition_price=0 with a valid kurs=5 -> must also go
+        to manual review (never silently converted to 0.00 EUR).
 
-    Yields {'convertible': id, 'no_kurs': id}. Teardown deletes every
-    carpark_vehicles row for TEST_COMPANY_ID and asserts zero remain.
+    Yields {'convertible': id, 'no_kurs': id, 'zero_price': id}. Teardown
+    deletes every carpark_vehicles row for TEST_COMPANY_ID and asserts zero
+    remain.
     """
     if not REAL_DB_AVAILABLE:
         pytest.skip(
@@ -118,6 +114,16 @@ def ron_seed():
             RETURNING id
         ''', (VIN_NO_KURS, 'TestBrand', 'TestModel', 'SH', TEST_COMPANY_ID, 40000, 19))
         ids['no_kurs'] = cur.fetchone()['id']
+
+        cur.execute('''
+            INSERT INTO carpark_vehicles
+                (vin, brand, model, category, company_id,
+                 acquisition_currency, acquisition_price, purchase_price_net,
+                 acquisition_exchange_rate, purchase_vat_rate)
+            VALUES (%s, %s, %s, %s, %s, 'RON', %s, NULL, %s, %s)
+            RETURNING id
+        ''', (VIN_ZERO_PRICE, 'TestBrand', 'TestModel', 'SH', TEST_COMPANY_ID, 0, 5, 19))
+        ids['zero_price'] = cur.fetchone()['id']
 
         conn.commit()
     finally:
@@ -154,10 +160,35 @@ def _fetch(vehicle_id):
         release_db(conn)
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# compute_conversion — pure-function guards (no DB)
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_compute_conversion_gross_net_from_net_lei():
+    row = {'acquisition_price': 40000, 'acquisition_exchange_rate': 5, 'purchase_vat_rate': 19}
+    assert compute_conversion(row) == (9520.0, 8000.0)
+
+
+@pytest.mark.parametrize('row', [
+    {'acquisition_price': 40000, 'acquisition_exchange_rate': None, 'purchase_vat_rate': 19},
+    {'acquisition_price': 40000, 'acquisition_exchange_rate': 0, 'purchase_vat_rate': 19},
+    {'acquisition_price': None, 'acquisition_exchange_rate': 5, 'purchase_vat_rate': 19},
+    {'acquisition_price': 0, 'acquisition_exchange_rate': 5, 'purchase_vat_rate': 19},
+    {'acquisition_price': -40000, 'acquisition_exchange_rate': 5, 'purchase_vat_rate': 19},
+])
+def test_compute_conversion_returns_none_for_invalid_inputs(row):
+    # No valid kurs OR non-positive price -> None (manual review), never a guess/0.00.
+    assert compute_conversion(row) is None
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# run() — DB-backed, always scoped to the sentinel company
+# ─────────────────────────────────────────────────────────────────────────
+
 def test_convert_is_idempotent(require_real_db, ron_seed):
     vehicle_id = ron_seed['convertible']
 
-    result = backfill_acq_currency.run(apply=True)
+    result = run(apply=True, company_id=TEST_COMPANY_ID)
     assert vehicle_id in result['converted']
 
     row = _fetch(vehicle_id)
@@ -168,7 +199,7 @@ def test_convert_is_idempotent(require_real_db, ron_seed):
     # Re-run: the guard `WHERE id=%s AND acquisition_currency='RON'` means
     # this row no longer matches the audit query at all on a second pass ->
     # untouched, not re-converted, not double-charged.
-    result2 = backfill_acq_currency.run(apply=True)
+    result2 = run(apply=True, company_id=TEST_COMPANY_ID)
     assert vehicle_id not in result2['converted']
     assert vehicle_id not in result2['manual_review']
 
@@ -183,7 +214,7 @@ def test_dry_run_writes_nothing(require_real_db, ron_seed):
     before = _fetch(vehicle_id)
     assert before['acquisition_currency'] == 'RON'
 
-    result = backfill_acq_currency.run(apply=False)
+    result = run(apply=False, company_id=TEST_COMPANY_ID)
     assert vehicle_id in result['converted']  # eligible/"would convert", but no write
 
     after = _fetch(vehicle_id)
@@ -195,9 +226,26 @@ def test_row_without_valid_kurs_is_flagged_not_guessed(require_real_db, ron_seed
     before = _fetch(vehicle_id)
     assert before['acquisition_currency'] == 'RON'
 
-    result = backfill_acq_currency.run(apply=True)
+    result = run(apply=True, company_id=TEST_COMPANY_ID)
     assert vehicle_id in result['manual_review']
     assert vehicle_id not in result['converted']
 
     after = _fetch(vehicle_id)
     assert after == before, 'a row with no valid exchange rate must never be written to'
+
+
+def test_non_positive_price_is_flagged_not_zeroed(require_real_db, ron_seed):
+    vehicle_id = ron_seed['zero_price']
+    before = _fetch(vehicle_id)
+    assert before['acquisition_currency'] == 'RON'
+    assert float(before['acquisition_price']) == 0.0
+
+    result = run(apply=True, company_id=TEST_COMPANY_ID)
+    assert vehicle_id in result['manual_review']
+    assert vehicle_id not in result['converted']
+
+    after = _fetch(vehicle_id)
+    assert after == before, (
+        'a row with a non-positive acquisition_price must go to manual review, '
+        'never be silently converted to 0.00 EUR'
+    )
