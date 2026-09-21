@@ -6,11 +6,12 @@ The NET purchase cost is the VAT-deductible cost basis: the stored
 there is no VAT). Used by analytics and per-vehicle profitability so the buy
 price is counted exactly once, on a net basis.
 
-NOTE: assumes the import-created convention (acquisition_price = GROSS EUR,
-purchase_price_net = NET EUR), which holds for all current prod data. The editor
-write-path stores the opposite (acquisition_price = NET RON, purchase_price_net =
-GROSS EUR); no editor-created cars exist on prod yet, but that write-path must be
-reconciled before editor-created cars are sold.
+NOTE: the canonical convention (acquisition_price = GROSS EUR,
+purchase_price_net = NET EUR, acquisition_currency = 'EUR') holds for all data:
+imports, transfers, AND the editor write-path. The editor enters the acquisition
+in net-LEI + a BNR kurs (or GROSS EUR directly for EUR-native cars) and stores
+the canonical EUR pair via toCanonical/canonicalFromGrossEur — so this NET-buy
+derivation is valid for every source.
 """
 
 # SQL fragment — requires the carpark_vehicles row aliased as `v`.
