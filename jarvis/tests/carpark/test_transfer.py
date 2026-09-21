@@ -168,6 +168,12 @@ def test_transfer_moves_vehicle_sets_fields_and_logs(transfer_seed):
     assert vehicle['source'] == 'TRANSFER'
     assert float(vehicle['acquisition_price']) == 10000
     assert str(vehicle['acquisition_date']) == str(date.today())
+    # Canonical model: acquisition_price = GROSS EUR, purchase_price_net =
+    # NET EUR, acquisition_currency = 'EUR'. A transfer has no VAT split —
+    # the transfer price IS the receiving company's cost basis, so
+    # gross == net == transfer_price.
+    assert float(vehicle['purchase_price_net']) == 10000
+    assert vehicle['acquisition_currency'] == 'EUR'
     assert vehicle['sale_price'] is None
     assert vehicle['sale_date'] is None
     assert vehicle['sale_type'] is None
