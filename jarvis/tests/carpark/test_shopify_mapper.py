@@ -216,3 +216,87 @@ def test_product_type_defaults_when_body_unresolved():
     vehicle.pop('vehicle_type', None)
     prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG)
     assert prod['productType'] == 'Autovehicul'
+
+
+# ── Anunț free-text (listing_description) surfaced in the Shopify description ──
+
+def test_description_includes_anunt_listing_description():
+    vehicle = {**BASE, 'listing_description': 'Audi RSQ8 Quattro MHEV 600CP'}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG)
+    assert 'Audi RSQ8 Quattro MHEV 600CP' in prod['descriptionHtml']
+
+
+def test_description_anunt_preserves_line_breaks_and_escapes():
+    vehicle = {**BASE, 'listing_description': 'Linia 1\nLinia 2 <b>'}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG)
+    desc = prod['descriptionHtml']
+    assert 'Linia 1<br>Linia 2 &lt;b&gt;' in desc
+    assert '<b>' not in desc  # raw markup must be escaped, not injected
+
+
+def test_description_no_anunt_block_when_listing_description_empty():
+    vehicle = {**BASE, 'listing_description': '   '}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG)
+    # still has the structured spec block, just no free-text paragraph
+    assert 'Specificații Tehnice' in prod['descriptionHtml']
+
+
+# ── dotari: also read equipment_options (TEXT[] Autovit slugs) + translate ──
+
+def test_dotari_includes_equipment_options_translated():
+    vehicle = {**BASE, 'equipment': {}, 'optional_packages': [],
+               'equipment_options': ['carplay', 'android-auto']}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG)
+    mf = _mf(prod)
+    assert mf[('custom', 'dotari')]['value'] == 'Apple CarPlay\nAndroid Auto'
+
+
+def test_dotari_equipment_options_value_map_override_wins():
+    vm = {**VALUE_MAP, 'equipment': {'carplay': 'CarPlay (custom)'}}
+    vehicle = {**BASE, 'equipment': {}, 'optional_packages': [],
+               'equipment_options': ['carplay']}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, vm, CONFIG)
+    assert _mf(prod)[('custom', 'dotari')]['value'] == 'CarPlay (custom)'
+
+
+def test_dotari_equipment_options_unknown_slug_falls_back_identity():
+    vehicle = {**BASE, 'equipment': {}, 'optional_packages': [],
+               'equipment_options': ['zzz-unmapped-slug']}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG)
+    assert _mf(prod)[('custom', 'dotari')]['value'] == 'zzz-unmapped-slug'
+
+
+def test_dotari_merges_and_dedups_across_sources():
+    # equipment_options adds a NEW item ('carplay'->'Apple CarPlay') and a
+    # DUPLICATE of the manual equipment ('navigation'->'Navigație').
+    vehicle = {**BASE, 'equipment': ['Navigație'], 'optional_packages': [],
+               'equipment_options': ['carplay', 'navigation']}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG)
+    assert _mf(prod)[('custom', 'dotari')]['value'] == 'Apple CarPlay\nNavigație'
+
+
+# ── putere_kw: derive from HP when the kw column is empty ──
+
+KW_FIELD_MAP = [
+    {'source_expr': 'engine_power_kw', 'target_namespace': 'custom', 'target_key': 'putere_kw',
+     'target_type': 'single_line_text_field', 'transform': 'int', 'is_active': True},
+]
+
+
+def test_putere_kw_derived_from_hp_when_missing():
+    vehicle = {**BASE, 'engine_power_kw': None, 'engine_power_hp': 600}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, KW_FIELD_MAP, VALUE_MAP, CONFIG)
+    assert _mf(prod)[('custom', 'putere_kw')]['value'] == '441'  # round(600 * 0.7355)
+
+
+def test_putere_kw_uses_explicit_value_when_present():
+    vehicle = {**BASE, 'engine_power_kw': 300, 'engine_power_hp': 600}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, KW_FIELD_MAP, VALUE_MAP, CONFIG)
+    assert _mf(prod)[('custom', 'putere_kw')]['value'] == '300'
+
+
+def test_putere_kw_empty_when_no_hp_either():
+    vehicle = {**BASE, 'engine_power_kw': None, 'engine_power_hp': None}
+    prod, warnings = mapper.vehicle_to_product(vehicle, PHOTOS, KW_FIELD_MAP, VALUE_MAP, CONFIG)
+    assert ('custom', 'putere_kw') not in _mf(prod)
+    assert any('putere_kw' in w for w in warnings)
