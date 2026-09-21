@@ -285,12 +285,10 @@ class DispoService:
         table: DispoRepository (dispo_repository.py) computes
         `sale_price - acquisition_price - COALESCE(SUM(amount), 0)` where the
         cost total is `SUM(carpark_vehicle_costs.amount)` — base amounts only,
-        excluding the separate vat_amount column. We therefore take
-        `get_cost_totals()['total_amount']` (= SUM(amount)) rather than
-        `get_profitability()['total_costs']`, which is VAT-INCLUSIVE
-        (`total_with_vat` = SUM(amount) + SUM(vat_amount)) and would fire this
-        warning against a more pessimistic margin than the dashboard figure,
-        leaving the salesperson unable to reconcile the two."""
+        excluding the separate vat_amount column. We take
+        `get_cost_totals()['total_amount']` (= SUM(amount)) directly; note
+        `get_profitability()['total_costs']` is now also net (SUM(amount)), so
+        the two agree, but we read the cost total explicitly here for clarity."""
         reasons: List[str] = []
         sale_price = float(sale_price)
 
