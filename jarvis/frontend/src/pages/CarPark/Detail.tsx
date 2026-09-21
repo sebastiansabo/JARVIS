@@ -1622,7 +1622,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           { key: 'purchase_contract_date', label: 'Dată contract', type: 'date' },
           { key: 'owner_name', label: 'Proprietar', type: 'text' },
           { key: 'acquisition_document_number', label: 'Nr. factură intrare', type: 'text' },
-          { key: 'acquisition_price', label: 'Preț achiziție (RON)', type: 'number' },
+          { key: 'acquisition_price', label: 'Preț achiziție (EUR)', type: 'number' },
           { key: 'acquisition_exchange_rate', label: 'Curs BNR', type: 'number' },
         ]}
       >
@@ -1634,7 +1634,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           <Field label="Dată contract" value={formatDate(v.purchase_contract_date)} />
           <Field label="Proprietar" value={v.owner_name} />
           <Field label="Nr. factură intrare" value={v.acquisition_document_number} />
-          <Field label="Preț achiziție (RON)" value={v.acquisition_price != null ? `${fmtMoney(v.acquisition_price)} RON` : null} />
+          <Field label="Preț achiziție (EUR)" value={v.acquisition_price != null ? `${fmtMoney(v.acquisition_price)} EUR` : null} />
           <Field label="Curs BNR" value={v.acquisition_exchange_rate} />
         </dl>
       </EditableCard>
