@@ -31,18 +31,35 @@ def ro(value_map: Dict[str, Dict[str, str]], dimension: str, value) -> str:
 # Each dimension maps CarPark source values (both English words and lowercase slugs) to Romanian.
 VALUE_TRANSLATIONS_SEED: Dict[str, Dict[str, str]] = {
     "fuel_type": {
-        "Petrol": "Benzină",
+        # The Autoworld store's `custom.fuel` metafield is a CHOICE LIST — the pushed
+        # value MUST be one of: Benzină / Benzină (Mild-Hybrid) / Diesel /
+        # Diesel (Mild-Hybrid) / Hybrid / Plug-in Hybrid / Electric / LPG, else Shopify
+        # rejects publish ("Value does not exist in provided choices"). So these map to
+        # the store's exact vocabulary — NOT the generic RO words (Motorină/Hibrid/GPL).
+        # Keys cover the canonical Autovit FUEL_MAP slugs (autovit/taxonomy.py) plus
+        # legacy/manual variants. NOTE: petrol-cng / hydrogen / ethanol have no store
+        # choice yet — publishing such a car fails until a matching choice is added.
         "petrol": "Benzină",
-        "Diesel": "Motorină",
-        "diesel": "Motorină",
-        "Electric": "Electric",
+        "Petrol": "Benzină",
+        "Benzina": "Benzină",
+        "benzina": "Benzină",
+        "diesel": "Diesel",
+        "Diesel": "Diesel",
         "electric": "Electric",
-        "Hybrid": "Hibrid",
-        "hybrid": "Hibrid",
-        "LPG": "GPL",
-        "lpg": "GPL",
-        "CNG": "GNC",
-        "cng": "GNC",
+        "Electric": "Electric",
+        "hybrid": "Hybrid",
+        "Hybrid": "Hybrid",
+        "Hibrid": "Hybrid",
+        "mild-hybrid-diesel": "Diesel (Mild-Hybrid)",
+        "mild-hybrid-petrol": "Benzină (Mild-Hybrid)",
+        "mild-hybrid-benzina": "Benzină (Mild-Hybrid)",
+        "plugin-hybrid": "Plug-in Hybrid",
+        "plug-in-hybrid": "Plug-in Hybrid",
+        "Hibrid Plug-In": "Plug-in Hybrid",
+        "petrol-lpg": "LPG",
+        "LPG": "LPG",
+        "lpg": "LPG",
+        "GPL": "LPG",
     },
     "transmission": {
         "Automatic": "Automată",
