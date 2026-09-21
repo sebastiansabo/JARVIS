@@ -60,6 +60,7 @@ import { reductionPct, formatReductionPct } from './priceReduction'
 import { useDragScroll } from './useDragScroll'
 import { PricingSheet, PriceZone, computePricingModel, type PricingModel, type PricingSheetSnapshot, type SheetInputs } from './PricingSheet'
 import { econ, type EngineParams } from './pricingEngine'
+import { acquisitionProfitInputs } from './profitInputs'
 import { AutofoxSyncModal } from './AutofoxSyncModal'
 import { activeSellingPrice } from './vehicleFormPricing'
 import { EmptyState } from '@/components/shared/EmptyState'
@@ -2756,27 +2757,22 @@ function ModificationsTab({ modifications }: { modifications: Array<{ id: number
 //   Achiziție      = grossAcqEur (acquisition_price, GROSS EUR paid)
 //   Costuri totale = Σ cost_lines.eur  (extra costs only, NOT the buy price)
 //   Profit/Loss    = total_revenues − netAcqEur (cost basis) − Costuri totale, via the econ engine
+// The net/gross/econ-input derivation is a pure, unit-tested helper —
+// acquisitionProfitInputs() in profitInputs.ts.
 // Revenues stay sourced from the profitability endpoint (data.total_revenues).
 function ProfitabilitySummary({ data, vehicle }: { data: Profitability; vehicle: Vehicle }) {
   const currency = 'EUR'
-  const costLinesEur = parseCostLines(vehicle.cost_lines).reduce((s, l) => s + (Number(l.eur) || 0), 0)
+  // Canonical acquisition/cost derivation (net/gross EUR, regime, econ inputs)
+  // lives in a pure, unit-tested helper — see profitInputs.ts.
+  const { regime, vatRate, grossAcqEur, costLinesEur, landedCostEur, purchaseGrossEur, inputVatEur } =
+    acquisitionProfitInputs(vehicle)
   const totalCosts = costLinesEur
   const totalRevenues = data.total_revenues
   const sellPrice = Number(vehicle.promotional_price ?? vehicle.list_price) || 0
   const income = totalRevenues > 0 ? totalRevenues : sellPrice
   // Marjă = VAT-adjusted profit net, via the same engine as the Fișă de preț.
-  const regime = vehicle.vat_deductible === false ? 'MARGIN' : 'NORMAL'
-  const vatRate = regime === 'MARGIN' ? 21 : (Number(vehicle.purchase_vat_rate) || 21)
-  const netAcqEur = Number(vehicle.purchase_price_net) || 0 // canonical NET EUR cost basis
-  // canonical GROSS EUR column; fall back to deriving gross from net for any
-  // legacy row missing acquisition_price
-  const grossAcqEur = Number(vehicle.acquisition_price) || (netAcqEur * (1 + vatRate / 100))
-  const baseCostEur = netAcqEur + costLinesEur
-  const engineParams: EngineParams = {
-    regime, vatRate, landedCostEur: baseCostEur,
-    purchaseGrossEur: grossAcqEur, inputVatEur: regime === 'NORMAL' ? grossAcqEur - netAcqEur : 0,
-  }
-  const e = income > 0 && baseCostEur > 0 ? econ(income, engineParams) : null
+  const engineParams: EngineParams = { regime, vatRate, landedCostEur, purchaseGrossEur, inputVatEur }
+  const e = income > 0 && landedCostEur > 0 ? econ(income, engineParams) : null
   const margin = e ? e.profitNet : null
   const marginPct = e ? e.marginNet * 100 : null
   const isProfit = (margin ?? 0) >= 0
