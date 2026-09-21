@@ -470,6 +470,12 @@ class DispoService:
                 'source': 'TRANSFER',
                 'acquisition_price': transfer_price,
                 'acquisition_date': transfer_date,
+                # Canonical model: acquisition_price = GROSS EUR,
+                # purchase_price_net = NET EUR, acquisition_currency = 'EUR'.
+                # A transfer has no VAT split — the transfer price IS the
+                # receiving company's cost basis, so gross == net == price.
+                'acquisition_currency': 'EUR',
+                'purchase_price_net': transfer_price,
                 'sale_price': None,
                 'sale_date': None,
                 'sale_type': None,
