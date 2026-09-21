@@ -7,7 +7,7 @@ import { SearchSelect } from '@/components/shared/SearchSelect'
 import { DecodePreviewDialog } from './DecodePreviewDialog'
 import { seedCurrentPriceOnCreate } from './vehicleFormPricing'
 import { findMissingRequiredFields } from './vehicleFormValidation'
-import { toCanonical, netLeiFromCanonical } from './acquisitionCanonical'
+import { toCanonical, netLeiFromCanonical, netLeiFromGrossEur } from './acquisitionCanonical'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -395,6 +395,18 @@ export default function VehicleForm() {
   // a separate local field (source of truth for the "Preț Achiziție Net (Lei)"
   // input), driving the conversion (via toCanonical) on every edit.
   const [netLeiInput, setNetLeiInput] = useState<number | null>(null)
+  // Refs mirroring the latest net-LEI entry + VAT rate so the async BNR fetch can
+  // read the CURRENT values after its `await` resolves — never stale closure
+  // values captured when the fetch started. Editing the field mid-fetch must not
+  // be clobbered when the rate arrives.
+  const netLeiRef = useRef<number | null>(null)
+  const vatRateRef = useRef<number | null>(21)
+  useEffect(() => {
+    netLeiRef.current = netLeiInput
+  }, [netLeiInput])
+  useEffect(() => {
+    vatRateRef.current = typeof form.purchase_vat_rate === 'number' ? form.purchase_vat_rate : null
+  }, [form.purchase_vat_rate])
 
   // "Titlu anunț" auto-composes from the specs until the user edits it manually
   // (then titleTouched stays true and we stop overwriting their text).
@@ -802,7 +814,9 @@ export default function VehicleForm() {
     try {
       const r = await carparkApi.getBnrRate(date)
       if (r.kurs) {
-        applyAcq(netLeiInput, numOrNull(form.purchase_vat_rate), r.kurs)
+        // Read the CURRENT net-LEI + VAT from refs, not the pre-await closure —
+        // the user may have edited them while this request was in flight.
+        applyAcq(netLeiRef.current, vatRateRef.current, r.kurs)
         toast.success(`Curs BNR ${r.kurs} (${r.kurs_date})`)
       }
     } catch {
@@ -824,13 +838,13 @@ export default function VehicleForm() {
     applyAcq(netLeiInput, numOrNull(form.purchase_vat_rate), kurs)
   }
   const handleAcqEur = (v: string) => {
-    // This field is GROSS EUR (VAT-inclusive) → back out the net LEI base from
-    // it (gross EUR × kurs = gross LEI; ÷ (1+vat/100) = net LEI), then re-derive
-    // the canonical pair from that net LEI so every field stays consistent.
+    // This field is GROSS EUR (VAT-inclusive) → back out the net LEI base via
+    // the tested netLeiFromGrossEur() helper, then re-derive the canonical pair
+    // from that net LEI so every field stays consistent.
     const eur = v === '' ? null : Number(v)
     const kurs = numOrNull(form.acquisition_exchange_rate)
     const vat = numOrNull(form.purchase_vat_rate) ?? 0
-    const netLei = eur != null && kurs ? Math.round(((eur * kurs) / (1 + vat / 100)) * 100) / 100 : null
+    const netLei = netLeiFromGrossEur({ grossEur: eur, vatRate: vat, kurs })
     applyAcq(netLei, vat, kurs)
   }
   const handleVatRate = (v: string) => {

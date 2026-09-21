@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { vi, test, expect } from 'vitest'
@@ -10,7 +10,7 @@ vi.mock('@/api/carpark', () => ({
     getLocations: () => Promise.resolve({ locations: [] }),
     getVehicle: vi.fn(() => Promise.resolve({ vehicle: {} })),
     getPricingHistory: () => Promise.resolve({ history: [] }),
-    getBnrRate: () => Promise.resolve({}),
+    getBnrRate: vi.fn(() => Promise.resolve({})),
     checkVin: () => Promise.resolve({ exists: false }),
   },
 }))
@@ -62,4 +62,32 @@ test('editor LOAD reconstructs the RON entry from a canonical EUR vehicle', asyn
   } as never)
   renderNewVehicleForm('/edit/123?tab=comercial')
   expect(await screen.findByDisplayValue('40000')).toBeInTheDocument()
+})
+
+test('editing Net-Lei during an in-flight BNR fetch is not reverted when it resolves', async () => {
+  // Regression: fetchBnr must combine the resolved kurs with the CURRENT net-LEI
+  // (read from a ref), not the stale value captured when the fetch started.
+  let resolveBnr: (v: { kurs: number; kurs_date: string }) => void = () => {}
+  const pending = new Promise<{ kurs: number; kurs_date: string }>((res) => {
+    resolveBnr = res
+  })
+  vi.mocked(carparkApi.getBnrRate).mockReturnValueOnce(pending as never)
+
+  const { container } = renderNewVehicleForm('/edit/new?tab=comercial')
+
+  // Changing the acquisition date kicks off a BNR fetch that stays pending.
+  const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement
+  fireEvent.change(dateInput, { target: { value: '2026-01-15' } })
+
+  // While the fetch is in flight, the user types a net-LEI amount.
+  const netLei = screen.getByPlaceholderText('RON') as HTMLInputElement
+  fireEvent.change(netLei, { target: { value: '40000' } })
+  expect(netLei.value).toBe('40000')
+
+  // The BNR response resolves — the field must keep 40000 (combined with the new
+  // kurs), NOT revert to its stale (empty) pre-fetch value.
+  await act(async () => {
+    resolveBnr({ kurs: 5, kurs_date: '2026-01-15' })
+  })
+  expect((screen.getByPlaceholderText('RON') as HTMLInputElement).value).toBe('40000')
 })
