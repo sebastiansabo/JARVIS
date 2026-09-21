@@ -1,6 +1,7 @@
 """Analytics Repository — Aggregated queries for CarPark KPIs & dashboard."""
 from typing import Dict, Any, List, Optional
 from core.base_repository import BaseRepository
+from carpark.money import NET_BUY_SQL
 
 
 class AnalyticsRepository(BaseRepository):
@@ -149,17 +150,30 @@ class AnalyticsRepository(BaseRepository):
 
     def get_profitability_overview(self, company_id: int,
                                     period_days: int = 90) -> Dict[str, Any]:
-        """Aggregate profitability for recently sold vehicles."""
-        return self.query_one('''
-            WITH sold AS (
+        """Aggregate profitability for recently sold vehicles.
+
+        Profit is EUR net-basis: sale − net buy − extra costs. The net buy is
+        counted ONCE (the old query subtracted both acquisition_price and the
+        generated total_cost, which itself contained the net buy → double count);
+        extra costs come from carpark_vehicle_costs (the generated total_cost is
+        stale — it sums legacy cost columns the editor now leaves null).
+        """
+        return self.query_one(f'''
+            WITH costs AS (
+                SELECT vehicle_id, COALESCE(SUM(amount), 0) AS extra_costs
+                FROM carpark_vehicle_costs
+                GROUP BY vehicle_id
+            ),
+            sold AS (
                 SELECT
                     v.id,
                     v.sale_price,
-                    v.acquisition_price,
-                    COALESCE(v.total_cost, 0) AS total_cost,
-                    (v.sale_price - COALESCE(v.acquisition_price, 0) - COALESCE(v.total_cost, 0)) AS gross_profit,
+                    {NET_BUY_SQL} AS net_buy,
+                    COALESCE(c.extra_costs, 0) AS extra_costs,
+                    (v.sale_price - {NET_BUY_SQL} - COALESCE(c.extra_costs, 0)) AS gross_profit,
                     (v.sale_date - COALESCE(v.arrival_date, v.acquisition_date)) AS days_to_sell
                 FROM carpark_vehicles v
+                LEFT JOIN costs c ON c.vehicle_id = v.id
                 WHERE v.company_id = %s
                   AND v.status IN ('SOLD','DELIVERED')
                   AND v.sale_date >= CURRENT_DATE - (%s || ' days')::INTERVAL
@@ -169,8 +183,8 @@ class AnalyticsRepository(BaseRepository):
             SELECT
                 COUNT(*) AS vehicles_sold,
                 COALESCE(SUM(sale_price), 0) AS total_revenue,
-                COALESCE(SUM(acquisition_price), 0) AS total_acquisition,
-                COALESCE(SUM(total_cost), 0) AS total_costs,
+                COALESCE(SUM(net_buy), 0) AS total_acquisition,
+                COALESCE(SUM(extra_costs), 0) AS total_costs,
                 COALESCE(SUM(gross_profit), 0) AS total_gross_profit,
                 CASE WHEN SUM(sale_price) > 0
                      THEN ROUND(100.0 * SUM(gross_profit) / SUM(sale_price), 2)
@@ -202,19 +216,29 @@ class AnalyticsRepository(BaseRepository):
 
     def get_monthly_sales(self, company_id: int,
                           months: int = 12) -> List[Dict[str, Any]]:
-        """Monthly sold count + revenue for the last N months."""
-        return self.query_all('''
+        """Monthly sold count + revenue for the last N months.
+
+        gross_profit is EUR net-basis (sale − net buy − extra costs), matching
+        get_profitability_overview.
+        """
+        return self.query_all(f'''
+            WITH costs AS (
+                SELECT vehicle_id, COALESCE(SUM(amount), 0) AS extra_costs
+                FROM carpark_vehicle_costs
+                GROUP BY vehicle_id
+            )
             SELECT
-                TO_CHAR(sale_date, 'YYYY-MM') AS month,
+                TO_CHAR(v.sale_date, 'YYYY-MM') AS month,
                 COUNT(*) AS sold,
-                COALESCE(SUM(sale_price), 0) AS revenue,
-                COALESCE(SUM(sale_price - COALESCE(acquisition_price, 0) - COALESCE(total_cost, 0)), 0) AS gross_profit
-            FROM carpark_vehicles
-            WHERE company_id = %s
-              AND status IN ('SOLD','DELIVERED')
-              AND sale_date >= (DATE_TRUNC('month', CURRENT_DATE) - (%s || ' months')::INTERVAL)
-              AND sale_price IS NOT NULL
-            GROUP BY TO_CHAR(sale_date, 'YYYY-MM')
+                COALESCE(SUM(v.sale_price), 0) AS revenue,
+                COALESCE(SUM(v.sale_price - {NET_BUY_SQL} - COALESCE(c.extra_costs, 0)), 0) AS gross_profit
+            FROM carpark_vehicles v
+            LEFT JOIN costs c ON c.vehicle_id = v.id
+            WHERE v.company_id = %s
+              AND v.status IN ('SOLD','DELIVERED')
+              AND v.sale_date >= (DATE_TRUNC('month', CURRENT_DATE) - (%s || ' months')::INTERVAL)
+              AND v.sale_price IS NOT NULL
+            GROUP BY TO_CHAR(v.sale_date, 'YYYY-MM')
             ORDER BY month
         ''', (company_id, months))
 

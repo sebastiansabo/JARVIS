@@ -382,17 +382,19 @@ class VehicleService:
         revenues = self._revenue_repo.get_totals_by_vehicle(vehicle_id)
         vehicle = self._repo.get_by_id(vehicle_id)
 
-        acquisition_price = float(vehicle.get('acquisition_price') or 0) if vehicle else 0
-
-        total_costs = float(costs['total_with_vat'])
-        total_revenues = float(revenues['total_with_vat'])
+        # EUR net-basis: net buy (VAT-deductible) counted once; costs/revenues
+        # net (amount only, excl. VAT). Mirrors analytics + dispo.
+        from carpark.money import net_buy
+        buy = net_buy(vehicle)
+        total_costs = float(costs['total_amount'])
+        total_revenues = float(revenues['total_amount'])
 
         return {
-            'acquisition_price': acquisition_price,
+            'acquisition_price': buy,
             'total_costs': total_costs,
             'total_revenues': total_revenues,
-            'total_invested': acquisition_price + total_costs,
-            'profit': total_revenues - acquisition_price - total_costs,
+            'total_invested': buy + total_costs,
+            'profit': total_revenues - buy - total_costs,
             'costs_breakdown': costs['by_type'],
             'revenues_breakdown': revenues['by_type'],
         }
