@@ -86,14 +86,25 @@ export function computePricingModel(form: FormLike, costLines: Line[], inp: Pric
   const purchaseVatRate = num(form.purchase_vat_rate) || STANDARD_VAT
   const vatRate = regime === 'MARGIN' ? STANDARD_VAT : purchaseVatRate
   const curs = num(form.acquisition_exchange_rate)
-  const netLei = num(form.acquisition_price)
-  let netEur = curs > 0 ? netLei / curs : 0
-  let grossEur = netEur * (1 + purchaseVatRate / 100) // what was actually paid
-  // Fallback: cars with only `purchase_price_net` (the GROSS EUR paid) and no
-  // acquisition_price/kurs still get a basis, so the Fișă/Zona never blank out.
-  if (netEur <= 0) {
-    grossEur = num(form.purchase_price_net)
-    netEur = purchaseVatRate > 0 ? grossEur / (1 + purchaseVatRate / 100) : grossEur
+  let netEur: number
+  let grossEur: number
+  if ((form.acquisition_currency as string) === 'RON') {
+    // Legacy pre-migration row: acquisition_price = NET LEI, still needs the
+    // BNR kurs to get to EUR. Keep this branch until Task 8's migration lands.
+    const netLei = num(form.acquisition_price)
+    netEur = curs > 0 ? netLei / curs : 0
+    grossEur = netEur * (1 + purchaseVatRate / 100) // what was actually paid
+    // Fallback: cars with only `purchase_price_net` (the GROSS EUR paid) and no
+    // acquisition_price/kurs still get a basis, so the Fișă/Zona never blank out.
+    if (netEur <= 0) {
+      grossEur = num(form.purchase_price_net)
+      netEur = purchaseVatRate > 0 ? grossEur / (1 + purchaseVatRate / 100) : grossEur
+    }
+  } else {
+    // Canonical: purchase_price_net = NET EUR, acquisition_price = GROSS EUR.
+    netEur = num(form.purchase_price_net)
+    grossEur = num(form.acquisition_price) || (regime === 'MARGIN' ? netEur : netEur * (1 + purchaseVatRate / 100))
+    if (netEur <= 0 && grossEur > 0) netEur = regime === 'MARGIN' ? grossEur : grossEur / (1 + purchaseVatRate / 100)
   }
   // Cost basis: MARGIN keeps the non-deductible VAT in the cost (gross); NORMAL
   // reclaims the input VAT, so only the net is a real cost.
