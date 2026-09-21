@@ -57,6 +57,22 @@ def delete(key):
     _get_client().delete_object(Bucket=_cfg()['bucket'], Key=key)
 
 
+def presigned_url(key, expires=3600):
+    """Return a time-limited public GET URL for a private object key.
+
+    Objects are stored private (see upload); consumers that cannot authenticate to
+    Spaces (e.g. Shopify fetching an image server-side) need a signed URL instead.
+    Returns the key unchanged when Spaces is not configured, so callers degrade to
+    their pre-existing behaviour rather than crashing.
+    """
+    if not is_enabled():
+        return key
+    return _get_client().generate_presigned_url(
+        'get_object',
+        Params={'Bucket': _cfg()['bucket'], 'Key': key},
+        ExpiresIn=expires)
+
+
 def resolve_image_bytes(value):
     """Accept an old base64 data-URL OR a Spaces key; return raw bytes."""
     if not value:
