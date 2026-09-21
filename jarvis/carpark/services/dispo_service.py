@@ -474,8 +474,12 @@ class DispoService:
                 # purchase_price_net = NET EUR, acquisition_currency = 'EUR'.
                 # A transfer has no VAT split — the transfer price IS the
                 # receiving company's cost basis, so gross == net == price.
+                # Pin purchase_vat_rate = 0 so gross == net holds and a later
+                # editor acquisition edit (which re-derives gross as
+                # net×(1+vat)/kurs) can't re-apply a phantom VAT and inflate it.
                 'acquisition_currency': 'EUR',
                 'purchase_price_net': transfer_price,
+                'purchase_vat_rate': 0,
                 'sale_price': None,
                 'sale_date': None,
                 'sale_type': None,

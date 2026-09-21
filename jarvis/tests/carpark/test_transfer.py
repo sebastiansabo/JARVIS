@@ -174,6 +174,10 @@ def test_transfer_moves_vehicle_sets_fields_and_logs(transfer_seed):
     # gross == net == transfer_price.
     assert float(vehicle['purchase_price_net']) == 10000
     assert vehicle['acquisition_currency'] == 'EUR'
+    # A transfer has no VAT split — purchase_vat_rate is pinned to 0 so gross ==
+    # net == transfer_price and no later acquisition edit (via the editor's
+    # VAT-driven applyAcq path) can re-apply a phantom VAT and inflate the basis.
+    assert float(vehicle['purchase_vat_rate']) == 0
     assert vehicle['sale_price'] is None
     assert vehicle['sale_date'] is None
     assert vehicle['sale_type'] is None
@@ -198,6 +202,27 @@ def test_transfer_moves_vehicle_sets_fields_and_logs(transfer_seed):
     persisted = VehicleRepository().get_by_id(vehicle_id)
     assert persisted['company_id'] == COMPANY_B
     assert persisted['status'] == 'ACQUIRED'
+
+
+def test_transfer_pins_zero_vat_rate_so_no_phantom_vat(transfer_seed):
+    """A transferred car's cost basis is the transfer price, VAT-free. The
+    transfer must persist purchase_vat_rate = 0 (alongside the canonical
+    gross==net==transfer_price) so a later editor acquisition edit — which
+    re-derives gross EUR as net×(1+vat)/kurs — cannot re-inflate the basis by
+    a phantom 21% VAT. Verified straight from the DB, not just the return dict."""
+    vehicle_id = transfer_seed['vehicle_id']
+
+    DispoService().transfer(vehicle_id, COMPANY_A, USER, {
+        'to_company_id': COMPANY_B,
+        'transfer_price': 12000,
+        'document_id': transfer_seed['document_id'],
+    })
+
+    persisted = VehicleRepository().get_by_id(vehicle_id)
+    assert float(persisted['purchase_vat_rate']) == 0
+    assert float(persisted['acquisition_price']) == 12000
+    assert float(persisted['purchase_price_net']) == 12000
+    assert persisted['acquisition_currency'] == 'EUR'
 
 
 def test_transfer_cancels_active_reservation(transfer_seed):
