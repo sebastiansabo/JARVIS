@@ -166,6 +166,74 @@ VALUE_TRANSLATIONS_SEED: Dict[str, Dict[str, str]] = {
     },
 }
 
+# Autovit equipment taxonomy: slug -> RO label.
+# The current vehicle form stores selected equipment as Autovit *slugs* in the
+# carpark_vehicles.equipment_options (TEXT[]) column; the human labels live in
+# the frontend taxonomy (jarvis/frontend/src/data/autovitData.ts AUTOVIT_EQUIPMENT).
+# This backend mirror lets the Shopify mapper render those slugs as Romanian
+# labels in the `custom.dotari` metafield. Keep in sync with autovitData.ts.
+# An admin can still override any label via the value map ('equipment' dimension).
+AUTOVIT_EQUIPMENT_RO: Dict[str, str] = {
+    # Confort
+    "ac": "Aer condiționat",
+    "climatronic": "Climatronic",
+    "heated-seats-front": "Scaune încălzite față",
+    "heated-seats-rear": "Scaune încălzite spate",
+    "ventilated-seats": "Scaune ventilate",
+    "electric-seats": "Scaune electrice",
+    "memory-seats": "Scaune cu memorie",
+    "heated-steering": "Volan încălzit",
+    "sunroof": "Trapă / Panoramic",
+    "keyless": "Keyless entry/go",
+    "electric-windows": "Geamuri electrice",
+    "folding-mirrors": "Oglinzi rabatabile electric",
+    "tow-bar": "Cârlig remorcare",
+    "power-tailgate": "Haion electric",
+    # Siguranță
+    "abs": "ABS",
+    "esp": "ESP",
+    "airbags": "Airbag-uri",
+    "traction-control": "Control tracțiune",
+    "tpms": "Senzori presiune anvelope",
+    "isofix": "ISOFIX",
+    "alarm": "Alarmă",
+    "immobilizer": "Imobilizator",
+    # Asistență
+    "rear-camera": "Cameră marșarier",
+    "360-camera": "Cameră 360°",
+    "park-sensors-front": "Senzori parcare față",
+    "park-sensors-rear": "Senzori parcare spate",
+    "auto-park": "Parcare automată",
+    "cruise-control": "Tempomat",
+    "adaptive-cruise": "Tempomat adaptiv",
+    "lane-assist": "Asistență menținere bandă",
+    "blind-spot": "Detectare unghi mort",
+    "traffic-sign": "Recunoaștere semne",
+    "aeb": "Frânare automată urgență",
+    "hud": "Head-up display",
+    # Multimedia
+    "navigation": "Navigație",
+    "bluetooth": "Bluetooth",
+    "carplay": "Apple CarPlay",
+    "android-auto": "Android Auto",
+    "premium-audio": "Sistem audio premium",
+    "touchscreen": "Ecran tactil",
+    "wireless-charging": "Încărcare wireless",
+    "usb": "USB",
+    # Lumini & Exterior
+    "led-headlights": "Faruri LED",
+    "xenon": "Faruri Xenon",
+    "matrix": "Faruri Matrix",
+    "laser": "Faruri Laser",
+    "drl": "Lumini de zi LED",
+    "adaptive-headlights": "Faruri adaptive",
+    "high-beam-assist": "Asistență fază lungă",
+    "alloy-wheels": "Jante aliaj",
+    "roof-rails": "Bare portbagaj",
+    "tinted-windows": "Geamuri fumurii",
+}
+
+
 # RO body-type product type vocabulary.
 # Maps CarPark body_type/vehicle_type values to store's RO productType vocabulary.
 # Derived from VALUE_TRANSLATIONS_SEED["body_type"] (single source of truth) so the
