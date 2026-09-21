@@ -7,7 +7,7 @@ import { SearchSelect } from '@/components/shared/SearchSelect'
 import { DecodePreviewDialog } from './DecodePreviewDialog'
 import { seedCurrentPriceOnCreate } from './vehicleFormPricing'
 import { findMissingRequiredFields } from './vehicleFormValidation'
-import { toCanonical } from './acquisitionCanonical'
+import { toCanonical, netLeiFromCanonical } from './acquisitionCanonical'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -412,12 +412,26 @@ export default function VehicleForm() {
           populated[key] = (v as unknown as Record<string, string | number | boolean | null>)[key]
         }
       }
-      // VAT: default the rate to 21% and (re)compute the LEI VAT value from the price.
+      // VAT: default the rate to 21% and (re)compute the LEI VAT value from the
+      // reconstructed net LEI — NOT from the stored acquisition_price, which is
+      // now GROSS EUR under the canonical model.
       const _vatRate = populated.purchase_vat_rate == null ? 21 : Number(populated.purchase_vat_rate)
       populated.purchase_vat_rate = _vatRate
-      const _acqLei = Number(populated.acquisition_price) || 0
+      // Reconstruct the RON entry: canonical ('EUR') rows derive net LEI from
+      // purchase_price_net (NET EUR) × kurs; legacy ('RON') rows (pre-migration)
+      // already stored the net LEI value directly in acquisition_price.
+      const _netLei =
+        populated.acquisition_currency === 'EUR'
+          ? netLeiFromCanonical({
+              purchase_price_net: populated.purchase_price_net,
+              kurs: populated.acquisition_exchange_rate,
+            })
+          : Number(populated.acquisition_price) || null
+      setNetLeiInput(_netLei)
       populated.acquisition_vat =
-        _acqLei > 0 && _vatRate > 0 ? Math.round(_acqLei * (_vatRate / 100) * 100) / 100 : (populated.acquisition_vat ?? null)
+        _netLei != null && _netLei > 0 && _vatRate > 0
+          ? Math.round(_netLei * (_vatRate / 100) * 100) / 100
+          : (populated.acquisition_vat ?? null)
       setForm((prev) => ({ ...prev, ...populated }))
       // Keep an existing custom title / manual Preț critic — don't auto-overwrite them.
       if (v.listing_title) titleTouched.current = true
