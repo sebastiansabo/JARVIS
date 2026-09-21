@@ -2748,29 +2748,33 @@ function ModificationsTab({ modifications }: { modifications: Array<{ id: number
 
 // ── Profitability Summary ──────────────────────────────────
 // The four money cards are computed from the vehicle's FORM MODEL (all in EUR).
-// Acquisition and the extra cost lines are SEPARATE cards (no double-counting):
-//   Achiziție      = purchase_price_net
+// Canonical model: purchase_price_net = NET EUR cost basis (used directly, no
+// VAT division); acquisition_price = GROSS EUR actually paid (incl. VAT). In
+// MARGIN regime (vat_deductible === false) VAT isn't deductible, so net ==
+// gross for that car. Acquisition and the extra cost lines are SEPARATE cards
+// (no double-counting):
+//   Achiziție      = grossAcqEur (acquisition_price, GROSS EUR paid)
 //   Costuri totale = Σ cost_lines.eur  (extra costs only, NOT the buy price)
-//   Profit/Loss    = total_revenues − Achiziție − Costuri totale
+//   Profit/Loss    = total_revenues − netAcqEur (cost basis) − Costuri totale, via the econ engine
 // Revenues stay sourced from the profitability endpoint (data.total_revenues).
 function ProfitabilitySummary({ data, vehicle }: { data: Profitability; vehicle: Vehicle }) {
   const currency = 'EUR'
   const costLinesEur = parseCostLines(vehicle.cost_lines).reduce((s, l) => s + (Number(l.eur) || 0), 0)
-  const acquisition = Number(vehicle.purchase_price_net) || 0 // GROSS EUR paid (incl. VAT)
   const totalCosts = costLinesEur
   const totalRevenues = data.total_revenues
   const sellPrice = Number(vehicle.promotional_price ?? vehicle.list_price) || 0
   const income = totalRevenues > 0 ? totalRevenues : sellPrice
-  // Marjă = VAT-adjusted profit net, via the same engine as the Fișă de preț
-  // (not the raw gross spread). purchase_price_net is the GROSS EUR paid; the
-  // net cost basis = gross ÷ (1+TVA) in NORMAL, or the gross itself in MARGIN.
+  // Marjă = VAT-adjusted profit net, via the same engine as the Fișă de preț.
   const regime = vehicle.vat_deductible === false ? 'MARGIN' : 'NORMAL'
   const vatRate = regime === 'MARGIN' ? 21 : (Number(vehicle.purchase_vat_rate) || 21)
-  const netAcqEur = regime === 'NORMAL' ? acquisition / (1 + vatRate / 100) : acquisition
+  const netAcqEur = Number(vehicle.purchase_price_net) || 0 // canonical NET EUR cost basis
+  // canonical GROSS EUR column; fall back to deriving gross from net for any
+  // legacy row missing acquisition_price
+  const grossAcqEur = Number(vehicle.acquisition_price) || (netAcqEur * (1 + vatRate / 100))
   const baseCostEur = netAcqEur + costLinesEur
   const engineParams: EngineParams = {
     regime, vatRate, landedCostEur: baseCostEur,
-    purchaseGrossEur: acquisition, inputVatEur: regime === 'NORMAL' ? acquisition - netAcqEur : 0,
+    purchaseGrossEur: grossAcqEur, inputVatEur: regime === 'NORMAL' ? grossAcqEur - netAcqEur : 0,
   }
   const e = income > 0 && baseCostEur > 0 ? econ(income, engineParams) : null
   const margin = e ? e.profitNet : null
@@ -2788,7 +2792,7 @@ function ProfitabilitySummary({ data, vehicle }: { data: Profitability; vehicle:
       </Card>
       <Card className="p-3">
         <div className="text-xs text-muted-foreground mb-1">Achiziție</div>
-        <CurrencyDisplay value={acquisition} currency={currency} className="text-lg font-semibold" />
+        <CurrencyDisplay value={grossAcqEur} currency={currency} className="text-lg font-semibold" />
       </Card>
       <Card className="p-3">
         <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
