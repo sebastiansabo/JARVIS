@@ -14,9 +14,13 @@ import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from .translations import BODY_TYPE_RO, ro
+from .translations import AUTOVIT_EQUIPMENT_RO, BODY_TYPE_RO, ro
 
 ELIGIBLE_STATUSES = {'READY_FOR_SALE', 'LISTED', 'PRICE_REDUCED', 'AUCTION_CANDIDATE'}
+
+# Metric horsepower (CP/PS) -> kilowatt conversion factor, used to derive
+# custom.putere_kw when engine_power_kw is not filled but engine_power_hp is.
+HP_TO_KW = 0.7355
 
 
 def _price(vehicle: Dict[str, Any]):
@@ -77,10 +81,36 @@ def _coerce_list(value: Any) -> List[str]:
     return [s] if s else []
 
 
+def _equipment_label(value_map: Dict[str, Dict[str, str]], slug: str) -> str:
+    """Translate an equipment_options Autovit slug to a display label.
+
+    Precedence: admin value-map override ('equipment' dimension) > Autovit RO
+    taxonomy > the slug itself (identity fallback, so nothing is ever dropped).
+    """
+    s = str(slug).strip()
+    override = value_map.get('equipment', {}).get(s)
+    return override or AUTOVIT_EQUIPMENT_RO.get(s, s)
+
+
 def _dotari_items(vehicle: Dict[str, Any], value_map: Dict[str, Dict[str, str]]) -> List[str]:
-    """Combine equipment + optional_packages into a translated flat list."""
-    raw_items = _coerce_list(vehicle.get('equipment')) + _coerce_list(vehicle.get('optional_packages'))
-    return [ro(value_map, 'equipment', item) for item in raw_items if item]
+    """Flat, de-duplicated equipment list drawn from every column that holds it.
+
+    - equipment_options (TEXT[]): Autovit slugs saved by the current vehicle form
+      -> translated via the Autovit taxonomy / value-map override.
+    - equipment (JSONB) + optional_packages: already human-readable strings (or an
+      Autovit flag/category dict) -> passed through the value-map ('equipment').
+    """
+    items = [_equipment_label(value_map, slug)
+             for slug in _coerce_list(vehicle.get('equipment_options'))]
+    items += [ro(value_map, 'equipment', item)
+              for item in _coerce_list(vehicle.get('equipment')) + _coerce_list(vehicle.get('optional_packages'))]
+    seen: set = set()
+    out: List[str] = []
+    for item in items:
+        if item and item not in seen:
+            seen.add(item)
+            out.append(item)
+    return out
 
 
 def _extract_year(value: Any) -> Optional[int]:
@@ -107,6 +137,14 @@ def _apply_transform(row: Dict[str, Any], vehicle: Dict[str, Any],
         return '\n'.join(items) if items else None
 
     raw_value = vehicle.get(source_expr)
+    if (raw_value is None or raw_value == '') and source_expr == 'engine_power_kw':
+        # Derive kW from metric horsepower when the kW column is not filled.
+        hp = vehicle.get('engine_power_hp')
+        if hp not in (None, ''):
+            try:
+                raw_value = round(float(hp) * HP_TO_KW)
+            except (TypeError, ValueError):
+                pass
     if raw_value is None or raw_value == '':
         return None
 
@@ -142,6 +180,12 @@ def _description_html(vehicle: Dict[str, Any], spec_pairs: List[Tuple[str, str]]
     title = _title(vehicle)
     year = vehicle.get('year_of_manufacture') or ''
     parts = [f'<h3>{html.escape(str(title))} ({html.escape(str(year))})</h3>']
+
+    # Anunț free-text from CarPark (listing_description): the marketing copy the
+    # sales team wrote. Escaped, with newlines preserved as <br>.
+    anunt = (vehicle.get('listing_description') or '').strip()
+    if anunt:
+        parts.append(f'<div>{html.escape(anunt).replace(chr(10), "<br>")}</div>')
 
     if spec_pairs:
         specs = ''.join(

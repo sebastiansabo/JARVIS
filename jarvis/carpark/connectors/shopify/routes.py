@@ -349,6 +349,41 @@ def publish_vehicle(vid):
     return jsonify(result), (200 if result.get('success') else 400)
 
 
+@shopify_bp.route('/api/vehicles/<int:vid>/preview', methods=['GET'])
+@carpark_edit_required
+def preview_vehicle(vid):
+    """Dry-run: report what publishing would produce without touching Shopify.
+
+    Powers the pre-publish confirmation modal — returns whether the vehicle is
+    eligible (mandatory: for-sale status + price + photo) plus the non-mandatory
+    empty-metafield warnings, computed from the same field/value map publish uses.
+    No Shopify client is built and no listing state is written.
+    """
+    from . import mapper
+    try:
+        _schema_repo.seed_defaults_if_empty()
+    except Exception:
+        logger.exception('schema seed failed; continuing with existing field/value map')
+    connector = _get_single_account()
+    if not connector:
+        return jsonify({'success': False, 'error': 'Shopify is not configured'}), 400
+    vehicle = _vehicle_repo.get_by_id(vid)
+    if not vehicle:
+        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+    photos = _photo_repo.get_by_vehicle(vid)
+
+    eligible, reason = mapper.is_eligible(vehicle, photos)
+    warnings: list = []
+    if eligible:
+        field_map = _schema_repo.get_active_field_map()
+        value_map = _schema_repo.get_value_map()
+        _product, warnings = mapper.vehicle_to_product(
+            vehicle, photos, field_map, value_map, _config(connector))
+    return jsonify({'success': True, 'eligible': eligible,
+                    'blocking_reason': None if eligible else reason,
+                    'warnings': warnings})
+
+
 @shopify_bp.route('/api/vehicles/<int:vid>/unpublish', methods=['POST'])
 @carpark_edit_required
 def unpublish_vehicle(vid):

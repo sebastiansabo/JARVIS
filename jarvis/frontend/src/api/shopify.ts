@@ -51,6 +51,7 @@ export const shopifyApi = {
   getTaxonomy: () => api.get<{ success: boolean } & TaxonomyPayload>(`${BASE}/taxonomy`),
   saveTaxonomy: (mappings: Array<{ dimension: string; source_value: string; target_gid?: string; target_label?: string; shopify_attribute_gid?: string }>) =>
     api.post<{ success: boolean; saved: number }>(`${BASE}/taxonomy`, { mappings }),
+  previewVehicle: (vid: number) => api.get<{ success: boolean; eligible: boolean; blocking_reason?: string | null; warnings: string[] }>(`${BASE}/vehicles/${vid}/preview`),
   publishVehicle: (vid: number) => api.post<{ success: boolean; external_id?: string; external_url?: string; warnings?: string[]; error?: string }>(`${BASE}/vehicles/${vid}/publish`, {}),
   unpublishVehicle: (vid: number) => api.post<{ success: boolean; error?: string }>(`${BASE}/vehicles/${vid}/unpublish`, {}),
   vehicleStatus: (vid: number) => api.get<{
