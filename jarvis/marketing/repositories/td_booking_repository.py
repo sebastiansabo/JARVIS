@@ -1,5 +1,6 @@
 """Repository for the public test-drive booking layer (mkt_td_* tables)."""
 from core.base_repository import BaseRepository
+from foi_parcurs.session_lifecycle import GRACE_HOURS, NOW_LOCAL_SQL
 
 
 class TdConflict(Exception):
@@ -181,9 +182,12 @@ class TdBookingRepository(BaseRepository):
     # These three checks together are the "3-way availability" recheck. The overlap
     # SQL mirrors FoiParcursRepository.find_conflicts (foi_parcurs_repository.py:725):
     # a live TD session on the VIN whose [departure, COALESCE(return, departure)]
-    # window overlaps [frm, to] and is still open. Grace is kept at 6h / now() per the
-    # confirm spec. NOTE: find_conflicts currently uses GRACE_HOURS=8 and a
-    # Bucharest-local now() (session_lifecycle.py) -- if those drift, reconcile here.
+    # window overlaps [frm, to] and is still open. The grace clause is byte-equivalent
+    # to find_conflicts' -- both interpolate GRACE_HOURS and NOW_LOCAL_SQL from
+    # foi_parcurs.session_lifecycle (currently 8h grace + Bucharest-local now), so the
+    # confirm-time recheck and the read-time find_conflicts can never disagree on
+    # whether a stale in-grace PLANNED row still blocks. Runtime values stay
+    # parameterized (%s); only the server-controlled constants are f-string'd in.
     _CONFLICT_SQL = (
         "SELECT 1 FROM foi_de_parcurs fp "
         "WHERE fp.vin=%s AND fp.route_type='TD' "
@@ -191,7 +195,7 @@ class TdBookingRepository(BaseRepository):
         "AND COALESCE(fp.return_datetime, fp.departure_datetime) >= %s "
         "AND (fp.status='PLANNED' OR (fp.status<>'COMPLETED' AND fp.status<>'PENDING')) "
         "AND fp.status<>'MISSED' "
-        "AND NOT (fp.status='PLANNED' AND fp.departure_datetime + INTERVAL '6 hours' < now()) "
+        f"AND NOT (fp.status = 'PLANNED' AND fp.departure_datetime + INTERVAL '{GRACE_HOURS} hours' < {NOW_LOCAL_SQL}) "
         "LIMIT 1")
     _LOCK_SQL = (
         "SELECT 1 FROM fp_vehicles v WHERE v.vin=%s AND (v.locked_out=TRUE OR EXISTS "

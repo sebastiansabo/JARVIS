@@ -18,8 +18,16 @@ values. contract_id is UNIQUE, so the confirm row and the seeded conflict row us
 distinct contract_ids.
 
 A synthetic VIN ('CFACONF001') is used so the in-txn 3-way recheck sees no real
-foi_de_parcurs sessions / fp_vehicles lock rows; the conflict test explicitly SEEDS a
-live TD foi_de_parcurs row on that VIN/time and asserts TdConflict + booking untouched.
+foi_de_parcurs sessions / fp_vehicles lock rows by default. Each conflict test then
+SEEDS exactly one blocker and asserts the matching TdConflict branch + full rollback
+(booking untouched, no confirm-row committed):
+  - _CONFLICT_SQL: an overlapping PLANNED TD row on the VIN/time.
+  - _OPEN_SQL: a FILLED td_form row on the VIN, window OUTSIDE [frm, to] so only the
+    "already out" check can fire.
+  - _LOCK_SQL: an fp_vehicles row with locked_out=TRUE (only vin/mark/model are
+    NOT-NULL-without-default, so the seed is cheap).
+  - replay guard: a booking flipped to 'confirmed' -> the FOR UPDATE pending-check
+    raises before any FP row is created.
 
 mkt_td_bookings has plain (non-CASCADE) FKs to pages/slots/cars, so bookings are deleted
 before the page (whose slots/cars DO cascade) in teardown.
@@ -80,6 +88,30 @@ def _seed_conflict_fp(vin, company_id):
                  tuple(row[c] for c in cols))
 
 
+def _seed_open_fp(vin, company_id):
+    """Insert a live FILLED td_form session on the VIN (a car that's already OUT),
+    deliberately OUTSIDE the [frm, to] window so the overlap check (_CONFLICT_SQL)
+    can't fire first -- this isolates the _OPEN_SQL branch."""
+    row = _fp_row(vin, company_id)
+    row['contract_id'] = f'CFA-OPEN-{vin}'
+    row['status'] = 'FILLED'
+    row['departure_datetime'] = '2098-01-01 10:00+03'
+    row['return_datetime'] = '2098-01-01 10:30+03'
+    cols = list(row.keys())
+    ph = ', '.join(['%s'] * len(cols))
+    repo.execute(f"INSERT INTO foi_de_parcurs ({', '.join(cols)}) VALUES ({ph})",
+                 tuple(row[c] for c in cols))
+
+
+def _seed_locked_vehicle(vin):
+    """Insert an fp_vehicles row for the VIN with locked_out=TRUE -> trips _LOCK_SQL.
+    fp_vehicles' only NOT-NULL-without-default columns are vin/mark/model, so this is
+    a cheap 4-column seed."""
+    repo.execute(
+        'INSERT INTO fp_vehicles (vin, mark, model, locked_out) VALUES (%s,%s,%s,TRUE)',
+        (vin, 'TestMark', 'TestModel'))
+
+
 def _resolve_company_id():
     conn = get_db()
     try:
@@ -97,8 +129,10 @@ def booking(require_real_db):
     company_id = _resolve_company_id()
 
     # Defensive pre-clean: a prior aborted run could leave a foi_de_parcurs row on
-    # this VIN (contract_id is UNIQUE -> would collide) or a page on this slug.
+    # this VIN (contract_id is UNIQUE -> would collide), an fp_vehicles lock row on
+    # this VIN (would trip _LOCK_SQL and break the happy path), or a page on this slug.
     repo.execute('DELETE FROM foi_de_parcurs WHERE vin=%s', (_VIN,))
+    repo.execute('DELETE FROM fp_vehicles WHERE vin=%s', (_VIN,))
     for pg in repo.query_all('SELECT id FROM mkt_td_booking_pages WHERE slug=%s', (_SLUG,)):
         repo.execute('DELETE FROM mkt_td_bookings WHERE page_id=%s', (pg['id'],))
         repo.execute('DELETE FROM mkt_td_booking_pages WHERE id=%s', (pg['id'],))
@@ -113,9 +147,10 @@ def booking(require_real_db):
                              'customer_email': 'ion@ex.com',
                              'expires_at': datetime.now(timezone.utc) + timedelta(hours=1)})
     yield p, c, s, b, company_id
-    # bookings (plain FK) before page (slots/cars cascade); foi_de_parcurs has no FK
-    # back to the mkt tables, so its cleanup order is independent.
+    # bookings (plain FK) before page (slots/cars cascade); foi_de_parcurs and
+    # fp_vehicles have no FK back to the mkt tables, so their cleanup is independent.
     repo.execute('DELETE FROM foi_de_parcurs WHERE vin=%s', (_VIN,))
+    repo.execute('DELETE FROM fp_vehicles WHERE vin=%s', (_VIN,))
     repo.execute('DELETE FROM mkt_td_bookings WHERE page_id=%s', (p['id'],))
     repo.execute('DELETE FROM mkt_td_booking_pages WHERE id=%s', (p['id'],))
 
@@ -133,9 +168,50 @@ def test_confirm_conflicts_when_car_busy(booking):
     p, c, s, b, company_id = booking
     # Seed a conflicting live FP session on the same VIN/time.
     _seed_conflict_fp(_VIN, company_id)
-    with pytest.raises(TdConflict):
+    with pytest.raises(TdConflict) as exc:
         repo.confirm_booking_atomic(b['id'], _VIN, _FRM, _TO, _fp_row(_VIN, company_id))
+    assert 'overlapping' in str(exc.value)  # _CONFLICT_SQL branch
     # booking untouched, and no confirm-row was left behind (transaction rolled back)
     assert repo.get_booking(b['id'])['status'] == 'pending_confirm'
+    assert repo.query_one(
+        "SELECT id FROM foi_de_parcurs WHERE contract_id=%s", (f'CFA-CONFIRM-{_VIN}',)) is None
+
+
+def test_confirm_conflicts_when_vehicle_already_out(booking):
+    """_OPEN_SQL branch: a FILLED td_form session on the VIN (car handed over, not
+    yet returned) blocks the confirm even when its window does NOT overlap [frm, to]."""
+    p, c, s, b, company_id = booking
+    _seed_open_fp(_VIN, company_id)
+    with pytest.raises(TdConflict) as exc:
+        repo.confirm_booking_atomic(b['id'], _VIN, _FRM, _TO, _fp_row(_VIN, company_id))
+    assert 'already out' in str(exc.value)  # _OPEN_SQL branch, not the overlap check
+    # rolled back: booking still pending, no confirm-row committed
+    assert repo.get_booking(b['id'])['status'] == 'pending_confirm'
+    assert repo.query_one(
+        "SELECT id FROM foi_de_parcurs WHERE contract_id=%s", (f'CFA-CONFIRM-{_VIN}',)) is None
+
+
+def test_confirm_conflicts_when_vehicle_locked(booking):
+    """_LOCK_SQL branch: an fp_vehicles row with locked_out=TRUE blocks the confirm."""
+    p, c, s, b, company_id = booking
+    _seed_locked_vehicle(_VIN)
+    with pytest.raises(TdConflict) as exc:
+        repo.confirm_booking_atomic(b['id'], _VIN, _FRM, _TO, _fp_row(_VIN, company_id))
+    assert 'locked' in str(exc.value)  # _LOCK_SQL branch
+    assert repo.get_booking(b['id'])['status'] == 'pending_confirm'
+    assert repo.query_one(
+        "SELECT id FROM foi_de_parcurs WHERE contract_id=%s", (f'CFA-CONFIRM-{_VIN}',)) is None
+
+
+def test_confirm_replay_guard_when_already_confirmed(booking):
+    """Replay/double-confirm guard (the FOR UPDATE pending-check): a booking that is
+    no longer 'pending_confirm' raises TdConflict before any FP row is created."""
+    p, c, s, b, company_id = booking
+    repo.execute("UPDATE mkt_td_bookings SET status='confirmed' WHERE id=%s", (b['id'],))
+    with pytest.raises(TdConflict) as exc:
+        repo.confirm_booking_atomic(b['id'], _VIN, _FRM, _TO, _fp_row(_VIN, company_id))
+    assert 'not pending' in str(exc.value)  # booking-status guard
+    # guard fired before any insert: no confirm-row exists, status unchanged
+    assert repo.get_booking(b['id'])['status'] == 'confirmed'
     assert repo.query_one(
         "SELECT id FROM foi_de_parcurs WHERE contract_id=%s", (f'CFA-CONFIRM-{_VIN}',)) is None
