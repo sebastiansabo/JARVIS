@@ -42,6 +42,9 @@ const Forms = lazy(() => import('./pages/Forms'))
 const FormDetail = lazy(() => import('./pages/Forms/FormDetail'))
 const FormBuilder = lazy(() => import('./pages/Forms/FormBuilder'))
 const PublicForm = lazy(() => import('./pages/Public/PublicForm'))
+const PublicTdBooking = lazy(() => import('./pages/Public/PublicTdBooking'))
+const TdConfirm = lazy(() => import('./pages/Public/TdConfirm'))
+const TdCancel = lazy(() => import('./pages/Public/TdCancel'))
 const VoucherPortal = lazy(() => import('./pages/Public/VoucherPortal'))
 const Dms = lazy(() => import('./pages/Dms'))
 const DmsDocumentDetail = lazy(() => import('./pages/Dms/DocumentDetail'))
@@ -169,6 +172,11 @@ export default function App() {
 
       {/* Public form — no auth, no layout */}
       <Route path="/f/:slug" element={<SuspensePage><PublicForm /></SuspensePage>} />
+
+      {/* Public test-drive booking — no auth, no layout. Specific routes first. */}
+      <Route path="/td/confirm" element={<SuspensePage><TdConfirm /></SuspensePage>} />
+      <Route path="/td/cancel" element={<SuspensePage><TdCancel /></SuspensePage>} />
+      <Route path="/td/:slug" element={<SuspensePage><PublicTdBooking /></SuspensePage>} />
 
       <Route path="/app" element={<><Layout /><SpotlightProvider /></>}>
         <Route index element={<DefaultRedirect />} />
