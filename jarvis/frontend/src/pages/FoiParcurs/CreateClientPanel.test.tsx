@@ -21,7 +21,7 @@ describe('CreateClientPanel company toggle', () => {
   beforeEach(() => createCrmClient.mockClear())
 
   it('hides company fields by default and reveals them when toggled', () => {
-    wrap(<CreateClientPanel prefill={null} onCancel={() => {}} onCreated={() => {}} />)
+    wrap(<CreateClientPanel onCancel={() => {}} onCreated={() => {}} />)
     expect(screen.queryByPlaceholderText('Denumire firmă')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('checkbox'))
     expect(screen.getByPlaceholderText('Denumire firmă')).toBeInTheDocument()
@@ -29,7 +29,7 @@ describe('CreateClientPanel company toggle', () => {
   })
 
   it('sends is_company + company_name + cui when creating a company client', async () => {
-    wrap(<CreateClientPanel prefill={null} onCancel={() => {}} onCreated={vi.fn()} />)
+    wrap(<CreateClientPanel onCancel={() => {}} onCreated={vi.fn()} />)
     fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.change(screen.getByPlaceholderText('Nume și prenume'), { target: { value: 'Ion Pop' } })
     fireEvent.change(screen.getByPlaceholderText('0721 234 567'), { target: { value: '0712345678' } })
@@ -45,7 +45,7 @@ describe('CreateClientPanel company toggle', () => {
   })
 
   it('omits company fields when the toggle stays off', async () => {
-    wrap(<CreateClientPanel prefill={null} onCancel={() => {}} onCreated={vi.fn()} />)
+    wrap(<CreateClientPanel onCancel={() => {}} onCreated={vi.fn()} />)
     fireEvent.change(screen.getByPlaceholderText('Nume și prenume'), { target: { value: 'Ana' } })
     fireEvent.change(screen.getByPlaceholderText('0721 234 567'), { target: { value: '0712345678' } })
     fireEvent.click(screen.getByRole('button', { name: /creează client/i }))
