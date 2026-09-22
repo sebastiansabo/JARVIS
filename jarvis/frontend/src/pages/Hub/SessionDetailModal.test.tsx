@@ -3,11 +3,11 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 
-const { correctSession, extendReturn, discardTestDrive, deleteContract } = vi.hoisted(() => ({
-  correctSession: vi.fn(), extendReturn: vi.fn(), discardTestDrive: vi.fn(), deleteContract: vi.fn(),
+const { correctSession, extendReturn, discardTestDrive, deleteContract, getContract } = vi.hoisted(() => ({
+  correctSession: vi.fn(), extendReturn: vi.fn(), discardTestDrive: vi.fn(), deleteContract: vi.fn(), getContract: vi.fn(),
 }))
 vi.mock('@/api/foiParcurs', () => ({
-  foiParcursApi: { correctSession, extendReturn, discardTestDrive, deleteContract, getContractPdfUrl: (id: number) => `/pdf/${id}` },
+  foiParcursApi: { correctSession, extendReturn, discardTestDrive, deleteContract, getContract, getContractPdfUrl: (id: number) => `/pdf/${id}` },
 }))
 
 // role + company read at render → flip between tests to exercise the admin
@@ -30,6 +30,7 @@ const base = {
 }
 const planned = { ...base, status: 'PLANNED' }
 const driving = { ...base, status: 'FILLED', td_status: 'driving' }
+const finalized = { ...base, status: 'COMPLETED', td_status: 'complete' }
 const internalWithComment = {
   ...base, client_name: null, status: 'FILLED', td_status: 'driving',
   is_internal: true, company_id: 5, itinerary: 'Deplasare SNN – pregatiri livrare',
@@ -44,6 +45,24 @@ describe('SessionDetailModal', () => {
   beforeEach(() => {
     auth.role = 'user'; auth.companyId = 5; vi.clearAllMocks()
     getUsers.mockResolvedValue([{ name: 'Ana', phone: '0755000111' }])
+    // The list row omits the heavy base64 licence photo, so the modal hydrates
+    // it from the detail endpoint — default to "no photo on file".
+    getContract.mockResolvedValue({ contract: { driver_license_photo: null } })
+  })
+
+  it('shows the licence photo for a client test drive, hydrated from the detail endpoint', async () => {
+    const dataUrl = 'data:image/jpeg;base64,AAAA'
+    getContract.mockResolvedValue({ contract: { driver_license_photo: dataUrl } })
+    wrap(<SessionDetailModal session={finalized as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    const img = await screen.findByAltText('Permis de conducere')
+    expect(img).toHaveAttribute('src', dataUrl)
+    expect(getContract).toHaveBeenCalledWith(finalized.id)
+  })
+
+  it('does not fetch or show a licence photo for an internal driving session', () => {
+    wrap(<SessionDetailModal session={internalWithComment as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(getContract).not.toHaveBeenCalled()
+    expect(screen.queryByAltText('Permis de conducere')).not.toBeInTheDocument()
   })
 
   it('internal session: shows an Intern tag, the driving user as Șofer, and their profile phone', async () => {
