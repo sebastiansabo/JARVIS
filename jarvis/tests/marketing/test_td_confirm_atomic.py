@@ -40,7 +40,7 @@ import psycopg2  # noqa: E402  (real driver, bound by conftest's require_real_db
 from datetime import datetime, timezone, timedelta  # noqa: E402
 from database import get_db, get_cursor, release_db  # noqa: E402
 from marketing.repositories.td_booking_repository import (  # noqa: E402
-    TdBookingRepository, TdConflict,
+    TdBookingRepository, TdConflict, TdBookingNotPending,
 )
 
 repo = TdBookingRepository()
@@ -171,6 +171,9 @@ def test_confirm_conflicts_when_car_busy(booking):
     with pytest.raises(TdConflict) as exc:
         repo.confirm_booking_atomic(b['id'], _VIN, _FRM, _TO, _fp_row(_VIN, company_id))
     assert 'overlapping' in str(exc.value)  # _CONFLICT_SQL branch
+    # An availability recheck raises PLAIN TdConflict, NOT the pending-guard subclass,
+    # so the service marks the booking 'conflict' (rather than treating it idempotently).
+    assert not isinstance(exc.value, TdBookingNotPending)
     # booking untouched, and no confirm-row was left behind (transaction rolled back)
     assert repo.get_booking(b['id'])['status'] == 'pending_confirm'
     assert repo.query_one(
@@ -211,6 +214,9 @@ def test_confirm_replay_guard_when_already_confirmed(booking):
     with pytest.raises(TdConflict) as exc:
         repo.confirm_booking_atomic(b['id'], _VIN, _FRM, _TO, _fp_row(_VIN, company_id))
     assert 'not pending' in str(exc.value)  # booking-status guard
+    # The guard raises the DISTINCT subclass so the service can respond idempotently
+    # to a racing/duplicate confirm instead of flipping a good booking to 'conflict'.
+    assert isinstance(exc.value, TdBookingNotPending)
     # guard fired before any insert: no confirm-row exists, status unchanged
     assert repo.get_booking(b['id'])['status'] == 'confirmed'
     assert repo.query_one(

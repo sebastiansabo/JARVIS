@@ -8,6 +8,15 @@ class TdConflict(Exception):
     (overlapping TD session, vehicle locked/blocked, already out, or the booking is
     no longer in a confirmable state). Signals the caller to return HTTP 409."""
 
+
+class TdBookingNotPending(TdConflict):
+    """Raised specifically by confirm_booking_atomic's FOR-UPDATE guard when the
+    booking is no longer 'pending_confirm' by the time the advisory lock is held
+    (e.g. a racing/duplicate confirm already committed 'confirmed', or a cancel/
+    expire fired). IS-A TdConflict for backward compatibility, but lets the service
+    distinguish "someone else already finished this booking" (idempotent) from a
+    genuine car-availability conflict (which must mark the booking 'conflict')."""
+
 _PAGE_COLS = {
     'project_id', 'company_id', 'event_id', 'slug', 'status', 'opens_at',
     'closes_at', 'min_lead_minutes', 'slot_minutes', 'buffer_minutes',
@@ -230,7 +239,11 @@ class TdBookingRepository(BaseRepository):
                            (booking_id,))
             row = cursor.fetchone()
             if not row or row['status'] != 'pending_confirm':
-                raise TdConflict('booking not pending')
+                # Distinct subclass so the service can respond idempotently to a
+                # racing/duplicate confirm instead of flipping a good booking to
+                # 'conflict'. The 3 availability rechecks below still raise plain
+                # TdConflict.
+                raise TdBookingNotPending('booking not pending')
             # 3-way availability recheck, all on THIS cursor (inside the lock).
             cursor.execute(self._CONFLICT_SQL, (vin, to, frm))
             if cursor.fetchone():
