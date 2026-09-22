@@ -460,6 +460,10 @@ export interface CreateCrmClientPayload {
   is_company?: boolean
   company_name?: string
   cui?: string
+  /** Driving licence captured on the TD form — persisted on the client so it's
+   *  reusable on the next drive (parity with mobile). */
+  driver_license_number?: string
+  driver_license_expiry?: string
 }
 
 // ── Driver-license OCR (Claude vision) ──

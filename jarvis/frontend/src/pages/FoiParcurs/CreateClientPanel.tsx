@@ -247,6 +247,11 @@ export function CreateClientPanel({
               ...(cui.trim() ? { cui: cui.trim() } : {}),
             }
           : {}),
+        // Persist the scanned/typed licence on the client (parity with mobile),
+        // so it's reusable on that client's next drive. Company drives also keep
+        // it on the contact person (created below); this is harmless there.
+        ...(licenseNumber.trim() ? { driver_license_number: licenseNumber.trim() } : {}),
+        ...(licenseExpiry.trim() ? { driver_license_expiry: licenseExpiry.trim() } : {}),
       },
       {
         onSuccess: async (res) => {
