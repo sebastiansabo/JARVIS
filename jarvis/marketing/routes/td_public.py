@@ -56,13 +56,12 @@ def get_page(slug):
         return jsonify({'error': 'not found'}), 404
     cars = _repo.list_cars(page['id'])
     slots = _slots.available_slots(page['id'], datetime.now(timezone.utc))
-    company = _repo.query_one('SELECT company FROM companies WHERE id=%s', (page['company_id'],))
     return jsonify({
         'page': {
             'title': page.get('title'),
             'intro': page.get('intro'),
             'thank_you': page.get('thank_you'),
-            'company_name': company.get('company') if company else None,
+            'company_name': _repo.get_company_name(page['company_id']),
         },
         'cars': [{'id': c['id'], 'vin': c['vin']} for c in cars],
         'slots': slots,
