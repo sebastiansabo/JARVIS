@@ -1352,12 +1352,12 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
             </div>
           ) : showManualCreate ? (
             <CreateClientPanel
-              prefill={null}
               onCancel={() => setShowManualCreate(false)}
-              onCreated={(client, licenseNumber, licenseExpiry) => {
+              onCreated={(client, licenseNumber, licenseExpiry, licensePhoto) => {
                 setSelectedClient(client)
                 if (licenseNumber) setDriverLicenseNumber(licenseNumber)
                 if (licenseExpiry) setDriverLicenseExpiry(licenseExpiry)
+                if (licensePhoto) setDriverLicensePhoto(licensePhoto)
                 setShowManualCreate(false)
                 setClientSearch('')
               }}

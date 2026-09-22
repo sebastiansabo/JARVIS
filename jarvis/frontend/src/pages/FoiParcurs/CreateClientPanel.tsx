@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { ImagePlus, X, Loader2, ScanLine, Users } from 'lucide-react'
+import { ImagePlus, X, Loader2, ScanLine, Users, UserPlus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -20,7 +20,7 @@ import { crmApi } from '@/api/crm'
 import { fileToCompressedDataUrl } from '@/lib/imageCompress'
 import { RO_COUNTIES, RO_CITIES } from '@/data/roLocalities'
 import { Autocomplete } from '@/components/shared/Autocomplete'
-import type { CrmClient, DriverLicenseOcrData } from '@/types/foiParcurs'
+import type { CrmClient } from '@/types/foiParcurs'
 import { composePhone, COUNTRY_DIAL_CODES } from './phoneFormat'
 
 /** Country options — România default, common others after. */
@@ -68,13 +68,7 @@ export function DriverLicenseSection({
   onLicenseExpiry?: (value: string) => void
 }) {
   const [busy, setBusy] = useState(false)
-  const [prefill, setPrefill] = useState<DriverLicenseOcrData | null>(null)
   const [showCreate, setShowCreate] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const ocr = useMutation({
-    mutationFn: (image: string) => foiParcursApi.driverLicenseOcr(image),
-  })
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -84,24 +78,6 @@ export function DriverLicenseSection({
     const compressed = await fileToCompressedDataUrl(file)
     setBusy(false)
     if (compressed) onPhotoChange(compressed)
-  }
-
-  const handleScan = () => {
-    if (!photo) return
-    setError(null)
-    ocr.mutate(photo, {
-      onSuccess: (res) => {
-        const data = res.data ?? {}
-        setPrefill(data)
-        if (data.license_number) onLicenseNumber(data.license_number)
-        setShowCreate(true)
-      },
-      onError: (err: any) => {
-        setError(err?.data?.error || err?.message || 'Scanarea a eșuat. Completează manual.')
-        setPrefill(null)
-        setShowCreate(true)
-      },
-    })
   }
 
   return (
@@ -132,23 +108,23 @@ export function DriverLicenseSection({
         </p>
       )}
 
-      {photo && !hasClient && !showCreate && (
-        <Button type="button" variant="secondary" className="w-full" onClick={handleScan} disabled={ocr.isPending}>
-          {ocr.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanLine className="h-4 w-4 mr-2" />}
-          {ocr.isPending ? 'Se scanează...' : 'Scanează permisul și creează client'}
+      {!hasClient && !showCreate && (
+        <Button type="button" variant="secondary" className="w-full" onClick={() => setShowCreate(true)}>
+          <UserPlus className="h-4 w-4 mr-2" />
+          Adaugă client nou
         </Button>
       )}
 
-      {error && <p className="text-xs text-destructive">{error}</p>}
-
-      {photo && !hasClient && showCreate && (
+      {!hasClient && showCreate && (
         <CreateClientPanel
-          prefill={prefill}
           onCancel={() => setShowCreate(false)}
-          onCreated={(client, licenseNumber, licenseExpiry) => {
+          onCreated={(client, licenseNumber, licenseExpiry, licensePhoto) => {
             onSelectClient(client)
             if (licenseNumber) onLicenseNumber(licenseNumber)
             if (licenseExpiry) onLicenseExpiry?.(licenseExpiry)
+            // The licence photo captured while creating the client doubles as
+            // the drive's licence photo, so it's never captured twice.
+            if (licensePhoto) onPhotoChange(licensePhoto)
             setShowCreate(false)
           }}
         />
@@ -160,28 +136,65 @@ export function DriverLicenseSection({
 /** Inline "new CRM client" form, prefilled from the license OCR where legible.
  *  Name + phone required; the rest optional. Creates in crm_clients. */
 export function CreateClientPanel({
-  prefill,
   onCancel,
   onCreated,
 }: {
-  prefill: DriverLicenseOcrData | null
   onCancel: () => void
-  onCreated: (client: CrmClient, licenseNumber: string, licenseExpiry: string) => void
+  onCreated: (
+    client: CrmClient,
+    licenseNumber: string,
+    licenseExpiry: string,
+    licensePhoto: string | null,
+  ) => void
 }) {
-  const [name, setName] = useState(prefill?.full_name ?? '')
+  const [name, setName] = useState('')
   const [dialCode, setDialCode] = useState('+40')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [isCompany, setIsCompany] = useState(false)
   const [companyName, setCompanyName] = useState('')
   const [cui, setCui] = useState('')
-  const [licenseNumber, setLicenseNumber] = useState(prefill?.license_number ?? '')
-  const [licenseExpiry, setLicenseExpiry] = useState(prefill?.expiry_date ?? '')
-  const [address, setAddress] = useState(prefill?.address ?? '')
+  const [licenseNumber, setLicenseNumber] = useState('')
+  const [licenseExpiry, setLicenseExpiry] = useState('')
+  const [address, setAddress] = useState('')
   const [country, setCountry] = useState('România')
-  const [county, setCounty] = useState(prefill?.county ?? '')
-  const [city, setCity] = useState(prefill?.city ?? '')
+  const [county, setCounty] = useState('')
+  const [city, setCity] = useState('')
+  const [licensePhoto, setLicensePhoto] = useState<string | null>(null)
+  const [scanBusy, setScanBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const ocr = useMutation({
+    mutationFn: (image: string) => foiParcursApi.driverLicenseOcr(image),
+  })
+
+  /** Capture the licence photo, OCR it, and prefill the form. The photo is kept
+   *  and returned on create so it can become the drive's licence photo too. */
+  const handleScanFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setError(null)
+    setScanBusy(true)
+    const compressed = await fileToCompressedDataUrl(file)
+    setScanBusy(false)
+    if (!compressed) return
+    setLicensePhoto(compressed)
+    ocr.mutate(compressed, {
+      onSuccess: (res) => {
+        const data = res.data ?? {}
+        if (data.full_name) setName(data.full_name)
+        if (data.license_number) setLicenseNumber(data.license_number)
+        if (data.expiry_date) setLicenseExpiry(data.expiry_date)
+        if (data.address) setAddress(data.address)
+        if (data.county) setCounty(data.county)
+        if (data.city) setCity(data.city)
+      },
+      onError: (err: any) => {
+        setError(err?.data?.error || err?.message || 'Scanarea a eșuat. Completează manual.')
+      },
+    })
+  }
 
   // County first: choosing a județ scopes the city list to that county's towns.
   const cityOptions = useMemo(() => {
@@ -256,7 +269,7 @@ export function CreateClientPanel({
               return
             }
           }
-          onCreated(res.client, licenseNumber.trim(), licenseExpiry.trim())
+          onCreated(res.client, licenseNumber.trim(), licenseExpiry.trim(), licensePhoto)
         },
         onError: (err: any) => {
           setError(err?.data?.error || err?.message || 'Crearea clientului a eșuat.')
@@ -268,6 +281,28 @@ export function CreateClientPanel({
   return (
     <div className="space-y-2.5 rounded-md border bg-muted/40 p-3">
       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Client nou</p>
+      {/* Scan the driving licence → captures the photo, OCRs it, and prefills the
+          fields below. The photo is returned on create to become the drive's
+          licence photo too, so it's never captured twice. */}
+      {licensePhoto ? (
+        <div className="flex items-center gap-3">
+          <img src={licensePhoto} alt="Permis de conducere" className="h-16 w-28 rounded-md object-cover border" />
+          <Button type="button" variant="ghost" size="sm" className="text-destructive" onClick={() => setLicensePhoto(null)}>
+            <X className="h-3.5 w-3.5 mr-1" /> Șterge poza
+          </Button>
+        </div>
+      ) : (
+        <label
+          className={cn(
+            'flex w-full cursor-pointer items-center justify-center gap-2 rounded-md border bg-secondary text-secondary-foreground hover:bg-secondary/80 h-9 px-3 text-sm font-medium transition-colors',
+            (scanBusy || ocr.isPending) && 'opacity-60 pointer-events-none',
+          )}
+        >
+          {scanBusy || ocr.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />}
+          {scanBusy ? 'Se procesează...' : ocr.isPending ? 'Se scanează...' : 'Scanează și preia din Permis'}
+          <input type="file" accept="image/*" className="hidden" onChange={handleScanFile} />
+        </label>
+      )}
       <div className="flex items-center gap-2 pt-0.5">
         <Checkbox id="is-company" checked={isCompany} onCheckedChange={(v) => setIsCompany(v === true)} />
         <Label htmlFor="is-company" className="text-xs leading-normal cursor-pointer">Persoană juridică (firmă)</Label>
@@ -386,7 +421,7 @@ export function CreateClientPanel({
               <button
                 key={c.id}
                 type="button"
-                onClick={() => onCreated(c, lic.number, lic.expiry)}
+                onClick={() => onCreated(c, lic.number, lic.expiry, licensePhoto)}
                 className="w-full flex items-center justify-between gap-2 rounded-md border bg-background px-2.5 py-2 text-left hover:bg-accent transition-colors"
               >
                 <span className="min-w-0">
