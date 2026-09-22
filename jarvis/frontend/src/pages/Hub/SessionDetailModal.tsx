@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { PlayCircle, RotateCcw, FileDown, Trash2, Clock, Pencil, Phone, Gauge, User2, CalendarDays, MessageSquare, Building2, Route, FileText } from 'lucide-react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { PlayCircle, RotateCcw, FileDown, Trash2, Clock, Pencil, Phone, Gauge, User2, CalendarDays, MessageSquare, Building2, Route, FileText, IdCard } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
@@ -60,6 +60,18 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
   const [correcting, setCorrecting] = useState(false)
   const [extending, setExtending] = useState(false)
+  const [zoomLicense, setZoomLicense] = useState(false)
+
+  // The list row strips the heavy base64 licence photo (~155 kB/row), so the
+  // detail view hydrates it from the single-contract endpoint — same query key
+  // as CorrectSessionDialog, so the fetch is shared/cached. Client Test Drives
+  // only; internal driving logs never carry a licence.
+  const { data: licenseDetail } = useQuery({
+    queryKey: ['fp-contract', c.id],
+    queryFn: () => foiParcursApi.getContract(c.id),
+    enabled: !c.is_internal,
+  })
+  const licensePhoto = licenseDetail?.contract?.driver_license_photo ?? null
 
   const ss = sessionStatus(c)
   const isPlanned = ss.key === 'planificat'
@@ -78,7 +90,15 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
   })
   const correctMutation = useMutation({
     mutationFn: (data: CorrectionPayload) => foiParcursApi.correctSession(c.id, data),
-    onSuccess: () => { invalidate(); setCorrecting(false); onClose() },
+    onSuccess: () => {
+      invalidate()
+      // A correction can replace the licence photo; the thumbnail reads it from
+      // the ['fp-contract', id] detail cache (staleTime 30s), so drop that entry
+      // too — otherwise a reopen within the window shows the old image.
+      queryClient.invalidateQueries({ queryKey: ['fp-contract', c.id] })
+      setCorrecting(false)
+      onClose()
+    },
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Corectarea a eșuat'),
   })
   const extendMutation = useMutation({
@@ -151,6 +171,30 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
                   <FileText className="h-3 w-3" />Detalii
                 </dt>
                 <dd className="mt-0.5 whitespace-pre-wrap break-words font-medium">{c.general_observation}</dd>
+              </div>
+            )}
+            {/* Driving-licence photo captured on the departure form (base64 data
+                URL). Shown in-app so the licence is viewable without downloading
+                the PDF; click to enlarge. */}
+            {licensePhoto && (
+              <div className="col-span-2 min-w-0">
+                <dt className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">
+                  <IdCard className="h-3 w-3" />Permis de conducere
+                </dt>
+                <dd className="mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setZoomLicense(true)}
+                    title="Mărește"
+                    className="block rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <img
+                      src={licensePhoto}
+                      alt="Permis de conducere"
+                      className="h-20 w-32 rounded-md border object-cover transition-opacity hover:opacity-90"
+                    />
+                  </button>
+                </dd>
               </div>
             )}
           </dl>
@@ -230,6 +274,20 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
           onClose={() => setExtending(false)}
           onSubmit={(rd) => extendMutation.mutate(rd)}
         />
+      )}
+      {zoomLicense && licensePhoto && (
+        <Dialog open onOpenChange={(o) => { if (!o) setZoomLicense(false) }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Permis de conducere</DialogTitle>
+            </DialogHeader>
+            <img
+              src={licensePhoto}
+              alt="Permis de conducere"
+              className="max-h-[75vh] w-full rounded-md object-contain"
+            />
+          </DialogContent>
+        </Dialog>
       )}
     </>
   )
