@@ -32,6 +32,7 @@ from tasks.carpark import cleanup_vin_cache, expire_reservations, carpark_aging_
 from tasks.holidays import populate_holidays
 from tasks.telemetry import close_stale_sessions, cleanup_old_telemetry
 from tasks.foi_parcurs_sessions import run_session_lifecycle
+from tasks.td_bookings import expire_stale_bookings
 from tasks.hr_leave_trash import purge_old_trashed_leaves
 from happy.jobs import purge_happy_events, refresh_happy_targets, process_escalations as happy_process_escalations, grant_monthly_giveable as happy_grant_monthly_giveable, rollup_campaign_stats as happy_rollup_campaign_stats
 
@@ -493,6 +494,26 @@ def start_scheduler():
         'interval',
         minutes=10,
         id='foi_parcurs_sessions',
+        replace_existing=True,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    # Public TD booking — expire pending_confirm bookings past their expires_at,
+    # freeing the slot for another visitor (every 10 minutes)
+    def _expire_stale_td_bookings():
+        try:
+            count = expire_stale_bookings()
+            if count:
+                logger.info('Expired %d stale TD booking(s)', count)
+        except Exception:
+            logger.exception('Failed to run TD booking expiry job')
+
+    scheduler.add_job(
+        _expire_stale_td_bookings,
+        'interval',
+        minutes=10,
+        id='td_bookings_expire_stale',
         replace_existing=True,
         misfire_grace_time=300,
         coalesce=True,
