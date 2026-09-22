@@ -19,7 +19,22 @@
 - **Public endpoints must never return 401** (the shared FE client hard-redirects to `/login` on 401). Anonymous → 200/404/409/410/429.
 - Customer emails call `send_email(..., skip_global_cc=True)` so prospects are never CC'd to the internal global address.
 - Status strings are exact: TD rows are `route_type='TD'`, `status='PLANNED'`, `source='td_form'`. No-show grace is **6h** (`GRACE_HOURS`, `foi_parcurs/session_lifecycle.py:12`).
-- Local dev DB is shared across worktrees; Flask on **:5001**. Run `python3 -m py_compile jarvis/app.py` and `python -m pytest tests/ -x -q` before declaring a task done.
+- Local dev DB is shared across worktrees; Flask on **:5001**. Run `python3 -m py_compile jarvis/app.py` before declaring a task done.
+
+### Testing infrastructure — AUTHORITATIVE (overrides any `tests/…` path written in individual task steps)
+
+Pre-flight established this repo has **two test trees**; individual tasks below were drafted before that was known, so follow this block, not their literal paths:
+
+- **Top-level `tests/`** hard-mocks `psycopg2` (MagicMock) at collection time and is the **only tree CI runs** (no Postgres service). Use it ONLY for pure/no-DB tests: **Task 5 (booking_token)** and **Task 6 (customer_message)** → `tests/core/…` as written. These run in CI.
+- **`jarvis/tests/marketing/`** is a real-DB tree (local-only; CI does not run it). **All DB-backed tests (Tasks 1, 2, 3, 4, 7, 8, 9, 10, 11, 12) go here**, e.g. `jarvis/tests/marketing/test_td_*.py` (not `tests/marketing/…`). Requirements for this tree:
+  - Add `jarvis/tests/marketing/__init__.py` (empty) and `jarvis/tests/marketing/conftest.py` **copied verbatim** from `jarvis/tests/accounting/facturare/conftest.py` (adapt only the docstring). It exports `REAL_DB_AVAILABLE` + a `require_real_db` fixture.
+  - Each DB test module: top of file `import os; os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')`, `import psycopg2` (the REAL driver), `from database import get_db, get_cursor, release_db`.
+  - Every DB test/fixture **depends on `require_real_db`** (skips cleanly when no DB).
+  - **Never hardcode `company_id=1`** (it is absent in defaultdb). Resolve a real seed id once: `SELECT id FROM companies WHERE is_active ORDER BY id LIMIT 1` (the `companies` table has NO `deleted_at`, only `is_active`). Use `users id=1` for the advisor (present).
+  - The race test catches the **real** exception: `import psycopg2; with pytest.raises((psycopg2.errors.UniqueViolation, psycopg2.IntegrityError)): ...` then `conn.rollback()`. Precedent: `jarvis/tests/accounting/test_document_numbers_schema.py`.
+  - Run DB tests with: `DATABASE_URL=postgresql://localhost/defaultdb python -m pytest jarvis/tests/marketing/ -x -q`.
+- **Schema application (Task 1):** after editing `schema_marketing.py`, apply the new DDL to defaultdb by importing `create_schema_marketing` from `migrations.domains.schema_marketing` (it imports only psycopg2, NOT `database`) and calling it with a real psycopg2 connection to `localhost/defaultdb` + `conn.commit()`. Do **NOT** `import database`/`jarvis.database` (its `init_db()` runs on import).
+- **CI caveat (accepted):** the DB tests above are local-only; CI won't cover this feature's DB logic. The per-task test evidence must come from the real-DB local run.
 
 ---
 
