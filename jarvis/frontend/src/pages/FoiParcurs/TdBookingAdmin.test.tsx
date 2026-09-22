@@ -2,14 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const { listPages, createPage, listBookings } = vi.hoisted(() => ({
+const { listPages, createPage, listBookings, listCars, listWindows } = vi.hoisted(() => ({
   listPages: vi.fn(),
   createPage: vi.fn(),
   listBookings: vi.fn().mockResolvedValue({ bookings: [] }),
+  listCars: vi.fn().mockResolvedValue({ cars: [] }),
+  listWindows: vi.fn().mockResolvedValue({ windows: [] }),
 }))
 vi.mock('@/api/tdAdmin', () => ({
   tdAdminApi: {
-    listPages, createPage, listBookings,
+    listPages, createPage, listBookings, listCars, listWindows,
     setStatus: vi.fn(), materialize: vi.fn(),
     addCar: vi.fn(), removeCar: vi.fn(), addWindow: vi.fn(), reassignAdvisor: vi.fn(),
   },

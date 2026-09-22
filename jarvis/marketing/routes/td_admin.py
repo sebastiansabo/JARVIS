@@ -86,6 +86,12 @@ def td_remove_car(cid):
     return jsonify({'ok': True})
 
 
+@marketing_bp.route('/api/td/pages/<int:pid>/cars', methods=['GET'])
+@login_required
+def td_list_cars(pid):
+    return jsonify({'cars': _repo.list_cars(pid)})
+
+
 # ---- windows ----
 
 @marketing_bp.route('/api/td/pages/<int:pid>/windows', methods=['POST'])
@@ -97,6 +103,12 @@ def td_add_window(pid):
     w = _repo.add_window(pid, d['window_date'], d['start_time'], d['end_time'],
                           d.get('slot_minutes'))
     return jsonify(w), 201
+
+
+@marketing_bp.route('/api/td/pages/<int:pid>/windows', methods=['GET'])
+@login_required
+def td_list_windows(pid):
+    return jsonify({'windows': _repo.list_windows(pid)})
 
 
 # ---- materialize ----

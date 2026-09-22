@@ -203,6 +203,42 @@ def test_list_pages_and_bookings(client, company_id):
     assert bookings.get_json()['bookings'] == []
 
 
+# ---- list cars / windows ----
+
+def test_list_cars_and_windows(client, company_id):
+    r = client.post('/marketing/api/td/pages',
+                     json={'company_id': company_id, 'slug': _SLUG, 'title': 'Admin TD'})
+    pid = r.get_json()['id']
+
+    empty_cars = client.get(f'/marketing/api/td/pages/{pid}/cars')
+    assert empty_cars.status_code == 200
+    assert empty_cars.get_json()['cars'] == []
+
+    empty_windows = client.get(f'/marketing/api/td/pages/{pid}/windows')
+    assert empty_windows.status_code == 200
+    assert empty_windows.get_json()['windows'] == []
+
+    car_r = client.post(f'/marketing/api/td/pages/{pid}/cars',
+                         json={'vin': _VIN, 'default_advisor_user_id': _USER1_ID})
+    assert car_r.status_code == 201
+    car = car_r.get_json()
+
+    win_r = client.post(f'/marketing/api/td/pages/{pid}/windows',
+                         json={'window_date': '2099-10-01', 'start_time': '10:00', 'end_time': '11:00'})
+    assert win_r.status_code == 201
+    window = win_r.get_json()
+
+    cars = client.get(f'/marketing/api/td/pages/{pid}/cars')
+    assert cars.status_code == 200
+    car_ids = [c['id'] for c in cars.get_json()['cars']]
+    assert car['id'] in car_ids
+
+    windows = client.get(f'/marketing/api/td/pages/{pid}/windows')
+    assert windows.status_code == 200
+    window_ids = [w['id'] for w in windows.get_json()['windows']]
+    assert window['id'] in window_ids
+
+
 # ---- status transition ----
 
 def test_set_status(client, company_id):

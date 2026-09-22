@@ -84,7 +84,11 @@ export const tdAdminApi = {
 
   removeCar: (cid: number) => api.delete<{ ok: boolean }>(`${B}/cars/${cid}`),
 
+  listCars: (id: number) => api.get<{ cars: TdAdminCar[] }>(`${B}/pages/${id}/cars`),
+
   addWindow: (id: number, body: Record<string, unknown>) => api.post<TdAdminWindow>(`${B}/pages/${id}/windows`, body),
+
+  listWindows: (id: number) => api.get<{ windows: TdAdminWindow[] }>(`${B}/pages/${id}/windows`),
 
   materialize: (id: number) => api.post<{ inserted: number }>(`${B}/pages/${id}/materialize`, {}),
 

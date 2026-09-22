@@ -19,7 +19,7 @@ import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { hrApi } from '@/api/hr'
 import { usersApi } from '@/api/users'
-import { tdAdminApi, type TdAdminCar, type TdAdminPage, type TdAdminWindow } from '@/api/tdAdmin'
+import { tdAdminApi, type TdAdminPage } from '@/api/tdAdmin'
 import TdCarsPanel from './TdCarsPanel'
 import TdWindowsPanel from './TdWindowsPanel'
 import TdBookingsPanel from './TdBookingsPanel'
@@ -44,10 +44,6 @@ export default function TdBookingAdmin({ companyId }: { companyId: number }) {
   const qc = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedPageId, setSelectedPageId] = useState<number | null>(null)
-  // Cars/windows have no backend GET list route (see the panels' GOTCHA
-  // comments) -- tracked here per selected page, reset on selection change.
-  const [cars, setCars] = useState<TdAdminCar[]>([])
-  const [windows, setWindows] = useState<TdAdminWindow[]>([])
 
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
@@ -82,8 +78,6 @@ export default function TdBookingAdmin({ companyId }: { companyId: number }) {
 
   const selectPage = (id: number) => {
     setSelectedPageId(id)
-    setCars([])
-    setWindows([])
   }
 
   const setStatusMut = useMutation({
@@ -186,8 +180,8 @@ export default function TdBookingAdmin({ companyId }: { companyId: number }) {
             </div>
           </div>
 
-          <TdCarsPanel pageId={selectedPage.id} users={userList} cars={cars} onCarsChange={setCars} />
-          <TdWindowsPanel pageId={selectedPage.id} windows={windows} onWindowsChange={setWindows} />
+          <TdCarsPanel pageId={selectedPage.id} users={userList} />
+          <TdWindowsPanel pageId={selectedPage.id} />
           <TdBookingsPanel pageId={selectedPage.id} users={userList} />
         </Card>
       )}
