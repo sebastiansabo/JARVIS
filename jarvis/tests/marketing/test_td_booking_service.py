@@ -123,6 +123,110 @@ def test_double_submit_one_conflict(open_page):
     assert r2.status_code == 409
 
 
+def test_submit_normalizes_e164_phone(open_page):
+    """A phone with spaces is normalized to canonical E.164 before it is stored /
+    used for dedup (spec §7)."""
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(_SLUG, slot['id'], 'Ana', '+40 721 000 111', _EMAIL,
+                           {}, '1.2.3.4', 'ua', 'x')
+    assert r.success and r.status_code == 201
+    b = repo.get_booking(r.data['booking_id'])
+    assert b['customer_phone_e164'] == '+40721000111'
+
+
+def test_submit_rejects_non_e164_phone(open_page):
+    """A phone without a country code (not E.164) is rejected 422 and stored nowhere."""
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(_SLUG, slot['id'], 'Ana', '0721000111', _EMAIL,
+                           {}, '1.2.3.4', 'ua', 'x')
+    assert not r.success and r.status_code == 422
+    # Nothing was inserted for that page.
+    assert repo.query_all('SELECT id FROM mkt_td_bookings WHERE page_id=%s', (p['id'],)) == []
+
+
+def test_submit_filters_utm_allowlist(open_page):
+    """Only the tracked utm_* keys are persisted; unknown keys are dropped (spec §7)."""
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(
+        _SLUG, slot['id'], 'Ana', _PHONE, _EMAIL,
+        {'utm_source': 'fb', 'utm_medium': 'cpc', 'evil': 'drop-me', 'ref': 'x'},
+        '1.2.3.4', 'ua', 'x')
+    assert r.success and r.status_code == 201
+    stored = repo.get_booking(r.data['booking_id'])['utm']
+    assert stored == {'utm_source': 'fb', 'utm_medium': 'cpc'}
+
+
+def test_double_confirm_idempotent(open_page):
+    """Two sequential confirm calls with the same token: the first confirms; the
+    second is idempotent success (200, confirmed) — the good booking is NOT flipped
+    to 'conflict', its slot stays held, and the PLANNED FP row is still present."""
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(_SLUG, slot['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x')
+    booking_id = r.data['booking_id']
+    token = make_booking_token(booking_id, 'confirm', current_app.secret_key)
+
+    cr1 = svc.confirm_booking(token)
+    assert cr1.success and cr1.status_code == 200 and cr1.data['status'] == 'confirmed'
+    fp_id = cr1.data['fp_id']
+
+    cr2 = svc.confirm_booking(token)
+    assert cr2.success and cr2.status_code == 200 and cr2.data['status'] == 'confirmed'
+    assert cr2.data['fp_id'] == fp_id
+
+    b = repo.get_booking(booking_id)
+    assert b['status'] == 'confirmed' and b['foi_de_parcurs_id'] == fp_id
+    assert repo.query_one('SELECT id FROM foi_de_parcurs WHERE id=%s', (fp_id,)) is not None
+    free_ids = {s['id'] for s in svc.slots.available_slots(
+        p['id'], datetime(2099, 1, 1, tzinfo=timezone.utc))}
+    assert slot['id'] not in free_ids
+
+
+def test_confirm_race_not_flipped_to_conflict(open_page, monkeypatch):
+    """A racing DUPLICATE confirm that read the booking while it was still pending
+    (before the first commit) must NOT corrupt the good booking. We force the
+    pre-atomic read to hand back a stale 'pending_confirm' snapshot so the flow
+    reaches confirm_booking_atomic, whose FOR-UPDATE guard (booking already
+    'confirmed') raises TdBookingNotPending. The service must return idempotent
+    success and leave the booking 'confirmed' + its slot held + its FP row intact —
+    NOT flip it to 'conflict' (which would free the slot) and NOT return 409."""
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(_SLUG, slot['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x')
+    booking_id = r.data['booking_id']
+    token = make_booking_token(booking_id, 'confirm', current_app.secret_key)
+
+    cr1 = svc.confirm_booking(token)
+    assert cr1.success and cr1.data['status'] == 'confirmed'
+    fp_id = cr1.data['fp_id']
+
+    real_get = svc.repo.get_booking
+    state = {'n': 0}
+
+    def fake_get(bid):
+        state['n'] += 1
+        row = real_get(bid)
+        if state['n'] == 1 and row:  # only the pre-atomic read is forced stale-pending
+            row = dict(row)
+            row['status'] = 'pending_confirm'
+        return row
+    monkeypatch.setattr(svc.repo, 'get_booking', fake_get)
+
+    cr2 = svc.confirm_booking(token)
+    assert cr2.success and cr2.status_code == 200 and cr2.data['status'] == 'confirmed'
+    assert cr2.data['fp_id'] == fp_id
+
+    b = real_get(booking_id)
+    assert b['status'] == 'confirmed'  # NOT 'conflict'
+    assert repo.query_one('SELECT id FROM foi_de_parcurs WHERE id=%s', (fp_id,)) is not None
+    free_ids = {s['id'] for s in svc.slots.available_slots(
+        p['id'], datetime(2099, 1, 1, tzinfo=timezone.utc))}
+    assert slot['id'] not in free_ids
+
+
 def test_confirm_creates_planned_fp(open_page):
     svc, p, c, sent = open_page
     slot = _first_slot(svc, p)

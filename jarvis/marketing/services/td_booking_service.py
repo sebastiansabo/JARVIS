@@ -16,7 +16,9 @@ TdBookingService is the integration crux that wires the booking layer together:
 Every public method returns a ServiceResult so the route layer just maps
 (status_code, data/error) onto an HTTP response.
 """
+import html
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 
@@ -24,7 +26,9 @@ import psycopg2
 
 from flask import current_app
 from core.base_repository import BaseRepository
-from marketing.repositories.td_booking_repository import TdBookingRepository, TdConflict
+from marketing.repositories.td_booking_repository import (
+    TdBookingRepository, TdConflict, TdBookingNotPending,
+)
 from marketing.services.td_slot_service import TdSlotService
 from core.approvals.booking_token import make_booking_token, read_booking_token
 from core.messaging.customer_message import send_customer_message
@@ -37,6 +41,19 @@ logger = logging.getLogger('jarvis.marketing.td_booking')
 _PENDING_TTL_MINUTES = 45
 # Per-IP throttle: at most this many booking attempts in the trailing hour.
 _MAX_ATTEMPTS_PER_IP_PER_HOUR = 8
+# UTM keys we persist; anything else in the submitted utm blob is dropped (spec §7).
+_UTM_ALLOWED_KEYS = {'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'}
+# Server-side E.164 guard: '+' then 7-15 digits, once spaces/dashes are stripped.
+_E164_RE = re.compile(r'^\+\d{7,15}$')
+
+
+def _normalize_e164(phone) -> str | None:
+    """Strip spaces/dashes from a candidate phone and return it iff it is a valid
+    E.164 number ('+' + 7-15 digits); otherwise None. The frontend composes E.164
+    via composePhone, but this is the server-side guard so a malformed/malicious
+    client can't break dedup (find_by_phone is exact-match) or store junk."""
+    candidate = (phone or '').replace(' ', '').replace('-', '')
+    return candidate if _E164_RE.match(candidate) else None
 
 
 @dataclass
@@ -77,6 +94,14 @@ class TdBookingService:
             return ServiceResult(False, 403, error='Registration not open yet')
         if page.get('closes_at') and now > _as_aware(page['closes_at']):
             return ServiceResult(False, 403, error='Registration closed')
+        # Normalize/validate the phone to canonical E.164 BEFORE it drives the
+        # rate limit, the insert, or (at confirm) the CRM find-or-create; storing a
+        # non-E.164 value would break exact-match dedup and pollute the column.
+        phone_e164 = _normalize_e164(phone_e164)
+        if not phone_e164:
+            return ServiceResult(False, 422, error='Invalid phone number')
+        # Keep only the tracked UTM keys, coerced to strings (spec §7).
+        utm = {k: str(v) for k, v in (utm or {}).items() if k in _UTM_ALLOWED_KEYS}
         # Rate limits: per contact (phone/email) and per IP.
         if self.repo.count_active_by_contact(phone_e164, email) >= page['max_bookings_per_contact']:
             return ServiceResult(False, 429, error='Booking limit reached for this contact')
@@ -104,13 +129,16 @@ class TdBookingService:
         cancel_token = make_booking_token(booking['id'], 'cancel', secret)
         confirm_link = f"{base_url}/td/confirm?token={confirm_token}"
         cancel_link = f"{base_url}/td/cancel?token={cancel_token}"
-        html = (
-            f"<p>Bună, {name}!</p>"
+        # Escape the customer-supplied name before interpolating it into the email
+        # HTML (spec §7); the raw name is fine in the DB column since React escapes
+        # it in staff views, but the email body is raw HTML.
+        body = (
+            f"<p>Bună, {html.escape(name)}!</p>"
             f"<p>Confirmă programarea la test drive: "
             f"<a href='{confirm_link}'>Confirmă</a></p>"
             f"<p>Dacă nu mai poți ajunge, anulează: <a href='{cancel_link}'>aici</a></p>"
         )
-        send_customer_message('email', email, 'Confirmă programarea la test drive', html)
+        send_customer_message('email', email, 'Confirmă programarea la test drive', body)
         return ServiceResult(True, 201,
                              data={'booking_id': booking['id'], 'status': 'pending_confirm'})
 
@@ -154,6 +182,16 @@ class TdBookingService:
         try:
             res = self.repo.confirm_booking_atomic(
                 booking['id'], car['vin'], slot['starts_at'], slot['ends_at'], fp_row)
+        except TdBookingNotPending:
+            # The booking was pending when we read it, but under the advisory lock the
+            # FOR-UPDATE guard saw it is no longer pending -- a racing/duplicate confirm
+            # (or a cancel/expire) got there first. Re-read and respond idempotently;
+            # NEVER mark 'conflict' (that would free a legitimately-held slot).
+            fresh = self.repo.get_booking(booking['id'])
+            if fresh and fresh['status'] == 'confirmed':
+                return ServiceResult(True, 200, data={
+                    'status': 'confirmed', 'fp_id': fresh.get('foi_de_parcurs_id')})
+            return ServiceResult(False, 410, error='Booking expired or already handled')
         except TdConflict:
             self.repo.mark_status(booking['id'], 'conflict')
             return ServiceResult(False, 409, error='Car no longer available for this slot')
