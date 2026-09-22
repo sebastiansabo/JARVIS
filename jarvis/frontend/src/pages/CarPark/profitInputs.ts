@@ -9,6 +9,11 @@
  * In MARGIN regime (vat_deductible === false) purchase-side VAT is
  * non-deductible, so for that car net == gross and there is no input VAT.
  * All amounts are EUR.
+ *
+ * LEGACY FALLBACK: pre-migration rows (acquisition_currency === 'RON') stored
+ * NET LEI in acquisition_price and GROSS EUR in purchase_price_net. The RON
+ * branch converts NET LEI / kurs → net EUR (or derives from the gross-EUR
+ * purchase_price_net when no kurs). Mirrors money.py net_buy + PricingSheet.
  */
 import type { VatRegime } from './pricingEngine'
 
@@ -19,6 +24,10 @@ export type ProfitInputsVehicle = {
   purchase_vat_rate: number | null
   vat_deductible: boolean
   cost_lines: string | null
+  /** Legacy 'RON' marks the pre-migration editor convention (NET LEI + GROSS EUR ppn). */
+  acquisition_currency?: string | null
+  /** RON/EUR BNR kurs, needed to convert a legacy 'RON' row's NET LEI to EUR. */
+  acquisition_exchange_rate?: number | null
 }
 
 export type AcquisitionProfitInputs = {
@@ -53,18 +62,37 @@ function sumCostLinesEur(raw: string | null | undefined): number {
 export function acquisitionProfitInputs(vehicle: ProfitInputsVehicle): AcquisitionProfitInputs {
   const regime: VatRegime = vehicle.vat_deductible === false ? 'MARGIN' : 'NORMAL'
   const vatRate = regime === 'MARGIN' ? 21 : (Number(vehicle.purchase_vat_rate) || 21)
-  let netAcqEur = Number(vehicle.purchase_price_net) || 0 // canonical NET EUR cost basis
-  // canonical GROSS EUR column; fall back to deriving gross from net for any
-  // legacy row missing acquisition_price. MARGIN cars carry no purchase-side
-  // VAT, so their gross == net (no (1+vat) uplift on the fallback).
-  const grossAcqEur = Number(vehicle.acquisition_price)
-    || (regime === 'MARGIN' ? netAcqEur : netAcqEur * (1 + vatRate / 100))
-  // Symmetric fallback (mirrors PricingSheet.computePricingModel): a row with a
-  // GROSS EUR acquisition_price but missing purchase_price_net still gets a NET
-  // basis, so cost/profit never collapse to zero. NORMAL divides out the VAT;
-  // MARGIN keeps net == gross (no deductible purchase-side VAT).
-  if (netAcqEur <= 0 && grossAcqEur > 0) {
-    netAcqEur = regime === 'MARGIN' ? grossAcqEur : grossAcqEur / (1 + vatRate / 100)
+  let netAcqEur: number
+  let grossAcqEur: number
+  if (vehicle.acquisition_currency === 'RON') {
+    // Legacy editor convention: acquisition_price = NET LEI, purchase_price_net =
+    // GROSS EUR. Convert NET LEI / kurs → net EUR; without a usable kurs, derive
+    // net from the gross-EUR purchase_price_net. NORMAL matches money.py net_buy
+    // and PricingSheet's 'RON' branch. MARGIN keeps net == gross (no deductible
+    // purchase-side VAT) — consistent with the canonical MARGIN path below.
+    const kurs = Number(vehicle.acquisition_exchange_rate) || 0
+    const netLei = Number(vehicle.acquisition_price) || 0
+    if (kurs > 0 && netLei > 0) {
+      netAcqEur = netLei / kurs
+    } else {
+      const grossFallback = Number(vehicle.purchase_price_net) || 0
+      netAcqEur = regime === 'MARGIN' ? grossFallback : grossFallback / (1 + vatRate / 100)
+    }
+    grossAcqEur = regime === 'MARGIN' ? netAcqEur : netAcqEur * (1 + vatRate / 100)
+  } else {
+    // Canonical: purchase_price_net = NET EUR cost basis (used directly);
+    // acquisition_price = GROSS EUR. Fall back to deriving gross from net for any
+    // canonical row missing acquisition_price (MARGIN → gross == net, no uplift).
+    netAcqEur = Number(vehicle.purchase_price_net) || 0
+    grossAcqEur = Number(vehicle.acquisition_price)
+      || (regime === 'MARGIN' ? netAcqEur : netAcqEur * (1 + vatRate / 100))
+    // Symmetric fallback (mirrors PricingSheet.computePricingModel): a row with a
+    // GROSS EUR acquisition_price but missing purchase_price_net still gets a NET
+    // basis, so cost/profit never collapse to zero. NORMAL divides out the VAT;
+    // MARGIN keeps net == gross (no deductible purchase-side VAT).
+    if (netAcqEur <= 0 && grossAcqEur > 0) {
+      netAcqEur = regime === 'MARGIN' ? grossAcqEur : grossAcqEur / (1 + vatRate / 100)
+    }
   }
   const costLinesEur = sumCostLinesEur(vehicle.cost_lines)
   const landedCostEur = netAcqEur + costLinesEur

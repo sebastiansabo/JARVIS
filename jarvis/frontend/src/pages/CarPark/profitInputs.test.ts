@@ -110,6 +110,54 @@ describe('acquisitionProfitInputs', () => {
     expect(out.inputVatEur).toBe(0)
   })
 
+  test('legacy RON NORMAL row: net EUR = NET LEI / kurs, gross uplifts by VAT', () => {
+    // acquisition_price = NET LEI (50000), kurs 5 → net EUR 10000; gross = 10000*1.20.
+    // purchase_price_net here is GROSS EUR and must be IGNORED on the kurs path.
+    const out = acquisitionProfitInputs(vehicle({
+      acquisition_currency: 'RON',
+      acquisition_price: 50000,
+      acquisition_exchange_rate: 5,
+      purchase_price_net: 99999,
+      purchase_vat_rate: 20,
+      vat_deductible: true,
+    }))
+    expect(out.regime).toBe('NORMAL')
+    expect(out.netAcqEur).toBe(10000)
+    expect(out.grossAcqEur).toBe(12000)
+    expect(out.inputVatEur).toBe(2000)
+    expect(out.landedCostEur).toBe(10000)
+    expect(out.purchaseGrossEur).toBe(12000)
+  })
+
+  test('legacy RON row without kurs → falls back to gross-EUR purchase_price_net', () => {
+    const out = acquisitionProfitInputs(vehicle({
+      acquisition_currency: 'RON',
+      acquisition_price: 50000,       // NET LEI, unusable without a kurs
+      acquisition_exchange_rate: 0,
+      purchase_price_net: 11900,      // GROSS EUR fallback
+      purchase_vat_rate: 19,
+      vat_deductible: true,
+    }))
+    expect(out.netAcqEur).toBeCloseTo(10000, 6) // 11900 / 1.19
+    expect(out.grossAcqEur).toBeCloseTo(11900, 6)
+    expect(out.inputVatEur).toBeCloseTo(1900, 6)
+  })
+
+  test('legacy RON MARGIN row: net == gross (no purchase-side VAT)', () => {
+    const out = acquisitionProfitInputs(vehicle({
+      acquisition_currency: 'RON',
+      acquisition_price: 50000,
+      acquisition_exchange_rate: 5,
+      purchase_vat_rate: 20,
+      vat_deductible: false,
+    }))
+    expect(out.regime).toBe('MARGIN')
+    expect(out.netAcqEur).toBe(10000)
+    expect(out.grossAcqEur).toBe(10000)
+    expect(out.inputVatEur).toBe(0)
+    expect(out.landedCostEur).toBe(10000)
+  })
+
   test('unparseable cost_lines → 0 cost, no throw', () => {
     const out = acquisitionProfitInputs(vehicle({
       purchase_price_net: 5000,
