@@ -18,7 +18,7 @@
 - The shared client hard-redirects to `/login` on **401** — public pages must never trigger a 401 (backend already guarantees this; don't add auth headers on public calls).
 - Response envelopes are unwrapped per-call via the TS generic on each `api.get/post<...>()` — declare the shape and read the named key.
 - Phone → E.164 via `composePhone(dialCode, rawNumber)` from `pages/FoiParcurs/phoneFormat.ts`; validate before enabling submit.
-- **Verification is `npm run build` (zero TS errors) + Playwright** (webapp-testing skill). There is no FE unit-test runner in the pre-push checklist — do not invent one.
+- **Verification (AUTHORITATIVE — overrides task-step mentions of Playwright):** (1) HARD gate `cd jarvis/frontend && npm run build` (`tsc -b && vite build`) must exit 0 with zero TS errors; (2) **vitest IS configured** (jsdom + @testing-library/react, 62 existing tests) — write real unit/component tests as `*.test.ts`/`*.test.tsx` next to the source (mirror existing `src/api/*.test.ts` and `src/lib/*.test.ts`), run with `npm run test -- <file>`. **NO Playwright** (not installed) and the full app **cannot boot locally** (pre-existing `init_db`/schema_hr bug), so there is NO end-to-end run — rely on build + vitest + review. (3) Commit **SOURCE only** (`jarvis/frontend/src/**`); `jarvis/static/react/` is the gitignored build output — never `git add` it. Run `npm ci` once if `node_modules` is missing (already installed in this worktree).
 
 ---
 
