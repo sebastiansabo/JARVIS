@@ -600,6 +600,114 @@ def create_schema_marketing(conn, cursor):
         )
     ''')
 
+    # === Test-Drive Booking ===
+    # ============== Test-Drive Booking (public slot layer) ==============
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_td_booking_pages (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER REFERENCES mkt_projects(id) ON DELETE CASCADE,
+            company_id INTEGER NOT NULL REFERENCES companies(id),
+            event_id INTEGER REFERENCES hr.events(id),
+            slug TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            opens_at TIMESTAMPTZ,
+            closes_at TIMESTAMPTZ,
+            min_lead_minutes INTEGER NOT NULL DEFAULT 120,
+            slot_minutes INTEGER NOT NULL DEFAULT 30,
+            buffer_minutes INTEGER NOT NULL DEFAULT 0,
+            max_bookings_per_contact INTEGER NOT NULL DEFAULT 1,
+            access_code TEXT,
+            title TEXT,
+            intro TEXT,
+            thank_you TEXT,
+            notify_user_ids INTEGER[] DEFAULT '{}',
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            deleted_at TIMESTAMPTZ,
+            CONSTRAINT mkt_td_pages_status_check CHECK (status IN ('draft','open','closed'))
+        )
+    ''')
+    cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS uq_mkt_td_pages_slug ON mkt_td_booking_pages(slug) WHERE deleted_at IS NULL')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_pages_company ON mkt_td_booking_pages(company_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_td_booking_cars (
+            id SERIAL PRIMARY KEY,
+            page_id INTEGER NOT NULL REFERENCES mkt_td_booking_pages(id) ON DELETE CASCADE,
+            vehicle_id INTEGER,
+            vin TEXT NOT NULL,
+            default_advisor_user_id INTEGER REFERENCES users(id),
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_mkt_td_car_per_page UNIQUE (page_id, vin)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_cars_page ON mkt_td_booking_cars(page_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_td_booking_windows (
+            id SERIAL PRIMARY KEY,
+            page_id INTEGER NOT NULL REFERENCES mkt_td_booking_pages(id) ON DELETE CASCADE,
+            window_date DATE NOT NULL,
+            start_time TIME NOT NULL,
+            end_time TIME NOT NULL,
+            slot_minutes INTEGER,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_windows_page ON mkt_td_booking_windows(page_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_td_slots (
+            id SERIAL PRIMARY KEY,
+            page_id INTEGER NOT NULL REFERENCES mkt_td_booking_pages(id) ON DELETE CASCADE,
+            car_id INTEGER NOT NULL REFERENCES mkt_td_booking_cars(id) ON DELETE CASCADE,
+            vin TEXT NOT NULL,
+            starts_at TIMESTAMPTZ NOT NULL,
+            ends_at TIMESTAMPTZ NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT mkt_td_slots_status_check CHECK (status IN ('open','blocked')),
+            CONSTRAINT uq_mkt_td_slot_car_time UNIQUE (car_id, starts_at)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_slots_page ON mkt_td_slots(page_id)')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_td_bookings (
+            id SERIAL PRIMARY KEY,
+            page_id INTEGER NOT NULL REFERENCES mkt_td_booking_pages(id),
+            slot_id INTEGER NOT NULL REFERENCES mkt_td_slots(id),
+            car_id INTEGER NOT NULL REFERENCES mkt_td_booking_cars(id),
+            customer_name TEXT NOT NULL,
+            customer_phone_e164 TEXT NOT NULL,
+            customer_email TEXT NOT NULL,
+            crm_client_id INTEGER,
+            foi_de_parcurs_id INTEGER,
+            advisor_user_id INTEGER REFERENCES users(id),
+            status TEXT NOT NULL DEFAULT 'pending_confirm',
+            expires_at TIMESTAMPTZ NOT NULL,
+            confirmed_at TIMESTAMPTZ,
+            cancelled_at TIMESTAMPTZ,
+            extra_answers JSONB DEFAULT '{}'::jsonb,
+            utm JSONB DEFAULT '{}'::jsonb,
+            ip TEXT,
+            user_agent TEXT,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT mkt_td_bookings_status_check CHECK (status IN (
+                'pending_confirm','confirmed','cancelled','expired','conflict','completed','no_show'))
+        )
+    ''')
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_mkt_td_active_booking_per_slot "
+                   "ON mkt_td_bookings(slot_id) WHERE status IN ('pending_confirm','confirmed')")
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_bookings_page ON mkt_td_bookings(page_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_bookings_contact ON mkt_td_bookings(customer_phone_e164, customer_email)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_bookings_status ON mkt_td_bookings(status)')
+
 
 def _seed_sim_benchmarks(cursor):
     """Seed campaign simulator benchmarks from exercitiu.xlsx Foaie2."""
