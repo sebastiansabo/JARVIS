@@ -71,12 +71,26 @@ describe('tdAdminApi', () => {
     expect(del).toHaveBeenCalledWith('/marketing/api/td/cars/10')
   })
 
+  it('listCars fetches the cars for a page', async () => {
+    get.mockResolvedValueOnce({ cars: [] })
+    const res = await tdAdminApi.listCars(5)
+    expect(get).toHaveBeenCalledWith('/marketing/api/td/pages/5/cars')
+    expect(res).toEqual({ cars: [] })
+  })
+
   it('addWindow posts the window payload to the page windows route', async () => {
     const body = { window_date: '2026-10-01', start_time: '09:00', end_time: '17:00' }
     post.mockResolvedValueOnce({ id: 20, ...body })
     const res = await tdAdminApi.addWindow(5, body)
     expect(post).toHaveBeenCalledWith('/marketing/api/td/pages/5/windows', body)
     expect(res).toEqual({ id: 20, ...body })
+  })
+
+  it('listWindows fetches the windows for a page', async () => {
+    get.mockResolvedValueOnce({ windows: [] })
+    const res = await tdAdminApi.listWindows(5)
+    expect(get).toHaveBeenCalledWith('/marketing/api/td/pages/5/windows')
+    expect(res).toEqual({ windows: [] })
   })
 
   it('materialize posts to the materialize route with no body', async () => {

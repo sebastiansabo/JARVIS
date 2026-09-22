@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -7,26 +7,27 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { tdAdminApi, type TdAdminCar } from '@/api/tdAdmin'
+import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import { tdAdminApi } from '@/api/tdAdmin'
 import type { UserDetail } from '@/types/users'
 
 const NONE = '__none__'
 
-/** Cars attached to a booking page (vin + optional default advisor).
- *
- *  GOTCHA: td_admin.py only exposes POST .../cars and DELETE /cars/<id> --
- *  there is no GET list route for a page's cars. So this table is fed by
- *  the parent's local `cars` state (seeded empty per page, kept in sync from
- *  each mutation's response) rather than a useQuery -- it only reflects what
- *  was added in the current session and won't survive a reload. Follow-up:
- *  add GET /marketing/api/td/pages/<id>/cars on the backend so this can
- *  become a real query like TdBookingsPanel. */
-export default function TdCarsPanel({ pageId, users, cars, onCarsChange }: {
+/** Cars attached to a booking page (vin + optional default advisor). Backed
+ *  by a real `useQuery` against GET .../pages/<id>/cars, invalidated after
+ *  add/remove, so the table survives a reload (unlike the old session-local
+ *  `useState` this replaced). */
+export default function TdCarsPanel({ pageId, users }: {
   pageId: number
   users: UserDetail[]
-  cars: TdAdminCar[]
-  onCarsChange: (cars: TdAdminCar[]) => void
 }) {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({
+    queryKey: ['td-cars', pageId],
+    queryFn: () => tdAdminApi.listCars(pageId),
+  })
+  const cars = data?.cars ?? []
+
   const [vin, setVin] = useState('')
   const [advisorId, setAdvisorId] = useState(NONE)
 
@@ -35,8 +36,8 @@ export default function TdCarsPanel({ pageId, users, cars, onCarsChange }: {
       vin: vin.trim(),
       default_advisor_user_id: advisorId === NONE ? undefined : Number(advisorId),
     }),
-    onSuccess: (car) => {
-      onCarsChange([...cars, car])
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['td-cars', pageId] })
       setVin('')
       setAdvisorId(NONE)
     },
@@ -45,11 +46,13 @@ export default function TdCarsPanel({ pageId, users, cars, onCarsChange }: {
 
   const removeMut = useMutation({
     mutationFn: (carId: number) => tdAdminApi.removeCar(carId),
-    onSuccess: (_r, carId) => onCarsChange(cars.filter((c) => c.id !== carId)),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['td-cars', pageId] }),
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Ștergerea a eșuat'),
   })
 
   const advisorName = (id: number | null) => (id ? users.find((u) => u.id === id)?.name ?? `#${id}` : '—')
+
+  if (isLoading) return <TableSkeleton rows={2} columns={3} />
 
   return (
     <div className="space-y-3">

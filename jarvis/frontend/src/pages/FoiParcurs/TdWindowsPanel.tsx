@@ -1,35 +1,41 @@
 import { useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { tdAdminApi, type TdAdminWindow } from '@/api/tdAdmin'
+import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import { tdAdminApi } from '@/api/tdAdmin'
 
 /** Availability windows (date + time range) a page's slots are materialized
- *  from.
- *
- *  GOTCHA: td_admin.py only exposes POST .../windows -- no GET list, no
- *  DELETE. So (like TdCarsPanel) this table is fed by the parent's local
- *  `windows` state rather than a useQuery, and only reflects what was added
- *  in the current session. Follow-up: add GET (and ideally DELETE)
- *  /marketing/api/td/pages/<id>/windows on the backend. */
-export default function TdWindowsPanel({ pageId, windows, onWindowsChange }: {
-  pageId: number
-  windows: TdAdminWindow[]
-  onWindowsChange: (windows: TdAdminWindow[]) => void
-}) {
+ *  from. Backed by a real `useQuery` against GET .../pages/<id>/windows,
+ *  invalidated after add, so the table survives a reload (unlike the old
+ *  session-local `useState` this replaced). No DELETE route exists yet, so
+ *  removal is still out of scope here. */
+export default function TdWindowsPanel({ pageId }: { pageId: number }) {
+  const qc = useQueryClient()
+  const { data, isLoading } = useQuery({
+    queryKey: ['td-windows', pageId],
+    queryFn: () => tdAdminApi.listWindows(pageId),
+  })
+  const windows = data?.windows ?? []
+
   const [date, setDate] = useState('')
   const [start, setStart] = useState('09:00')
   const [end, setEnd] = useState('17:00')
 
   const addMut = useMutation({
     mutationFn: () => tdAdminApi.addWindow(pageId, { window_date: date, start_time: start, end_time: end }),
-    onSuccess: (w) => { onWindowsChange([...windows, w]); setDate('') },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['td-windows', pageId] })
+      setDate('')
+    },
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Adăugarea intervalului a eșuat'),
   })
+
+  if (isLoading) return <TableSkeleton rows={2} columns={3} />
 
   return (
     <div className="space-y-3">
