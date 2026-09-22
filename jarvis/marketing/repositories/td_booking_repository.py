@@ -39,6 +39,10 @@ class TdBookingRepository(BaseRepository):
         return self.query_one(
             'SELECT * FROM mkt_td_booking_pages WHERE slug=%s AND deleted_at IS NULL', (slug,))
 
+    def get_company_name(self, company_id: int):
+        row = self.query_one('SELECT company FROM companies WHERE id=%s', (company_id,))
+        return row['company'] if row else None
+
     def list_pages(self, company_id=None):
         if company_id:
             return self.query_all(
