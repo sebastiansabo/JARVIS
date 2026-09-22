@@ -1,6 +1,12 @@
 """Repository for the public test-drive booking layer (mkt_td_* tables)."""
 from core.base_repository import BaseRepository
 
+
+class TdConflict(Exception):
+    """Raised when a booking cannot be confirmed because the car is no longer free
+    (overlapping TD session, vehicle locked/blocked, already out, or the booking is
+    no longer in a confirmable state). Signals the caller to return HTTP 409."""
+
 _PAGE_COLS = {
     'project_id', 'company_id', 'event_id', 'slug', 'status', 'opens_at',
     'closes_at', 'min_lead_minutes', 'slot_minutes', 'buffer_minutes',
@@ -170,3 +176,72 @@ class TdBookingRepository(BaseRepository):
         return self.execute(
             "UPDATE mkt_td_bookings SET status='expired', updated_at=NOW() "
             "WHERE status='pending_confirm' AND expires_at < %s", (now,))
+
+    # ---- atomic confirm (race-safe) ----
+    # These three checks together are the "3-way availability" recheck. The overlap
+    # SQL mirrors FoiParcursRepository.find_conflicts (foi_parcurs_repository.py:725):
+    # a live TD session on the VIN whose [departure, COALESCE(return, departure)]
+    # window overlaps [frm, to] and is still open. Grace is kept at 6h / now() per the
+    # confirm spec. NOTE: find_conflicts currently uses GRACE_HOURS=8 and a
+    # Bucharest-local now() (session_lifecycle.py) -- if those drift, reconcile here.
+    _CONFLICT_SQL = (
+        "SELECT 1 FROM foi_de_parcurs fp "
+        "WHERE fp.vin=%s AND fp.route_type='TD' "
+        "AND fp.departure_datetime <= %s "
+        "AND COALESCE(fp.return_datetime, fp.departure_datetime) >= %s "
+        "AND (fp.status='PLANNED' OR (fp.status<>'COMPLETED' AND fp.status<>'PENDING')) "
+        "AND fp.status<>'MISSED' "
+        "AND NOT (fp.status='PLANNED' AND fp.departure_datetime + INTERVAL '6 hours' < now()) "
+        "LIMIT 1")
+    _LOCK_SQL = (
+        "SELECT 1 FROM fp_vehicles v WHERE v.vin=%s AND (v.locked_out=TRUE OR EXISTS "
+        "(SELECT 1 FROM fp_vehicle_blocks b WHERE b.vehicle_id=v.id AND b.is_active "
+        " AND CURRENT_DATE BETWEEN b.start_date AND b.end_date)) LIMIT 1")
+    _OPEN_SQL = (
+        "SELECT 1 FROM foi_de_parcurs fp "
+        "WHERE fp.vin=%s AND fp.status='FILLED' AND fp.source='td_form' LIMIT 1")
+
+    def confirm_booking_atomic(self, booking_id, vin, frm, to, fp_row: dict) -> dict:
+        """Confirm a pending booking under a per-VIN advisory lock, re-running the
+        3-way availability check on the confirm transaction's own cursor so the lock
+        actually covers it, then creating the operational PLANNED foi_de_parcurs row
+        and flipping the booking to 'confirmed' -- all in ONE transaction. Raises
+        TdConflict (rolling everything back) if the booking is no longer pending or
+        the car is no longer free.
+
+        Known limitation (MVP): the advisory lock serializes concurrent *public*
+        confirms for a VIN, but a staff-created FP insert does not take the lock, so a
+        sub-second public-vs-staff window remains -- narrowed (not eliminated) by the
+        in-txn recheck. Follow-up: add the same lock to the staff TD create path.
+        """
+        def _work(cursor):
+            # Serialize all confirms for this VIN; released at txn end (commit/rollback).
+            cursor.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', (vin,))
+            # Guard: booking still confirmable (row-locked for the txn).
+            cursor.execute('SELECT status FROM mkt_td_bookings WHERE id=%s FOR UPDATE',
+                           (booking_id,))
+            row = cursor.fetchone()
+            if not row or row['status'] != 'pending_confirm':
+                raise TdConflict('booking not pending')
+            # 3-way availability recheck, all on THIS cursor (inside the lock).
+            cursor.execute(self._CONFLICT_SQL, (vin, to, frm))
+            if cursor.fetchone():
+                raise TdConflict('overlapping TD session')
+            cursor.execute(self._LOCK_SQL, (vin,))
+            if cursor.fetchone():
+                raise TdConflict('vehicle locked/blocked')
+            cursor.execute(self._OPEN_SQL, (vin,))
+            if cursor.fetchone():
+                raise TdConflict('vehicle already out')
+            # Create the operational PLANNED FP row (column-driven insert).
+            cols = list(fp_row.keys())
+            ph = ', '.join(['%s'] * len(cols))
+            cursor.execute(
+                f"INSERT INTO foi_de_parcurs ({', '.join(cols)}) VALUES ({ph}) RETURNING id",
+                tuple(fp_row[c] for c in cols))
+            fp_id = cursor.fetchone()['id']
+            cursor.execute(
+                "UPDATE mkt_td_bookings SET status='confirmed', foi_de_parcurs_id=%s, "
+                "confirmed_at=NOW(), updated_at=NOW() WHERE id=%s", (fp_id, booking_id))
+            return {'fp_id': fp_id}
+        return self.execute_many(_work)
