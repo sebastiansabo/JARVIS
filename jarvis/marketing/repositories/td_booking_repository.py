@@ -8,6 +8,12 @@ _PAGE_COLS = {
     'notify_user_ids', 'created_by',
 }
 
+_BOOKING_COLS = {
+    'page_id', 'slot_id', 'car_id', 'customer_name', 'customer_phone_e164',
+    'customer_email', 'advisor_user_id', 'expires_at', 'extra_answers',
+    'utm', 'ip', 'user_agent',
+}
+
 
 class TdBookingRepository(BaseRepository):
     # ---- pages ----
@@ -101,3 +107,66 @@ class TdBookingRepository(BaseRepository):
             "AND NOT EXISTS (SELECT 1 FROM mkt_td_bookings b "
             "                WHERE b.slot_id=s.id AND b.status IN ('pending_confirm','confirmed')) "
             "ORDER BY s.car_id, s.starts_at", (page_id,))
+
+    # ---- bookings ----
+    def create_booking(self, data: dict) -> dict:
+        """Whitelisted insert. Lets psycopg2.errors.UniqueViolation propagate when the
+        partial-unique index uq_mkt_td_active_booking_per_slot rejects a second active
+        booking on the same slot -- the service layer maps that to HTTP 409.
+        """
+        from psycopg2.extras import Json
+        fields = {k: v for k, v in data.items() if k in _BOOKING_COLS}
+        for k in ('extra_answers', 'utm'):
+            if isinstance(fields.get(k), (dict, list)):
+                fields[k] = Json(fields[k])
+        cols = ', '.join(fields)
+        ph = ', '.join(['%s'] * len(fields))
+        return self.execute(
+            f'INSERT INTO mkt_td_bookings ({cols}) VALUES ({ph}) RETURNING *',
+            tuple(fields.values()), returning=True)
+
+    def get_booking(self, booking_id):
+        return self.query_one('SELECT * FROM mkt_td_bookings WHERE id=%s', (booking_id,))
+
+    def list_bookings(self, page_id, status=None) -> list:
+        if status:
+            return self.query_all(
+                'SELECT * FROM mkt_td_bookings WHERE page_id=%s AND status=%s ORDER BY created_at DESC',
+                (page_id, status))
+        return self.query_all(
+            'SELECT * FROM mkt_td_bookings WHERE page_id=%s ORDER BY created_at DESC', (page_id,))
+
+    def count_active_by_contact(self, phone, email) -> int:
+        row = self.query_one(
+            "SELECT COUNT(*) AS n FROM mkt_td_bookings "
+            "WHERE (customer_phone_e164=%s OR customer_email=%s) "
+            "AND status IN ('pending_confirm','confirmed')", (phone, email))
+        return int(row['n']) if row else 0
+
+    def count_recent_by_ip(self, ip, since) -> int:
+        row = self.query_one(
+            'SELECT COUNT(*) AS n FROM mkt_td_bookings WHERE ip=%s AND created_at >= %s',
+            (ip, since))
+        return int(row['n']) if row else 0
+
+    def mark_confirmed(self, booking_id, crm_client_id, foi_de_parcurs_id, advisor_user_id) -> dict:
+        return self.execute(
+            "UPDATE mkt_td_bookings SET status='confirmed', crm_client_id=%s, "
+            "foi_de_parcurs_id=%s, advisor_user_id=%s, confirmed_at=NOW(), updated_at=NOW() "
+            "WHERE id=%s RETURNING *",
+            (crm_client_id, foi_de_parcurs_id, advisor_user_id, booking_id), returning=True)
+
+    def mark_cancelled(self, booking_id) -> dict:
+        return self.execute(
+            "UPDATE mkt_td_bookings SET status='cancelled', cancelled_at=NOW(), updated_at=NOW() "
+            "WHERE id=%s RETURNING *", (booking_id,), returning=True)
+
+    def mark_status(self, booking_id, status) -> dict:
+        return self.execute(
+            'UPDATE mkt_td_bookings SET status=%s, updated_at=NOW() WHERE id=%s RETURNING *',
+            (status, booking_id), returning=True)
+
+    def expire_pending(self, now) -> int:
+        return self.execute(
+            "UPDATE mkt_td_bookings SET status='expired', updated_at=NOW() "
+            "WHERE status='pending_confirm' AND expires_at < %s", (now,))
