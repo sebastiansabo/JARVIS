@@ -326,6 +326,9 @@ export function PricingSheet({
           <Breakdown title="La preț listă" e={L} landed={params.landedCostEur} target={target} />
           <Breakdown title="La preț promo" e={P} landed={params.landedCostEur} target={target} />
         </div>
+        <p className="mt-1 text-[10px] leading-tight text-muted-foreground">
+          «TVA de plată» e informativ — TVA remisă statului{m.regime === 'MARGIN' ? ' (pe marjă)' : ''}. «Net încasat» e deja net de TVA, deci profitul e mereu Net încasat − Cost total (TVA nu se scade a doua oară).
+        </p>
         {/* Cost composition — makes the "other costs" transparent (financing + warranty are computed, not manual) */}
         <div className="mt-3 border-t pt-3">
           <div className="mb-1 text-xs font-semibold">Compoziție cost total (landed)</div>
@@ -465,7 +468,10 @@ function Breakdown({ title, e, landed, target }: {
   const cls = e.profitNet >= target ? 'text-emerald-600 dark:text-emerald-400' : e.profitNet >= 0 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'
   const rows: [string, string, string?][] = [
     ['Net încasat', fmtEur(e.netRevenue)],
-    ['TVA de plată', `−${fmtEur(Math.max(0, e.vatDue))}`, 'text-red-600 dark:text-red-400'],
+    // Informational, not a deduction: profit = Net încasat − Cost total in BOTH regimes.
+    // NORMAL: netRevenue already excludes output VAT (price/(1+r)); MARGIN: netRevenue = price − vatDue.
+    // vatDue is remitted to the state but is never subtracted a second time from profit — keep it neutral, no leading −.
+    ['TVA de plată (informativ)', fmtEur(Math.max(0, e.vatDue)), 'text-muted-foreground'],
     ['Cost total', `−${fmtEur(landed)}`, 'text-red-600 dark:text-red-400'],
     ['Profit net', money(e.profitNet), cls],
     ['Marjă netă · Adaos', `${fmtPct(e.marginNet)} · ${fmtPct(e.markup)}`, cls],
