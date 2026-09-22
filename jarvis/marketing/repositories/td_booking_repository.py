@@ -77,3 +77,27 @@ class TdBookingRepository(BaseRepository):
         return self.query_all(
             'SELECT * FROM mkt_td_booking_windows WHERE page_id=%s ORDER BY window_date, start_time',
             (page_id,))
+
+    # ---- slots ----
+    def bulk_insert_slots(self, rows: list) -> int:
+        if not rows:
+            return 0
+
+        def _work(cursor):
+            n = 0
+            for r in rows:
+                cursor.execute(
+                    'INSERT INTO mkt_td_slots (page_id, car_id, vin, starts_at, ends_at) '
+                    'VALUES (%s,%s,%s,%s,%s) ON CONFLICT (car_id, starts_at) DO NOTHING',
+                    (r['page_id'], r['car_id'], r['vin'], r['starts_at'], r['ends_at']))
+                n += cursor.rowcount
+            return n
+        return self.execute_many(_work)
+
+    def list_open_slots(self, page_id: int) -> list:
+        return self.query_all(
+            "SELECT s.* FROM mkt_td_slots s "
+            "WHERE s.page_id=%s AND s.status='open' "
+            "AND NOT EXISTS (SELECT 1 FROM mkt_td_bookings b "
+            "                WHERE b.slot_id=s.id AND b.status IN ('pending_confirm','confirmed')) "
+            "ORDER BY s.car_id, s.starts_at", (page_id,))
