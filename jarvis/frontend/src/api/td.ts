@@ -53,7 +53,7 @@ export const tdApi = {
 
   submitBooking: (slug: string, body: {
     slot_ids: number[]; name: string; phone: string; email: string
-    license: string; license_expiry?: string
+    license: string; license_expiry?: string; license_photo?: string | null
     gdpr_consent: boolean; conditions_accepted: boolean
     utm?: Record<string, string>
   }) => api.post<TdSubmitResult>(`/api/td/pages/${slug}/bookings`, body),
