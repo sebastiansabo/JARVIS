@@ -41,7 +41,10 @@ describe('PublicTdBooking', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getPage.mockResolvedValue(PAGE)
-    submitBooking.mockResolvedValue({ booking_id: 1, status: 'pending_confirm' })
+    submitBooking.mockResolvedValue({
+      group_id: 'g1', booked: [{ booking_id: 1, slot_id: 100, car_id: 10, starts_at: null, ends_at: null }],
+      unavailable: [], booking_id: 1, status: 'pending_confirm',
+    })
   })
 
   it('renders the car label + plate + slot times', async () => {
@@ -55,7 +58,7 @@ describe('PublicTdBooking', () => {
   it('keeps the CTA disabled until slot + details + both consents are provided', async () => {
     renderPage()
     await screen.findByText('MG ZS')
-    const cta = screen.getByRole('button', { name: 'Trimite programarea' })
+    const cta = screen.getByRole('button', { name: 'Trimite programările' })
     expect(cta).toBeDisabled()
 
     fireEvent.click(screen.getByRole('button', { name: '10:00' }))
@@ -86,11 +89,11 @@ describe('PublicTdBooking', () => {
     fireEvent.click(gdpr)
     fireEvent.click(conditions)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Trimite programarea' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Trimite programările' }))
 
     await waitFor(() => expect(submitBooking).toHaveBeenCalledTimes(1))
     expect(submitBooking).toHaveBeenCalledWith('vara', {
-      slot_id: 100,
+      slot_ids: [100],
       name: 'Andrei Popescu',
       phone: '+40721234567',
       email: 'andrei@exemplu.ro',
@@ -100,6 +103,38 @@ describe('PublicTdBooking', () => {
     })
     // Success state after submit.
     expect(await screen.findByText('Verifică emailul')).toBeInTheDocument()
+  })
+
+  it('selects several intervals as a group, lists them, removes one, and submits slot_ids', async () => {
+    renderPage()
+    await screen.findByText('MG ZS')
+
+    // Pick both intervals -> both appear in the "Programările tale" summary.
+    fireEvent.click(screen.getByRole('button', { name: '10:00' }))
+    fireEvent.click(screen.getByRole('button', { name: '11:00' }))
+    expect(await screen.findByText('Programările tale')).toBeInTheDocument()
+    // Two removable summary entries.
+    expect(screen.getAllByRole('button', { name: /^Elimină/ })).toHaveLength(2)
+
+    // Remove the 11:00 pick.
+    fireEvent.click(screen.getByRole('button', { name: /Elimină.*11:00/ }))
+    expect(screen.getAllByRole('button', { name: /^Elimină/ })).toHaveLength(1)
+
+    // Re-add it, fill details, submit -> both slot_ids in one group.
+    fireEvent.click(screen.getByRole('button', { name: '11:00' }))
+    fill('Nume complet', 'Andrei Popescu')
+    fill('Telefon', '0721234567')
+    fill('Email', 'andrei@exemplu.ro')
+    fill('Serie și număr permis', 'AB 123456')
+    const [gdpr, conditions] = screen.getAllByRole('checkbox')
+    fireEvent.click(gdpr)
+    fireEvent.click(conditions)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Trimite programările' }))
+    await waitFor(() => expect(submitBooking).toHaveBeenCalledTimes(1))
+    expect(submitBooking).toHaveBeenCalledWith('vara', expect.objectContaining({
+      slot_ids: [100, 101],
+    }))
   })
 
   it('reveals the GDPR text behind a "Detalii" toggle', async () => {

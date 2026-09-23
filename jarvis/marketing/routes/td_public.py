@@ -84,11 +84,14 @@ def _car_public(car) -> dict:
 
 @td_public_bp.route('/pages/<slug>/bookings', methods=['POST'])
 def submit_booking(slug):
-    """Submit a booking request. Body: {slot_id, name, phone, email, utm,
-    license, license_expiry?, gdpr_consent, conditions_accepted}.
+    """Submit a booking request for one OR several (car+interval) slots as one
+    group. Body: {slot_ids: [..] | slot_id, name, phone, email, utm, license,
+    license_expiry?, gdpr_consent, conditions_accepted}.
 
-    The service re-validates the page/slot server-side from `slug`; the
-    company/car/advisor are never taken from the body.
+    The service re-validates the page/slots server-side from `slug`; the
+    company/car/advisor are never taken from the body. Slots picked together
+    share one group_id -> ONE confirmation email -> one link confirms/cancels
+    them all.
 
     Legal fields are required for a customer-facing booking: the driving-licence
     serie & number must be present and both consents (GDPR + test-drive
@@ -96,11 +99,18 @@ def submit_booking(slug):
     ride along in extra_answers and are mapped onto the fișă at confirm.
     """
     data = request.get_json(silent=True) or {}
-    required = ('slot_id', 'name', 'phone', 'email')
-    if not all(data.get(k) for k in required):
+    # Accept a list (multi-car/multi-interval) or a lone slot_id (a group of one).
+    # A non-list slot_ids is ignored (never iterated char-by-char).
+    raw_ids = data.get('slot_ids')
+    if not isinstance(raw_ids, list):
+        raw_ids = None
+    if raw_ids is None and data.get('slot_id') is not None:
+        raw_ids = [data.get('slot_id')]
+    required = ('name', 'phone', 'email')
+    if not raw_ids or not all(data.get(k) for k in required):
         return jsonify({'error': 'missing fields'}), 400
     try:
-        slot_id = int(data['slot_id'])
+        slot_ids = [int(x) for x in raw_ids]
     except (TypeError, ValueError):
         return jsonify({'error': 'invalid slot_id'}), 400
     license_str = (data.get('license') or '').strip()
@@ -117,9 +127,11 @@ def submit_booking(slug):
         'conditions_accepted': True,
     }
     result = _svc.submit_booking(
-        slug, slot_id, data['name'], data['phone'], data['email'],
-        data.get('utm') or {}, _client_ip(), request.headers.get('User-Agent', ''),
-        request.host_url.rstrip('/'), extra_answers=extra_answers)
+        slug, name=data['name'], phone_e164=data['phone'], email=data['email'],
+        utm=data.get('utm') or {}, ip=_client_ip(),
+        user_agent=request.headers.get('User-Agent', ''),
+        base_url=request.host_url.rstrip('/'),
+        extra_answers=extra_answers, slot_ids=slot_ids)
     return _result_response(result)
 
 

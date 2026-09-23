@@ -706,6 +706,7 @@ def create_schema_marketing(conn, cursor):
             customer_name TEXT NOT NULL,
             customer_phone_e164 TEXT NOT NULL,
             customer_email TEXT NOT NULL,
+            group_id TEXT,
             crm_client_id INTEGER,
             foi_de_parcurs_id INTEGER,
             advisor_user_id INTEGER REFERENCES users(id),
@@ -728,6 +729,21 @@ def create_schema_marketing(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_bookings_page ON mkt_td_bookings(page_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_bookings_contact ON mkt_td_bookings(customer_phone_e164, customer_email)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_bookings_status ON mkt_td_bookings(status)')
+
+    # Migration: group_id ties several (car+interval) bookings made together into
+    # ONE group -> one confirmation email -> one link confirms/cancels them all.
+    # Idempotent guard for tables that predate this column.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'mkt_td_bookings' AND column_name = 'group_id'
+            ) THEN
+                ALTER TABLE mkt_td_bookings ADD COLUMN group_id TEXT;
+            END IF;
+        END $$
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_bookings_group ON mkt_td_bookings(group_id)')
 
 
 def _seed_sim_benchmarks(cursor):
