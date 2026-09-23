@@ -17,7 +17,10 @@ vi.mock('@/api/tdAdmin', () => ({
   },
 }))
 vi.mock('@/api/foiParcurs', () => ({
-  foiParcursApi: { getCompanies: vi.fn().mockResolvedValue({ companies: [{ id: 7, company: 'Autoworld' }] }) },
+  foiParcursApi: {
+    getCompanies: vi.fn().mockResolvedValue({ companies: [{ id: 7, company: 'Autoworld' }] }),
+    getVehicles: vi.fn().mockResolvedValue({ vehicles: [] }),
+  },
 }))
 vi.mock('@/api/hr', () => ({ hrApi: { getEvents: vi.fn().mockResolvedValue([]) } }))
 vi.mock('@/api/users', () => ({
