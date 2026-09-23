@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,9 +11,10 @@ import { tdAdminApi } from '@/api/tdAdmin'
 
 /** Availability windows (date + time range) a page's slots are materialized
  *  from. Backed by a real `useQuery` against GET .../pages/<id>/windows,
- *  invalidated after add, so the table survives a reload (unlike the old
- *  session-local `useState` this replaced). No DELETE route exists yet, so
- *  removal is still out of scope here. */
+ *  invalidated after add/remove, so the table survives a reload (unlike the
+ *  old session-local `useState` this replaced). Removal mirrors
+ *  TdCarsPanel.tsx's car-delete: a plain `useMutation` on
+ *  `tdAdminApi.deleteWindow`, invalidating on success. */
 export default function TdWindowsPanel({ pageId }: { pageId: number }) {
   const qc = useQueryClient()
   const { data, isLoading } = useQuery({
@@ -33,6 +34,12 @@ export default function TdWindowsPanel({ pageId }: { pageId: number }) {
       setDate('')
     },
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Adăugarea intervalului a eșuat'),
+  })
+
+  const removeMut = useMutation({
+    mutationFn: (windowId: number) => tdAdminApi.deleteWindow(windowId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['td-windows', pageId] }),
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Ștergerea a eșuat'),
   })
 
   if (isLoading) return <TableSkeleton rows={2} columns={3} />
@@ -67,6 +74,7 @@ export default function TdWindowsPanel({ pageId }: { pageId: number }) {
               <TableHead>Data</TableHead>
               <TableHead>De la</TableHead>
               <TableHead>Până la</TableHead>
+              <TableHead className="text-right">Acțiuni</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -75,6 +83,12 @@ export default function TdWindowsPanel({ pageId }: { pageId: number }) {
                 <TableCell className="text-sm">{w.window_date}</TableCell>
                 <TableCell className="text-sm">{w.start_time}</TableCell>
                 <TableCell className="text-sm">{w.end_time}</TableCell>
+                <TableCell className="text-right">
+                  <Button variant="ghost" size="icon" className="h-7 w-7" disabled={removeMut.isPending}
+                    onClick={() => removeMut.mutate(w.id)} aria-label={`Șterge intervalul ${w.window_date} ${w.start_time}`}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
