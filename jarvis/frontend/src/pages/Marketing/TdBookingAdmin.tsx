@@ -441,6 +441,7 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
   const [title, setTitle] = useState('')
   const [intro, setIntro] = useState('')
   const [thankYou, setThankYou] = useState('')
+  const [conditionsText, setConditionsText] = useState('')
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [notifyIds, setNotifyIds] = useState<(number | string)[]>([])
   const [opensAt, setOpensAt] = useState('')
@@ -455,6 +456,7 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
     setTitle(page.title ?? '')
     setIntro(page.intro ?? '')
     setThankYou(page.thank_you ?? '')
+    setConditionsText(page.conditions_text ?? '')
     setLogoUrl(page.logo_url ?? null)
     setNotifyIds(page.notify_user_ids ?? [])
     setOpensAt(isoToLocal(page.opens_at))
@@ -477,6 +479,8 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
       if (nextIntro !== (page.intro ?? null)) body.intro = nextIntro
       const nextThankYou = thankYou.trim() || null
       if (nextThankYou !== (page.thank_you ?? null)) body.thank_you = nextThankYou
+      const nextConditions = conditionsText.trim() || null
+      if (nextConditions !== (page.conditions_text ?? null)) body.conditions_text = nextConditions
       if (logoUrl !== (page.logo_url ?? null)) body.logo_url = logoUrl
 
       const nextNotifyIds = notifyIds.map(Number)
@@ -527,6 +531,15 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
           <div className="space-y-1.5">
             <Label className="text-xs">Mesaj de mulțumire</Label>
             <Textarea rows={3} value={thankYou} onChange={(e) => setThankYou(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Condiții de test drive (text)</Label>
+            <Textarea
+              rows={4}
+              value={conditionsText}
+              onChange={(e) => setConditionsText(e.target.value)}
+              placeholder="Textul afișat în fereastra „Citește” de lângă acordul pentru condiții. Gol → text implicit."
+            />
           </div>
           <LogoUploadField value={logoUrl} onChange={setLogoUrl} />
           <div className="space-y-1.5">

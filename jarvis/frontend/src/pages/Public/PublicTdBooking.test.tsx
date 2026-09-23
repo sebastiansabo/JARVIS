@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
@@ -17,6 +17,19 @@ const PAGE = {
   slots: [
     { id: 100, car_id: 10, vin: 'VIN1', starts_at: '2099-10-01T10:00:00', ends_at: '2099-10-01T11:00:00' },
     { id: 101, car_id: 10, vin: 'VIN1', starts_at: '2099-10-01T11:00:00', ends_at: '2099-10-01T12:00:00' },
+  ],
+}
+
+// A two-day event: car A only free on day 1 (25 Sept), car B only on day 2 (26 Sept).
+const MULTI_DAY_PAGE = {
+  page: { title: 'Test Drive Toamnă', company_name: 'Autoworld' },
+  cars: [
+    { id: 10, vin: 'VIN1', label: 'MG ZS', plate: 'B-100-XYZ' },
+    { id: 20, vin: 'VIN2', label: 'Dacia Duster', plate: 'B-200-ABC' },
+  ],
+  slots: [
+    { id: 100, car_id: 10, vin: 'VIN1', starts_at: '2099-09-25T10:00:00', ends_at: '2099-09-25T11:00:00' },
+    { id: 200, car_id: 20, vin: 'VIN2', starts_at: '2099-09-26T14:00:00', ends_at: '2099-09-26T15:00:00' },
   ],
 }
 
@@ -203,12 +216,70 @@ describe('PublicTdBooking', () => {
     expect(screen.getByText('Adaugă poza permisului')).toBeInTheDocument()
   })
 
-  it('reveals the GDPR text behind a "Detalii" toggle', async () => {
+  it('opens the GDPR text in a "Citește" popup (first consent link)', async () => {
     renderPage()
     await screen.findByText('MG ZS')
     expect(screen.queryByText(/Îți prelucrăm datele/)).not.toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Detalii' }))
-    expect(screen.getByText(/Îți prelucrăm datele/)).toBeInTheDocument()
+    // Two "Citește" links (GDPR then Conditions); the first opens the GDPR popup.
+    fireEvent.click(screen.getAllByRole('button', { name: 'Citește' })[0])
+    expect(await screen.findByText(/Îți prelucrăm datele/)).toBeInTheDocument()
+  })
+
+  it('opens the conditions popup with the built-in default when the page has none', async () => {
+    renderPage()
+    await screen.findByText('MG ZS')
+    expect(screen.queryByText(/permis de conducere valid/)).not.toBeInTheDocument()
+    fireEvent.click(screen.getAllByRole('button', { name: 'Citește' })[1])
+    expect(await screen.findByText(/permis de conducere valid/)).toBeInTheDocument()
+  })
+
+  it('shows the page-provided conditions_text in the popup when set', async () => {
+    getPage.mockResolvedValueOnce({
+      ...PAGE,
+      page: { ...PAGE.page, conditions_text: 'Reguli speciale pentru acest eveniment.' },
+    })
+    renderPage()
+    await screen.findByText('MG ZS')
+    fireEvent.click(screen.getAllByRole('button', { name: 'Citește' })[1])
+    expect(await screen.findByText('Reguli speciale pentru acest eveniment.')).toBeInTheDocument()
+  })
+
+  it('shows a day selector for a multi-day event and persists picks across days', async () => {
+    getPage.mockResolvedValueOnce(MULTI_DAY_PAGE)
+    renderPage()
+    await screen.findByText('MG ZS')
+
+    // Two day pills in the day-selector group.
+    const dayGroup = screen.getByRole('group', { name: 'Alege ziua' })
+    const dayPills = within(dayGroup).getAllByRole('button')
+    expect(dayPills).toHaveLength(2)
+
+    // Default = first day: car A's 10:00 is shown; car B (day 2 only) is empty here.
+    expect(screen.getByRole('button', { name: '10:00' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '14:00' })).not.toBeInTheDocument()
+    expect(screen.getByText('Niciun interval liber în această zi')).toBeInTheDocument()
+
+    // Pick the day-1 slot -> it lands in the summary.
+    fireEvent.click(screen.getByRole('button', { name: '10:00' }))
+    expect(screen.getByRole('button', { name: /Elimină.*MG ZS/ })).toBeInTheDocument()
+
+    // Switch to day 2: picker swaps to day-2 slots...
+    fireEvent.click(dayPills[1])
+    expect(screen.queryByRole('button', { name: '10:00' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '14:00' })).toBeInTheDocument()
+
+    // ...but the day-1 pick PERSISTS in the summary across the switch.
+    expect(screen.getByRole('button', { name: /Elimină.*MG ZS/ })).toBeInTheDocument()
+
+    // Add a day-2 pick -> both cars/days stay selected as one group.
+    fireEvent.click(screen.getByRole('button', { name: '14:00' }))
+    expect(screen.getAllByRole('button', { name: /^Elimină/ })).toHaveLength(2)
+  })
+
+  it('shows no day selector for a single-day event', async () => {
+    renderPage()
+    await screen.findByText('MG ZS')
+    expect(screen.queryByRole('group', { name: 'Alege ziua' })).not.toBeInTheDocument()
   })
 
   it('shows a not-available message when the page fails to load', async () => {

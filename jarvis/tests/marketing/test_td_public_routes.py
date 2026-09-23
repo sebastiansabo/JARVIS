@@ -189,6 +189,18 @@ def test_get_page_car_label_plate_and_gdpr(client, open_page):
                      ((original or {}).get('gdpr_text'), company_id))
 
 
+def test_get_page_returns_conditions_text(client, open_page):
+    """The public page object carries the per-page conditions_text -- NULL by
+    default, and the configured value once set (which also exercises that
+    update_page whitelists the new column via _PAGE_COLS)."""
+    body = client.get(f'/api/td/pages/{_SLUG}').get_json()
+    assert 'conditions_text' in body['page']
+    assert body['page']['conditions_text'] is None
+    repo.update_page(open_page['id'], {'conditions_text': 'Reguli eveniment de test.'})
+    body = client.get(f'/api/td/pages/{_SLUG}').get_json()
+    assert body['page']['conditions_text'] == 'Reguli eveniment de test.'
+
+
 def test_get_missing_page_404_not_401(client):
     r = client.get('/api/td/pages/nope')
     assert r.status_code == 404
