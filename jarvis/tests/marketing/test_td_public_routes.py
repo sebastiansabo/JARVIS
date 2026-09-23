@@ -61,6 +61,7 @@ _PHONE = '+40721100010'
 _PHONE2 = '+40721100099'
 _EMAIL = 'ana-pub@ex.com'
 _EMAIL2 = 'bob-pub@ex.com'
+_LOGO_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
 
 def _resolve_company_id():
@@ -122,7 +123,8 @@ _VALID_LEGAL = {'license': 'AB 123456', 'gdpr_consent': True, 'conditions_accept
 def open_page(app):
     company_id = _resolve_company_id()
     p = repo.create_page({'company_id': company_id, 'slug': _SLUG, 'created_by': 1,
-                          'status': 'open', 'min_lead_minutes': 0, 'title': 'Test Drive X'})
+                          'status': 'open', 'min_lead_minutes': 0, 'title': 'Test Drive X',
+                          'logo_url': _LOGO_DATA_URL})
     repo.add_car(p['id'], vin=_VIN, default_advisor_user_id=1)
     # Seed the fleet row so the public car carries a friendly make/model label
     # + plate (cleaned up by _cleanup's DELETE FROM fp_vehicles WHERE vin=...).
@@ -150,7 +152,21 @@ def test_get_page_public_no_auth(client, open_page):
     assert body['cars'][0]['vin'] == _VIN
     assert 'slots' in body and len(body['slots']) >= 1
     assert body['page']['title'] == 'Test Drive X'
+    assert body['page']['logo_url'] == _LOGO_DATA_URL
     assert 'company_name' in body['page']
+
+
+def test_get_page_logo_url_absent_when_unset(client):
+    """A page created without a logo returns logo_url: null (not a KeyError),
+    so the FE can render its header without a logo gracefully."""
+    company_id = _resolve_company_id()
+    p = repo.create_page({'company_id': company_id, 'slug': _CLOSED_SLUG, 'created_by': 1,
+                          'status': 'open', 'min_lead_minutes': 0, 'title': 'No Logo'})
+    try:
+        body = client.get(f'/api/td/pages/{_CLOSED_SLUG}').get_json()
+        assert body['page']['logo_url'] is None
+    finally:
+        repo.execute('DELETE FROM mkt_td_booking_pages WHERE id=%s', (p['id'],))
 
 
 def test_get_page_car_label_plate_and_gdpr(client, open_page):

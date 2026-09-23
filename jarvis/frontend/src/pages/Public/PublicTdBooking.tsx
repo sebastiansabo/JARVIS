@@ -91,19 +91,33 @@ export default function PublicTdBooking() {
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] text-[#0E1B2C] dark:bg-[#0B1522] dark:text-slate-100">
-      <div className="mx-auto max-w-[520px] px-5 py-8 sm:py-12">
-        <header className="mb-8">
-          <h1 className="text-3xl font-semibold tracking-tight">
+      {/* Full-width event banner — breaks out of the centered content column
+          on purpose so the logo/title read as a proper event header, not a
+          plain in-column title. */}
+      <header className="w-full border-b border-slate-200 bg-white dark:border-slate-700/60 dark:bg-[#14243A]">
+        <div className="mx-auto max-w-[640px] px-5 py-10 text-center sm:py-14">
+          {data.page.logo_url && (
+            <img
+              src={data.page.logo_url}
+              alt={data.page.title ? `Sigla ${data.page.title}` : 'Sigla evenimentului'}
+              className="mx-auto mb-5 h-12 w-auto max-w-[220px] object-contain sm:h-[72px]"
+            />
+          )}
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
             {data.page.title || 'Programează un test drive'}
           </h1>
           {data.page.company_name && (
-            <p className="mt-1.5 text-[15px] text-slate-500 dark:text-slate-400">{data.page.company_name}</p>
+            <p className="mt-2 text-sm font-medium text-[#2743E6] dark:text-[#8CA1FF]">{data.page.company_name}</p>
           )}
           {data.page.intro && (
-            <p className="mt-4 text-[15px] leading-relaxed text-slate-600 dark:text-slate-300">{data.page.intro}</p>
+            <p className="mx-auto mt-4 max-w-[520px] text-[15px] leading-relaxed text-slate-600 dark:text-slate-300">
+              {data.page.intro}
+            </p>
           )}
-        </header>
+        </div>
+      </header>
 
+      <div className="mx-auto max-w-[520px] px-5 py-8 sm:py-12">
         {/* Car + time picker — the hero */}
         <section className="space-y-4" aria-label="Alege mașina și intervalul">
           {data.cars.map((car) => {
@@ -311,11 +325,15 @@ function Field({ id, label, children }: { id: string; label: string; children: R
 function BookingSkeleton() {
   return (
     <div className="min-h-screen bg-[#F6F7F9] dark:bg-[#0B1522]">
-      <div className="mx-auto max-w-[520px] px-5 py-8 sm:py-12">
-        <div className="mb-8 space-y-3 motion-safe:animate-pulse">
-          <div className="h-8 w-2/3 rounded-lg bg-slate-200 dark:bg-slate-700" />
-          <div className="h-4 w-1/3 rounded bg-slate-200 dark:bg-slate-700" />
+      <div className="w-full border-b border-slate-200 bg-white dark:border-slate-700/60 dark:bg-[#14243A]">
+        <div className="mx-auto max-w-[640px] px-5 py-10 text-center sm:py-14">
+          <div className="mx-auto space-y-3 motion-safe:animate-pulse">
+            <div className="mx-auto h-8 w-2/3 rounded-lg bg-slate-200 dark:bg-slate-700" />
+            <div className="mx-auto h-4 w-1/3 rounded bg-slate-200 dark:bg-slate-700" />
+          </div>
         </div>
+      </div>
+      <div className="mx-auto max-w-[520px] px-5 py-8 sm:py-12">
         <div className="space-y-4 motion-safe:animate-pulse">
           {[0, 1].map((i) => (
             <div key={i} className="rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-700/60 dark:bg-[#14243A]">
