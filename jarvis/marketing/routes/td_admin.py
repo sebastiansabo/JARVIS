@@ -111,6 +111,13 @@ def td_list_windows(pid):
     return jsonify({'windows': _repo.list_windows(pid)})
 
 
+@marketing_bp.route('/api/td/windows/<int:wid>', methods=['DELETE'])
+@login_required
+def td_remove_window(wid):
+    _repo.delete_window(wid)
+    return jsonify({'ok': True})
+
+
 # ---- materialize ----
 
 @marketing_bp.route('/api/td/pages/<int:pid>/materialize', methods=['POST'])

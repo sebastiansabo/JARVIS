@@ -12,8 +12,8 @@ const { listPages, createPage, listBookings, listCars, listWindows } = vi.hoiste
 vi.mock('@/api/tdAdmin', () => ({
   tdAdminApi: {
     listPages, createPage, listBookings, listCars, listWindows,
-    setStatus: vi.fn(), materialize: vi.fn(),
-    addCar: vi.fn(), removeCar: vi.fn(), addWindow: vi.fn(), reassignAdvisor: vi.fn(),
+    setStatus: vi.fn(), materialize: vi.fn(), updatePage: vi.fn(),
+    addCar: vi.fn(), removeCar: vi.fn(), addWindow: vi.fn(), deleteWindow: vi.fn(), reassignAdvisor: vi.fn(),
   },
 }))
 vi.mock('@/api/foiParcurs', () => ({
