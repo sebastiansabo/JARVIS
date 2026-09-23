@@ -20,6 +20,7 @@ export interface TdPublicPage {
     title?: string
     intro?: string
     thank_you?: string
+    logo_url?: string | null
     company_name?: string
     gdpr_text?: string | null
   }

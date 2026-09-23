@@ -48,6 +48,7 @@ _SLUG = 'adm-td-1'
 _VIN = 'ADMTD0001'
 _VIN2 = 'ADMTD0002'
 _USER1_ID = 1
+_LOGO_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
 
 class _StubUser:
@@ -151,12 +152,14 @@ def company_id(app):
 
 def test_create_page_add_car_window_materialize(client, company_id):
     r = client.post('/marketing/api/td/pages',
-                     json={'company_id': company_id, 'slug': _SLUG, 'title': 'Admin TD'})
+                     json={'company_id': company_id, 'slug': _SLUG, 'title': 'Admin TD',
+                           'logo_url': _LOGO_DATA_URL})
     assert r.status_code == 201
     page = r.get_json()
     pid = page['id']
     assert page['slug'] == _SLUG
     assert page['status'] == 'draft'
+    assert page['logo_url'] == _LOGO_DATA_URL
 
     car_r = client.post(f'/marketing/api/td/pages/{pid}/cars',
                          json={'vin': _VIN, 'default_advisor_user_id': _USER1_ID})
@@ -266,6 +269,7 @@ def test_update_page_persists_settings_and_notify_user_ids(client, company_id):
         'title': 'Updated title',
         'intro': 'Intro text',
         'thank_you': 'Thanks!',
+        'logo_url': _LOGO_DATA_URL,
         'notify_user_ids': [_USER1_ID, second_user_id],
         'min_lead_minutes': 45,
         'slot_minutes': 20,
@@ -279,6 +283,7 @@ def test_update_page_persists_settings_and_notify_user_ids(client, company_id):
     assert body['title'] == 'Updated title'
     assert body['intro'] == 'Intro text'
     assert body['thank_you'] == 'Thanks!'
+    assert body['logo_url'] == _LOGO_DATA_URL
     assert sorted(body['notify_user_ids']) == sorted([_USER1_ID, second_user_id])
     assert body['min_lead_minutes'] == 45
     assert body['slot_minutes'] == 20
@@ -295,6 +300,7 @@ def test_update_page_persists_settings_and_notify_user_ids(client, company_id):
     assert fetched['title'] == 'Updated title'
     assert fetched['min_lead_minutes'] == 45
     assert fetched['slot_minutes'] == 20
+    assert fetched['logo_url'] == _LOGO_DATA_URL
 
 
 def test_update_page_not_found_404(client):

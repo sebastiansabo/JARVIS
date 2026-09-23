@@ -115,4 +115,21 @@ describe('PublicTdBooking', () => {
     renderPage()
     expect(await screen.findByText('Această pagină nu este disponibilă.')).toBeInTheDocument()
   })
+
+  it('renders the logo + intro in the full-width header when set, and skips the image when absent', async () => {
+    getPage.mockResolvedValueOnce({
+      ...PAGE,
+      page: { ...PAGE.page, logo_url: 'data:image/png;base64,AAAA', intro: 'Vino să testezi noul model.' },
+    })
+    renderPage()
+    const logo = await screen.findByRole('img', { name: /Sigla Test Drive Vara/ })
+    expect(logo).toHaveAttribute('src', 'data:image/png;base64,AAAA')
+    expect(screen.getByText('Vino să testezi noul model.')).toBeInTheDocument()
+  })
+
+  it('renders no logo image when the page has no logo_url', async () => {
+    renderPage()
+    await screen.findByText('Test Drive Vara')
+    expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  })
 })
