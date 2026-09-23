@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CalendarClock, ChevronLeft, Lock, Plus, Search, Settings, Unlock, Upload, X } from 'lucide-react'
+import { CalendarClock, ChevronLeft, Copy, ExternalLink, Link2, Lock, Plus, Search, Settings, Unlock, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -123,6 +123,68 @@ function LogoUploadField({ value, onChange }: {
     </div>
   )
 }
+/** Public event link + QR for sharing. The QR is rendered by the same external
+ *  image service the app already uses for the mobile-app download QR
+ *  (DownloadApp.tsx: api.qrserver.com) -- no QR-generator dependency. The URL is
+ *  built from the current host, so it points at whatever environment the admin
+ *  is on (prod/staging/dev). A draft/closed page's public URL 404s until it's
+ *  opened -- surfaced with a small badge. */
+function PublicLinkCard({ slug, status }: { slug: string; status: TdAdminPage['status'] }) {
+  const url = `${window.location.origin}/td/${slug}`
+  const qr = (size: number) =>
+    `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&margin=8&data=${encodeURIComponent(url)}`
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(url); toast.success('Link copiat') }
+    catch { toast.error('Nu am putut copia linkul') }
+  }
+  return (
+    <Card className="p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link2 className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Link public</span>
+            {status !== 'open' && (
+              <Badge variant="secondary" className="text-[10px] font-normal">
+                {status === 'draft' ? 'Activ după „Deschide”' : 'Închisă'}
+              </Badge>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="max-w-full truncate rounded bg-muted px-2 py-1 text-xs">{url}</code>
+            <Button variant="outline" size="sm" className="h-8" onClick={copy}>
+              <Copy className="mr-1.5 h-3.5 w-3.5" />Copiază
+            </Button>
+            <Button
+              variant="outline" size="sm" className="h-8"
+              onClick={() => window.open(url, '_blank', 'noopener')}
+            >
+              <ExternalLink className="mr-1.5 h-3.5 w-3.5" />Deschide
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Distribuie linkul sau codul QR — WhatsApp, social media, email sau pe afișul de la eveniment.
+          </p>
+        </div>
+        <div className="shrink-0 text-center">
+          <img
+            src={qr(160)}
+            alt={`Cod QR pentru ${url}`}
+            width={128} height={128} loading="lazy"
+            className="h-32 w-32 rounded-md border bg-white p-1"
+          />
+          <a
+            href={qr(600)} target="_blank" rel="noopener noreferrer"
+            className="mt-1 block text-xs text-primary hover:underline"
+          >
+            Mărește / descarcă
+          </a>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 const STATUS_LABEL: Record<TdAdminPage['status'], string> = { draft: 'Ciornă', open: 'Deschisă', closed: 'Închisă' }
 const STATUS_VARIANT: Record<TdAdminPage['status'], 'secondary' | 'default' | 'outline'> = {
   draft: 'secondary', open: 'default', closed: 'outline',
@@ -329,6 +391,7 @@ export default function TdBookingAdmin({ companyId: initialCompanyId = 0 }: { co
               </TabsContent>
 
               <TabsContent value="details" className="space-y-6 pt-4">
+                <PublicLinkCard slug={selectedPage.slug} status={selectedPage.status} />
                 <TdCarsPanel pageId={selectedPage.id} companyId={selectedPage.company_id} users={userList} />
                 <TdWindowsPanel pageId={selectedPage.id} />
               </TabsContent>
