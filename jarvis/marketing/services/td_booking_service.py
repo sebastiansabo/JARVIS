@@ -87,14 +87,19 @@ class TdBookingService:
     # ---- submit ----
     def submit_booking(self, slug, slot_id=None, name=None, phone_e164=None, email=None,
                        utm=None, ip=None, user_agent=None, base_url=None,
-                       extra_answers=None, slot_ids=None):
+                       extra_answers=None, slot_ids=None, license_photo=None):
         """Submit a booking for one OR several (car+interval) slots as a single
         group. `slot_ids` (a list) is the multi-slot entry point; a lone
         `slot_id` still works (a group of one), so the original single-slot
         callers/tests are unchanged. Whatever the count, every requested slot
         that is still live is inserted as one group (shared group_id), ONE
         confirmation email is sent, and the response reports what was booked vs
-        what was just taken."""
+        what was just taken.
+
+        `license_photo` (a base64 data-URL string) is OPTIONAL: when present it
+        is folded into `extra_answers` alongside the licence number/consents so
+        every booking in the group carries it; when absent, extra_answers is
+        left untouched and the fișă's photo column stays null at confirm."""
         page = self.repo.get_page_by_slug(slug)
         if not page or page['status'] != 'open':
             return ServiceResult(False, 404, error='Booking page not available')
@@ -134,6 +139,11 @@ class TdBookingService:
         to_book = [avail[sid] for sid in requested if sid in avail]
         if not to_book:
             return ServiceResult(False, 409, error='Slot no longer available')
+        # Fold the optional licence photo into extra_answers (only when given,
+        # so a photo-less submit leaves extra_answers -- and later the fișă's
+        # driver_license_photo column -- exactly as before).
+        if license_photo:
+            extra_answers = {**(extra_answers or {}), 'license_photo': license_photo}
         # One shared group_id ties the batch together for confirm/cancel.
         group_id = secrets.token_urlsafe(12)
         expires_at = now + timedelta(minutes=_PENDING_TTL_MINUTES)
@@ -375,6 +385,7 @@ class TdBookingService:
         extra = booking.get('extra_answers') or {}
         lic_no = (extra.get('license') or '').strip()
         lic_exp = (extra.get('license_expiry') or '').strip()
+        lic_photo = (extra.get('license_photo') or '').strip()
         row = {
             'contract_id': f"TDB-{booking['id']}",
             'vin': car['vin'],
@@ -413,6 +424,11 @@ class TdBookingService:
             row['driver_license_number'] = lic_no
         if lic_exp:
             row['driver_license_expiry'] = lic_exp
+        # Licence photo is OPTIONAL (unlike serie/number above): when the
+        # customer skipped it, extra_answers has no 'license_photo' key and
+        # driver_license_photo is simply never set, leaving the column null.
+        if lic_photo:
+            row['driver_license_photo'] = lic_photo
         return row
 
     def _advisor_name(self, user_id):

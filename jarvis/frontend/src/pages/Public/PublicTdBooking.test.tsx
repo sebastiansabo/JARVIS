@@ -98,6 +98,7 @@ describe('PublicTdBooking', () => {
       phone: '+40721234567',
       email: 'andrei@exemplu.ro',
       license: 'AB 123456',
+      license_photo: null,
       gdpr_consent: true,
       conditions_accepted: true,
     })
@@ -135,6 +136,71 @@ describe('PublicTdBooking', () => {
     expect(submitBooking).toHaveBeenCalledWith('vara', expect.objectContaining({
       slot_ids: [100, 101],
     }))
+  })
+
+  it('keeps the CTA enabled without a licence photo (it is optional)', async () => {
+    renderPage()
+    await screen.findByText('MG ZS')
+
+    fireEvent.click(screen.getByRole('button', { name: '10:00' }))
+    fill('Nume complet', 'Andrei Popescu')
+    fill('Telefon', '0721234567')
+    fill('Email', 'andrei@exemplu.ro')
+    fill('Serie și număr permis', 'AB 123456')
+    const [gdpr, conditions] = screen.getAllByRole('checkbox')
+    fireEvent.click(gdpr)
+    fireEvent.click(conditions)
+
+    // No photo ever uploaded -- CTA still enables and submit still succeeds.
+    const cta = screen.getByRole('button', { name: 'Trimite programările' })
+    expect(cta).toBeEnabled()
+    fireEvent.click(cta)
+    await waitFor(() => expect(submitBooking).toHaveBeenCalledTimes(1))
+    expect(submitBooking).toHaveBeenCalledWith('vara', expect.objectContaining({ license_photo: null }))
+  })
+
+  it('reads an uploaded licence photo into a base64 data URL, previews it, and includes it in the submit payload', async () => {
+    renderPage()
+    await screen.findByText('MG ZS')
+
+    const file = new File(['fake-image-bytes'], 'permis.png', { type: 'image/png' })
+    const input = screen.getByLabelText('Poză permis (opțional)') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [file] } })
+
+    // Preview swaps the upload control for the thumbnail + remove control.
+    const remove = await screen.findByRole('button', { name: 'Șterge' })
+    expect(screen.getByAltText('Poză permis')).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/))
+
+    fireEvent.click(screen.getByRole('button', { name: '10:00' }))
+    fill('Nume complet', 'Andrei Popescu')
+    fill('Telefon', '0721234567')
+    fill('Email', 'andrei@exemplu.ro')
+    fill('Serie și număr permis', 'AB 123456')
+    const [gdpr, conditions] = screen.getAllByRole('checkbox')
+    fireEvent.click(gdpr)
+    fireEvent.click(conditions)
+    fireEvent.click(screen.getByRole('button', { name: 'Trimite programările' }))
+
+    await waitFor(() => expect(submitBooking).toHaveBeenCalledTimes(1))
+    const payload = submitBooking.mock.calls[0][1]
+    expect(payload.license_photo).toMatch(/^data:image\/png;base64,/)
+
+    // Remove control clears the preview back to the upload control.
+    fireEvent.click(remove)
+    expect(screen.queryByRole('button', { name: 'Șterge' })).not.toBeInTheDocument()
+  })
+
+  it('rejects an oversized licence photo and does not set a preview', async () => {
+    renderPage()
+    await screen.findByText('MG ZS')
+
+    const big = new File([new Uint8Array(2.6 * 1024 * 1024)], 'big.png', { type: 'image/png' })
+    const input = screen.getByLabelText('Poză permis (opțional)') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [big] } })
+
+    // Stays on the upload control -- the oversized file was rejected, not previewed.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Șterge' })).not.toBeInTheDocument())
+    expect(screen.getByText('Adaugă poza permisului')).toBeInTheDocument()
   })
 
   it('reveals the GDPR text behind a "Detalii" toggle', async () => {

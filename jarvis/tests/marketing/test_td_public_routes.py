@@ -241,6 +241,32 @@ def test_submit_stores_extra_answers(client, open_page):
     assert ea['gdpr_consent'] is True and ea['conditions_accepted'] is True
 
 
+def test_submit_stores_license_photo_in_extra_answers(client, open_page):
+    """An optional license_photo in the body rides along in extra_answers,
+    same as the required legal fields."""
+    slot = _first_slot(client)
+    r = client.post(f'/api/td/pages/{_SLUG}/bookings', json={
+        'slot_id': slot['id'], 'name': 'Ana', 'phone': _PHONE, 'email': _EMAIL,
+        **_VALID_LEGAL, 'license_photo': _LOGO_DATA_URL,
+    })
+    assert r.status_code == 201
+    booking = repo.get_booking(r.get_json()['booking_id'])
+    assert booking['extra_answers']['license_photo'] == _LOGO_DATA_URL
+
+
+def test_submit_without_license_photo_omits_it_from_extra_answers(client, open_page):
+    """A submit with no license_photo (the common case) leaves extra_answers
+    without that key -- the photo stays fully optional."""
+    slot = _first_slot(client)
+    r = client.post(f'/api/td/pages/{_SLUG}/bookings', json={
+        'slot_id': slot['id'], 'name': 'Ana', 'phone': _PHONE, 'email': _EMAIL,
+        **_VALID_LEGAL,
+    })
+    assert r.status_code == 201
+    booking = repo.get_booking(r.get_json()['booking_id'])
+    assert 'license_photo' not in booking['extra_answers']
+
+
 def test_submit_missing_license_422(client, open_page):
     slot = _first_slot(client)
     r = client.post(f'/api/td/pages/{_SLUG}/bookings', json={
