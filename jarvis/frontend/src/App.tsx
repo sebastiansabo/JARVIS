@@ -23,6 +23,7 @@ const MarketingEvents = lazy(() => import('./pages/Marketing/Events'))
 const MarketingSimulator = lazy(() => import('./pages/Marketing/CampaignSimulator'))
 const MarketingCalendar = lazy(() => import('./pages/Marketing/CalendarPage'))
 const MarketingDashboard = lazy(() => import('./pages/Marketing/DashboardPage'))
+const MarketingTdBooking = lazy(() => import('./pages/Marketing/TdBookingAdmin'))
 const ProjectDetail = lazy(() => import('./pages/Marketing/ProjectDetail'))
 const Bilant = lazy(() => import('./pages/Accounting/Bilant'))
 const BilantDetail = lazy(() => import('./pages/Accounting/Bilant/BilantDetail'))
@@ -239,6 +240,7 @@ export default function App() {
         <Route path="marketing/calendar" element={<Guard flag="can_access_marketing"><SuspensePage><MarketingCalendar /></SuspensePage></Guard>} />
         <Route path="marketing/simulator" element={<Guard flag="can_access_marketing"><V2Guard permKey="marketing.simulator.view"><SuspensePage><MarketingSimulator /></SuspensePage></V2Guard></Guard>} />
         <Route path="marketing/events/*" element={<Guard flag="can_access_marketing"><SuspensePage><MarketingEvents /></SuspensePage></Guard>} />
+        <Route path="marketing/evenimente-td" element={<Guard flag="can_access_marketing"><SuspensePage><MarketingTdBooking /></SuspensePage></Guard>} />
         <Route path="marketing/projects/:projectId" element={<Guard flag="can_access_marketing"><SuspensePage><ProjectDetail /></SuspensePage></Guard>} />
 
         {/* Forms — requires can_access_forms */}

@@ -30,17 +30,18 @@ const STATUS_VARIANT: Record<TdAdminPage['status'], 'secondary' | 'default' | 'o
   draft: 'secondary', open: 'default', closed: 'outline',
 }
 
-/** Staff admin for public test-drive booking pages ("Programări TD" tab of
- *  the Driving Hub) -- create a page → add cars (+ default advisor) → add
+/** Staff admin for public test-drive booking pages ("Evenimente TD" in the
+ *  Marketing module) -- create a page → add cars (+ default advisor) → add
  *  availability windows → Materialize slots → Open the page → track/reassign
  *  bookings. Consumes `tdAdminApi` (src/api/tdAdmin.ts), the authed
  *  counterpart of the public `/td/<slug>` flow (src/api/td.ts,
  *  src/pages/Public/PublicTdBooking.tsx).
  *
- *  `companyId` is the Driving Hub header's selected company (0 = "Toate
- *  companiile") -- reused here to scope both the page list and the Create
- *  dialog's default company, matching the other FoiParcurs tabs. */
-export default function TdBookingAdmin({ companyId }: { companyId: number }) {
+ *  `companyId` scopes the page list and the Create dialog's default company.
+ *  As a standalone Marketing route it defaults to 0 ("Toate companiile") --
+ *  every company's pages are listed and the Create dialog forces an explicit
+ *  company choice. */
+export default function TdBookingAdmin({ companyId = 0 }: { companyId?: number }) {
   const qc = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedPageId, setSelectedPageId] = useState<number | null>(null)

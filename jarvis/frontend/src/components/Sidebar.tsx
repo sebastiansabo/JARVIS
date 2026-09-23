@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, Building2, Network, MapPin, PartyPopper, ClipboardList, Car, DollarSign, Tag, BarChart3, Receipt, Headset, MoreHorizontal, GraduationCap, Wrench, Activity, Ticket, Home, MessageSquare, Target, LayoutGrid, Coins } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, CalendarClock, Building2, Network, MapPin, PartyPopper, ClipboardList, Car, DollarSign, Tag, BarChart3, Receipt, Headset, MoreHorizontal, GraduationCap, Wrench, Activity, Ticket, Home, MessageSquare, Target, LayoutGrid, Coins } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -78,6 +78,10 @@ const navItemsDef: NavItem[] = [
       { path: '/app/marketing/calendar', label: 'Calendar', icon: CalendarDays, moduleKey: 'marketing_calendar' },
       { path: '/app/marketing', label: 'Projects', icon: Megaphone, moduleKey: 'marketing_projects' },
       { path: '/app/marketing/events', label: 'Events', icon: PartyPopper, moduleKey: 'marketing_events' },
+      // No moduleKey: not (yet) registered in module_menu_items, so a DB-menu
+      // filter would hide it (see Cost Centers). Visibility rides the parent
+      // Marketing group's can_access_marketing gate.
+      { path: '/app/marketing/evenimente-td', label: 'Evenimente TD', icon: CalendarClock },
       { path: '/app/marketing/simulator', label: 'Simulator', icon: Calculator, moduleKey: 'marketing_simulator', v2Permission: 'marketing.simulator.view' },
     ],
   },
