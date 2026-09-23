@@ -21,6 +21,8 @@ export interface TdAdminPage {
   thank_you: string | null
   conditions_text?: string | null
   logo_url?: string | null
+  email_subject?: string | null
+  email_body?: string | null
   notify_user_ids: number[] | null
   created_by: number | null
   created_at: string

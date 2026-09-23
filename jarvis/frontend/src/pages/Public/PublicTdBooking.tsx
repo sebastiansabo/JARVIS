@@ -5,6 +5,8 @@ import { toast } from 'sonner'
 import { tdApi, type TdSlot, type TdCar } from '@/api/td'
 import { composePhone, COUNTRY_DIAL_CODES } from '@/pages/FoiParcurs/phoneFormat'
 import { ApiError } from '@/api/client'
+import { RichTextDisplay } from '@/components/shared/RichTextEditor'
+import { sanitizeRichHtml, isEmptyRichHtml } from '@/lib/richText'
 import { Toaster } from '@/components/ui/sonner'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -68,9 +70,15 @@ function dayKeyOf(startsAt: string): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 }
 
-// A customer can pick up to this many (car+interval) slots in one group; beyond
-// it, the unpicked chips go quiet and a gentle hint appears.
+// A customer can book up to this many CARS in one group (one primary interval
+// each); beyond it, a brand-new car's chips go quiet.
 const MAX_SLOTS = 5
+
+// Per car, the customer ranks up to this many times: the 1st pick is the real
+// booking (it holds the slot), the 2nd/3rd/4th are preferred alternatives that
+// reserve nothing and may be shifted by the team.
+const MAX_CHOICES_PER_CAR = 4
+const CHOICE_LABELS = ['Prima opțiune', 'A doua opțiune', 'A treia opțiune', 'A patra opțiune']
 
 export default function PublicTdBooking() {
   const { slug } = useParams<{ slug: string }>()
@@ -142,10 +150,33 @@ export default function PublicTdBooking() {
     ? selectedDay
     : (days[0]?.key ?? null)
 
-  const atCap = selectedIds.length >= MAX_SLOTS
-  const toggleSlot = (s: TdSlot) => setSelectedIds((prev) =>
-    prev.includes(s.id) ? prev.filter((x) => x !== s.id)
-      : prev.length >= MAX_SLOTS ? prev : [...prev, s.id])
+  const sameStart = (a: TdSlot, b: TdSlot) =>
+    new Date(a.starts_at).getTime() === new Date(b.starts_at).getTime()
+  // Picks are kept in selection ORDER; per car the first pick is the primary
+  // (the real, slot-holding booking) and later picks are ranked alternatives.
+  const carPicks = (carId: number) => selectedIds.filter((id) => slotsById[id]?.car_id === carId)
+  const primaryCount = (data?.cars || []).filter((c) => carPicks(c.id).length > 0).length
+  // Ranked selection rules:
+  //  - a car holds at most MAX_CHOICES_PER_CAR picks (1st + up to 3 backups)
+  //  - at most MAX_SLOTS cars (primaries) per group
+  //  - two cars may not share the same PRIMARY hour (one driver, one booking);
+  //    backup alternatives are flexible and never clash-checked.
+  const toggleSlot = (s: TdSlot) => setSelectedIds((prev) => {
+    if (prev.includes(s.id)) return prev.filter((x) => x !== s.id)
+    const picks = prev.filter((id) => slotsById[id]?.car_id === s.car_id)
+    if (picks.length >= MAX_CHOICES_PER_CAR) return prev
+    if (picks.length === 0) { // this pick would become the car's PRIMARY
+      const carsWithPick = new Set(prev.map((id) => slotsById[id]?.car_id))
+      if (carsWithPick.size >= MAX_SLOTS) return prev
+      const primaryClash = prev.some((id) => {
+        const o = slotsById[id]
+        const oIsPrimary = prev.filter((x) => slotsById[x]?.car_id === o?.car_id)[0] === id
+        return !!o && oIsPrimary && o.car_id !== s.car_id && sameStart(o, s)
+      })
+      if (primaryClash) return prev
+    }
+    return [...prev, s.id]
+  })
 
   const slotSummary = (s: TdSlot) =>
     `${carsById[s.car_id]?.label ?? ''} · ${dayFmt.format(new Date(s.starts_at))}, ${timeFmt.format(new Date(s.starts_at))}`
@@ -175,16 +206,33 @@ export default function PublicTdBooking() {
   }
 
   const submit = useMutation({
-    mutationFn: () => tdApi.submitBooking(slug!, {
-      slot_ids: selectedIds,
-      name: name.trim(),
-      phone: phoneFull,
-      email: email.trim(),
-      license: license.trim(),
-      license_photo: licensePhoto || null,
-      gdpr_consent: gdprConsent,
-      conditions_accepted: conditionsAccepted,
-    }),
+    mutationFn: () => {
+      // Only the primary (1st pick per car) is an actual booking; the ranked
+      // backups ride along as human-readable preferences — they reserve nothing.
+      const primarySlotIds: number[] = []
+      const preferred: { car: string; plate: string | null; choices: string[] }[] = []
+      for (const c of (data?.cars || [])) {
+        const picks = carPicks(c.id)
+        if (!picks.length) continue
+        primarySlotIds.push(picks[0])
+        const backups = picks.slice(1)
+          .map((id) => slotsById[id])
+          .filter(Boolean)
+          .map((s) => `${dayFmt.format(new Date(s!.starts_at))}, ${timeFmt.format(new Date(s!.starts_at))}`)
+        if (backups.length) preferred.push({ car: c.label, plate: c.plate ?? null, choices: backups })
+      }
+      return tdApi.submitBooking(slug!, {
+        slot_ids: primarySlotIds,
+        preferred,
+        name: name.trim(),
+        phone: phoneFull,
+        email: email.trim(),
+        license: license.trim(),
+        license_photo: licensePhoto || null,
+        gdpr_consent: gdprConsent,
+        conditions_accepted: conditionsAccepted,
+      })
+    },
     onSuccess: (res) => {
       // Some slots may have been taken between load and submit — surface which.
       const taken = (res?.unavailable || [])
@@ -203,12 +251,14 @@ export default function PublicTdBooking() {
 
   if (isLoading) return <BookingSkeleton />
   if (isError || !data) return <CenteredMessage title="Această pagină nu este disponibilă." />
-  if (done) return <CenteredMessage
-    title="Verifică emailul"
-    body={data.page.thank_you || 'Confirmă toate programările dintr-un singur link — ți l-am trimis pe email.'}
-    note={takenNote} />
+  if (done) return (
+    <ThankYouScreen
+      logoUrl={data.page.logo_url}
+      thankYouHtml={data.page.thank_you}
+      note={takenNote}
+    />
+  )
 
-  const selectedSlots = selectedIds.map((id) => slotsById[id]).filter(Boolean) as TdSlot[]
   const detailsFilled = !!name.trim() && phoneValid && EMAIL_RE.test(email.trim())
     && !!license.trim() && gdprConsent && conditionsAccepted
   const canSubmit = selectedIds.length > 0 && detailsFilled && !submit.isPending
@@ -224,22 +274,22 @@ export default function PublicTdBooking() {
           on purpose so the logo/title read as a proper event header, not a
           plain in-column title. */}
       <header className="w-full border-b border-slate-200 bg-white dark:border-slate-700/60 dark:bg-[#14243A]">
-        <div className="mx-auto max-w-[640px] px-5 py-10 text-center sm:py-14">
+        <div className="mx-auto max-w-[640px] px-5 py-6 text-center sm:py-8">
           {data.page.logo_url && (
             <img
               src={data.page.logo_url}
               alt={data.page.title ? `Sigla ${data.page.title}` : 'Sigla evenimentului'}
-              className="mx-auto mb-5 h-12 w-auto max-w-[220px] object-contain sm:h-[72px]"
+              className="mx-auto mb-3 h-9 w-auto max-w-[180px] object-contain sm:h-12"
             />
           )}
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
             {data.page.title || 'Programează un test drive'}
           </h1>
           {data.page.company_name && (
-            <p className="mt-2 text-sm font-medium text-[#2743E6] dark:text-[#8CA1FF]">{data.page.company_name}</p>
+            <p className="mt-1 text-sm font-medium text-[#2743E6] dark:text-[#8CA1FF]">{data.page.company_name}</p>
           )}
           {data.page.intro && (
-            <p className="mx-auto mt-4 max-w-[520px] text-[15px] leading-relaxed text-slate-600 dark:text-slate-300">
+            <p className="mx-auto mt-2.5 max-w-[520px] text-sm leading-relaxed text-slate-600 dark:text-slate-300">
               {data.page.intro}
             </p>
           )}
@@ -343,50 +393,6 @@ export default function PublicTdBooking() {
                 Opțional — nu este necesară pentru a trimite programarea.
               </p>
             </div>
-
-            {/* Consent rows — each carries a "Citește" link that opens the full
-                text in a popup; the checkboxes still gate submit. */}
-            <div className="space-y-3 pt-1">
-              <label className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="checkbox" checked={gdprConsent}
-                  onChange={(e) => setGdprConsent(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#2743E6]
-                             accent-[#2743E6] focus-visible:ring-2 focus-visible:ring-[#2743E6]"
-                />
-                <span>
-                  Sunt de acord cu prelucrarea datelor personale (GDPR)
-                  <button
-                    type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setGdprOpen(true) }}
-                    className="ml-1 text-[#2743E6] underline underline-offset-2 outline-none
-                               focus-visible:ring-2 focus-visible:ring-[#2743E6] rounded"
-                  >
-                    Citește
-                  </button>
-                </span>
-              </label>
-
-              <label className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-200">
-                <input
-                  type="checkbox" checked={conditionsAccepted}
-                  onChange={(e) => setConditionsAccepted(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#2743E6]
-                             accent-[#2743E6] focus-visible:ring-2 focus-visible:ring-[#2743E6]"
-                />
-                <span>
-                  Accept condițiile de test drive
-                  <button
-                    type="button"
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConditionsOpen(true) }}
-                    className="ml-1 text-[#2743E6] underline underline-offset-2 outline-none
-                               focus-visible:ring-2 focus-visible:ring-[#2743E6] rounded"
-                  >
-                    Citește
-                  </button>
-                </span>
-              </label>
-            </div>
           </div>
         </section>
 
@@ -424,11 +430,24 @@ export default function PublicTdBooking() {
               // Single day: a quiet caption, no picker.
               <p className="mt-1 text-sm capitalize text-slate-500 dark:text-slate-400">{days[0].label}</p>
             ) : null}
+            <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              Prima oră aleasă la fiecare mașină este cea rezervată. Poți adăuga și alte
+              ore preferate (a 2-a, a 3-a, a 4-a) — acestea sunt orientative și pot fi
+              ajustate împreună cu echipa.
+            </p>
           </div>
 
           <div className="space-y-4">
             {data.cars.map((car) => {
               const carSlots = (slotsByCar[car.id] || []).filter((s) => dayKeyOf(s.starts_at) === activeDay)
+              // This car's picks in rank order (may span days); index 0 = primary.
+              const picks = carPicks(car.id)
+              const carFull = picks.length >= MAX_CHOICES_PER_CAR
+              // Other cars' PRIMARY start times — a new primary here may not clash.
+              const otherPrimaries = (data.cars)
+                .filter((c) => c.id !== car.id)
+                .map((c) => slotsById[carPicks(c.id)[0]])
+                .filter(Boolean) as TdSlot[]
               return (
                 <article key={car.id}
                   className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm
@@ -448,28 +467,47 @@ export default function PublicTdBooking() {
                   ) : (
                     <div className="flex flex-wrap gap-2">
                       {carSlots.map((s) => {
-                        const active = selectedIds.includes(s.id)
-                        // At the cap, unpicked chips go quiet (but stay
-                        // visible); picked ones can always be toggled off.
-                        const capped = !active && atCap
+                        const rank = picks.indexOf(s.id) // -1 unpicked, 0 primary, ≥1 backup
+                        const active = rank >= 0
+                        const isPrimary = rank === 0
+                        // An unpicked chip goes quiet when the car is full, or —
+                        // only if it would be this car's PRIMARY — the car cap is
+                        // hit or it clashes with another car's primary hour.
+                        const wouldBePrimary = picks.length === 0
+                        const clash = wouldBePrimary && otherPrimaries.some((o) => sameStart(o, s))
+                        const capped = wouldBePrimary && primaryCount >= MAX_SLOTS
+                        const disabled = !active && (carFull || clash || capped)
                         return (
                           <button
                             key={s.id}
                             type="button"
                             aria-pressed={active}
-                            disabled={capped}
+                            disabled={disabled}
+                            title={clash ? 'Ai deja o rezervare la această oră' : undefined}
                             onClick={() => toggleSlot(s)}
                             className={
-                              'rounded-full px-3.5 py-1.5 text-sm font-medium outline-none ' +
-                              'motion-safe:transition-colors focus-visible:ring-2 focus-visible:ring-[#2743E6] ' +
-                              'focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#14243A] ' +
-                              (active
+                              'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium ' +
+                              'outline-none motion-safe:transition-colors focus-visible:ring-2 ' +
+                              'focus-visible:ring-[#2743E6] focus-visible:ring-offset-2 ' +
+                              'dark:focus-visible:ring-offset-[#14243A] ' +
+                              (isPrimary
                                 ? 'bg-[#2743E6] text-white'
-                                : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-300 ' +
-                                  'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 ' +
-                                  'dark:border-slate-600 dark:bg-transparent dark:text-slate-200 dark:hover:border-slate-500')
+                                : active
+                                  ? 'border border-[#2743E6]/40 bg-[#2743E6]/10 text-[#2743E6] ' +
+                                    'dark:border-[#8CA1FF]/40 dark:bg-[#2743E6]/25 dark:text-[#C9D4FF]'
+                                  : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-300 ' +
+                                    'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 ' +
+                                    'dark:border-slate-600 dark:bg-transparent dark:text-slate-200 dark:hover:border-slate-500')
                             }
                           >
+                            {active && (
+                              <span className={
+                                'grid h-4 w-4 place-items-center rounded-full text-[10px] font-bold ' +
+                                (isPrimary ? 'bg-white/25 text-white' : 'bg-[#2743E6]/20 text-[#2743E6] dark:text-[#C9D4FF]')
+                              }>
+                                {rank + 1}
+                              </span>
+                            )}
                             {timeFmt.format(new Date(s.starts_at))}
                           </button>
                         )
@@ -482,9 +520,9 @@ export default function PublicTdBooking() {
             {data.cars.length === 0 && (
               <p className="text-sm text-slate-400 dark:text-slate-500">Momentan nu sunt mașini disponibile.</p>
             )}
-            {atCap && (
+            {primaryCount >= MAX_SLOTS && (
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Poți alege până la {MAX_SLOTS} intervale. Deselectează unul ca să adaugi altul.
+                Poți programa până la {MAX_SLOTS} mașini. Deselectează una ca să adaugi alta.
               </p>
             )}
           </div>
@@ -498,38 +536,118 @@ export default function PublicTdBooking() {
                  aria-label="Programările tale">
           <h2 className="mb-3 text-base font-semibold">
             Programările tale
-            {selectedSlots.length > 0 && (
+            {primaryCount > 0 && (
               <span className="ml-1 font-normal text-slate-400 dark:text-slate-500">
-                ({selectedSlots.length})
+                ({primaryCount} {primaryCount === 1 ? 'mașină' : 'mașini'})
               </span>
             )}
           </h2>
 
-          {selectedSlots.length > 0 ? (
-            <ul className="mb-4 space-y-2">
-              {selectedSlots.map((s) => (
-                <li key={s.id}
-                    className="flex items-center justify-between gap-3 rounded-lg bg-[#2743E6]/8 px-3 py-2
-                               text-sm text-[#2743E6] dark:bg-[#2743E6]/15 dark:text-slate-100">
-                  <span>{slotSummary(s)}</span>
-                  <button
-                    type="button"
-                    aria-label={`Elimină ${slotSummary(s)}`}
-                    onClick={() => toggleSlot(s)}
-                    className="shrink-0 rounded-md px-1.5 text-lg leading-none text-[#2743E6]/70 outline-none
-                               hover:text-[#2743E6] focus-visible:ring-2 focus-visible:ring-[#2743E6]
-                               dark:text-slate-300 dark:hover:text-white"
-                  >
-                    ×
-                  </button>
-                </li>
-              ))}
+          {primaryCount > 0 ? (
+            <ul className="mb-4 space-y-3">
+              {data.cars.filter((c) => carPicks(c.id).length > 0).map((car) => {
+                const picks = carPicks(car.id)
+                return (
+                  <li key={car.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700/60">
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="text-sm font-semibold">{car.label}</span>
+                      {car.plate && (
+                        <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs
+                                         font-medium text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                          {car.plate}
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      {picks.map((id, i) => {
+                        const s = slotsById[id]
+                        if (!s) return null
+                        const isPrimary = i === 0
+                        return (
+                          <div key={id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+                            <span className={
+                              'grid h-4 w-4 shrink-0 place-items-center rounded-full text-[10px] font-bold ' +
+                              (isPrimary ? 'bg-[#2743E6] text-white' : 'bg-[#2743E6]/15 text-[#2743E6] dark:text-[#C9D4FF]')
+                            }>
+                              {i + 1}
+                            </span>
+                            <span className="font-medium">{CHOICE_LABELS[i]}</span>
+                            <span className="text-slate-500 dark:text-slate-400">
+                              {dayFmt.format(new Date(s.starts_at))}, {timeFmt.format(new Date(s.starts_at))}
+                            </span>
+                            <span className={
+                              'ml-auto text-xs ' +
+                              (isPrimary ? 'font-medium text-[#2743E6] dark:text-[#8CA1FF]' : 'text-slate-400 dark:text-slate-500')
+                            }>
+                              {isPrimary ? 'rezervat' : 'ora poate fi modificată'}
+                            </span>
+                            <button
+                              type="button"
+                              aria-label={`Elimină ${CHOICE_LABELS[i]} — ${car.label}`}
+                              onClick={() => toggleSlot(s)}
+                              className="shrink-0 rounded-md px-1 text-lg leading-none text-slate-400 outline-none
+                                         hover:text-[#2743E6] focus-visible:ring-2 focus-visible:ring-[#2743E6]
+                                         dark:hover:text-white"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           ) : (
             <p className="mb-4 text-sm text-slate-400 dark:text-slate-500">
-              Selectează cel puțin un interval mai sus.
+              Alege cel puțin o oră mai sus — prima aleasă la fiecare mașină este cea rezervată.
             </p>
           )}
+
+          {/* Consents — the final gate before sending. "Citește" opens the full
+              text in a popup; both boxes must be checked to enable the CTA. */}
+          <div className="mb-4 space-y-3 border-t border-slate-100 pt-4 dark:border-slate-700/60">
+            <label className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-200">
+              <input
+                type="checkbox" checked={gdprConsent}
+                onChange={(e) => setGdprConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#2743E6]
+                           accent-[#2743E6] focus-visible:ring-2 focus-visible:ring-[#2743E6]"
+              />
+              <span>
+                Sunt de acord cu prelucrarea datelor personale (GDPR)
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setGdprOpen(true) }}
+                  className="ml-1 text-[#2743E6] underline underline-offset-2 outline-none
+                             focus-visible:ring-2 focus-visible:ring-[#2743E6] rounded"
+                >
+                  Citește
+                </button>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-3 text-sm text-slate-700 dark:text-slate-200">
+              <input
+                type="checkbox" checked={conditionsAccepted}
+                onChange={(e) => setConditionsAccepted(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 text-[#2743E6]
+                           accent-[#2743E6] focus-visible:ring-2 focus-visible:ring-[#2743E6]"
+              />
+              <span>
+                Accept condițiile de test drive
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConditionsOpen(true) }}
+                  className="ml-1 text-[#2743E6] underline underline-offset-2 outline-none
+                             focus-visible:ring-2 focus-visible:ring-[#2743E6] rounded"
+                >
+                  Citește
+                </button>
+              </span>
+            </label>
+          </div>
 
           {submit.isError && (
             <p role="alert" className="mb-3 text-sm text-red-600 dark:text-red-400">{errText(submit.error)}</p>
@@ -611,7 +729,7 @@ function BookingSkeleton() {
   return (
     <div className="min-h-screen bg-[#F6F7F9] dark:bg-[#0B1522]">
       <div className="w-full border-b border-slate-200 bg-white dark:border-slate-700/60 dark:bg-[#14243A]">
-        <div className="mx-auto max-w-[640px] px-5 py-10 text-center sm:py-14">
+        <div className="mx-auto max-w-[640px] px-5 py-6 text-center sm:py-8">
           <div className="mx-auto space-y-3 motion-safe:animate-pulse">
             <div className="mx-auto h-8 w-2/3 rounded-lg bg-slate-200 dark:bg-slate-700" />
             <div className="mx-auto h-4 w-1/3 rounded bg-slate-200 dark:bg-slate-700" />
@@ -631,6 +749,46 @@ function BookingSkeleton() {
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  )
+}
+
+/** Post-submit "done" screen: the event logo, the "check your email" heading,
+ *  the page's staff-authored rich-text thank-you (or a sensible default), and an
+ *  optional note about slots taken between load and submit. */
+function ThankYouScreen({ logoUrl, thankYouHtml, note }: {
+  logoUrl?: string | null
+  thankYouHtml?: string
+  note?: string
+}) {
+  const hasThankYou = !isEmptyRichHtml(thankYouHtml)
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-[#F6F7F9] p-6 text-center
+                    text-[#0E1B2C] dark:bg-[#0B1522] dark:text-slate-100">
+      <div className="max-w-[440px]">
+        {logoUrl && (
+          <img
+            src={logoUrl}
+            alt="Sigla evenimentului"
+            className="mx-auto mb-6 h-11 w-auto max-w-[190px] object-contain"
+          />
+        )}
+        <h1 className="text-2xl font-semibold tracking-tight">Verifică emailul</h1>
+        {hasThankYou ? (
+          <RichTextDisplay
+            content={sanitizeRichHtml(thankYouHtml!)}
+            className="mt-3 text-slate-600 dark:text-slate-300 [&_a]:text-[#2743E6] [&_a]:underline"
+          />
+        ) : (
+          <p className="mt-2 text-[15px] leading-relaxed text-slate-500 dark:text-slate-400">
+            Confirmă toate programările dintr-un singur link — ți l-am trimis pe email.
+          </p>
+        )}
+        {note && (
+          <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-700
+                        dark:bg-amber-500/10 dark:text-amber-300">{note}</p>
+        )}
       </div>
     </div>
   )

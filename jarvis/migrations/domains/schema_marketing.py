@@ -629,6 +629,8 @@ def create_schema_marketing(conn, cursor):
             thank_you TEXT,
             conditions_text TEXT,
             logo_url TEXT,
+            email_subject TEXT,
+            email_body TEXT,
             notify_user_ids INTEGER[] DEFAULT '{}',
             created_by INTEGER REFERENCES users(id),
             created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -665,6 +667,14 @@ def create_schema_marketing(conn, cursor):
             END IF;
         END $$
     ''')
+
+    # Migration: editable confirmation-email subject + body (staff-authored,
+    # rich HTML) with merge tags ({nume}, {programari}, {link}, {anulare}).
+    # NULL/empty -> the built-in default body is used (render_confirmation_email).
+    # One guard per column so a DB that somehow has only one of the two still
+    # gets the other (each ALTER is independently idempotent).
+    cursor.execute("ALTER TABLE mkt_td_booking_pages ADD COLUMN IF NOT EXISTS email_subject TEXT")
+    cursor.execute("ALTER TABLE mkt_td_booking_pages ADD COLUMN IF NOT EXISTS email_body TEXT")
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS mkt_td_booking_cars (

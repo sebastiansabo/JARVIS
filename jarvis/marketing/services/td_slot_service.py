@@ -3,10 +3,11 @@
 TdSlotService turns a page's booking windows into concrete per-car slots
 (materialize_slots) and, at read time, filters open slots down to the ones
 that are actually bookable right now (available_slots), backed by the same
-3-way live check (is_car_free) used to gate a real test-drive: no conflicting
-Foaie de Parcurs session, no lockout, and no currently-open session on the VIN.
+live availability check (is_car_free) used to gate a real test-drive: no
+conflicting Foaie de Parcurs session, no lockout, no currently-open session on
+the VIN, and no still-live pending TD hold overlapping the slot.
 """
-from datetime import datetime, timedelta, date as ddate, time as dtime
+from datetime import datetime, timedelta, timezone, date as ddate, time as dtime
 
 try:
     from zoneinfo import ZoneInfo
@@ -58,9 +59,15 @@ class TdSlotService:
         return self.repo.bulk_insert_slots(rows)
 
     def is_car_free(self, vin: str, frm, to) -> bool:
-        """The read-time 3-way live check: no overlapping TD conflict, no
-        effective lockout (manual or scheduled), and no already-open session
-        on the VIN."""
+        """The read-time availability check: no overlapping TD conflict, no
+        effective lockout (manual or scheduled), no already-open session on the
+        VIN, and no still-live pending TD hold overlapping [frm, to).
+
+        The pending-hold check is what makes a `pending_confirm` booking actually
+        reserve its interval until it confirms or its window expires: it has no
+        foi_de_parcurs row yet, so the fp checks below can't see it, and without
+        it an OVERLAPPING slot on the same car (e.g. the same VIN offered on
+        another page) would look free while the hold is outstanding."""
         if self.fp.find_conflicts(vin, frm, to):
             return False
         lock = self.veh.get_lock_by_vin(vin)
@@ -68,11 +75,13 @@ class TdSlotService:
             return False
         if self.fp.get_open_session(vin):
             return False
+        if self.repo.has_pending_overlap(vin, datetime.now(timezone.utc), frm, to):
+            return False
         return True
 
     def available_slots(self, page_id: int, now: datetime) -> list:
-        """Open slots for the page, filtered by lead time and the live 3-way
-        check. Returns [{id, car_id, vin, starts_at, ends_at}, ...]."""
+        """Open slots for the page, filtered by lead time and the live
+        is_car_free check. Returns [{id, car_id, vin, starts_at, ends_at}, ...]."""
         page = self.repo.get_page(page_id)
         lead = timedelta(minutes=page['min_lead_minutes']) if page else timedelta()
         earliest = now + lead
