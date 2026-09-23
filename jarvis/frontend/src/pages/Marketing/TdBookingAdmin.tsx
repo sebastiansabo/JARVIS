@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CalendarClock, Lock, Plus, Settings, Unlock } from 'lucide-react'
+import { CalendarClock, Lock, Plus, Settings, Unlock, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -29,6 +29,85 @@ import TdBookingsPanel from './TdBookingsPanel'
 import TdBookingHelp from './TdBookingHelp'
 
 const NONE = '__none__'
+
+// Event logo: read client-side into a base64 data URL and ship it inline in
+// the create/update payload -- mirrors the company-logo pattern
+// (organization/routes.py's api_upload_company_logo, "Stores as base64 data
+// URL in DB"), but skips the multipart round trip since this page has no
+// id yet at create time. No Spaces/object storage involved.
+const MAX_LOGO_BYTES = 1.5 * 1024 * 1024 // 1.5MB
+
+function readLogoAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('read failed'))
+    reader.onload = () => resolve(reader.result as string)
+    reader.readAsDataURL(file)
+  })
+}
+
+/** Compact logo upload/preview control shared by the Create and Setări
+ *  dialogs. `value` is the current base64 data URL (or null/undefined when
+ *  no logo is set); `onChange` receives the new data URL, or null on remove. */
+function LogoUploadField({ value, onChange }: {
+  value?: string | null
+  onChange: (dataUrl: string | null) => void
+}) {
+  const [busy, setBusy] = useState(false)
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Fișierul trebuie să fie o imagine')
+      return
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      toast.error('Logo prea mare (max 1.5MB)')
+      return
+    }
+    setBusy(true)
+    try {
+      onChange(await readLogoAsDataUrl(file))
+    } catch {
+      toast.error('Nu am putut citi fișierul')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">Logo eveniment</Label>
+      <div className="flex items-center gap-3">
+        {value ? (
+          <div className="relative">
+            <img src={value} alt="Logo eveniment" className="h-10 w-auto max-w-[140px] rounded border object-contain p-1" />
+            <button
+              type="button"
+              onClick={() => onChange(null)}
+              disabled={busy}
+              className="absolute -right-1.5 -top-1.5 rounded-full bg-destructive p-0.5 text-destructive-foreground shadow-sm hover:bg-destructive/90"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        ) : (
+          <div className="flex h-10 w-20 items-center justify-center rounded border border-dashed text-muted-foreground">
+            <Upload className="h-4 w-4" />
+          </div>
+        )}
+        <label className="cursor-pointer">
+          <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={busy} />
+          <span className="text-xs font-medium text-primary hover:underline">
+            {busy ? 'Se încarcă…' : value ? 'Schimbă' : 'Încarcă'}
+          </span>
+        </label>
+      </div>
+    </div>
+  )
+}
 const STATUS_LABEL: Record<TdAdminPage['status'], string> = { draft: 'Ciornă', open: 'Deschisă', closed: 'Închisă' }
 const STATUS_VARIANT: Record<TdAdminPage['status'], 'secondary' | 'default' | 'outline'> = {
   draft: 'secondary', open: 'default', closed: 'outline',
@@ -267,8 +346,12 @@ function CreatePageDialog({ open, onOpenChange, companies, events, defaultCompan
   const [slug, setSlug] = useState('')
   const [title, setTitle] = useState('')
   const [eventId, setEventId] = useState(NONE)
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
 
-  const reset = () => { setCompanyId(defaultCompanyId ? String(defaultCompanyId) : ''); setSlug(''); setTitle(''); setEventId(NONE) }
+  const reset = () => {
+    setCompanyId(defaultCompanyId ? String(defaultCompanyId) : ''); setSlug(''); setTitle('')
+    setEventId(NONE); setLogoUrl(null)
+  }
 
   const createMut = useMutation({
     mutationFn: () => tdAdminApi.createPage({
@@ -276,6 +359,7 @@ function CreatePageDialog({ open, onOpenChange, companies, events, defaultCompan
       slug: slug.trim(),
       title: title.trim() || undefined,
       event_id: eventId === NONE ? undefined : Number(eventId),
+      logo_url: logoUrl || undefined,
     }),
     onSuccess: (page) => {
       toast.success('Pagină creată')
@@ -325,6 +409,7 @@ function CreatePageDialog({ open, onOpenChange, companies, events, defaultCompan
               </SelectContent>
             </Select>
           </div>
+          <LogoUploadField value={logoUrl} onChange={setLogoUrl} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Anulează</Button>
@@ -356,6 +441,7 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
   const [title, setTitle] = useState('')
   const [intro, setIntro] = useState('')
   const [thankYou, setThankYou] = useState('')
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [notifyIds, setNotifyIds] = useState<(number | string)[]>([])
   const [opensAt, setOpensAt] = useState('')
   const [closesAt, setClosesAt] = useState('')
@@ -369,6 +455,7 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
     setTitle(page.title ?? '')
     setIntro(page.intro ?? '')
     setThankYou(page.thank_you ?? '')
+    setLogoUrl(page.logo_url ?? null)
     setNotifyIds(page.notify_user_ids ?? [])
     setOpensAt(isoToLocal(page.opens_at))
     setClosesAt(isoToLocal(page.closes_at))
@@ -390,6 +477,7 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
       if (nextIntro !== (page.intro ?? null)) body.intro = nextIntro
       const nextThankYou = thankYou.trim() || null
       if (nextThankYou !== (page.thank_you ?? null)) body.thank_you = nextThankYou
+      if (logoUrl !== (page.logo_url ?? null)) body.logo_url = logoUrl
 
       const nextNotifyIds = notifyIds.map(Number)
       const origNotifyIds = page.notify_user_ids ?? []
@@ -440,6 +528,7 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
             <Label className="text-xs">Mesaj de mulțumire</Label>
             <Textarea rows={3} value={thankYou} onChange={(e) => setThankYou(e.target.value)} />
           </div>
+          <LogoUploadField value={logoUrl} onChange={setLogoUrl} />
           <div className="space-y-1.5">
             <Label className="text-xs">Consilieri notificați</Label>
             <MultiSelectPills

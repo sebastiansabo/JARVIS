@@ -627,6 +627,7 @@ def create_schema_marketing(conn, cursor):
             title TEXT,
             intro TEXT,
             thank_you TEXT,
+            logo_url TEXT,
             notify_user_ids INTEGER[] DEFAULT '{}',
             created_by INTEGER REFERENCES users(id),
             created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -637,6 +638,19 @@ def create_schema_marketing(conn, cursor):
     ''')
     cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS uq_mkt_td_pages_slug ON mkt_td_booking_pages(slug) WHERE deleted_at IS NULL')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_pages_company ON mkt_td_booking_pages(company_id)')
+
+    # Migration: event logo (base64 data URL, mirrors companies.logo_url) for
+    # pages created before this column existed.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'mkt_td_booking_pages' AND column_name = 'logo_url'
+            ) THEN
+                ALTER TABLE mkt_td_booking_pages ADD COLUMN logo_url TEXT;
+            END IF;
+        END $$
+    ''')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS mkt_td_booking_cars (
