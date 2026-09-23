@@ -56,6 +56,9 @@ export const tdApi = {
     slot_ids: number[]; name: string; phone: string; email: string
     license: string; license_expiry?: string; license_photo?: string | null
     gdpr_consent: boolean; conditions_accepted: boolean
+    // Ranked backup times (2nd/3rd/4th choice) per car — preference only, they
+    // reserve nothing; captured on the booking for the team.
+    preferred?: { car: string; plate: string | null; choices: string[] }[]
     utm?: Record<string, string>
   }) => api.post<TdSubmitResult>(`/api/td/pages/${slug}/bookings`, body),
 

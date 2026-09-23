@@ -212,6 +212,19 @@ def api_submit_test_drive():
             msg = 'Mașină blocată în parcul auto' + (f' ({_cat})' if _cat else '') + (f': {_note}' if _note else '')
             return jsonify({'success': False, 'error': msg, 'locked_out': True}), 409
 
+    # Reserve cars committed to an Event TD: a classic session (TD or internal)
+    # may not book a car during one of its event's availability windows. The
+    # reservation is date-bounded (only the window times match), so the car
+    # stays available in classic forms outside the event. Not overridable — the
+    # event has an exclusive claim on the car for those windows.
+    _dep = data.get('departure_datetime')
+    if _dep:
+        _resv = _fp_repo.find_event_reservation(data['vin'], _dep, data.get('return_datetime') or _dep)
+        if _resv:
+            _label = _resv[0].get('title') or _resv[0].get('slug')
+            msg = f'Mașină rezervată pentru evenimentul Test Drive „{_label}” în acest interval'
+            return jsonify({'success': False, 'error': msg, 'event_reserved': True}), 409
+
     # Single-open-session rule (Rule A): a car that already has a session out
     # (FILLED, not returned) can't start a new one — only when actually starting
     # (a PLANNED draft is fine). Admins may override with allow_open_session.

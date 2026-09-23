@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CalendarClock, Lock, Plus, Settings, Unlock, Upload, X } from 'lucide-react'
+import { CalendarClock, ChevronLeft, Lock, Plus, Search, Settings, Unlock, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -15,9 +15,12 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { MultiSelectPills } from '@/components/shared/MultiSelectPills'
+import { RichTextEditor } from '@/components/shared/RichTextEditor'
+import { isEmptyRichHtml } from '@/lib/richText'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { hrApi } from '@/api/hr'
 import { usersApi } from '@/api/users'
@@ -29,6 +32,13 @@ import TdBookingsPanel from './TdBookingsPanel'
 import TdBookingHelp from './TdBookingHelp'
 
 const NONE = '__none__'
+
+// A rich field that's visually empty diffs as NULL (never saves "<p></p>").
+// isEmptyRichHtml is shared with the public render so both agree on "empty".
+function htmlOrNull(s: string): string | null {
+  const t = (s || '').trim()
+  return isEmptyRichHtml(t) ? null : t
+}
 
 // Event logo: read client-side into a base64 data URL and ship it inline in
 // the create/update payload -- mirrors the company-logo pattern
@@ -54,6 +64,7 @@ function LogoUploadField({ value, onChange }: {
   onChange: (dataUrl: string | null) => void
 }) {
   const [busy, setBusy] = useState(false)
+  const inputId = useId()
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -80,6 +91,7 @@ function LogoUploadField({ value, onChange }: {
   return (
     <div className="space-y-1.5">
       <Label className="text-xs">Logo eveniment</Label>
+      <input id={inputId} type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={busy} />
       <div className="flex items-center gap-3">
         {value ? (
           <div className="relative">
@@ -94,12 +106,15 @@ function LogoUploadField({ value, onChange }: {
             </button>
           </div>
         ) : (
-          <div className="flex h-10 w-20 items-center justify-center rounded border border-dashed text-muted-foreground">
+          <label
+            htmlFor={inputId}
+            className="flex h-10 w-20 cursor-pointer items-center justify-center rounded border border-dashed
+                       text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+          >
             <Upload className="h-4 w-4" />
-          </div>
+          </label>
         )}
-        <label className="cursor-pointer">
-          <input type="file" accept="image/*" className="hidden" onChange={handleFile} disabled={busy} />
+        <label htmlFor={inputId} className="cursor-pointer">
           <span className="text-xs font-medium text-primary hover:underline">
             {busy ? 'Se încarcă…' : value ? 'Schimbă' : 'Încarcă'}
           </span>
@@ -153,11 +168,16 @@ function isoEqual(a: string | null, b: string | null): boolean {
  *  As a standalone Marketing route it defaults to 0 ("Toate companiile") --
  *  every company's pages are listed and the Create dialog forces an explicit
  *  company choice. */
-export default function TdBookingAdmin({ companyId = 0 }: { companyId?: number }) {
+export default function TdBookingAdmin({ companyId: initialCompanyId = 0 }: { companyId?: number }) {
   const qc = useQueryClient()
+  // Tenant scope: 0 = "Toate companiile". The header selector drives the page
+  // list (this is a standalone Marketing route, so it owns its own company
+  // switcher rather than inheriting one from a parent).
+  const [companyId, setCompanyId] = useState(initialCompanyId)
   const [createOpen, setCreateOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [selectedPageId, setSelectedPageId] = useState<number | null>(null)
+  const [search, setSearch] = useState('')
 
   const { data: companiesData } = useQuery({
     queryKey: ['fp-companies'],
@@ -208,14 +228,38 @@ export default function TdBookingAdmin({ companyId = 0 }: { companyId?: number }
 
   const companyName = (id: number) => companies.find((c) => c.id === id)?.company ?? `#${id}`
 
+  // Client-side list filter across slug / title / company for the drill-in list.
+  const q = search.trim().toLowerCase()
+  const filtered = q
+    ? pages.filter((p) =>
+        p.slug.toLowerCase().includes(q)
+        || (p.title ?? '').toLowerCase().includes(q)
+        || companyName(p.company_id).toLowerCase().includes(q))
+    : pages
+
+  // Switching tenant clears the drilled-in page + search so the list re-reads
+  // from the top for the newly-selected company.
+  const chooseCompany = (v: string) => {
+    setCompanyId(Number(v)); setSelectedPageId(null); setSearch('')
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-semibold">Pagini programare Test Drive</h3>
           <p className="text-sm text-muted-foreground">Pagini publice de programare (evenimente, lansări) — mașini, intervale și rezervări.</p>
         </div>
         <div className="flex items-center gap-2">
+          <Select value={String(companyId)} onValueChange={chooseCompany}>
+            <SelectTrigger className="h-9 w-52"><SelectValue placeholder="Selectează compania" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="0">Toate companiile</SelectItem>
+              {companies.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <TdBookingHelp />
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="mr-1.5 h-4 w-4" />Pagină nouă
@@ -223,7 +267,75 @@ export default function TdBookingAdmin({ companyId = 0 }: { companyId?: number }
         </div>
       </div>
 
-      {pagesLoading ? (
+      {selectedPage ? (
+        // Drill-in detail: replaces the list so it scales to any number of pages.
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setSelectedPageId(null)}
+            className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground"
+          >
+            <ChevronLeft className="h-4 w-4" />Toate paginile
+          </button>
+          <Card className="space-y-4 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-semibold">{selectedPage.title || selectedPage.slug}</h3>
+                <Badge variant={STATUS_VARIANT[selectedPage.status]}>{STATUS_LABEL[selectedPage.status]}</Badge>
+                <span className="font-mono text-xs text-muted-foreground">/td/{selectedPage.slug}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline" size="sm" className="h-8"
+                  onClick={() => setSettingsOpen(true)}
+                >
+                  <Settings className="mr-1.5 h-4 w-4" />Setări
+                </Button>
+                <Button
+                  variant="outline" size="sm" className="h-8"
+                  disabled={materializeMut.isPending}
+                  onClick={() => materializeMut.mutate(selectedPage.id)}
+                >
+                  <CalendarClock className="mr-1.5 h-4 w-4" />Materializează sloturi
+                </Button>
+                <Button
+                  variant="outline" size="sm" className="h-8"
+                  disabled={selectedPage.status === 'open' || setStatusMut.isPending}
+                  onClick={() => setStatusMut.mutate({ id: selectedPage.id, status: 'open' })}
+                >
+                  <Unlock className="mr-1.5 h-4 w-4" />Deschide
+                </Button>
+                <Button
+                  variant="outline" size="sm" className="h-8"
+                  disabled={selectedPage.status === 'closed' || setStatusMut.isPending}
+                  onClick={() => setStatusMut.mutate({ id: selectedPage.id, status: 'closed' })}
+                >
+                  <Lock className="mr-1.5 h-4 w-4" />Închide
+                </Button>
+              </div>
+            </div>
+
+            {/* Rezervări first (the day-to-day view); Detalii eveniment holds the
+                cars + availability config. Keyed by page id so switching events
+                resets to Rezervări. Routes are unchanged. */}
+            <Tabs key={selectedPage.id} defaultValue="bookings">
+              <TabsList>
+                <TabsTrigger value="bookings">Rezervări</TabsTrigger>
+                <TabsTrigger value="details">Detalii eveniment</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="bookings" className="pt-4">
+                <TdBookingsPanel pageId={selectedPage.id} users={userList} />
+              </TabsContent>
+
+              <TabsContent value="details" className="space-y-6 pt-4">
+                <TdCarsPanel pageId={selectedPage.id} companyId={selectedPage.company_id} users={userList} />
+                <TdWindowsPanel pageId={selectedPage.id} />
+              </TabsContent>
+            </Tabs>
+          </Card>
+        </div>
+      ) : pagesLoading ? (
         <TableSkeleton rows={4} columns={5} />
       ) : !pages.length ? (
         <EmptyState
@@ -232,81 +344,53 @@ export default function TdBookingAdmin({ companyId = 0 }: { companyId?: number }
           description="Creează prima pagină cu butonul de mai sus."
         />
       ) : (
-        <Card className="overflow-hidden py-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Slug</TableHead>
-                <TableHead>Titlu</TableHead>
-                <TableHead>Companie</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Creat</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {pages.map((p) => (
-                <TableRow
-                  key={p.id}
-                  className={`cursor-pointer hover:bg-muted/50 ${p.id === selectedPageId ? 'bg-muted/40' : ''}`}
-                  onClick={() => selectPage(p.id)}
-                >
-                  <TableCell className="font-mono text-xs">{p.slug}</TableCell>
-                  <TableCell className="text-sm">{p.title || '—'}</TableCell>
-                  <TableCell className="text-sm">{companyName(p.company_id)}</TableCell>
-                  <TableCell><Badge variant={STATUS_VARIANT[p.status]}>{STATUS_LABEL[p.status]}</Badge></TableCell>
-                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                    {new Date(p.created_at).toLocaleDateString('ro-RO')}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
-
-      {selectedPage && (
-        <Card className="space-y-6 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <h3 className="text-base font-semibold">{selectedPage.title || selectedPage.slug}</h3>
-              <Badge variant={STATUS_VARIANT[selectedPage.status]}>{STATUS_LABEL[selectedPage.status]}</Badge>
-              <span className="font-mono text-xs text-muted-foreground">/td/{selectedPage.slug}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline" size="sm" className="h-8"
-                onClick={() => setSettingsOpen(true)}
-              >
-                <Settings className="mr-1.5 h-4 w-4" />Setări
-              </Button>
-              <Button
-                variant="outline" size="sm" className="h-8"
-                disabled={materializeMut.isPending}
-                onClick={() => materializeMut.mutate(selectedPage.id)}
-              >
-                <CalendarClock className="mr-1.5 h-4 w-4" />Materializează sloturi
-              </Button>
-              <Button
-                variant="outline" size="sm" className="h-8"
-                disabled={selectedPage.status === 'open' || setStatusMut.isPending}
-                onClick={() => setStatusMut.mutate({ id: selectedPage.id, status: 'open' })}
-              >
-                <Unlock className="mr-1.5 h-4 w-4" />Deschide
-              </Button>
-              <Button
-                variant="outline" size="sm" className="h-8"
-                disabled={selectedPage.status === 'closed' || setStatusMut.isPending}
-                onClick={() => setStatusMut.mutate({ id: selectedPage.id, status: 'closed' })}
-              >
-                <Lock className="mr-1.5 h-4 w-4" />Închide
-              </Button>
-            </div>
+        <div className="space-y-3">
+          <div className="relative max-w-xs">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Caută după slug, titlu, companie…"
+              className="pl-8"
+            />
           </div>
-
-          <TdCarsPanel pageId={selectedPage.id} companyId={selectedPage.company_id} users={userList} />
-          <TdWindowsPanel pageId={selectedPage.id} />
-          <TdBookingsPanel pageId={selectedPage.id} users={userList} />
-        </Card>
+          {filtered.length ? (
+            <Card className="overflow-hidden py-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Slug</TableHead>
+                    <TableHead>Titlu</TableHead>
+                    <TableHead>Companie</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Creat</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((p) => (
+                    <TableRow
+                      key={p.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => selectPage(p.id)}
+                    >
+                      <TableCell className="font-mono text-xs">{p.slug}</TableCell>
+                      <TableCell className="text-sm">{p.title || '—'}</TableCell>
+                      <TableCell className="text-sm">{companyName(p.company_id)}</TableCell>
+                      <TableCell><Badge variant={STATUS_VARIANT[p.status]}>{STATUS_LABEL[p.status]}</Badge></TableCell>
+                      <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                        {new Date(p.created_at).toLocaleDateString('ro-RO')}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
+          ) : (
+            <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Nicio pagină nu se potrivește cu „{search}”.
+            </p>
+          )}
+        </div>
       )}
 
       {selectedPage && (
@@ -326,7 +410,11 @@ export default function TdBookingAdmin({ companyId = 0 }: { companyId?: number }
         events={events ?? []}
         defaultCompanyId={companyId || undefined}
         onCreated={(page) => {
-          qc.invalidateQueries({ queryKey: ['td-pages', companyId] })
+          // Keep the new page within the active tenant scope before drilling in
+          // — creating it for a company other than the current filter would
+          // otherwise leave it invisible (pages.find can't locate it).
+          if (companyId !== 0 && companyId !== page.company_id) setCompanyId(page.company_id)
+          qc.invalidateQueries({ queryKey: ['td-pages'] })
           selectPage(page.id)
         }}
       />
@@ -347,6 +435,13 @@ function CreatePageDialog({ open, onOpenChange, companies, events, defaultCompan
   const [title, setTitle] = useState('')
   const [eventId, setEventId] = useState(NONE)
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+
+  // Preselect the header's current company each time the dialog opens; the
+  // useState initializer only runs once, but the header filter can change
+  // between opens.
+  useEffect(() => {
+    if (open) setCompanyId(defaultCompanyId ? String(defaultCompanyId) : '')
+  }, [open, defaultCompanyId])
 
   const reset = () => {
     setCompanyId(defaultCompanyId ? String(defaultCompanyId) : ''); setSlug(''); setTitle('')
@@ -443,6 +538,8 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
   const [thankYou, setThankYou] = useState('')
   const [conditionsText, setConditionsText] = useState('')
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [emailSubject, setEmailSubject] = useState('')
+  const [emailBody, setEmailBody] = useState('')
   const [notifyIds, setNotifyIds] = useState<(number | string)[]>([])
   const [opensAt, setOpensAt] = useState('')
   const [closesAt, setClosesAt] = useState('')
@@ -451,20 +548,30 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
   const [bufferMinutes, setBufferMinutes] = useState('')
   const [maxPerContact, setMaxPerContact] = useState('')
 
+  // Re-init ONLY on the closed->open transition, not on every `page` change: a
+  // background refetch of the selected page (React Query refetchOnWindowFocus,
+  // or a concurrent admin edit) hands back a new `page` ref while the dialog is
+  // open, and re-initializing then would silently wipe the staff member's
+  // unsaved edits.
+  const wasOpen = useRef(false)
   useEffect(() => {
-    if (!open) return
-    setTitle(page.title ?? '')
-    setIntro(page.intro ?? '')
-    setThankYou(page.thank_you ?? '')
-    setConditionsText(page.conditions_text ?? '')
-    setLogoUrl(page.logo_url ?? null)
-    setNotifyIds(page.notify_user_ids ?? [])
-    setOpensAt(isoToLocal(page.opens_at))
-    setClosesAt(isoToLocal(page.closes_at))
-    setMinLead(String(page.min_lead_minutes ?? ''))
-    setSlotMinutes(String(page.slot_minutes ?? ''))
-    setBufferMinutes(String(page.buffer_minutes ?? ''))
-    setMaxPerContact(String(page.max_bookings_per_contact ?? ''))
+    if (open && !wasOpen.current) {
+      setTitle(page.title ?? '')
+      setIntro(page.intro ?? '')
+      setThankYou(page.thank_you ?? '')
+      setConditionsText(page.conditions_text ?? '')
+      setLogoUrl(page.logo_url ?? null)
+      setEmailSubject(page.email_subject ?? '')
+      setEmailBody(page.email_body ?? '')
+      setNotifyIds(page.notify_user_ids ?? [])
+      setOpensAt(isoToLocal(page.opens_at))
+      setClosesAt(isoToLocal(page.closes_at))
+      setMinLead(String(page.min_lead_minutes ?? ''))
+      setSlotMinutes(String(page.slot_minutes ?? ''))
+      setBufferMinutes(String(page.buffer_minutes ?? ''))
+      setMaxPerContact(String(page.max_bookings_per_contact ?? ''))
+    }
+    wasOpen.current = open
   }, [open, page])
 
   const userOptions = users.filter((u) => u.is_active).map((u) => ({ value: u.id, label: u.name }))
@@ -477,11 +584,15 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
       if (nextTitle !== (page.title ?? null)) body.title = nextTitle
       const nextIntro = intro.trim() || null
       if (nextIntro !== (page.intro ?? null)) body.intro = nextIntro
-      const nextThankYou = thankYou.trim() || null
+      const nextThankYou = htmlOrNull(thankYou)
       if (nextThankYou !== (page.thank_you ?? null)) body.thank_you = nextThankYou
       const nextConditions = conditionsText.trim() || null
       if (nextConditions !== (page.conditions_text ?? null)) body.conditions_text = nextConditions
       if (logoUrl !== (page.logo_url ?? null)) body.logo_url = logoUrl
+      const nextEmailSubject = emailSubject.trim() || null
+      if (nextEmailSubject !== (page.email_subject ?? null)) body.email_subject = nextEmailSubject
+      const nextEmailBody = htmlOrNull(emailBody)
+      if (nextEmailBody !== (page.email_body ?? null)) body.email_body = nextEmailBody
 
       const nextNotifyIds = notifyIds.map(Number)
       const origNotifyIds = page.notify_user_ids ?? []
@@ -530,8 +641,46 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Mesaj de mulțumire</Label>
-            <Textarea rows={3} value={thankYou} onChange={(e) => setThankYou(e.target.value)} />
+            <p className="text-xs text-muted-foreground">
+              Afișat pe ecranul de final, după trimiterea programării.
+            </p>
+            <RichTextEditor
+              content={thankYou}
+              onChange={setThankYou}
+              placeholder="Mulțumim! Ți-am trimis un email de confirmare."
+            />
           </div>
+
+          <div className="space-y-2 rounded-lg border border-dashed p-3">
+            <Label className="text-xs font-semibold">Email de confirmare</Label>
+            <p className="text-xs text-muted-foreground">
+              Trimis clientului după programare. Lasă gol pentru textul implicit.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Subiect</Label>
+              <Input
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                placeholder="Confirmă programarea la test drive"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Conținut</Label>
+              <RichTextEditor
+                content={emailBody}
+                onChange={setEmailBody}
+                placeholder="Bună {nume}, confirmă programarea…"
+              />
+            </div>
+            <div className="rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Etichete disponibile:</span>{' '}
+              <code className="rounded bg-background px-1">{'{nume}'}</code> numele clientului ·{' '}
+              <code className="rounded bg-background px-1">{'{programari}'}</code> lista mașini + ore ·{' '}
+              <code className="rounded bg-background px-1">{'{link}'}</code> buton de confirmare ·{' '}
+              <code className="rounded bg-background px-1">{'{anulare}'}</code> link de anulare
+            </div>
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs">Condiții de test drive (text)</Label>
             <Textarea
