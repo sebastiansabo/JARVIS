@@ -1,4 +1,7 @@
 """Repository for the public test-drive booking layer (mkt_td_* tables)."""
+import psycopg2
+import psycopg2.errors
+
 from core.base_repository import BaseRepository
 from foi_parcurs.session_lifecycle import GRACE_HOURS, NOW_LOCAL_SQL
 
@@ -26,7 +29,7 @@ _PAGE_COLS = {
 
 _BOOKING_COLS = {
     'page_id', 'slot_id', 'car_id', 'customer_name', 'customer_phone_e164',
-    'customer_email', 'advisor_user_id', 'expires_at', 'extra_answers',
+    'customer_email', 'group_id', 'advisor_user_id', 'expires_at', 'extra_answers',
     'utm', 'ip', 'user_agent',
 }
 
@@ -178,8 +181,27 @@ class TdBookingRepository(BaseRepository):
             f'INSERT INTO mkt_td_bookings ({cols}) VALUES ({ph}) RETURNING *',
             tuple(fields.values()), returning=True)
 
+    def create_bookings_group(self, rows: list) -> list:
+        """Insert a batch of bookings that share one group_id (several
+        car+interval slots booked together). Each row is inserted with the same
+        per-row `create_booking` semantics + its own transaction, so a per-slot
+        UniqueViolation (that slot was just taken by the partial-unique active
+        index) skips ONLY that row -- the rest still commit. Returns the rows
+        that were actually created (empty if every slot lost its race)."""
+        created = []
+        for row in rows:
+            try:
+                created.append(self.create_booking(row))
+            except psycopg2.errors.UniqueViolation:
+                continue
+        return created
+
     def get_booking(self, booking_id):
         return self.query_one('SELECT * FROM mkt_td_bookings WHERE id=%s', (booking_id,))
+
+    def get_group(self, group_id) -> list:
+        return self.query_all(
+            'SELECT * FROM mkt_td_bookings WHERE group_id=%s ORDER BY id', (group_id,))
 
     def list_bookings(self, page_id, status=None) -> list:
         if status:
@@ -194,6 +216,20 @@ class TdBookingRepository(BaseRepository):
             "SELECT COUNT(*) AS n FROM mkt_td_bookings "
             "WHERE (customer_phone_e164=%s OR customer_email=%s) "
             "AND status IN ('pending_confirm','confirmed')", (phone, email))
+        return int(row['n']) if row else 0
+
+    def count_active_groups_by_contact(self, phone, email) -> int:
+        """Count a contact's active *groups* (not bookings): every booking that
+        shares a group_id counts once, and each legacy NULL-group booking counts
+        as its own group. This is what the per-contact limit is measured against,
+        so a multi-slot group counts as ONE toward max_bookings_per_contact."""
+        row = self.query_one(
+            "SELECT COUNT(*) AS n FROM ("
+            "  SELECT DISTINCT COALESCE(group_id, 'single-' || id::text) AS g "
+            "  FROM mkt_td_bookings "
+            "  WHERE (customer_phone_e164=%s OR customer_email=%s) "
+            "  AND status IN ('pending_confirm','confirmed')"
+            ") t", (phone, email))
         return int(row['n']) if row else 0
 
     def count_recent_by_ip(self, ip, since) -> int:
@@ -213,6 +249,14 @@ class TdBookingRepository(BaseRepository):
         return self.execute(
             "UPDATE mkt_td_bookings SET status='cancelled', cancelled_at=NOW(), updated_at=NOW() "
             "WHERE id=%s RETURNING *", (booking_id,), returning=True)
+
+    def mark_group_cancelled(self, group_id) -> int:
+        """Cancel every still-active booking in a group (leaves already
+        terminal ones -- expired/conflict/completed -- untouched). Returns the
+        number of rows flipped to 'cancelled'."""
+        return self.execute(
+            "UPDATE mkt_td_bookings SET status='cancelled', cancelled_at=NOW(), updated_at=NOW() "
+            "WHERE group_id=%s AND status IN ('pending_confirm','confirmed')", (group_id,))
 
     def mark_status(self, booking_id, status) -> dict:
         return self.execute(

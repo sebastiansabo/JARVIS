@@ -29,9 +29,15 @@ function groupByDay(slots: TdSlot[]): { key: string; label: string; slots: TdSlo
   return order.map((key) => ({ key, ...buckets[key] }))
 }
 
+// A customer can pick up to this many (car+interval) slots in one group; beyond
+// it, the unpicked chips go quiet and a gentle hint appears.
+const MAX_SLOTS = 5
+
 export default function PublicTdBooking() {
   const { slug } = useParams<{ slug: string }>()
-  const [selected, setSelected] = useState<TdSlot | null>(null)
+  // Multi-select: an ORDERED list of chosen slot ids (across cars). Kept as ids
+  // (not slot objects) so it survives an availability refetch cleanly.
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [name, setName] = useState('')
   const [dialCode, setDialCode] = useState('+40')
   const [phone, setPhone] = useState('')
@@ -41,6 +47,7 @@ export default function PublicTdBooking() {
   const [conditionsAccepted, setConditionsAccepted] = useState(false)
   const [gdprOpen, setGdprOpen] = useState(false)
   const [done, setDone] = useState(false)
+  const [takenNote, setTakenNote] = useState('')
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['td-page', slug],
@@ -61,9 +68,23 @@ export default function PublicTdBooking() {
     return m
   }, [data])
 
+  const slotsById = useMemo(() => {
+    const m: Record<number, TdSlot> = {}
+    for (const s of data?.slots || []) m[s.id] = s
+    return m
+  }, [data])
+
+  const atCap = selectedIds.length >= MAX_SLOTS
+  const toggleSlot = (s: TdSlot) => setSelectedIds((prev) =>
+    prev.includes(s.id) ? prev.filter((x) => x !== s.id)
+      : prev.length >= MAX_SLOTS ? prev : [...prev, s.id])
+
+  const slotSummary = (s: TdSlot) =>
+    `${carsById[s.car_id]?.label ?? ''} · ${dayFmt.format(new Date(s.starts_at))}, ${timeFmt.format(new Date(s.starts_at))}`
+
   const submit = useMutation({
     mutationFn: () => tdApi.submitBooking(slug!, {
-      slot_id: selected!.id,
+      slot_ids: selectedIds,
       name: name.trim(),
       phone: phoneFull,
       email: email.trim(),
@@ -71,10 +92,19 @@ export default function PublicTdBooking() {
       gdpr_consent: gdprConsent,
       conditions_accepted: conditionsAccepted,
     }),
-    onSuccess: () => setDone(true),
+    onSuccess: (res) => {
+      // Some slots may have been taken between load and submit — surface which.
+      const taken = (res?.unavailable || [])
+        .map((id) => slotsById[id] && slotSummary(slotsById[id]))
+        .filter(Boolean) as string[]
+      setTakenNote(taken.length
+        ? `Aceste intervale tocmai fuseseră ocupate și nu au fost programate: ${taken.join('; ')}.`
+        : '')
+      setDone(true)
+    },
     onError: (e) => {
-      // Slot lost to another customer: drop it from the UI and refresh availability.
-      if (e instanceof ApiError && e.status === 409) { refetch(); setSelected(null) }
+      // Every requested slot was lost to other customers: refresh + clear picks.
+      if (e instanceof ApiError && e.status === 409) { refetch(); setSelectedIds([]) }
     },
   })
 
@@ -82,12 +112,14 @@ export default function PublicTdBooking() {
   if (isError || !data) return <CenteredMessage title="Această pagină nu este disponibilă." />
   if (done) return <CenteredMessage
     title="Verifică emailul"
-    body={data.page.thank_you || 'Ți-am trimis un link de confirmare pe email.'} />
+    body={data.page.thank_you || 'Confirmă toate programările dintr-un singur link — ți l-am trimis pe email.'}
+    note={takenNote} />
 
+  const selectedSlots = selectedIds.map((id) => slotsById[id]).filter(Boolean) as TdSlot[]
   const detailsFilled = !!name.trim() && phoneValid && EMAIL_RE.test(email.trim())
     && !!license.trim() && gdprConsent && conditionsAccepted
-  const canSubmit = !!selected && detailsFilled && !submit.isPending
-  const ctaHint = !selected ? 'Alege un interval' : 'Completează câmpurile'
+  const canSubmit = selectedIds.length > 0 && detailsFilled && !submit.isPending
+  const ctaHint = selectedIds.length === 0 ? 'Alege cel puțin un interval' : 'Completează câmpurile'
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] text-[#0E1B2C] dark:bg-[#0B1522] dark:text-slate-100">
@@ -145,13 +177,17 @@ export default function PublicTdBooking() {
                         <p className="mb-1.5 text-xs font-medium text-slate-500 dark:text-slate-400">{day.label}</p>
                         <div className="flex flex-wrap gap-2">
                           {day.slots.map((s) => {
-                            const active = selected?.id === s.id
+                            const active = selectedIds.includes(s.id)
+                            // At the cap, unpicked chips go quiet (but stay
+                            // visible); picked ones can always be toggled off.
+                            const capped = !active && atCap
                             return (
                               <button
                                 key={s.id}
                                 type="button"
                                 aria-pressed={active}
-                                onClick={() => setSelected(active ? null : s)}
+                                disabled={capped}
+                                onClick={() => toggleSlot(s)}
                                 className={
                                   'rounded-full px-3.5 py-1.5 text-sm font-medium outline-none ' +
                                   'motion-safe:transition-colors focus-visible:ring-2 focus-visible:ring-[#2743E6] ' +
@@ -159,6 +195,7 @@ export default function PublicTdBooking() {
                                   (active
                                     ? 'bg-[#2743E6] text-white'
                                     : 'border border-slate-200 bg-white text-slate-700 hover:border-slate-300 ' +
+                                      'disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-slate-200 ' +
                                       'dark:border-slate-600 dark:bg-transparent dark:text-slate-200 dark:hover:border-slate-500')
                                 }
                               >
@@ -177,18 +214,51 @@ export default function PublicTdBooking() {
           {data.cars.length === 0 && (
             <p className="text-sm text-slate-400 dark:text-slate-500">Momentan nu sunt mașini disponibile.</p>
           )}
+          {atCap && (
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Poți alege până la {MAX_SLOTS} intervale. Deselectează unul ca să adaugi altul.
+            </p>
+          )}
         </section>
+
+        {/* "Programările tale" — a compact, editable summary of every chosen
+            (car+interval) so it's clear what will be booked as one group. */}
+        {selectedSlots.length > 0 && (
+          <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm
+                              dark:border-slate-700/60 dark:bg-[#14243A]"
+                   aria-label="Programările tale">
+            <h2 className="mb-3 text-base font-semibold">
+              Programările tale
+              <span className="ml-1 font-normal text-slate-400 dark:text-slate-500">
+                ({selectedSlots.length})
+              </span>
+            </h2>
+            <ul className="space-y-2">
+              {selectedSlots.map((s) => (
+                <li key={s.id}
+                    className="flex items-center justify-between gap-3 rounded-lg bg-[#2743E6]/8 px-3 py-2
+                               text-sm text-[#2743E6] dark:bg-[#2743E6]/15 dark:text-slate-100">
+                  <span>{slotSummary(s)}</span>
+                  <button
+                    type="button"
+                    aria-label={`Elimină ${slotSummary(s)}`}
+                    onClick={() => toggleSlot(s)}
+                    className="shrink-0 rounded-md px-1.5 text-lg leading-none text-[#2743E6]/70 outline-none
+                               hover:text-[#2743E6] focus-visible:ring-2 focus-visible:ring-[#2743E6]
+                               dark:text-slate-300 dark:hover:text-white"
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {/* Details panel */}
         <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm
                             dark:border-slate-700/60 dark:bg-[#14243A]">
           <h2 className="mb-4 text-base font-semibold">Datele tale</h2>
-
-          {selected && (
-            <div className="mb-4 rounded-lg bg-[#2743E6]/8 px-3 py-2 text-sm text-[#2743E6] dark:bg-[#2743E6]/15 dark:text-slate-100">
-              Interval ales: {carsById[selected.car_id]?.label} · {dayFmt.format(new Date(selected.starts_at))}, {timeFmt.format(new Date(selected.starts_at))}
-            </div>
-          )}
 
           <div className="space-y-4">
             <Field id="td-name" label="Nume complet">
@@ -295,7 +365,7 @@ export default function PublicTdBooking() {
                          disabled:cursor-not-allowed disabled:opacity-40
                          dark:focus-visible:ring-offset-[#14243A]"
             >
-              {submit.isPending ? 'Se trimite…' : 'Trimite programarea'}
+              {submit.isPending ? 'Se trimite…' : 'Trimite programările'}
             </button>
             {!canSubmit && !submit.isPending && (
               <p className="text-center text-xs text-slate-400 dark:text-slate-500">{ctaHint}</p>
@@ -351,13 +421,17 @@ function BookingSkeleton() {
   )
 }
 
-function CenteredMessage({ title, body }: { title: string; body?: string }) {
+function CenteredMessage({ title, body, note }: { title: string; body?: string; note?: string }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[#F6F7F9] p-6 text-center
                     text-[#0E1B2C] dark:bg-[#0B1522] dark:text-slate-100">
       <div className="max-w-[420px]">
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {body && <p className="mt-2 text-[15px] leading-relaxed text-slate-500 dark:text-slate-400">{body}</p>}
+        {note && (
+          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-700
+                        dark:bg-amber-500/10 dark:text-amber-300">{note}</p>
+        )}
       </div>
     </div>
   )
@@ -365,7 +439,8 @@ function CenteredMessage({ title, body }: { title: string; body?: string }) {
 
 function errText(e: unknown): string {
   if (e instanceof ApiError) {
-    if (e.status === 409) return 'Intervalul tocmai a fost ocupat. Alege altul.'
+    if (e.status === 409) return 'Intervalele alese tocmai au fost ocupate. Alege altele.'
+    if (e.status === 410) return 'Linkul a expirat. Reîncarcă pagina și încearcă din nou.'
     if (e.status === 429) return 'Ai atins limita de programări. Încearcă mai târziu.'
     if (e.status === 403) return 'Programările sunt închise momentan.'
     if (e.status === 422) {

@@ -36,7 +36,7 @@ from flask import Flask, current_app  # noqa: E402
 import marketing.services.td_booking_service as svc_mod  # noqa: E402
 from marketing.services.td_booking_service import TdBookingService  # noqa: E402
 from marketing.repositories.td_booking_repository import TdBookingRepository  # noqa: E402
-from core.approvals.booking_token import make_booking_token  # noqa: E402
+from core.approvals.booking_token import make_booking_token, make_group_token  # noqa: E402
 from database import get_db, get_cursor, release_db  # noqa: E402
 
 repo = TdBookingRepository()
@@ -79,7 +79,11 @@ def open_page(require_real_db, monkeypatch):
     p = repo.create_page({'company_id': _resolve_company_id(), 'slug': _SLUG,
                           'created_by': 1, 'status': 'open', 'min_lead_minutes': 0})
     c = repo.add_car(p['id'], vin=_VIN, default_advisor_user_id=1)
-    repo.add_window(p['id'], '2099-10-01', '10:00', '11:00')
+    # 10:00-12:00 @ 30min = four slots (10:00, 10:30, 11:00, 11:30). The multi-
+    # interval group tests pick NON-adjacent slots (e.g. 10:00 + 11:00) so the two
+    # confirmed fișe don't collide on their shared boundary (back-to-back TD
+    # sessions on the same VIN legitimately conflict at confirm).
+    repo.add_window(p['id'], '2099-10-01', '10:00', '12:00')
 
     svc = TdBookingService()
     svc.slots.materialize_slots(p['id'])
@@ -102,6 +106,14 @@ def _first_slot(svc, page):
     slots = svc.slots.available_slots(page['id'], datetime(2099, 1, 1, tzinfo=timezone.utc))
     assert slots, 'expected at least one available slot'
     return slots[0]
+
+
+def _two_nonadjacent_slots(svc, page):
+    """First + third available slot (10:00 and 11:00) — leaving a gap so two
+    confirmed TD fișe on the same VIN don't collide on a shared boundary."""
+    slots = svc.slots.available_slots(page['id'], datetime(2099, 1, 1, tzinfo=timezone.utc))
+    assert len(slots) >= 3, 'expected at least three available slots for the group tests'
+    return slots[0], slots[2]
 
 
 def test_submit_sends_email(open_page):
@@ -273,6 +285,109 @@ def test_confirm_maps_licence_and_consents_onto_fp(open_page):
     # The licence is mirrored onto the (newly-created) CRM client.
     crm = repo.query_one('SELECT driver_license_number FROM crm_clients WHERE phone=%s', (_PHONE,))
     assert crm and crm['driver_license_number'] == 'AB 123456'
+
+
+# ---- multi-car / multi-interval GROUP ----
+
+def test_submit_group_two_slots_shares_group_id_one_email(open_page):
+    """A submit with two slot_ids creates two bookings that share one group_id,
+    reports both as booked, and sends exactly ONE confirmation email."""
+    svc, p, c, sent = open_page
+    s1, s2 = _two_nonadjacent_slots(svc, p)
+    r = svc.submit_booking(_SLUG, name='Ana', phone_e164=_PHONE, email=_EMAIL,
+                           utm={}, ip='1.2.3.4', user_agent='ua', base_url='x',
+                           slot_ids=[s1['id'], s2['id']])
+    assert r.success and r.status_code == 201
+    assert len(r.data['booked']) == 2
+    assert r.data['unavailable'] == []
+    gid = r.data['group_id']
+    rows = repo.get_group(gid)
+    assert len(rows) == 2
+    assert {row['slot_id'] for row in rows} == {s1['id'], s2['id']}
+    assert all(row['group_id'] == gid for row in rows)
+    assert all(row['status'] == 'pending_confirm' for row in rows)
+    assert len(sent) == 1  # ONE email for the whole group
+
+
+def test_group_confirm_token_confirms_both(open_page):
+    """The group confirm token confirms BOTH bookings -> two PLANNED fișe."""
+    svc, p, c, sent = open_page
+    s1, s2 = _two_nonadjacent_slots(svc, p)
+    r = svc.submit_booking(_SLUG, name='Ana', phone_e164=_PHONE, email=_EMAIL,
+                           utm={}, ip='1.2.3.4', user_agent='ua', base_url='x',
+                           slot_ids=[s1['id'], s2['id']])
+    gid = r.data['group_id']
+
+    cr = svc.confirm_booking(make_group_token(gid, 'confirm', current_app.secret_key))
+    assert cr.success and cr.status_code == 200
+    assert cr.data['confirmed'] == 2 and cr.data['conflicts'] == 0
+
+    rows = repo.get_group(gid)
+    fp_ids = [row['foi_de_parcurs_id'] for row in rows]
+    assert all(fp_ids) and len(set(fp_ids)) == 2
+    for fid in fp_ids:
+        fp = repo.query_one('SELECT status, route_type FROM foi_de_parcurs WHERE id=%s', (fid,))
+        assert fp['status'] == 'PLANNED' and fp['route_type'] == 'TD'
+    assert all(row['status'] == 'confirmed' for row in rows)
+
+
+def test_group_submit_skips_already_taken_slot(open_page):
+    """A slot already held by another contact is dropped from the group and
+    flagged 'unavailable'; the rest of the group still succeeds."""
+    svc, p, c, sent = open_page
+    s1, s2 = _two_nonadjacent_slots(svc, p)
+    # Another contact grabs s1 first (a group of one).
+    r0 = svc.submit_booking(_SLUG, name='Bob', phone_e164=_PHONE2, email=_EMAIL2,
+                            utm={}, ip='9.9.9.9', user_agent='ua', base_url='x',
+                            slot_ids=[s1['id']])
+    assert r0.success
+
+    r = svc.submit_booking(_SLUG, name='Ana', phone_e164=_PHONE, email=_EMAIL,
+                           utm={}, ip='1.2.3.4', user_agent='ua', base_url='x',
+                           slot_ids=[s1['id'], s2['id']])
+    assert r.success and r.status_code == 201
+    assert [b['slot_id'] for b in r.data['booked']] == [s2['id']]
+    assert r.data['unavailable'] == [s1['id']]
+    rows = repo.get_group(r.data['group_id'])
+    assert len(rows) == 1 and rows[0]['slot_id'] == s2['id']
+
+
+def test_group_cancel_cancels_all_and_deletes_fise(open_page):
+    """The group cancel token cancels every booking in the group and hard-deletes
+    each PLANNED fișă, freeing the slots again."""
+    svc, p, c, sent = open_page
+    s1, s2 = _two_nonadjacent_slots(svc, p)
+    r = svc.submit_booking(_SLUG, name='Ana', phone_e164=_PHONE, email=_EMAIL,
+                           utm={}, ip='1.2.3.4', user_agent='ua', base_url='x',
+                           slot_ids=[s1['id'], s2['id']])
+    gid = r.data['group_id']
+    cr = svc.confirm_booking(make_group_token(gid, 'confirm', current_app.secret_key))
+    fp_ids = [row['foi_de_parcurs_id'] for row in repo.get_group(gid)]
+    assert cr.data['confirmed'] == 2 and all(fp_ids)
+
+    xr = svc.cancel_booking(make_group_token(gid, 'cancel', current_app.secret_key))
+    assert xr.success and xr.status_code == 200 and xr.data['status'] == 'cancelled'
+
+    assert all(row['status'] == 'cancelled' for row in repo.get_group(gid))
+    for fid in fp_ids:
+        assert repo.query_one('SELECT id FROM foi_de_parcurs WHERE id=%s', (fid,)) is None
+    free_ids = {s['id'] for s in svc.slots.available_slots(
+        p['id'], datetime(2099, 1, 1, tzinfo=timezone.utc))}
+    assert s1['id'] in free_ids and s2['id'] in free_ids
+
+
+def test_group_of_one_keeps_single_shape(open_page):
+    """A single-slot submit still exposes the legacy booking_id + status fields
+    (a group of one), so existing single-slot callers keep working."""
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(_SLUG, name='Ana', phone_e164=_PHONE, email=_EMAIL,
+                           utm={}, ip='1.2.3.4', user_agent='ua', base_url='x',
+                           slot_ids=[slot['id']])
+    assert r.success and r.status_code == 201
+    assert r.data['status'] == 'pending_confirm'
+    assert 'booking_id' in r.data and r.data['group_id']
+    assert len(sent) == 1
 
 
 def test_cancel_deletes_planned_fp_and_frees_slot(open_page):
