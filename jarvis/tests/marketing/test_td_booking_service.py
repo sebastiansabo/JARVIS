@@ -287,6 +287,49 @@ def test_confirm_maps_licence_and_consents_onto_fp(open_page):
     assert crm and crm['driver_license_number'] == 'AB 123456'
 
 
+_PHOTO_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+
+
+def test_submit_with_license_photo_stores_it_and_confirm_maps_to_fp(open_page):
+    """A submit WITH the optional license_photo kwarg stores it in the
+    booking's extra_answers, and confirm maps it onto the fișă's
+    driver_license_photo column -- mirroring how driver_license_number is
+    already mapped."""
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(
+        _SLUG, slot['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x',
+        extra_answers={'license': 'AB 123456', 'gdpr_consent': True, 'conditions_accepted': True},
+        license_photo=_PHOTO_DATA_URL)
+    assert r.success and r.status_code == 201
+    ea = repo.get_booking(r.data['booking_id'])['extra_answers']
+    assert ea['license_photo'] == _PHOTO_DATA_URL
+
+    cr = svc.confirm_booking(make_booking_token(r.data['booking_id'], 'confirm', current_app.secret_key))
+    assert cr.success and cr.status_code == 200
+    fp = repo.query_one('SELECT driver_license_photo FROM foi_de_parcurs WHERE id=%s', (cr.data['fp_id'],))
+    assert fp['driver_license_photo'] == _PHOTO_DATA_URL
+
+
+def test_submit_without_license_photo_leaves_fp_column_null(open_page):
+    """The photo is fully OPTIONAL: a submit that omits it still succeeds, and
+    the confirmed fișă's driver_license_photo stays null (proves it isn't
+    required and nothing coerces a placeholder value onto the column)."""
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(
+        _SLUG, slot['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x',
+        extra_answers={'license': 'AB 123456', 'gdpr_consent': True, 'conditions_accepted': True})
+    assert r.success and r.status_code == 201
+    ea = repo.get_booking(r.data['booking_id'])['extra_answers']
+    assert 'license_photo' not in ea
+
+    cr = svc.confirm_booking(make_booking_token(r.data['booking_id'], 'confirm', current_app.secret_key))
+    assert cr.success and cr.status_code == 200
+    fp = repo.query_one('SELECT driver_license_photo FROM foi_de_parcurs WHERE id=%s', (cr.data['fp_id'],))
+    assert fp['driver_license_photo'] is None
+
+
 # ---- multi-car / multi-interval GROUP ----
 
 def test_submit_group_two_slots_shares_group_id_one_email(open_page):

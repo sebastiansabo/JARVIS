@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { tdApi, type TdSlot, type TdCar } from '@/api/td'
 import { composePhone, COUNTRY_DIAL_CODES } from '@/pages/FoiParcurs/phoneFormat'
 import { ApiError } from '@/api/client'
+import { Toaster } from '@/components/ui/sonner'
 
 // Day headers read as "mie., 01 oct." and chips as clock times, so the picker
 // never shows a long machine datetime.
@@ -11,6 +13,23 @@ const dayFmt = new Intl.DateTimeFormat('ro-RO', { weekday: 'short', day: '2-digi
 const timeFmt = new Intl.DateTimeFormat('ro-RO', { hour: '2-digit', minute: '2-digit' })
 
 const EMAIL_RE = /.+@.+\..+/
+
+// Driving-licence photo: read client-side into a plain base64 data URL and
+// ship it inline in the submit payload -- same no-object-storage pattern as
+// the staff TestDriveForm (driver_license_photo TEXT column) and the event
+// logo upload on TdBookingAdmin. This public route renders with no Layout
+// (see App.tsx), so there's no ambient <Toaster/> to surface toast.error() --
+// this page mounts its own below.
+const MAX_PHOTO_BYTES = 2.5 * 1024 * 1024 // 2.5MB
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('read failed'))
+    reader.onload = () => resolve(reader.result as string)
+    reader.readAsDataURL(file)
+  })
+}
 
 /** Group a car's slots into ordered day buckets (slots already arrive
  *  time-sorted from the API), keyed by local calendar day. */
@@ -43,6 +62,8 @@ export default function PublicTdBooking() {
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
   const [license, setLicense] = useState('')
+  const [licensePhoto, setLicensePhoto] = useState<string | null>(null)
+  const [photoBusy, setPhotoBusy] = useState(false)
   const [gdprConsent, setGdprConsent] = useState(false)
   const [conditionsAccepted, setConditionsAccepted] = useState(false)
   const [gdprOpen, setGdprOpen] = useState(false)
@@ -82,6 +103,30 @@ export default function PublicTdBooking() {
   const slotSummary = (s: TdSlot) =>
     `${carsById[s.car_id]?.label ?? ''} · ${dayFmt.format(new Date(s.starts_at))}, ${timeFmt.format(new Date(s.starts_at))}`
 
+  // Licence photo is OPTIONAL: it never gates the CTA (see detailsFilled
+  // below), it only rejects an oversized/non-image file client-side.
+  const handlePhotoFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Fișierul trebuie să fie o imagine')
+      return
+    }
+    if (file.size > MAX_PHOTO_BYTES) {
+      toast.error('Poza este prea mare (max 2.5MB)')
+      return
+    }
+    setPhotoBusy(true)
+    try {
+      setLicensePhoto(await readAsDataUrl(file))
+    } catch {
+      toast.error('Nu am putut citi fișierul')
+    } finally {
+      setPhotoBusy(false)
+    }
+  }
+
   const submit = useMutation({
     mutationFn: () => tdApi.submitBooking(slug!, {
       slot_ids: selectedIds,
@@ -89,6 +134,7 @@ export default function PublicTdBooking() {
       phone: phoneFull,
       email: email.trim(),
       license: license.trim(),
+      license_photo: licensePhoto || null,
       gdpr_consent: gdprConsent,
       conditions_accepted: conditionsAccepted,
     }),
@@ -123,6 +169,10 @@ export default function PublicTdBooking() {
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] text-[#0E1B2C] dark:bg-[#0B1522] dark:text-slate-100">
+      {/* No Layout wraps this public route (see App.tsx), so there's no
+          ambient <Toaster/> for the licence-photo upload's toast.error()
+          calls -- mount one locally. */}
+      <Toaster />
       {/* Full-width event banner — breaks out of the centered content column
           on purpose so the logo/title read as a proper event header, not a
           plain in-column title. */}
@@ -308,6 +358,48 @@ export default function PublicTdBooking() {
                 className={inputCls}
               />
             </Field>
+
+            {/* Licence photo — OPTIONAL, applies once to the whole booking
+                group. Never required to submit (see detailsFilled/canSubmit
+                below, which don't reference it). */}
+            <div>
+              <p className={labelCls}>Poză permis (opțional)</p>
+              {licensePhoto ? (
+                <div className="flex items-center gap-3">
+                  <img
+                    src={licensePhoto}
+                    alt="Poză permis"
+                    className="h-16 w-28 rounded-lg border border-slate-200 object-cover dark:border-slate-600"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setLicensePhoto(null)}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600
+                               outline-none hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-[#2743E6]
+                               dark:border-slate-600 dark:text-slate-300 dark:hover:border-slate-500"
+                  >
+                    Șterge
+                  </button>
+                </div>
+              ) : (
+                <label
+                  className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-lg
+                             border border-dashed border-slate-300 text-sm text-slate-500 outline-none
+                             hover:border-slate-400 focus-within:ring-2 focus-within:ring-[#2743E6]
+                             dark:border-slate-600 dark:text-slate-400 dark:hover:border-slate-500"
+                >
+                  {photoBusy ? 'Se încarcă…' : 'Adaugă poza permisului'}
+                  <input
+                    type="file" accept="image/*" className="sr-only"
+                    onChange={handlePhotoFile} disabled={photoBusy}
+                    aria-label="Poză permis (opțional)"
+                  />
+                </label>
+              )}
+              <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
+                Opțional — nu este necesară pentru a trimite programarea.
+              </p>
+            </div>
 
             {/* Consent rows */}
             <div className="space-y-3 pt-1">
