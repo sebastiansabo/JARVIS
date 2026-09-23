@@ -260,6 +260,9 @@ def _register_blueprints(flask_app: Flask):
     from forms import forms_bp
     flask_app.register_blueprint(forms_bp, url_prefix='/forms')
 
+    from marketing.routes.td_public import td_public_bp
+    flask_app.register_blueprint(td_public_bp, url_prefix='/api/td')
+
     from core.mobile import mobile_bp
     flask_app.register_blueprint(mobile_bp)
 
@@ -531,6 +534,16 @@ def _register_routes(flask_app: Flask):
     @flask_app.route('/f/<path:slug>')
     def public_form_page(slug):
         """Serve React SPA for public form pages — NO auth required."""
+        index_file = os.path.join(_react_dir, 'index.html')
+        if os.path.exists(index_file):
+            resp = send_from_directory(_react_dir, 'index.html')
+            resp.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            return resp
+        return 'Not found', 404
+
+    @flask_app.route('/td/<path:slug>')
+    def public_td_page(slug):
+        """Serve React SPA for public test-drive booking pages — NO auth required."""
         index_file = os.path.join(_react_dir, 'index.html')
         if os.path.exists(index_file):
             resp = send_from_directory(_react_dir, 'index.html')
