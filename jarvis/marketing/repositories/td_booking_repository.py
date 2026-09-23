@@ -104,6 +104,12 @@ class TdBookingRepository(BaseRepository):
             'SELECT * FROM mkt_td_booking_windows WHERE page_id=%s ORDER BY window_date, start_time',
             (page_id,))
 
+    def delete_window(self, window_id):
+        """Hard delete -- windows are just slot generators (no FK from
+        mkt_td_slots to mkt_td_booking_windows), so removing one doesn't
+        orphan anything; already-materialized slots are untouched."""
+        return self.execute('DELETE FROM mkt_td_booking_windows WHERE id=%s', (window_id,))
+
     # ---- slots ----
     def bulk_insert_slots(self, rows: list) -> int:
         if not rows:

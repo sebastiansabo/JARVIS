@@ -254,6 +254,76 @@ def test_set_status(client, company_id):
     assert bad.status_code == 400
 
 
+# ---- update_page: settings persistence (title/intro/thank_you/notify_user_ids/timing) ----
+
+def test_update_page_persists_settings_and_notify_user_ids(client, company_id):
+    r = client.post('/marketing/api/td/pages',
+                     json={'company_id': company_id, 'slug': _SLUG, 'title': 'Original'})
+    pid = r.get_json()['id']
+    second_user_id = _resolve_second_user_id()
+
+    patch = client.patch(f'/marketing/api/td/pages/{pid}', json={
+        'title': 'Updated title',
+        'intro': 'Intro text',
+        'thank_you': 'Thanks!',
+        'notify_user_ids': [_USER1_ID, second_user_id],
+        'min_lead_minutes': 45,
+        'slot_minutes': 20,
+        'buffer_minutes': 5,
+        'max_bookings_per_contact': 2,
+        'opens_at': '2099-01-01T00:00:00+00:00',
+        'closes_at': '2099-12-31T23:59:00+00:00',
+    })
+    assert patch.status_code == 200
+    body = patch.get_json()
+    assert body['title'] == 'Updated title'
+    assert body['intro'] == 'Intro text'
+    assert body['thank_you'] == 'Thanks!'
+    assert sorted(body['notify_user_ids']) == sorted([_USER1_ID, second_user_id])
+    assert body['min_lead_minutes'] == 45
+    assert body['slot_minutes'] == 20
+    assert body['buffer_minutes'] == 5
+    assert body['max_bookings_per_contact'] == 2
+    assert body['opens_at'] is not None
+    assert body['closes_at'] is not None
+
+    # Round-trip via a fresh SELECT (not just the UPDATE...RETURNING row) so
+    # this actually proves the INTEGER[] and TIMESTAMPTZ columns persisted,
+    # not just that psycopg2 echoed back what we sent.
+    fetched = repo.get_page(pid)
+    assert sorted(fetched['notify_user_ids']) == sorted([_USER1_ID, second_user_id])
+    assert fetched['title'] == 'Updated title'
+    assert fetched['min_lead_minutes'] == 45
+    assert fetched['slot_minutes'] == 20
+
+
+def test_update_page_not_found_404(client):
+    r = client.patch('/marketing/api/td/pages/999999999', json={'title': 'nope'})
+    assert r.status_code == 404
+
+
+# ---- windows: add then delete via the new DELETE route ----
+
+def test_window_add_then_delete_via_route(client, company_id):
+    r = client.post('/marketing/api/td/pages', json={'company_id': company_id, 'slug': _SLUG})
+    pid = r.get_json()['id']
+
+    win_r = client.post(f'/marketing/api/td/pages/{pid}/windows',
+                         json={'window_date': '2099-11-01', 'start_time': '09:00', 'end_time': '10:00'})
+    assert win_r.status_code == 201
+    wid = win_r.get_json()['id']
+
+    listed = client.get(f'/marketing/api/td/pages/{pid}/windows')
+    assert wid in [w['id'] for w in listed.get_json()['windows']]
+
+    del_r = client.delete(f'/marketing/api/td/windows/{wid}')
+    assert del_r.status_code == 200
+    assert del_r.get_json()['ok'] is True
+
+    listed2 = client.get(f'/marketing/api/td/pages/{pid}/windows')
+    assert wid not in [w['id'] for w in listed2.get_json()['windows']]
+
+
 # ---- reassign advisor: booking + advisor_user_id + FP advisor_name sync ----
 
 def test_reassign_advisor_syncs_fp_advisor_name(client, company_id):

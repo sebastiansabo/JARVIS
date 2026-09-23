@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CalendarClock, Lock, Plus, Unlock } from 'lucide-react'
+import { CalendarClock, Lock, Plus, Settings, Unlock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
@@ -16,10 +17,12 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import { MultiSelectPills } from '@/components/shared/MultiSelectPills'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { hrApi } from '@/api/hr'
 import { usersApi } from '@/api/users'
 import { tdAdminApi, type TdAdminPage } from '@/api/tdAdmin'
+import type { UserDetail } from '@/types/users'
 import TdCarsPanel from './TdCarsPanel'
 import TdWindowsPanel from './TdWindowsPanel'
 import TdBookingsPanel from './TdBookingsPanel'
@@ -29,6 +32,35 @@ const NONE = '__none__'
 const STATUS_LABEL: Record<TdAdminPage['status'], string> = { draft: 'Ciornă', open: 'Deschisă', closed: 'Închisă' }
 const STATUS_VARIANT: Record<TdAdminPage['status'], 'secondary' | 'default' | 'outline'> = {
   draft: 'secondary', open: 'default', closed: 'outline',
+}
+
+/** `datetime-local` inputs work in the browser's local time with no
+ *  timezone suffix -- these mirror CampaignEditor.tsx's (HappyBoard)
+ *  isoToLocal/localToIso helpers for the same round trip. */
+function isoToLocal(iso?: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function localToIso(local: string): string | null {
+  if (!local) return null
+  const d = new Date(local)
+  return Number.isNaN(d.getTime()) ? null : d.toISOString()
+}
+
+/** True when two opens_at/closes_at values represent the same instant --
+ *  compares by timestamp (not string) since the DB's ISO format and
+ *  localToIso's toISOString() output differ byte-for-byte even when equal
+ *  (e.g. "+00:00" vs ".000Z"). */
+function isoEqual(a: string | null, b: string | null): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  const ta = new Date(a).getTime()
+  const tb = new Date(b).getTime()
+  return !Number.isNaN(ta) && !Number.isNaN(tb) && ta === tb
 }
 
 /** Staff admin for public test-drive booking pages ("Evenimente TD" in the
@@ -45,6 +77,7 @@ const STATUS_VARIANT: Record<TdAdminPage['status'], 'secondary' | 'default' | 'o
 export default function TdBookingAdmin({ companyId = 0 }: { companyId?: number }) {
   const qc = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [selectedPageId, setSelectedPageId] = useState<number | null>(null)
 
   const { data: companiesData } = useQuery({
@@ -163,6 +196,12 @@ export default function TdBookingAdmin({ companyId = 0 }: { companyId?: number }
             <div className="flex items-center gap-2">
               <Button
                 variant="outline" size="sm" className="h-8"
+                onClick={() => setSettingsOpen(true)}
+              >
+                <Settings className="mr-1.5 h-4 w-4" />Setări
+              </Button>
+              <Button
+                variant="outline" size="sm" className="h-8"
                 disabled={materializeMut.isPending}
                 onClick={() => materializeMut.mutate(selectedPage.id)}
               >
@@ -189,6 +228,16 @@ export default function TdBookingAdmin({ companyId = 0 }: { companyId?: number }
           <TdWindowsPanel pageId={selectedPage.id} />
           <TdBookingsPanel pageId={selectedPage.id} users={userList} />
         </Card>
+      )}
+
+      {selectedPage && (
+        <EventSettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          page={selectedPage}
+          users={userList}
+          onSaved={() => qc.invalidateQueries({ queryKey: ['td-pages', companyId] })}
+        />
       )}
 
       <CreatePageDialog
@@ -281,6 +330,158 @@ function CreatePageDialog({ open, onOpenChange, companies, events, defaultCompan
           <Button variant="outline" onClick={() => onOpenChange(false)}>Anulează</Button>
           <Button disabled={!canSave || createMut.isPending} onClick={() => createMut.mutate()}>
             {createMut.isPending ? 'Se creează…' : 'Creează'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+/** Editable event metadata -- Titlu/Intro/Mesaj de mulțumire, the notified
+ *  advisor list, the booking window (opens_at/closes_at) and the slotting
+ *  parameters. Wired to the already-existing `tdAdminApi.updatePage`
+ *  (PATCH .../pages/<id>), which whitelists these exact
+ *  mkt_td_booking_pages columns (see _PAGE_COLS in
+ *  td_booking_repository.py) -- this dialog is the first UI writer of any
+ *  of them (the create flow only sets title/event_id/slug). Re-syncs its
+ *  local form state from `page` every time it's opened, so switching the
+ *  selected page (or a background refetch) can't leave stale values behind. */
+function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
+  open: boolean
+  onOpenChange: (o: boolean) => void
+  page: TdAdminPage
+  users: UserDetail[]
+  onSaved: () => void
+}) {
+  const [title, setTitle] = useState('')
+  const [intro, setIntro] = useState('')
+  const [thankYou, setThankYou] = useState('')
+  const [notifyIds, setNotifyIds] = useState<(number | string)[]>([])
+  const [opensAt, setOpensAt] = useState('')
+  const [closesAt, setClosesAt] = useState('')
+  const [minLead, setMinLead] = useState('')
+  const [slotMinutes, setSlotMinutes] = useState('')
+  const [bufferMinutes, setBufferMinutes] = useState('')
+  const [maxPerContact, setMaxPerContact] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    setTitle(page.title ?? '')
+    setIntro(page.intro ?? '')
+    setThankYou(page.thank_you ?? '')
+    setNotifyIds(page.notify_user_ids ?? [])
+    setOpensAt(isoToLocal(page.opens_at))
+    setClosesAt(isoToLocal(page.closes_at))
+    setMinLead(String(page.min_lead_minutes ?? ''))
+    setSlotMinutes(String(page.slot_minutes ?? ''))
+    setBufferMinutes(String(page.buffer_minutes ?? ''))
+    setMaxPerContact(String(page.max_bookings_per_contact ?? ''))
+  }, [open, page])
+
+  const userOptions = users.filter((u) => u.is_active).map((u) => ({ value: u.id, label: u.name }))
+
+  const saveMut = useMutation({
+    mutationFn: () => {
+      const body: Record<string, unknown> = {}
+
+      const nextTitle = title.trim() || null
+      if (nextTitle !== (page.title ?? null)) body.title = nextTitle
+      const nextIntro = intro.trim() || null
+      if (nextIntro !== (page.intro ?? null)) body.intro = nextIntro
+      const nextThankYou = thankYou.trim() || null
+      if (nextThankYou !== (page.thank_you ?? null)) body.thank_you = nextThankYou
+
+      const nextNotifyIds = notifyIds.map(Number)
+      const origNotifyIds = page.notify_user_ids ?? []
+      const sameNotify = nextNotifyIds.length === origNotifyIds.length
+        && [...nextNotifyIds].sort((a, b) => a - b).every((v, i) => v === [...origNotifyIds].sort((a, b) => a - b)[i])
+      if (!sameNotify) body.notify_user_ids = nextNotifyIds
+
+      const nextOpensAt = localToIso(opensAt)
+      if (!isoEqual(nextOpensAt, page.opens_at)) body.opens_at = nextOpensAt
+      const nextClosesAt = localToIso(closesAt)
+      if (!isoEqual(nextClosesAt, page.closes_at)) body.closes_at = nextClosesAt
+
+      const nextMinLead = minLead === '' ? null : Number(minLead)
+      if (nextMinLead !== null && nextMinLead !== page.min_lead_minutes) body.min_lead_minutes = nextMinLead
+      const nextSlotMinutes = slotMinutes === '' ? null : Number(slotMinutes)
+      if (nextSlotMinutes !== null && nextSlotMinutes !== page.slot_minutes) body.slot_minutes = nextSlotMinutes
+      const nextBufferMinutes = bufferMinutes === '' ? null : Number(bufferMinutes)
+      if (nextBufferMinutes !== null && nextBufferMinutes !== page.buffer_minutes) body.buffer_minutes = nextBufferMinutes
+      const nextMaxPerContact = maxPerContact === '' ? null : Number(maxPerContact)
+      if (nextMaxPerContact !== null && nextMaxPerContact !== page.max_bookings_per_contact) {
+        body.max_bookings_per_contact = nextMaxPerContact
+      }
+
+      return tdAdminApi.updatePage(page.id, body)
+    },
+    onSuccess: () => {
+      toast.success('Setări salvate')
+      onSaved()
+      onOpenChange(false)
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Salvarea setărilor a eșuat'),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogHeader><DialogTitle>Setări eveniment</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Titlu</Label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Intro</Label>
+            <Textarea rows={3} value={intro} onChange={(e) => setIntro(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Mesaj de mulțumire</Label>
+            <Textarea rows={3} value={thankYou} onChange={(e) => setThankYou(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Consilieri notificați</Label>
+            <MultiSelectPills
+              options={userOptions}
+              selected={notifyIds}
+              onChange={setNotifyIds}
+              placeholder="Fără consilieri notificați"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Deschidere</Label>
+              <Input type="datetime-local" value={opensAt} onChange={(e) => setOpensAt(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Închidere</Label>
+              <Input type="datetime-local" value={closesAt} onChange={(e) => setClosesAt(e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Timp minim înainte (min)</Label>
+              <Input type="number" min={0} value={minLead} onChange={(e) => setMinLead(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Max programări / contact</Label>
+              <Input type="number" min={1} value={maxPerContact} onChange={(e) => setMaxPerContact(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Durată interval (min)</Label>
+              <Input type="number" min={1} value={slotMinutes} onChange={(e) => setSlotMinutes(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Pauză între intervale (min)</Label>
+              <Input type="number" min={0} value={bufferMinutes} onChange={(e) => setBufferMinutes(e.target.value)} />
+            </div>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Anulează</Button>
+          <Button disabled={saveMut.isPending} onClick={() => saveMut.mutate()}>
+            {saveMut.isPending ? 'Se salvează…' : 'Salvează'}
           </Button>
         </DialogFooter>
       </DialogContent>
