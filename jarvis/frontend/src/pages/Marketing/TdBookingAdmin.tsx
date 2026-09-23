@@ -23,6 +23,7 @@ import { tdAdminApi, type TdAdminPage } from '@/api/tdAdmin'
 import TdCarsPanel from './TdCarsPanel'
 import TdWindowsPanel from './TdWindowsPanel'
 import TdBookingsPanel from './TdBookingsPanel'
+import TdBookingHelp from './TdBookingHelp'
 
 const NONE = '__none__'
 const STATUS_LABEL: Record<TdAdminPage['status'], string> = { draft: 'Ciornă', open: 'Deschisă', closed: 'Închisă' }
@@ -102,9 +103,12 @@ export default function TdBookingAdmin({ companyId = 0 }: { companyId?: number }
           <h3 className="text-lg font-semibold">Pagini programare Test Drive</h3>
           <p className="text-sm text-muted-foreground">Pagini publice de programare (evenimente, lansări) — mașini, intervale și rezervări.</p>
         </div>
-        <Button size="sm" onClick={() => setCreateOpen(true)}>
-          <Plus className="mr-1.5 h-4 w-4" />Pagină nouă
-        </Button>
+        <div className="flex items-center gap-2">
+          <TdBookingHelp />
+          <Button size="sm" onClick={() => setCreateOpen(true)}>
+            <Plus className="mr-1.5 h-4 w-4" />Pagină nouă
+          </Button>
+        </div>
       </div>
 
       {pagesLoading ? (
