@@ -85,7 +85,7 @@ class TdBookingService:
 
     # ---- submit ----
     def submit_booking(self, slug, slot_id, name, phone_e164, email, utm, ip,
-                       user_agent, base_url):
+                       user_agent, base_url, extra_answers=None):
         page = self.repo.get_page_by_slug(slug)
         if not page or page['status'] != 'open':
             return ServiceResult(False, 404, error='Booking page not available')
@@ -114,13 +114,18 @@ class TdBookingService:
             return ServiceResult(False, 409, error='Slot no longer available')
         # Insert the pending_confirm booking; the partial-unique active-booking
         # index maps a lost race to HTTP 409.
+        booking_data = {
+            'page_id': page['id'], 'slot_id': slot['id'], 'car_id': slot['car_id'],
+            'customer_name': name, 'customer_phone_e164': phone_e164,
+            'customer_email': email, 'utm': utm, 'ip': ip, 'user_agent': user_agent,
+            'expires_at': now + timedelta(minutes=_PENDING_TTL_MINUTES),
+        }
+        # Legal fields (driving licence + consents) captured at submit and mapped
+        # onto the fișă at confirm; the route enforces their presence (422).
+        if extra_answers:
+            booking_data['extra_answers'] = extra_answers
         try:
-            booking = self.repo.create_booking({
-                'page_id': page['id'], 'slot_id': slot['id'], 'car_id': slot['car_id'],
-                'customer_name': name, 'customer_phone_e164': phone_e164,
-                'customer_email': email, 'utm': utm, 'ip': ip, 'user_agent': user_agent,
-                'expires_at': now + timedelta(minutes=_PENDING_TTL_MINUTES),
-            })
+            booking = self.repo.create_booking(booking_data)
         except psycopg2.errors.UniqueViolation:
             return ServiceResult(False, 409, error='Slot just taken')
         # Email the signed confirm + cancel links.
@@ -174,6 +179,25 @@ class TdBookingService:
                 source_flags={'td_booking': True},
             )
         crm_client_id = crm_client['id'] if crm_client else None
+
+        # Keep the customer's driving licence on their CRM record (mirrors the
+        # staff TD flow), so it prefills on their next drive. COALESCE/NULLIF so a
+        # blank never wipes an existing value; best-effort — a CRM write hiccup
+        # must not fail the confirm.
+        extra = booking.get('extra_answers') or {}
+        lic_no = (extra.get('license') or '').strip()
+        lic_exp = (extra.get('license_expiry') or '').strip()
+        if crm_client_id and (lic_no or lic_exp):
+            try:
+                self.crm.execute(
+                    "UPDATE crm_clients SET "
+                    "driver_license_number = COALESCE(NULLIF(%s, ''), driver_license_number), "
+                    "driver_license_expiry = COALESCE(NULLIF(%s, ''), driver_license_expiry) "
+                    "WHERE id = %s",
+                    (lic_no, lic_exp, crm_client_id))
+            except Exception:
+                logger.warning('Could not store licence on CRM client %s',
+                               crm_client_id, exc_info=True)
 
         advisor_id = car.get('default_advisor_user_id') if car else None
         advisor_name = self._advisor_name(advisor_id)
@@ -231,8 +255,16 @@ class TdBookingService:
         """Build the PLANNED foi_de_parcurs TD row. Mirrors the draft-case of
         api_submit_test_drive's contract_data, minus FILLED-only fields, and fills
         every NOT NULL-without-default column (contract_id UNIQUE; km_*, distance_km,
-        fuel_* required; fuel_gauge_*_level are varchar so use 'full', not 0)."""
-        return {
+        fuel_* required; fuel_gauge_*_level are varchar so use 'full', not 0).
+
+        The legal fields the customer supplied at submit (extra_answers) map onto
+        the same columns the staff TD flow uses: driving licence serie&number
+        (+ expiry when given), and the GDPR / general-conditions consents captured
+        at booking time (with the acceptance timestamp)."""
+        extra = booking.get('extra_answers') or {}
+        lic_no = (extra.get('license') or '').strip()
+        lic_exp = (extra.get('license_expiry') or '').strip()
+        row = {
             'contract_id': f"TDB-{booking['id']}",
             'vin': car['vin'],
             'company_id': page['company_id'],
@@ -248,7 +280,11 @@ class TdBookingService:
             'source': 'td_form',
             'status': 'PLANNED',
             'is_internal': False,
-            'gdpr_consent': False,                   # deferred to staff activation
+            # Consents captured at booking time (the route enforces both true).
+            'gdpr_consent': bool(extra.get('gdpr_consent')),
+            'general_conditions_accepted': bool(extra.get('conditions_accepted')),
+            'general_conditions_accepted_at': (datetime.now(timezone.utc)
+                                               if extra.get('conditions_accepted') else None),
             # NOT NULL columns without a server default:
             'km_start': 0,
             'km_end': 0,
@@ -260,6 +296,13 @@ class TdBookingService:
             'fuel_end_liters': 0,
             'fuel_consumed_liters': 0,
         }
+        # Driving licence (serie & number, + optional expiry) — only set when
+        # present so an empty string never overwrites a column default.
+        if lic_no:
+            row['driver_license_number'] = lic_no
+        if lic_exp:
+            row['driver_license_expiry'] = lic_exp
+        return row
 
     def _advisor_name(self, user_id):
         if not user_id:

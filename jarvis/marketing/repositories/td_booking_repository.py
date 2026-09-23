@@ -52,6 +52,12 @@ class TdBookingRepository(BaseRepository):
         row = self.query_one('SELECT company FROM companies WHERE id=%s', (company_id,))
         return row['company'] if row else None
 
+    def get_company_gdpr_text(self, company_id: int):
+        """The tenant's configured GDPR text for the public consent checkbox
+        (None when unset/missing)."""
+        row = self.query_one('SELECT gdpr_text FROM companies WHERE id=%s', (company_id,))
+        return row['gdpr_text'] if row else None
+
     def list_pages(self, company_id=None):
         if company_id:
             return self.query_all(
@@ -84,6 +90,27 @@ class TdBookingRepository(BaseRepository):
     def list_cars(self, page_id):
         return self.query_all(
             'SELECT * FROM mkt_td_booking_cars WHERE page_id=%s AND is_active ORDER BY sort_order, id',
+            (page_id,))
+
+    def list_cars_with_vehicle(self, page_id):
+        """Active cars for a page, each joined to its fp_vehicles row for a
+        friendly make/model label + plate. The LATERAL prefers the explicit
+        vehicle_id link, else falls back to matching by vin, and LIMIT 1
+        guarantees exactly one (possibly all-NULL) vehicle row per car -- so a
+        car whose fleet row is missing still comes back (the caller falls back
+        to the VIN for the label). All runtime values stay parameterized."""
+        return self.query_all(
+            "SELECT c.id, c.vin, c.vehicle_id, "
+            "       v.mark AS mark, v.model AS model, "
+            "       v.registration_number AS registration_number "
+            "FROM mkt_td_booking_cars c "
+            "LEFT JOIN LATERAL ("
+            "    SELECT mark, model, registration_number FROM fp_vehicles fv "
+            "    WHERE fv.id = c.vehicle_id OR fv.vin = c.vin "
+            "    ORDER BY (fv.id = c.vehicle_id) DESC NULLS LAST LIMIT 1"
+            ") v ON TRUE "
+            "WHERE c.page_id=%s AND c.is_active "
+            "ORDER BY c.sort_order, c.id",
             (page_id,))
 
     def get_car(self, car_id):

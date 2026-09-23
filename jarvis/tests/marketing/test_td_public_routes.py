@@ -113,12 +113,22 @@ def client(app):
         yield c
 
 
+# Valid legal-field body appended to every well-formed submit: the driving
+# licence + both consents are now required (422 otherwise).
+_VALID_LEGAL = {'license': 'AB 123456', 'gdpr_consent': True, 'conditions_accepted': True}
+
+
 @pytest.fixture
 def open_page(app):
     company_id = _resolve_company_id()
     p = repo.create_page({'company_id': company_id, 'slug': _SLUG, 'created_by': 1,
                           'status': 'open', 'min_lead_minutes': 0, 'title': 'Test Drive X'})
     repo.add_car(p['id'], vin=_VIN, default_advisor_user_id=1)
+    # Seed the fleet row so the public car carries a friendly make/model label
+    # + plate (cleaned up by _cleanup's DELETE FROM fp_vehicles WHERE vin=...).
+    repo.execute(
+        "INSERT INTO fp_vehicles (vin, mark, model, registration_number, fuel_type, document_type) "
+        "VALUES (%s, 'MG', 'ZS', 'B-100-XYZ', 'Diesel', 'sales')", (_VIN,))
     repo.add_window(p['id'], '2099-10-01', '10:00', '11:00')
     TdSlotService().materialize_slots(p['id'])
     return p
@@ -141,6 +151,24 @@ def test_get_page_public_no_auth(client, open_page):
     assert 'slots' in body and len(body['slots']) >= 1
     assert body['page']['title'] == 'Test Drive X'
     assert 'company_name' in body['page']
+
+
+def test_get_page_car_label_plate_and_gdpr(client, open_page):
+    """The public car carries a friendly make/model label + plate (from the
+    joined fleet row), and the page carries the tenant's GDPR text."""
+    company_id = open_page['company_id']
+    original = repo.query_one('SELECT gdpr_text FROM companies WHERE id=%s', (company_id,))
+    repo.execute('UPDATE companies SET gdpr_text=%s WHERE id=%s', ('Politica GDPR de test', company_id))
+    try:
+        body = client.get(f'/api/td/pages/{_SLUG}').get_json()
+        car = body['cars'][0]
+        assert car['label'] == 'MG ZS'
+        assert car['plate'] == 'B-100-XYZ'
+        assert car['vin'] == _VIN
+        assert body['page']['gdpr_text'] == 'Politica GDPR de test'
+    finally:
+        repo.execute('UPDATE companies SET gdpr_text=%s WHERE id=%s',
+                     ((original or {}).get('gdpr_text'), company_id))
 
 
 def test_get_missing_page_404_not_401(client):
@@ -170,12 +198,58 @@ def test_submit_booking_201(client, open_page, app):
     slot = _first_slot(client)
     r = client.post(f'/api/td/pages/{_SLUG}/bookings', json={
         'slot_id': slot['id'], 'name': 'Ana', 'phone': _PHONE, 'email': _EMAIL,
+        **_VALID_LEGAL,
     })
     assert r.status_code == 201
     body = r.get_json()
     assert body['status'] == 'pending_confirm'
     assert 'booking_id' in body
     assert app.config['SENT_EMAILS'], 'expected the confirm email to be "sent"'
+
+
+def test_submit_stores_extra_answers(client, open_page):
+    """A full submit persists the legal fields in extra_answers on the booking."""
+    slot = _first_slot(client)
+    r = client.post(f'/api/td/pages/{_SLUG}/bookings', json={
+        'slot_id': slot['id'], 'name': 'Ana', 'phone': _PHONE, 'email': _EMAIL,
+        'license': 'CJ 998877', 'license_expiry': '2030-05-01',
+        'gdpr_consent': True, 'conditions_accepted': True,
+    })
+    assert r.status_code == 201
+    booking = repo.get_booking(r.get_json()['booking_id'])
+    ea = booking['extra_answers']
+    assert ea['license'] == 'CJ 998877'
+    assert ea['license_expiry'] == '2030-05-01'
+    assert ea['gdpr_consent'] is True and ea['conditions_accepted'] is True
+
+
+def test_submit_missing_license_422(client, open_page):
+    slot = _first_slot(client)
+    r = client.post(f'/api/td/pages/{_SLUG}/bookings', json={
+        'slot_id': slot['id'], 'name': 'Ana', 'phone': _PHONE, 'email': _EMAIL,
+        'gdpr_consent': True, 'conditions_accepted': True,
+    })
+    assert r.status_code == 422
+    # Nothing was inserted for that page.
+    assert repo.query_all('SELECT id FROM mkt_td_bookings WHERE page_id=%s', (open_page['id'],)) == []
+
+
+def test_submit_missing_gdpr_consent_422(client, open_page):
+    slot = _first_slot(client)
+    r = client.post(f'/api/td/pages/{_SLUG}/bookings', json={
+        'slot_id': slot['id'], 'name': 'Ana', 'phone': _PHONE, 'email': _EMAIL,
+        'license': 'AB 123456', 'conditions_accepted': True,
+    })
+    assert r.status_code == 422
+
+
+def test_submit_missing_conditions_422(client, open_page):
+    slot = _first_slot(client)
+    r = client.post(f'/api/td/pages/{_SLUG}/bookings', json={
+        'slot_id': slot['id'], 'name': 'Ana', 'phone': _PHONE, 'email': _EMAIL,
+        'license': 'AB 123456', 'gdpr_consent': True,
+    })
+    assert r.status_code == 422
 
 
 def test_submit_booking_missing_fields_400(client, open_page):
@@ -185,7 +259,7 @@ def test_submit_booking_missing_fields_400(client, open_page):
 
 def test_submit_booking_missing_page_404_not_401(client):
     r = client.post('/api/td/pages/nope/bookings', json={
-        'slot_id': 1, 'name': 'Ana', 'phone': _PHONE, 'email': _EMAIL,
+        'slot_id': 1, 'name': 'Ana', 'phone': _PHONE, 'email': _EMAIL, **_VALID_LEGAL,
     })
     assert r.status_code == 404
     assert r.status_code != 401
@@ -197,6 +271,7 @@ def test_confirm_then_cancel_booking(client, open_page):
     slot = _first_slot(client)
     submit = client.post(f'/api/td/pages/{_SLUG}/bookings', json={
         'slot_id': slot['id'], 'name': 'Bob', 'phone': _PHONE2, 'email': _EMAIL2,
+        **_VALID_LEGAL,
     })
     booking_id = submit.get_json()['booking_id']
 

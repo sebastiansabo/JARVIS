@@ -11,10 +11,18 @@ export interface TdSlot {
 export interface TdCar {
   id: number
   vin: string
+  label: string
+  plate?: string | null
 }
 
 export interface TdPublicPage {
-  page: { title?: string; intro?: string; thank_you?: string; company_name?: string }
+  page: {
+    title?: string
+    intro?: string
+    thank_you?: string
+    company_name?: string
+    gdpr_text?: string | null
+  }
   cars: TdCar[]
   slots: TdSlot[]
 }
@@ -24,6 +32,8 @@ export const tdApi = {
 
   submitBooking: (slug: string, body: {
     slot_id: number; name: string; phone: string; email: string
+    license: string; license_expiry?: string
+    gdpr_consent: boolean; conditions_accepted: boolean
     utm?: Record<string, string>
   }) => api.post<{ booking_id: number; status: string }>(`/api/td/pages/${slug}/bookings`, body),
 
