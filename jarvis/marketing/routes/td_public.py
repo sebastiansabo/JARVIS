@@ -61,6 +61,7 @@ def get_page(slug):
             'title': page.get('title'),
             'intro': page.get('intro'),
             'thank_you': page.get('thank_you'),
+            'conditions_text': page.get('conditions_text'),
             'logo_url': page.get('logo_url'),
             'company_name': _repo.get_company_name(page['company_id']),
             'gdpr_text': _repo.get_company_gdpr_text(page['company_id']),

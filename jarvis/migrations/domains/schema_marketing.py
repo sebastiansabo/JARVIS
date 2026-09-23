@@ -627,6 +627,7 @@ def create_schema_marketing(conn, cursor):
             title TEXT,
             intro TEXT,
             thank_you TEXT,
+            conditions_text TEXT,
             logo_url TEXT,
             notify_user_ids INTEGER[] DEFAULT '{}',
             created_by INTEGER REFERENCES users(id),
@@ -648,6 +649,19 @@ def create_schema_marketing(conn, cursor):
                 WHERE table_name = 'mkt_td_booking_pages' AND column_name = 'logo_url'
             ) THEN
                 ALTER TABLE mkt_td_booking_pages ADD COLUMN logo_url TEXT;
+            END IF;
+        END $$
+    ''')
+
+    # Migration: per-page "Condiții de test drive" text shown behind the public
+    # consent "Citește" popup (falls back to a built-in default when NULL/empty).
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'mkt_td_booking_pages' AND column_name = 'conditions_text'
+            ) THEN
+                ALTER TABLE mkt_td_booking_pages ADD COLUMN conditions_text TEXT;
             END IF;
         END $$
     ''')

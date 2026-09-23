@@ -54,3 +54,16 @@ def test_add_car_and_window(page):
 
 def test_set_page_status(page):
     assert repo.set_page_status(page['id'], 'open')['status'] == 'open'
+
+
+def test_conditions_text_create_and_update(page):
+    """conditions_text is whitelisted in _PAGE_COLS: settable at create and via
+    update_page, and persisted on the page row."""
+    created = repo.create_page({'company_id': page['company_id'], 'slug': 'test-cond-xyz',
+                               'created_by': 1, 'conditions_text': 'Clauze inițiale.'})
+    try:
+        assert created['conditions_text'] == 'Clauze inițiale.'
+        updated = repo.update_page(created['id'], {'conditions_text': 'Clauze actualizate.'})
+        assert updated['conditions_text'] == 'Clauze actualizate.'
+    finally:
+        repo.execute('DELETE FROM mkt_td_booking_pages WHERE id=%s', (created['id'],))
