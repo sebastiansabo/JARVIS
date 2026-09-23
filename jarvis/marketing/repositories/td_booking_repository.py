@@ -24,7 +24,8 @@ _PAGE_COLS = {
     'project_id', 'company_id', 'event_id', 'slug', 'status', 'opens_at',
     'closes_at', 'min_lead_minutes', 'slot_minutes', 'buffer_minutes',
     'max_bookings_per_contact', 'access_code', 'title', 'intro', 'thank_you',
-    'conditions_text', 'logo_url', 'notify_user_ids', 'created_by',
+    'conditions_text', 'logo_url', 'email_subject', 'email_body',
+    'notify_user_ids', 'created_by',
 }
 
 _BOOKING_COLS = {
@@ -267,6 +268,25 @@ class TdBookingRepository(BaseRepository):
         return self.execute(
             "UPDATE mkt_td_bookings SET status='expired', updated_at=NOW() "
             "WHERE status='pending_confirm' AND expires_at < %s", (now,))
+
+    def has_pending_overlap(self, vin, now, frm, to) -> bool:
+        """True when a still-live `pending_confirm` hold on `vin` overlaps [frm, to).
+
+        A pending hold reserves its interval but has NOT yet created a
+        foi_de_parcurs row, so the fp-based availability checks (find_conflicts /
+        get_open_session) can't see it. Without this, an OVERLAPPING slot on the
+        same car -- e.g. the same VIN offered on another page -- would look free
+        until the hold is confirmed or its confirmation window expires. `now`
+        (real current time) drops holds already past expires_at even if the expiry
+        sweep hasn't run yet. Half-open overlap: slot.starts_at < to AND
+        slot.ends_at > frm."""
+        row = self.query_one(
+            "SELECT 1 FROM mkt_td_bookings b "
+            "JOIN mkt_td_slots s ON s.id = b.slot_id "
+            "WHERE s.vin = %s AND b.status = 'pending_confirm' AND b.expires_at > %s "
+            "AND s.starts_at < %s AND s.ends_at > %s LIMIT 1",
+            (vin, now, to, frm))
+        return row is not None
 
     # ---- atomic confirm (race-safe) ----
     # These three checks together are the "3-way availability" recheck. The overlap

@@ -496,7 +496,12 @@ def api_vehicle_conflicts(vin):
         return jsonify({'success': False, 'error': 'from and to are required'}), 400
     exclude_id = request.args.get('exclude_id', type=int)
     rows = _fp_repo.find_conflicts(vin, frm, to, exclude_id)
-    return jsonify({'success': True, 'conflicts': rows})
+    # Cars committed to an Event TD are reserved for the event's window dates and
+    # can't be booked via a classic form for an overlapping time (the submit
+    # endpoint hard-blocks it; this lets the form warn up-front).
+    event_reservations = _fp_repo.find_event_reservation(vin, frm, to)
+    return jsonify({'success': True, 'conflicts': rows,
+                    'event_reservations': event_reservations})
 
 
 @foi_parcurs_bp.route('/api/foi-parcurs/companies', methods=['GET'])
