@@ -21,7 +21,7 @@ _PAGE_COLS = {
     'project_id', 'company_id', 'event_id', 'slug', 'status', 'opens_at',
     'closes_at', 'min_lead_minutes', 'slot_minutes', 'buffer_minutes',
     'max_bookings_per_contact', 'access_code', 'title', 'intro', 'thank_you',
-    'notify_user_ids', 'created_by',
+    'logo_url', 'notify_user_ids', 'created_by',
 }
 
 _BOOKING_COLS = {

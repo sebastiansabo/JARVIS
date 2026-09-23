@@ -68,7 +68,44 @@ describe('TdBookingAdmin', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Creează' }))
 
     await waitFor(() =>
-      expect(createPage).toHaveBeenCalledWith({ company_id: 7, slug: 'audi-td', title: undefined, event_id: undefined }),
+      expect(createPage).toHaveBeenCalledWith({ company_id: 7, slug: 'audi-td', title: undefined, event_id: undefined, logo_url: undefined }),
     )
+  })
+
+  it('reads an uploaded logo into a base64 data URL and includes it in the create payload', async () => {
+    listPages.mockResolvedValue({ pages: [] })
+    createPage.mockResolvedValueOnce({ id: 6, company_id: 7, slug: 'logo-td', status: 'draft', created_at: '2026-09-22T00:00:00Z' })
+    wrap(<TdBookingAdmin companyId={7} />)
+
+    fireEvent.click(await screen.findByText('Pagină nouă'))
+    fireEvent.change(screen.getByPlaceholderText('ex: bmw-x5-td'), { target: { value: 'logo-td' } })
+
+    const file = new File(['fake-image-bytes'], 'logo.png', { type: 'image/png' })
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [file] } })
+
+    // Preview swaps the "Încarcă" label for "Schimbă" once the data URL is read.
+    await screen.findByText('Schimbă')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Creează' }))
+
+    await waitFor(() => expect(createPage).toHaveBeenCalled())
+    const payload = createPage.mock.calls[0][0]
+    expect(payload.logo_url).toMatch(/^data:image\/png;base64,/)
+  })
+
+  it('rejects an oversized logo file with a toast and does not set the preview', async () => {
+    listPages.mockResolvedValue({ pages: [] })
+    wrap(<TdBookingAdmin companyId={7} />)
+
+    fireEvent.click(await screen.findByText('Pagină nouă'))
+
+    const big = new File([new Uint8Array(1.6 * 1024 * 1024)], 'big.png', { type: 'image/png' })
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [big] } })
+
+    // Stays on the "Încarcă" (upload) label — the oversized file was rejected, not previewed.
+    await waitFor(() => expect(screen.queryByText('Schimbă')).not.toBeInTheDocument())
+    expect(screen.getByText('Încarcă')).toBeInTheDocument()
   })
 })
