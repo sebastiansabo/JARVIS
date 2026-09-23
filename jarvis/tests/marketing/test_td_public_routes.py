@@ -49,7 +49,7 @@ from marketing.repositories.td_booking_repository import TdBookingRepository  # 
 from marketing.services.td_slot_service import TdSlotService  # noqa: E402
 import marketing.services.td_slot_service as slot_mod  # noqa: E402
 import marketing.services.td_booking_service as svc_mod  # noqa: E402
-from core.approvals.booking_token import make_booking_token  # noqa: E402
+from core.approvals.booking_token import make_booking_token, make_group_token  # noqa: E402
 
 repo = TdBookingRepository()
 
@@ -131,7 +131,9 @@ def open_page(app):
     repo.execute(
         "INSERT INTO fp_vehicles (vin, mark, model, registration_number, fuel_type, document_type) "
         "VALUES (%s, 'MG', 'ZS', 'B-100-XYZ', 'Diesel', 'sales')", (_VIN,))
-    repo.add_window(p['id'], '2099-10-01', '10:00', '11:00')
+    # 10:00-12:00 @ 30min = four slots; the group route test picks non-adjacent
+    # ones so both confirm into PLANNED fișe without a boundary conflict.
+    repo.add_window(p['id'], '2099-10-01', '10:00', '12:00')
     TdSlotService().materialize_slots(p['id'])
     return p
 
@@ -305,6 +307,40 @@ def test_confirm_then_cancel_booking(client, open_page):
     assert xr.status_code == 200
     assert xr.get_json()['status'] == 'cancelled'
     assert repo.query_one('SELECT id FROM foi_de_parcurs WHERE id=%s', (fp_id,)) is None
+
+
+def test_submit_group_slot_ids_then_group_confirm_and_cancel(client, open_page):
+    """The HTTP path accepts slot_ids: a two-slot group returns booked+group_id,
+    the group confirm token confirms both (two PLANNED fișe), and the group
+    cancel token frees them again."""
+    body = client.get(f'/api/td/pages/{_SLUG}').get_json()
+    slots = body['slots']
+    assert len(slots) >= 3
+    ids = [slots[0]['id'], slots[2]['id']]  # non-adjacent -> no boundary conflict
+
+    submit = client.post(f'/api/td/pages/{_SLUG}/bookings', json={
+        'slot_ids': ids, 'name': 'Ana', 'phone': _PHONE, 'email': _EMAIL, **_VALID_LEGAL,
+    })
+    assert submit.status_code == 201
+    sbody = submit.get_json()
+    assert len(sbody['booked']) == 2 and sbody['unavailable'] == []
+    gid = sbody['group_id']
+
+    cr = client.post('/api/td/bookings/confirm',
+                     json={'token': make_group_token(gid, 'confirm', _SECRET)})
+    assert cr.status_code == 200 and cr.get_json()['confirmed'] == 2
+
+    fp_ids = [row['foi_de_parcurs_id'] for row in repo.get_group(gid)]
+    assert all(fp_ids)
+    for fid in fp_ids:
+        fp = repo.query_one('SELECT status FROM foi_de_parcurs WHERE id=%s', (fid,))
+        assert fp['status'] == 'PLANNED'
+
+    xr = client.post('/api/td/bookings/cancel',
+                     json={'token': make_group_token(gid, 'cancel', _SECRET)})
+    assert xr.status_code == 200 and xr.get_json()['status'] == 'cancelled'
+    for fid in fp_ids:
+        assert repo.query_one('SELECT id FROM foi_de_parcurs WHERE id=%s', (fid,)) is None
 
 
 def test_confirm_bad_token_410_not_401(client):
