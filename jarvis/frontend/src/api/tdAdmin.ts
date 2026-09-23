@@ -90,6 +90,8 @@ export const tdAdminApi = {
 
   listWindows: (id: number) => api.get<{ windows: TdAdminWindow[] }>(`${B}/pages/${id}/windows`),
 
+  deleteWindow: (wid: number) => api.delete<{ ok: boolean }>(`${B}/windows/${wid}`),
+
   materialize: (id: number) => api.post<{ inserted: number }>(`${B}/pages/${id}/materialize`, {}),
 
   listBookings: (id: number, status?: string) =>
