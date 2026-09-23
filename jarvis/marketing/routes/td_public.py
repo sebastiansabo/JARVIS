@@ -135,6 +135,28 @@ def submit_booking(slug):
         'gdpr_consent': True,
         'conditions_accepted': True,
     }
+    # Ranked backup time preferences (2nd/3rd/4th choice) per car -- preference
+    # only, they reserve NO slot; captured on the booking so the team can act on
+    # them. Trust-but-bound: cap the structure so a crafted body can't bloat the
+    # JSONB row (already human-readable strings from the client).
+    raw_pref = data.get('preferred')
+    if isinstance(raw_pref, list) and raw_pref:
+        cleaned = []
+        for item in raw_pref[:12]:
+            if not isinstance(item, dict):
+                continue
+            car = str(item.get('car') or '')[:120]
+            raw_choices = item.get('choices')
+            choices = [str(c)[:40] for c in raw_choices[:6]] if isinstance(raw_choices, list) else []
+            plate = item.get('plate')
+            if car and choices:
+                cleaned.append({
+                    'car': car,
+                    'plate': (str(plate)[:32] if plate else None),
+                    'choices': choices,
+                })
+        if cleaned:
+            extra_answers['preferred_times'] = cleaned
     result = _svc.submit_booking(
         slug, name=data['name'], phone_e164=data['phone'], email=data['email'],
         utm=data.get('utm') or {}, ip=_client_ip(),

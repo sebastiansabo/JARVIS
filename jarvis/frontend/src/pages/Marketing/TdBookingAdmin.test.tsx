@@ -49,16 +49,38 @@ describe('TdBookingAdmin', () => {
     expect(await screen.findByText('Nicio pagină de programare')).toBeInTheDocument()
   })
 
-  it('lists pages and shows the Cars/Windows/Bookings panels once a page is selected', async () => {
+  it('drills into a page with Rezervări as the default tab and Setări in the toolbar', async () => {
     listPages.mockResolvedValueOnce({
       pages: [{ id: 1, company_id: 7, slug: 'bmw-td', title: 'BMW Test Drive', status: 'draft', created_at: '2026-09-20T10:00:00Z' }],
     })
     wrap(<TdBookingAdmin companyId={7} />)
     fireEvent.click(await screen.findByText('bmw-td'))
-    expect(await screen.findByText('Mașini')).toBeInTheDocument()
-    expect(screen.getByText('Intervale disponibile')).toBeInTheDocument()
-    // Bookings panel fetches its own list and shows a skeleton first.
-    expect(await screen.findByText('Rezervări')).toBeInTheDocument()
+    // Drilled-in detail exposes both tabs, Rezervări selected by default.
+    const rezervari = await screen.findByRole('tab', { name: 'Rezervări' })
+    expect(rezervari).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Detalii eveniment' })).toBeInTheDocument()
+    // Setări (event config) is reachable from the toolbar regardless of the tab.
+    expect(screen.getByRole('button', { name: /Setări/ })).toBeInTheDocument()
+    // The bookings panel (default tab) renders its Rezervări heading.
+    expect(await screen.findByRole('heading', { name: 'Rezervări' })).toBeInTheDocument()
+  })
+
+  it('drills back to the list with "Toate paginile" and filters the list by search', async () => {
+    listPages.mockResolvedValue({
+      pages: [
+        { id: 1, company_id: 7, slug: 'bmw-td', title: 'BMW Test Drive', status: 'draft', created_at: '2026-09-20T10:00:00Z' },
+        { id: 2, company_id: 7, slug: 'audi-td', title: 'Audi Test Drive', status: 'open', created_at: '2026-09-21T10:00:00Z' },
+      ],
+    })
+    wrap(<TdBookingAdmin companyId={7} />)
+    fireEvent.click(await screen.findByText('bmw-td'))
+    // Back link returns to the list.
+    fireEvent.click(await screen.findByRole('button', { name: /Toate paginile/ }))
+    expect(await screen.findByText('audi-td')).toBeInTheDocument()
+    // Search narrows the list to the matching slug.
+    fireEvent.change(screen.getByPlaceholderText(/Caută după slug/), { target: { value: 'audi' } })
+    expect(screen.getByText('audi-td')).toBeInTheDocument()
+    expect(screen.queryByText('bmw-td')).not.toBeInTheDocument()
   })
 
   it('creates a page with the Driving Hub header company preselected', async () => {

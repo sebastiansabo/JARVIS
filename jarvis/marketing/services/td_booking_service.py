@@ -22,6 +22,7 @@ import re
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 from flask import current_app
 from core.base_repository import BaseRepository
@@ -46,6 +47,58 @@ _MAX_ATTEMPTS_PER_IP_PER_HOUR = 8
 _UTM_ALLOWED_KEYS = {'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content'}
 # Server-side E.164 guard: '+' then 7-15 digits, once spaces/dashes are stripped.
 _E164_RE = re.compile(r'^\+\d{7,15}$')
+# Slots are materialized in Europe/Bucharest local time; the {programari} merge
+# tag / default email render each booking's start in that same wall-clock zone.
+_LOCAL_TZ = ZoneInfo('Europe/Bucharest')
+
+
+def render_confirmation_email(*, name, booked_lines, confirm_link, cancel_link,
+                              email_subject=None, email_body=None):
+    """Build the (subject, html_body) pair for the booking-confirmation email.
+
+    `booked_lines` are pre-composed "Car label · DD.MM.YYYY, HH:MM" strings, one
+    per primary booking in the group. When the page carries a staff-authored
+    `email_subject`/`email_body` (rich HTML), it is used with these merge tags
+    substituted; a blank/None override falls back to the built-in default body:
+
+      {nume}       -> customer name (HTML-escaped in the body, raw in the subject)
+      {programari} -> the booked_lines joined by <br> (each label HTML-escaped)
+      {link}       -> a ready <a> "Confirmă" anchor to confirm_link
+      {anulare}    -> a ready <a> "anulează" anchor to cancel_link
+
+    The customer name is the only untrusted input; it is escaped before it lands
+    in the HTML body. The staff-authored template itself is trusted (authored via
+    the admin, normalized by the TipTap editor)."""
+    raw_name = name or ''
+    esc_name = html.escape(raw_name)
+
+    # The subject is an email header, NOT HTML: don't HTML-escape it (that would
+    # surface literal &lt; to the recipient), but strip CR/LF so a crafted name
+    # can't inject extra headers.
+    subject_name = raw_name.replace('\r', ' ').replace('\n', ' ')
+    subject_tpl = (email_subject or '').strip() or 'Confirmă programarea la test drive'
+    subject = subject_tpl.replace('{nume}', subject_name)
+
+    body_tpl = (email_body or '').strip()
+    if body_tpl:
+        programari_html = '<br>'.join(html.escape(line) for line in booked_lines)
+        # Substitute the trusted tags first and the customer-controlled {nume}
+        # LAST: a name that is literally '{link}'/'{programari}' then stays inert
+        # text (there is no further replace pass after {nume} to expand it).
+        body = (body_tpl
+                .replace('{link}', f"<a href='{confirm_link}'>Confirmă</a>")
+                .replace('{anulare}', f"<a href='{cancel_link}'>anulează</a>")
+                .replace('{programari}', programari_html)
+                .replace('{nume}', esc_name))
+    else:
+        n = len(booked_lines)
+        what = 'programarea la test drive' if n == 1 else f'cele {n} programări la test drive'
+        body = (
+            f"<p>Bună, {esc_name}!</p>"
+            f"<p>Confirmă {what} dintr-un singur click: <a href='{confirm_link}'>Confirmă</a></p>"
+            f"<p>Dacă nu mai poți ajunge, anulează: <a href='{cancel_link}'>aici</a></p>"
+        )
+    return subject, body
 
 
 def _normalize_e164(phone) -> str | None:
@@ -184,17 +237,29 @@ class TdBookingService:
         confirm_link = f"{base_url}/td/confirm?token={confirm_token}"
         cancel_link = f"{base_url}/td/cancel?token={cancel_token}"
         n = len(created)
-        what = 'programarea la test drive' if n == 1 else f'cele {n} programări la test drive'
-        # Escape the customer-supplied name before interpolating it into the email
-        # HTML (spec §7); the raw name is fine in the DB column since React escapes
-        # it in staff views, but the email body is raw HTML.
-        body = (
-            f"<p>Bună, {html.escape(name)}!</p>"
-            f"<p>Confirmă {what} dintr-un singur click: "
-            f"<a href='{confirm_link}'>Confirmă</a></p>"
-            f"<p>Dacă nu mai poți ajunge, anulează: <a href='{cancel_link}'>aici</a></p>"
+        # Human "Car label · date, time" lines (local wall-clock) feed the
+        # {programari} merge tag and the default body. Labels mirror _car_public:
+        # "<mark> <model>" with a VIN fallback when the fleet row has neither.
+        car_labels = {
+            c['id']: (f"{(c.get('mark') or '').strip()} {(c.get('model') or '').strip()}".strip() or c['vin'])
+            for c in self.repo.list_cars_with_vehicle(page['id'])
+        }
+        booked_lines = []
+        for b in created:
+            s = avail.get(b['slot_id'])
+            if not s:
+                continue
+            local = s['starts_at'].astimezone(_LOCAL_TZ)
+            booked_lines.append(f"{car_labels.get(b['car_id'], '')} · {local:%d.%m.%Y, %H:%M}")
+        # Subject/body come from the page's staff-authored overrides (with merge
+        # tags substituted) or the built-in default. The customer name is escaped
+        # inside the renderer before it lands in the HTML body (spec §7).
+        subject, body = render_confirmation_email(
+            name=name, booked_lines=booked_lines,
+            confirm_link=confirm_link, cancel_link=cancel_link,
+            email_subject=page.get('email_subject'), email_body=page.get('email_body'),
         )
-        send_customer_message('email', email, 'Confirmă programarea la test drive', body)
+        send_customer_message('email', email, subject, body)
         data = {'group_id': group_id, 'booked': booked, 'unavailable': unavailable}
         # Backward-compatible single-slot shape (a group of one): the original
         # callers/tests read booking_id + status directly off the response.

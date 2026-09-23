@@ -800,6 +800,32 @@ class FoiParcursRepository(BaseRepository):
         )
         return self.query_all(sql, tuple(params))
 
+    def find_event_reservation(self, vin: str, frm, to) -> list:
+        """Event TD availability windows that RESERVE `vin` during [frm, to].
+
+        A car assigned (is_active) to an active Event TD page (mkt_td_booking_pages
+        in status draft/open, not deleted) is committed to that event for the
+        page's availability windows, so a CLASSIC driving-session form must not
+        book it for an overlapping time. Windows are stored as local wall-clock
+        (window_date + start/end time) and materialized in Europe/Bucharest, so we
+        convert them the same way before comparing against the classic session's
+        [frm, to]. Overlap mirrors find_conflicts (inclusive): win_start <= to AND
+        win_end >= frm. Returns the reserving windows (page slug/title + window
+        date/time) so the caller can explain the block; empty when the car is
+        free for that time."""
+        return self.query_all(
+            "SELECT p.id AS page_id, p.slug, p.title, "
+            "       w.window_date, w.start_time, w.end_time "
+            "FROM mkt_td_booking_cars c "
+            "JOIN mkt_td_booking_pages p ON p.id = c.page_id "
+            "JOIN mkt_td_booking_windows w ON w.page_id = c.page_id "
+            "WHERE c.vin = %s AND c.is_active "
+            "  AND p.deleted_at IS NULL AND p.status IN ('draft','open') "
+            "  AND (w.window_date + w.start_time) AT TIME ZONE 'Europe/Bucharest' <= %s "
+            "  AND (w.window_date + w.end_time)   AT TIME ZONE 'Europe/Bucharest' >= %s "
+            "ORDER BY w.window_date, w.start_time",
+            (vin, to, frm))
+
     def get_open_session(self, vin: str, exclude_id: int | None = None) -> dict | None:
         """The earliest genuinely-OUT live session for a car: a live Test Drive
         (source='td_form') that's been handed over (status='FILLED') and not yet
