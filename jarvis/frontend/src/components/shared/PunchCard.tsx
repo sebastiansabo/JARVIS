@@ -6,6 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { checkinApi } from '@/api/checkin'
 import type { CheckinStatus, PunchResult } from '@/types/checkin'
+import { emit, tappedEvent, succeededEvent, rejectedEvent } from '@/lib/punchTelemetry'
 
 // Promise wrapper around the browser Geolocation API so we can `await` the fix
 // on the button click (no permission prompt until the user actually punches).
@@ -48,11 +49,47 @@ export function PunchCard() {
 
   const doPunch = async (gps: boolean) => {
     setResult(null)
-    if (!gps) return punch.mutate({})
-    setLocating(true)
-    const pos = await getPosition()
-    setLocating(false)
-    punch.mutate(pos ? { lat: pos.lat, lng: pos.lng } : {})
+    const intent = (status?.next_direction || 'IN') === 'OUT' ? 'OUT' : 'IN'
+    // Record the tap at press time so an attempt abandoned during GPS
+    // acquisition is still captured.
+    emit(tappedEvent(intent, gps ? 'gps' : 'wifi'))
+    const startedAt = Date.now()
+    let coords: { lat?: number; lng?: number } = {}
+    let gpsUnavailable = false
+    if (gps) {
+      setLocating(true)
+      const pos = await getPosition()
+      setLocating(false)
+      if (pos) coords = { lat: pos.lat, lng: pos.lng }
+      else gpsUnavailable = true // GPS failed/denied — falls through to IP match
+    }
+    // The mutation's onSuccess/onError still drive the UI banner; the try/catch
+    // here only mirrors the outcome into telemetry (mutateAsync also rejects on
+    // a non-2xx, which we handle). The GPS-fallback fact rides on the outcome.
+    try {
+      const r = await punch.mutateAsync(coords)
+      if (r.success) {
+        emit(succeededEvent({
+          direction: r.direction === 'OUT' ? 'OUT' : 'IN',
+          location: r.location,
+          distance: r.distance ?? undefined,
+          durationMs: Date.now() - startedAt,
+          gpsUnavailable,
+        }))
+      } else {
+        emit(rejectedEvent({ status: 200, message: r.error, gpsUnavailable }))
+      }
+    } catch (err: any) {
+      const d = err?.data || err?.response?.data || {}
+      emit(rejectedEvent({
+        status: err?.status,
+        message: d.error || err?.message,
+        distance: d.distance,
+        location: d.location,
+        allowedRadius: d.allowed_radius,
+        gpsUnavailable,
+      }))
+    }
   }
 
   const busy = locating || punch.isPending
