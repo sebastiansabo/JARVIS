@@ -86,7 +86,7 @@ def _car_public(car) -> dict:
 def submit_booking(slug):
     """Submit a booking request for one OR several (car+interval) slots as one
     group. Body: {slot_ids: [..] | slot_id, name, phone, email, utm, license,
-    license_expiry?, gdpr_consent, conditions_accepted}.
+    license_expiry?, license_photo?, gdpr_consent, conditions_accepted}.
 
     The service re-validates the page/slots server-side from `slug`; the
     company/car/advisor are never taken from the body. Slots picked together
@@ -97,6 +97,8 @@ def submit_booking(slug):
     serie & number must be present and both consents (GDPR + test-drive
     conditions) must be explicitly given, else 422 with a Romanian message. They
     ride along in extra_answers and are mapped onto the fișă at confirm.
+    `license_photo` (a base64 data-URL string) is OPTIONAL and never gates the
+    submit -- it rides along the same way when present.
     """
     data = request.get_json(silent=True) or {}
     # Accept a list (multi-car/multi-interval) or a lone slot_id (a group of one).
@@ -120,6 +122,12 @@ def submit_booking(slug):
         return jsonify({'error': 'Trebuie să fiți de acord cu prelucrarea datelor personale (GDPR).'}), 422
     if not data.get('conditions_accepted'):
         return jsonify({'error': 'Trebuie să acceptați condițiile de test drive.'}), 422
+    # Driving-licence photo is OPTIONAL (unlike the fields above, it never
+    # blocks the submit) -- a base64 data-URL string, same no-object-storage
+    # pattern as the staff TD flow's driver_license_photo column.
+    raw_photo = data.get('license_photo')
+    license_photo = raw_photo.strip() if isinstance(raw_photo, str) else None
+    license_photo = license_photo or None
     extra_answers = {
         'license': license_str,
         'license_expiry': (data.get('license_expiry') or '').strip() or None,
@@ -131,7 +139,8 @@ def submit_booking(slug):
         utm=data.get('utm') or {}, ip=_client_ip(),
         user_agent=request.headers.get('User-Agent', ''),
         base_url=request.host_url.rstrip('/'),
-        extra_answers=extra_answers, slot_ids=slot_ids)
+        extra_answers=extra_answers, slot_ids=slot_ids,
+        license_photo=license_photo)
     return _result_response(result)
 
 
