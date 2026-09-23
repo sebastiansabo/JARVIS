@@ -54,7 +54,7 @@ def get_page(slug):
     page = _repo.get_page_by_slug(slug)
     if not page or page['status'] != 'open':
         return jsonify({'error': 'not found'}), 404
-    cars = _repo.list_cars(page['id'])
+    cars = _repo.list_cars_with_vehicle(page['id'])
     slots = _slots.available_slots(page['id'], datetime.now(timezone.utc))
     return jsonify({
         'page': {
@@ -62,18 +62,37 @@ def get_page(slug):
             'intro': page.get('intro'),
             'thank_you': page.get('thank_you'),
             'company_name': _repo.get_company_name(page['company_id']),
+            'gdpr_text': _repo.get_company_gdpr_text(page['company_id']),
         },
-        'cars': [{'id': c['id'], 'vin': c['vin']} for c in cars],
+        'cars': [_car_public(c) for c in cars],
         'slots': slots,
     }), 200
 
 
+def _car_public(car) -> dict:
+    """Shape a joined car row for the public page: a friendly make/model label
+    (VIN fallback when the fleet row has no make/model) and an optional plate."""
+    label = f"{(car.get('mark') or '').strip()} {(car.get('model') or '').strip()}".strip()
+    return {
+        'id': car['id'],
+        'vin': car['vin'],
+        'label': label or car['vin'],
+        'plate': car.get('registration_number'),
+    }
+
+
 @td_public_bp.route('/pages/<slug>/bookings', methods=['POST'])
 def submit_booking(slug):
-    """Submit a booking request. Body: {slot_id, name, phone, email, utm}.
+    """Submit a booking request. Body: {slot_id, name, phone, email, utm,
+    license, license_expiry?, gdpr_consent, conditions_accepted}.
 
     The service re-validates the page/slot server-side from `slug`; the
     company/car/advisor are never taken from the body.
+
+    Legal fields are required for a customer-facing booking: the driving-licence
+    serie & number must be present and both consents (GDPR + test-drive
+    conditions) must be explicitly given, else 422 with a Romanian message. They
+    ride along in extra_answers and are mapped onto the fișă at confirm.
     """
     data = request.get_json(silent=True) or {}
     required = ('slot_id', 'name', 'phone', 'email')
@@ -83,10 +102,23 @@ def submit_booking(slug):
         slot_id = int(data['slot_id'])
     except (TypeError, ValueError):
         return jsonify({'error': 'invalid slot_id'}), 400
+    license_str = (data.get('license') or '').strip()
+    if not license_str:
+        return jsonify({'error': 'Seria și numărul permisului de conducere sunt obligatorii.'}), 422
+    if not data.get('gdpr_consent'):
+        return jsonify({'error': 'Trebuie să fiți de acord cu prelucrarea datelor personale (GDPR).'}), 422
+    if not data.get('conditions_accepted'):
+        return jsonify({'error': 'Trebuie să acceptați condițiile de test drive.'}), 422
+    extra_answers = {
+        'license': license_str,
+        'license_expiry': (data.get('license_expiry') or '').strip() or None,
+        'gdpr_consent': True,
+        'conditions_accepted': True,
+    }
     result = _svc.submit_booking(
         slug, slot_id, data['name'], data['phone'], data['email'],
         data.get('utm') or {}, _client_ip(), request.headers.get('User-Agent', ''),
-        request.host_url.rstrip('/'))
+        request.host_url.rstrip('/'), extra_answers=extra_answers)
     return _result_response(result)
 
 

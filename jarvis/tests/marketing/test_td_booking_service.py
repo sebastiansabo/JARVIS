@@ -245,6 +245,36 @@ def test_confirm_creates_planned_fp(open_page):
     assert b['status'] == 'confirmed' and b['foi_de_parcurs_id'] == cr.data['fp_id']
 
 
+def test_confirm_maps_licence_and_consents_onto_fp(open_page):
+    """A booking submitted with the legal fields (driving licence + GDPR /
+    conditions consents) maps them onto the confirmed fișă and mirrors the
+    licence onto the CRM client."""
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(
+        _SLUG, slot['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x',
+        extra_answers={'license': 'AB 123456', 'license_expiry': '2030-05-01',
+                       'gdpr_consent': True, 'conditions_accepted': True})
+    assert r.success and r.status_code == 201
+    # Stored on the booking as extra_answers.
+    ea = repo.get_booking(r.data['booking_id'])['extra_answers']
+    assert ea['license'] == 'AB 123456'
+
+    cr = svc.confirm_booking(make_booking_token(r.data['booking_id'], 'confirm', current_app.secret_key))
+    assert cr.success and cr.status_code == 200
+
+    fp = repo.query_one('SELECT * FROM foi_de_parcurs WHERE id=%s', (cr.data['fp_id'],))
+    assert fp['driver_license_number'] == 'AB 123456'
+    assert fp['driver_license_expiry'] == '2030-05-01'
+    assert fp['gdpr_consent'] is True
+    assert fp['general_conditions_accepted'] is True
+    assert fp['general_conditions_accepted_at'] is not None
+
+    # The licence is mirrored onto the (newly-created) CRM client.
+    crm = repo.query_one('SELECT driver_license_number FROM crm_clients WHERE phone=%s', (_PHONE,))
+    assert crm and crm['driver_license_number'] == 'AB 123456'
+
+
 def test_cancel_deletes_planned_fp_and_frees_slot(open_page):
     svc, p, c, sent = open_page
     slot = _first_slot(svc, p)
