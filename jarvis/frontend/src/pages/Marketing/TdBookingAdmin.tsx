@@ -185,7 +185,7 @@ export default function TdBookingAdmin({ companyId = 0 }: { companyId?: number }
             </div>
           </div>
 
-          <TdCarsPanel pageId={selectedPage.id} users={userList} />
+          <TdCarsPanel pageId={selectedPage.id} companyId={selectedPage.company_id} users={userList} />
           <TdWindowsPanel pageId={selectedPage.id} />
           <TdBookingsPanel pageId={selectedPage.id} users={userList} />
         </Card>
