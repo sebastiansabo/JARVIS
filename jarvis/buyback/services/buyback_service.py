@@ -103,12 +103,16 @@ class BuyBackService:
             payload.get('valid_until'), payload.get('notes'), actor,
         )
 
-        self.transition(
+        record = self.transition(
             record, _ROUND_TARGET_STATUS[offer_type], actor,
             {'offer_id': offer['id']},
         )
 
         if self.notifier is not None:
+            # Hand the notifier the FRESH record (post-transition status),
+            # not the stale pre-offer one — the email/sales hooks render
+            # status, so they must see INITIAL_OFFER/FINAL_OFFER, not the
+            # PENDING_EVALUATION/INSPECTION the record carried on entry.
             self.notifier.send_offer_email(record, offer)
             self.notifier.notify_sales(record)
 
@@ -118,20 +122,27 @@ class BuyBackService:
         """Record the seller's `decision` ('accepted'/'declined') on
         `offer_id`, then advance the record's status accordingly. Guards
         against acting on anything but the record's single latest offer,
-        only while it's still 'pending', and only while the record is
-        actually sitting in an offer-awaiting-decision status — this is
-        what rejects stale/superseded or already-decided offer links."""
+        only while it's still 'pending', only while the record is actually
+        sitting in an offer-awaiting-decision status, and only for a
+        recognized `decision` value — this is what rejects stale/superseded
+        or already-decided offer links. The `decision` membership check is
+        part of THIS pre-mutation guard on purpose: validating it after the
+        DB write would persist a bogus client_decision (e.g. 'maybe') and
+        strand the offer permanently non-'pending', unreachable by this very
+        guard on any retry (mirrors how post_offer validates offer_type
+        before it mutates)."""
         latest = self.offers.latest_for_record(record['id'])
         if (
-            latest is None
+            decision not in ('accepted', 'declined')
+            or latest is None
             or latest['id'] != offer_id
             or latest['client_decision'] != 'pending'
             or record['status'] not in (lifecycle.INITIAL_OFFER, lifecycle.FINAL_OFFER)
         ):
             raise ValueError(
-                f"Cannot record decision on offer {offer_id} for record "
-                f"{record['id']}: not the latest pending offer, or record "
-                f"is not awaiting a decision"
+                f"Cannot record decision {decision!r} on offer {offer_id} for "
+                f"record {record['id']}: unrecognized decision, or not the "
+                f"latest pending offer, or record is not awaiting a decision"
             )
 
         self.offers.record_decision(offer_id, decision, actor, decline_reason)
