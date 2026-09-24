@@ -38,6 +38,7 @@ export interface User {
   can_adjust_punches: boolean
   can_access_carpark: boolean
   can_edit_carpark: boolean
+  can_access_buyback: boolean
   can_delete_carpark: boolean
   can_access_carpark_mobile: boolean
   can_view_carpark_finance: boolean
