@@ -65,6 +65,9 @@ const CarParkPromotions = lazy(() => import('./pages/CarPark/Promotions'))
 const CarParkDashboard = lazy(() => import('./pages/CarPark/Dashboard'))
 const Ticketing = lazy(() => import('./pages/Ticketing'))
 const TicketDetail = lazy(() => import('./pages/Ticketing/TicketDetail'))
+const BuyBack = lazy(() => import('./pages/BuyBack'))
+const BuyBackForm = lazy(() => import('./pages/BuyBack/BuyBackForm'))
+const BuyBackDetail = lazy(() => import('./pages/BuyBack/BuyBackDetail'))
 const FoiParcurs = lazy(() => import('./pages/FoiParcurs'))
 const TestDriveForm = lazy(() => import('./pages/FoiParcurs/TestDriveForm'))
 const InternalSessionForm = lazy(() => import('./pages/FoiParcurs/InternalSessionForm'))
@@ -270,6 +273,11 @@ export default function App() {
         <Route path="foi-parcurs/test-drive" element={<Guard flag="can_access_carpark"><SuspensePage><TestDriveForm /></SuspensePage></Guard>} />
         <Route path="foi-parcurs/internal" element={<Guard flag="can_access_carpark"><SuspensePage><InternalSessionForm /></SuspensePage></Guard>} />
         <Route path="foi-parcurs/test-drive/:id/return" element={<Guard flag="can_access_carpark"><SuspensePage><TestDriveReturn /></SuspensePage></Guard>} />
+
+        {/* BuyBack — requires can_access_buyback */}
+        <Route path="buyback" element={<Guard flag="can_access_buyback"><SuspensePage><BuyBack /></SuspensePage></Guard>} />
+        <Route path="buyback/new" element={<Guard flag="can_access_buyback"><SuspensePage><BuyBackForm /></SuspensePage></Guard>} />
+        <Route path="buyback/:id" element={<Guard flag="can_access_buyback"><SuspensePage><BuyBackDetail /></SuspensePage></Guard>} />
 
         {/* Service Catalog */}
         <Route path="service/catalog" element={<SuspensePage><ServiceCatalog /></SuspensePage>} />
