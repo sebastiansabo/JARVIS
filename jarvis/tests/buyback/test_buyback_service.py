@@ -125,6 +125,74 @@ def test_decision_on_stale_offer_rejected(require_real_db):
     assert RecordRepository().get_by_id(rec['id'])['status'] == lifecycle.INSPECTION
 
 
+def test_bad_decision_value_raises_and_leaves_offer_pending(require_real_db):
+    # A bogus decision value must be rejected BEFORE any DB mutation, so the
+    # offer stays 'pending' and remains actionable. This directly guards the
+    # bug where record_decision wrote the offer first, then raised on the
+    # unrecognized value — permanently stranding it non-'pending'.
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    offer = svc.post_offer(rec, 'initial', {'amount_eur': 1000, 'vat_status': 'no_vat'}, actor=1)
+
+    rec2 = RecordRepository().get_by_id(rec['id'])
+    try:
+        svc.record_decision(rec2, offer['id'], 'maybe', actor=2)
+        assert False, 'expected ValueError (unrecognized decision value)'
+    except ValueError:
+        pass
+
+    # The offer must be untouched: still pending, no decider stamped.
+    fresh_offer = OfferRepository().get(offer['id'])
+    assert fresh_offer['client_decision'] == 'pending'
+    assert fresh_offer['decided_by'] is None
+    assert fresh_offer['decided_at'] is None
+    # And the record must not have advanced off INITIAL_OFFER.
+    assert RecordRepository().get_by_id(rec['id'])['status'] == lifecycle.INITIAL_OFFER
+
+
+def test_decision_with_no_offers_raises(require_real_db):
+    # latest_for_record() is None (record has never had an offer) -> raise,
+    # rather than dereferencing None.
+    svc = BuyBackService(notifier=None)
+    rec = RecordRepository().get_by_id(_record()['id'])
+    try:
+        svc.record_decision(rec, 123456789, 'accepted', actor=2)
+        assert False, 'expected ValueError (no offer exists for record)'
+    except ValueError:
+        pass
+
+
+def test_decision_on_superseded_offer_raises(require_real_db):
+    # A newer pending offer exists; deciding the OLDER offer_id must hit the
+    # `latest['id'] != offer_id` branch and raise. To get two offers on one
+    # record without tripping one-pending-per-record via post_offer, the
+    # first offer is decided (accepted -> INSPECTION), then a second (final)
+    # offer is posted; the record is now FINAL_OFFER with the final offer as
+    # latest+pending, but the first offer_id is stale.
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    first = svc.post_offer(rec, 'initial', {'amount_eur': 1000, 'vat_status': 'no_vat'}, actor=1)
+
+    rec = RecordRepository().get_by_id(rec['id'])
+    svc.record_decision(rec, first['id'], 'accepted', actor=2)  # -> INSPECTION
+
+    rec = RecordRepository().get_by_id(rec['id'])
+    second = svc.post_offer(rec, 'final', {'amount_eur': 900, 'vat_status': 'no_vat'}, actor=1)
+    assert OfferRepository().latest_for_record(rec['id'])['id'] == second['id']
+
+    rec = RecordRepository().get_by_id(rec['id'])  # FINAL_OFFER
+    try:
+        # deciding the older, superseded offer must raise (not the latest)
+        svc.record_decision(rec, first['id'], 'accepted', actor=2)
+        assert False, 'expected ValueError (superseded / non-latest offer)'
+    except ValueError:
+        pass
+
+    # The still-latest final offer must remain untouched/pending.
+    assert OfferRepository().get(second['id'])['client_decision'] == 'pending'
+    assert RecordRepository().get_by_id(rec['id'])['status'] == lifecycle.FINAL_OFFER
+
+
 def test_decision_declined_initial_moves_to_lost_with_reason(require_real_db):
     svc = BuyBackService(notifier=None)
     rec = _record()
@@ -184,17 +252,19 @@ def test_notifier_called_on_post_offer_when_present(require_real_db):
 
     class FakeNotifier:
         def send_offer_email(self, record, offer):
-            calls['email'].append((record['id'], offer['id']))
+            calls['email'].append((record['id'], offer['id'], record['status']))
 
         def notify_sales(self, record):
-            calls['sales'].append(record['id'])
+            calls['sales'].append((record['id'], record['status']))
 
     svc = BuyBackService(notifier=FakeNotifier())
     rec = _record()
     offer = svc.post_offer(rec, 'initial', {'amount_eur': 1000, 'vat_status': 'no_vat'}, actor=1)
 
-    assert calls['email'] == [(rec['id'], offer['id'])]
-    assert calls['sales'] == [rec['id']]
+    # The notifier must see the FRESH post-transition status (INITIAL_OFFER),
+    # not the stale PENDING_EVALUATION the record carried into post_offer.
+    assert calls['email'] == [(rec['id'], offer['id'], lifecycle.INITIAL_OFFER)]
+    assert calls['sales'] == [(rec['id'], lifecycle.INITIAL_OFFER)]
 
 
 def test_no_notifier_does_not_raise(require_real_db):
