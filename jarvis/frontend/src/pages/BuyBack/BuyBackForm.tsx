@@ -652,6 +652,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
               <Input
                 type="number"
                 inputMode="numeric"
+                min={0}
                 value={form.mileage_km}
                 onChange={(e) => set('mileage_km', e.target.value)}
                 placeholder="85000"
@@ -662,6 +663,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
               <Input
                 type="number"
                 inputMode="numeric"
+                min={0}
                 value={form.engine_capacity_cm3}
                 onChange={(e) => set('engine_capacity_cm3', e.target.value)}
                 placeholder="1995"
@@ -705,6 +707,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
               <Input
                 type="number"
                 inputMode="numeric"
+                min={0}
                 value={form.keys_count}
                 onChange={(e) => set('keys_count', e.target.value)}
                 placeholder="2"
@@ -885,7 +888,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
 
       <div className="flex justify-end gap-2 pb-8">
         <Button variant="outline" onClick={handleBack}>Anulează</Button>
-        <Button onClick={handleSubmit} disabled={createMutation.isPending}>
+        <Button onClick={handleSubmit} disabled={createMutation.isPending || !canSubmit}>
           {createMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
           Trimite Solicitarea
         </Button>
