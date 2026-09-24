@@ -33,6 +33,7 @@ from .domains.schema_controlling_bab import create_schema_controlling_bab
 from .domains.schema_vouchers import create_schema_vouchers
 from .domains.schema_evaluation360 import create_schema_evaluation360
 from .domains.schema_happy import create_schema_happy
+from .domains.schema_buyback import create_schema_buyback
 from .version_manager import run_pending_migrations
 
 
@@ -58,6 +59,7 @@ def create_schema(conn, cursor):
     create_schema_forms(conn, cursor)
     create_schema_digest(conn, cursor)
     create_schema_carpark(conn, cursor)
+    create_schema_buyback(conn, cursor)
     create_schema_sincron(conn, cursor)
     create_schema_divisions(conn, cursor)
     create_schema_cost_centers(conn, cursor)
