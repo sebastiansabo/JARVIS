@@ -72,7 +72,7 @@ export default function TdCarsPanel({ pageId, companyId, users }: {
   // page -- the backend has UNIQUE(page_id, vin) and would 409 on a repeat.
   const addedVins = useMemo(() => new Set(cars.map((c) => c.vin)), [cars])
   const availableVehicles = useMemo(
-    () => allVehicles.filter((v) => v.company_id === companyId && !addedVins.has(v.vin)),
+    () => allVehicles.filter((v) => v.company_id === companyId && v.is_active !== false && !addedVins.has(v.vin)),
     [allVehicles, companyId, addedVins],
   )
 

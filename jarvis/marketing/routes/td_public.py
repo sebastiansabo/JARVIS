@@ -63,6 +63,9 @@ def get_page(slug):
             'thank_you': page.get('thank_you'),
             'conditions_text': page.get('conditions_text'),
             'logo_url': page.get('logo_url'),
+            'opens_at': page.get('opens_at'),
+            'closes_at': page.get('closes_at'),
+            'require_license_photo': bool(page.get('require_license_photo')),
             'company_name': _repo.get_company_name(page['company_id']),
             'gdpr_text': _repo.get_company_gdpr_text(page['company_id']),
         },
@@ -135,25 +138,24 @@ def submit_booking(slug):
         'gdpr_consent': True,
         'conditions_accepted': True,
     }
-    # Ranked backup time preferences (2nd/3rd/4th choice) per car -- preference
-    # only, they reserve NO slot; captured on the booking so the team can act on
-    # them. Trust-but-bound: cap the structure so a crafted body can't bloat the
-    # JSONB row (already human-readable strings from the client).
+    # Ranked preferences (2nd/3rd/4th option, GLOBAL order) -- preference only,
+    # they reserve NO slot; captured on the booking so the team can act on them.
+    # Flat {car, plate, time} in rank order. Trust-but-bound: cap the structure so
+    # a crafted body can't bloat the JSONB row (already human-readable strings).
     raw_pref = data.get('preferred')
     if isinstance(raw_pref, list) and raw_pref:
         cleaned = []
-        for item in raw_pref[:12]:
+        for item in raw_pref[:8]:
             if not isinstance(item, dict):
                 continue
             car = str(item.get('car') or '')[:120]
-            raw_choices = item.get('choices')
-            choices = [str(c)[:40] for c in raw_choices[:6]] if isinstance(raw_choices, list) else []
+            time = str(item.get('time') or '')[:60]
             plate = item.get('plate')
-            if car and choices:
+            if car and time:
                 cleaned.append({
                     'car': car,
                     'plate': (str(plate)[:32] if plate else None),
-                    'choices': choices,
+                    'time': time,
                 })
         if cleaned:
             extra_answers['preferred_times'] = cleaned

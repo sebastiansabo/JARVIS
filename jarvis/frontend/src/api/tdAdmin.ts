@@ -23,6 +23,7 @@ export interface TdAdminPage {
   logo_url?: string | null
   email_subject?: string | null
   email_body?: string | null
+  require_license_photo?: boolean
   notify_user_ids: number[] | null
   created_by: number | null
   created_at: string

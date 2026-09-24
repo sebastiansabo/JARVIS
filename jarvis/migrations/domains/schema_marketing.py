@@ -631,6 +631,7 @@ def create_schema_marketing(conn, cursor):
             logo_url TEXT,
             email_subject TEXT,
             email_body TEXT,
+            require_license_photo BOOLEAN NOT NULL DEFAULT FALSE,
             notify_user_ids INTEGER[] DEFAULT '{}',
             created_by INTEGER REFERENCES users(id),
             created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -675,6 +676,9 @@ def create_schema_marketing(conn, cursor):
     # gets the other (each ALTER is independently idempotent).
     cursor.execute("ALTER TABLE mkt_td_booking_pages ADD COLUMN IF NOT EXISTS email_subject TEXT")
     cursor.execute("ALTER TABLE mkt_td_booking_pages ADD COLUMN IF NOT EXISTS email_body TEXT")
+    # Per-event: is the driving-licence photo mandatory on the public form?
+    cursor.execute("ALTER TABLE mkt_td_booking_pages ADD COLUMN IF NOT EXISTS "
+                   "require_license_photo BOOLEAN NOT NULL DEFAULT FALSE")
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS mkt_td_booking_cars (
