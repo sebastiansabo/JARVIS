@@ -18,6 +18,7 @@ vi.mock('@/api/buyback', () => ({
             seller_name: 'Ion',
             advisor_name: 'Maria',
             client_asking_price_eur: 10000,
+            purchase_price_eur: 9500,
             created_at: '2026-09-24',
           },
         ],
@@ -48,5 +49,7 @@ describe('BuyBack list page', () => {
     wrap(<BuyBack />)
     expect(await screen.findByText('BMW 320d')).toBeInTheDocument()
     expect(screen.getByText('Achiziționat')).toBeInTheDocument()
+    // purchase_price_eur (9500) renders in the "Preț achiziție €" column, ro-RO formatted
+    expect(screen.getByText((9500).toLocaleString('ro-RO'))).toBeInTheDocument()
   })
 })
