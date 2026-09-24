@@ -328,6 +328,98 @@ def test_email_surfaces_even_without_crm_link(open_page, monkeypatch):
     assert detail['client_email'] == _EMAIL      # RED until COALESCE(fp.client_email, ...)
 
 
+def test_admin_delete_cancels_booking_and_frees_planned_fp(open_page):
+    """Admin 'delete reservation' (even confirmed): soft-cancel the booking (frees
+    the slot -- 'cancelled' is outside the active partial-unique index) and
+    hard-delete its PLANNED fișă (mirrors the public cancel cascade)."""
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(_SLUG, slot['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x')
+    cr = svc.confirm_booking(make_booking_token(r.data['booking_id'], 'confirm', current_app.secret_key))
+    fp_id = cr.data['fp_id']
+
+    booking = svc.repo.get_booking(r.data['booking_id'])
+    svc.admin_delete_booking(booking)
+
+    assert svc.repo.get_booking(r.data['booking_id'])['status'] == 'cancelled'
+    assert svc.repo.query_one('SELECT id FROM foi_de_parcurs WHERE id=%s', (fp_id,)) is None
+
+
+def test_admin_update_contact_cascades_to_fp(open_page):
+    """Editing the customer's contact updates the booking AND the linked fișă's
+    client identity columns (name/phone/email) so the driving session reflects it."""
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(_SLUG, slot['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x')
+    cr = svc.confirm_booking(make_booking_token(r.data['booking_id'], 'confirm', current_app.secret_key))
+    fp_id = cr.data['fp_id']
+
+    booking = svc.repo.get_booking(r.data['booking_id'])
+    svc.admin_update_contact(booking, name='Ana Maria Pop', phone='+40722000099', email='ana.pop@ex.com')
+
+    b = svc.repo.get_booking(r.data['booking_id'])
+    assert b['customer_name'] == 'Ana Maria Pop'
+    assert b['customer_phone_e164'] == '+40722000099'   # E.164 (composed by the FE, guarded server-side)
+    assert b['customer_email'] == 'ana.pop@ex.com'
+    fp = svc.repo.query_one('SELECT client_name, client_phone, client_email FROM foi_de_parcurs WHERE id=%s', (fp_id,))
+    assert fp['client_name'] == 'Ana Maria Pop'
+    assert fp['client_phone'] == '+40722000099'
+    assert fp['client_email'] == 'ana.pop@ex.com'
+
+
+def test_admin_set_status_confirm_then_cancel(open_page):
+    """Staff can force a pending booking to confirmed (creates the PLANNED fișă,
+    no email link) and back to cancelled (frees it) from the admin."""
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(_SLUG, slot['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x')
+    bid = r.data['booking_id']
+
+    svc.admin_set_status(svc.repo.get_booking(bid), 'confirmed')
+    b = svc.repo.get_booking(bid)
+    assert b['status'] == 'confirmed' and b['foi_de_parcurs_id'] is not None
+    fp_id = b['foi_de_parcurs_id']
+
+    svc.admin_set_status(svc.repo.get_booking(bid), 'cancelled')
+    assert svc.repo.get_booking(bid)['status'] == 'cancelled'
+    assert svc.repo.query_one('SELECT id FROM foi_de_parcurs WHERE id=%s', (fp_id,)) is None
+
+
+def test_admin_reassign_slot_moves_confirmed_booking_and_rebuilds_fp(open_page):
+    """Reassign a confirmed booking to a different slot (a slot = car+interval, so
+    this covers both time-move and car-swap): the booking re-points at the new
+    slot/car and its PLANNED fișă is rebuilt at the new vin/time (old one freed)."""
+    svc, p, c, sent = open_page
+    s0, s2 = _two_nonadjacent_slots(svc, p)
+    r = svc.submit_booking(_SLUG, s0['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x')
+    cr = svc.confirm_booking(make_booking_token(r.data['booking_id'], 'confirm', current_app.secret_key))
+    old_fp = cr.data['fp_id']
+
+    booking = svc.repo.get_booking(r.data['booking_id'])
+    svc.admin_reassign_slot(booking, s2['id'])
+
+    b = svc.repo.get_booking(r.data['booking_id'])
+    assert b['slot_id'] == s2['id'] and b['car_id'] == s2['car_id']
+    assert svc.repo.query_one('SELECT id FROM foi_de_parcurs WHERE id=%s', (old_fp,)) is None
+    new_fp = svc.repo.query_one('SELECT vin FROM foi_de_parcurs WHERE id=%s', (b['foi_de_parcurs_id'],))
+    assert new_fp is not None and new_fp['vin'] == s2['vin']
+    assert b['foi_de_parcurs_id'] != old_fp
+
+
+def test_admin_reassign_blocked_when_drive_in_progress(open_page):
+    """Reassigning a booking whose fișă is already FILLED (car handed over) is
+    refused with a clean TdConflict, not an uncaught contract_id UniqueViolation."""
+    from marketing.repositories.td_booking_repository import TdConflict
+    svc, p, c, sent = open_page
+    s0, s2 = _two_nonadjacent_slots(svc, p)
+    r = svc.submit_booking(_SLUG, s0['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x')
+    cr = svc.confirm_booking(make_booking_token(r.data['booking_id'], 'confirm', current_app.secret_key))
+    svc.fp.execute("UPDATE foi_de_parcurs SET status='FILLED' WHERE id=%s", (cr.data['fp_id'],))
+    booking = svc.repo.get_booking(r.data['booking_id'])
+    with pytest.raises(TdConflict):
+        svc.admin_reassign_slot(booking, s2['id'])
+
+
 _PHOTO_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
 

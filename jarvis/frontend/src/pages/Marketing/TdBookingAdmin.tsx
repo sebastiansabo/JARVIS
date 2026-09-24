@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { usePersistedState } from '@/lib/utils'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { MultiSelectPills } from '@/components/shared/MultiSelectPills'
 import { RichTextEditor } from '@/components/shared/RichTextEditor'
@@ -240,7 +241,11 @@ export default function TdBookingAdmin({ companyId: initialCompanyId = 0 }: { co
   const [companyId, setCompanyId] = useState(initialCompanyId)
   const [createOpen, setCreateOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [selectedPageId, setSelectedPageId] = useState<number | null>(null)
+  // Persisted so a refresh (or nav away + back) keeps the staff on the same event
+  // + tab instead of dropping to the pages list. A stale id (page gone / other
+  // company) resolves to null below → the list, gracefully.
+  const [selectedPageId, setSelectedPageId] = usePersistedState<number | null>('td-admin-page', null)
+  const [adminTab, setAdminTab] = usePersistedState('td-admin-tab', 'bookings')
   const [search, setSearch] = useState('')
 
   const { data: companiesData } = useQuery({
@@ -380,9 +385,9 @@ export default function TdBookingAdmin({ companyId: initialCompanyId = 0 }: { co
             </div>
 
             {/* Rezervări first (the day-to-day view); Detalii eveniment holds the
-                cars + availability config. Keyed by page id so switching events
-                resets to Rezervări. Routes are unchanged. */}
-            <Tabs key={selectedPage.id} defaultValue="bookings">
+                cars + availability config. Controlled + persisted (usePersistedState)
+                so the active tab survives a refresh / nav away. */}
+            <Tabs value={adminTab} onValueChange={setAdminTab}>
               <TabsList>
                 <TabsTrigger value="bookings">Rezervări</TabsTrigger>
                 <TabsTrigger value="waitlist">Listă de așteptare</TabsTrigger>
