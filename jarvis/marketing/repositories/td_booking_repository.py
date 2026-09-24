@@ -315,6 +315,43 @@ class TdBookingRepository(BaseRepository):
             (vin, now, to, frm))
         return row is not None
 
+    # ---- waitlist ----
+    _WAITLIST_COLS = ('page_id', 'customer_name', 'customer_phone_e164',
+                      'customer_email', 'preferred_car_vin', 'note',
+                      'gdpr_consent', 'ip')
+
+    def create_waitlist_entry(self, data: dict) -> dict:
+        fields = {k: data.get(k) for k in self._WAITLIST_COLS if k in data}
+        cols = ', '.join(fields)
+        ph = ', '.join(['%s'] * len(fields))
+        return self.execute(
+            f'INSERT INTO mkt_td_waitlist ({cols}) VALUES ({ph}) RETURNING *',
+            tuple(fields.values()), returning=True)
+
+    def list_waitlist(self, page_id: int) -> list:
+        return self.query_all(
+            'SELECT * FROM mkt_td_waitlist WHERE page_id=%s ORDER BY created_at DESC', (page_id,))
+
+    def count_recent_waitlist_by_ip(self, ip, since) -> int:
+        row = self.query_one(
+            'SELECT COUNT(*) AS n FROM mkt_td_waitlist WHERE ip=%s AND created_at >= %s',
+            (ip, since))
+        return int(row['n']) if row else 0
+
+    def find_active_waitlist(self, page_id: int, phone: str) -> dict:
+        """The still-open ('new') entry for this phone on this event, if any --
+        used to keep a repeat submit idempotent instead of stacking rows."""
+        return self.query_one(
+            "SELECT * FROM mkt_td_waitlist WHERE page_id=%s AND customer_phone_e164=%s "
+            "AND status='new' ORDER BY created_at DESC LIMIT 1", (page_id, phone))
+
+    def set_waitlist_status(self, wid: int, status: str, handled_by=None) -> dict:
+        return self.execute(
+            "UPDATE mkt_td_waitlist SET status=%s, "
+            "handled_at = CASE WHEN %s = 'new' THEN NULL ELSE NOW() END, "
+            "handled_by = %s WHERE id=%s RETURNING *",
+            (status, status, handled_by, wid), returning=True)
+
     # ---- atomic confirm (race-safe) ----
     # These three checks together are the "3-way availability" recheck. The overlap
     # SQL mirrors FoiParcursRepository.find_conflicts (foi_parcurs_repository.py:725):

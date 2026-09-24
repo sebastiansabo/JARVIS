@@ -268,6 +268,39 @@ class TdBookingService:
             data['status'] = 'pending_confirm'
         return ServiceResult(True, 201, data=data)
 
+    def submit_waitlist(self, slug, *, name=None, phone=None, email=None,
+                        preferred_car_vin=None, note=None, gdpr_consent=False, ip=None):
+        """Join the event's waiting list -- preference only, reserves NO slot.
+
+        Mirrors submit_booking's PUBLIC guards (page open, phone normalized to
+        E.164, GDPR consent, per-IP hourly throttle) but skips slots and email;
+        staff follow up from the admin. A repeat submit from the same phone while
+        an entry is still 'new' is idempotent (returns the existing id, no dup
+        row), so one contact can't stack the queue."""
+        page = self.repo.get_page_by_slug(slug)
+        if not page or page['status'] != 'open':
+            return ServiceResult(False, 404, error='Booking page not available')
+        name = str(name or '').strip()[:120]
+        phone = _normalize_e164(phone)
+        if not name or not phone:
+            return ServiceResult(False, 422, error='Invalid name or phone')
+        if not gdpr_consent:
+            return ServiceResult(False, 422, error='GDPR consent required')
+        now = datetime.now(timezone.utc)
+        if self.repo.count_recent_waitlist_by_ip(ip, now - timedelta(hours=1)) >= _MAX_ATTEMPTS_PER_IP_PER_HOUR:
+            return ServiceResult(False, 429, error='Too many attempts, try later')
+        existing = self.repo.find_active_waitlist(page['id'], phone)
+        if existing:
+            return ServiceResult(True, 200, data={'ok': True, 'id': existing['id']})
+        entry = self.repo.create_waitlist_entry({
+            'page_id': page['id'], 'customer_name': name, 'customer_phone_e164': phone,
+            'customer_email': (str(email or '').strip()[:160] or None),
+            'preferred_car_vin': (str(preferred_car_vin or '').strip()[:40] or None),
+            'note': (str(note or '').strip()[:500] or None),
+            'gdpr_consent': True, 'ip': ip,
+        })
+        return ServiceResult(True, 201, data={'ok': True, 'id': entry['id']})
+
     # ---- confirm ----
     def confirm_booking(self, token, base_url=None):
         data = read_booking_token(token, current_app.secret_key)

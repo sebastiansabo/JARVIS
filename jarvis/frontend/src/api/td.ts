@@ -71,4 +71,10 @@ export const tdApi = {
 
   cancel: (token: string) =>
     api.post<{ status: string }>(`/api/td/bookings/cancel`, { token }),
+
+  // Join the waiting list — preference only, reserves no slot.
+  submitWaitlist: (slug: string, body: {
+    name: string; phone: string; email: string; gdpr_consent: boolean
+    preferred_car_vin?: string | null; note?: string | null
+  }) => api.post<{ ok: boolean; id: number }>(`/api/td/pages/${slug}/waitlist`, body),
 }

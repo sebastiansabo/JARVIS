@@ -101,6 +101,22 @@ export interface TdAdminBooking {
   updated_at: string
 }
 
+export type TdWaitlistStatus = 'new' | 'contacted' | 'done' | 'dismissed'
+
+export interface TdWaitlistEntry {
+  id: number
+  page_id: number
+  customer_name: string
+  customer_phone_e164: string
+  customer_email: string | null
+  preferred_car_vin: string | null
+  note: string | null
+  status: TdWaitlistStatus
+  created_at: string
+  handled_at: string | null
+  handled_by: number | null
+}
+
 export const tdAdminApi = {
   listPages: (companyId?: number) =>
     api.get<{ pages: TdAdminPage[] }>(`${B}/pages${companyId ? `?company_id=${companyId}` : ''}`),
@@ -133,4 +149,9 @@ export const tdAdminApi = {
 
   reassignAdvisor: (bid: number, advisor_user_id: number) =>
     api.patch<{ ok: boolean }>(`${B}/bookings/${bid}/advisor`, { advisor_user_id }),
+
+  listWaitlist: (id: number) => api.get<{ waitlist: TdWaitlistEntry[] }>(`${B}/pages/${id}/waitlist`),
+
+  updateWaitlist: (wid: number, status: TdWaitlistStatus) =>
+    api.patch<TdWaitlistEntry>(`${B}/waitlist/${wid}`, { status }),
 }
