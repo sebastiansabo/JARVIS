@@ -58,7 +58,11 @@ export default function TdWaitlistPanel({ pageId }: { pageId: number }) {
                 {w.customer_email && <><br />{w.customer_email}</>}
               </TableCell>
               <TableCell className="text-sm">
-                {w.preferred_car_vin && <div className="font-mono text-xs">{w.preferred_car_vin}</div>}
+                {w.preferred_car_vin && (
+                  <div className="text-xs font-medium">
+                    {[w.preferred_car_mark, w.preferred_car_model].filter(Boolean).join(' ') || w.preferred_car_vin}
+                  </div>
+                )}
                 {w.note && <div className="text-xs text-muted-foreground">{w.note}</div>}
                 {!w.preferred_car_vin && !w.note && <span className="text-muted-foreground">—</span>}
               </TableCell>

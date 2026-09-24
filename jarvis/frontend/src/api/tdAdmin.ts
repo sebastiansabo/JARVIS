@@ -121,6 +121,8 @@ export interface TdWaitlistEntry {
   customer_phone_e164: string
   customer_email: string | null
   preferred_car_vin: string | null
+  preferred_car_mark?: string | null
+  preferred_car_model?: string | null
   note: string | null
   status: TdWaitlistStatus
   created_at: string
