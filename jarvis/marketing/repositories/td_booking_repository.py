@@ -25,7 +25,7 @@ _PAGE_COLS = {
     'closes_at', 'min_lead_minutes', 'slot_minutes', 'buffer_minutes',
     'max_bookings_per_contact', 'access_code', 'title', 'intro', 'thank_you',
     'conditions_text', 'logo_url', 'email_subject', 'email_body',
-    'notify_user_ids', 'created_by',
+    'require_license_photo', 'notify_user_ids', 'created_by',
 }
 
 _BOOKING_COLS = {
