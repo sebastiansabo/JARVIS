@@ -489,3 +489,17 @@ def test_page_endpoints_deny_other_company_404(client, company_id, monkeypatch):
     assert client.patch(f'/marketing/api/td/pages/{pid}', json={'title': 'x'}).status_code == 404
     # And the list is filtered, not just per-id gated.
     assert all(p['id'] != pid for p in client.get('/marketing/api/td/pages').get_json()['pages'])
+
+
+def test_delete_page_archives_and_denies_cross_company(client, company_id, monkeypatch):
+    import marketing.routes.td_admin as td_admin_mod
+    page = repo.create_page({'company_id': company_id, 'slug': _SLUG, 'created_by': _USER1_ID, 'status': 'draft'})
+    # Denied for a caller outside the company → 404, not archived.
+    monkeypatch.setattr(td_admin_mod, 'get_actable_company_ids', lambda uid: set())
+    assert client.delete(f'/marketing/api/td/pages/{page["id"]}').status_code == 404
+    assert repo.get_page(page['id'])['deleted_at'] is None
+    # Permitted → archived (deleted_at stamped; drops from list_pages).
+    monkeypatch.setattr(td_admin_mod, 'get_actable_company_ids', lambda uid: {company_id})
+    assert client.delete(f'/marketing/api/td/pages/{page["id"]}').status_code == 200
+    assert repo.get_page(page['id'])['deleted_at'] is not None
+    assert all(p['id'] != page['id'] for p in repo.list_pages(company_id))
