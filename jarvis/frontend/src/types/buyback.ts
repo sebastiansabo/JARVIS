@@ -24,6 +24,7 @@ export interface BuybackRecord {
   vat_status: string | null
   client_id: number | null
   seller_name: string | null
+  seller_cui: string | null
   seller_phone: string | null
   seller_email: string | null
   brand: string
@@ -43,7 +44,7 @@ export interface BuybackRecord {
   keys_count: number | null
   has_damage: boolean | null
   damage_details: string | null
-  general_condition: string | null
+  general_condition: number | null
   client_asking_price_eur: number | null
   client_source: string | null
   other_details: string | null
@@ -78,7 +79,7 @@ export interface BuybackOffer {
   notes: string | null
   created_by: number | null
   created_at: string
-  client_decision: 'accepted' | 'declined' | null
+  client_decision: 'pending' | 'accepted' | 'declined'
   decided_by: number | null
   decided_at: string | null
   decline_reason: string | null
@@ -101,8 +102,8 @@ export interface BuybackEvent {
   id: number
   record_id: number
   action: string
-  actor: string | null
-  details: string | null
+  actor: number | null
+  details: Record<string, unknown> | null
   created_at: string
 }
 
