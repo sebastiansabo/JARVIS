@@ -25,6 +25,7 @@ from buyback.repositories.offer_repository import OfferRepository
 from buyback.repositories.photo_repository import PhotoRepository
 from buyback.repositories.event_repository import EventRepository
 from buyback.services.buyback_service import BuyBackService
+from buyback.services.email import Notifier
 from core.organization.manager_utils import get_actable_company_ids
 
 # ── Singleton repo/service instances (mirrors carpark/routes/vehicles.py's
@@ -33,7 +34,14 @@ records_repo = RecordRepository()
 offers_repo = OfferRepository()
 photos_repo = PhotoRepository()
 events_repo = EventRepository()
-service = BuyBackService()
+# BuyBackService itself never imports buyback.services.email at module top
+# level (Ruling R2, buyback_service.py's docstring) — that import cycle risk
+# doesn't apply HERE: _shared.py is a leaf the routes import, and email.py's
+# own deps (core.services.notification_service, foi_parcurs.dealer_config)
+# don't loop back into buyback at all. Notifier() itself never raises on
+# construction; its methods swallow their own exceptions (see email.py) so
+# an email/SMTP failure never surfaces as a 500 on the offer-post request.
+service = BuyBackService(notifier=Notifier())
 
 # Base64 image batch cap enforced on record CREATE (PhotoRepository.
 # store_base64_images checks the DECODED total against this). Module-level
