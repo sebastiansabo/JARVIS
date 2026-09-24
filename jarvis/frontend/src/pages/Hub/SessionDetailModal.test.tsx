@@ -50,6 +50,15 @@ describe('SessionDetailModal', () => {
     getContract.mockResolvedValue({ contract: { driver_license_photo: null } })
   })
 
+  it('shows Email, dealership Companie and Marcă for a client session', () => {
+    const session = { ...planned, client_email: 'ana@ex.com', company_name: 'Autoworld PLUS S.R.L.' }
+    const vehicle = { vin: 'VF1', brand: 'Audi', mark: 'Audi', model: 'Q8' }
+    wrap(<SessionDetailModal session={session as never} vehicle={vehicle as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(screen.getByText('ana@ex.com')).toBeInTheDocument()
+    expect(screen.getByText('Autoworld PLUS S.R.L.')).toBeInTheDocument()
+    expect(screen.getByText('Marcă')).toBeInTheDocument()
+  })
+
   it('shows the licence photo for a client test drive, hydrated from the detail endpoint', async () => {
     const dataUrl = 'data:image/jpeg;base64,AAAA'
     getContract.mockResolvedValue({ contract: { driver_license_photo: dataUrl } })
