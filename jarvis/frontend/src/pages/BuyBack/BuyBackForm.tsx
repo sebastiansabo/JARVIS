@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -233,7 +233,7 @@ export function buildCreatePayload(form: BuyBackFormState): CreatePayload {
   const payload: CreatePayload = {
     brand: form.brand,
     model: form.model,
-    vin: form.vin,
+    vin: form.vin.trim().toUpperCase(),
   }
 
   for (const field of STRING_FIELDS) {
@@ -279,6 +279,7 @@ interface BuyBackFormProps {
 export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormProps = {}) {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const queryClient = useQueryClient()
   const [form, setForm] = useState<BuyBackFormState>(emptyForm)
   const [attempted, setAttempted] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
@@ -404,6 +405,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
     mutationFn: () => buybackApi.createRecord(buildCreatePayload(form)),
     onSuccess: (data) => {
       setSubmitError(null)
+      queryClient.invalidateQueries({ queryKey: ['buyback-records'] })
       if (embedded) onDone?.(data.record)
       else navigate(`/app/buyback/${data.record.id}`)
     },
@@ -858,6 +860,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
               <Input
                 type="number"
                 inputMode="numeric"
+                min={0}
                 value={form.client_asking_price_eur}
                 onChange={(e) => set('client_asking_price_eur', e.target.value)}
                 placeholder="9500"
