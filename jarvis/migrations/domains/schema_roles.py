@@ -1288,12 +1288,12 @@ def _seed_buyback_permissions_v2(cursor, conn):
     for entity, action in (('record', 'view'), ('record', 'create'), ('record', 'edit')):
         _grant('Sales', entity, action, 'own')
 
-    # Acquisition: view + offer management + finalize authority.
-    for entity, action in (('record', 'view'), ('offer', 'manage'), ('record', 'finalize')):
+    # Acquisition: module access + view + offer management + finalize authority.
+    for entity, action in (('module', 'access'), ('record', 'view'), ('offer', 'manage'), ('record', 'finalize')):
         _grant('Acquisition', entity, action, 'all')
 
-    # Service: view + inspection management.
-    for entity, action in (('record', 'view'), ('inspection', 'manage')):
+    # Service: module access + view + inspection management.
+    for entity, action in (('module', 'access'), ('record', 'view'), ('inspection', 'manage')):
         _grant('Service', entity, action, 'all')
 
     # Viewer: explicit deny on everything, so the generic sweep can't widen it.
@@ -1302,7 +1302,26 @@ def _seed_buyback_permissions_v2(cursor, conn):
 
     # ── Permission column on roles table ──
     cursor.execute("ALTER TABLE roles ADD COLUMN IF NOT EXISTS can_access_buyback BOOLEAN DEFAULT FALSE")
-    cursor.execute("UPDATE roles SET can_access_buyback = TRUE WHERE name = 'Admin'")
+
+    # One-time backfill: derive can_access_buyback for EVERY role from its
+    # current buyback.module.access grant (seeding does not trigger the
+    # write-time _sync_v2_permissions_to_booleans). Mirrors the carpark
+    # backfill above — a live aggregation over role_permissions_v2, so
+    # Manager/Sales/Acquisition/Service (all of whom hold module.access) get
+    # TRUE, not just Admin. Idempotent — re-affirms the same values each boot.
+    cursor.execute('''
+        UPDATE roles r SET
+          can_access_buyback = x.access
+        FROM (
+          SELECT rp.role_id,
+            bool_or(p.entity_key='module' AND p.action_key='access' AND rp.scope <> 'deny') AS access
+          FROM role_permissions_v2 rp
+          JOIN permissions_v2 p ON p.id = rp.permission_id
+          WHERE p.module_key = 'buyback'
+          GROUP BY rp.role_id
+        ) x
+        WHERE x.role_id = r.id
+    ''')
 
     conn.commit()
 
