@@ -165,6 +165,50 @@ def _to_bought(client, as_role, tracked, vin, company_id=1):
     return rid
 
 
+def _to_final_offer(client, as_role, tracked, vin, company_id=1):
+    """Drive a fresh record to FINAL_OFFER: a final offer is POSTED but the
+    client's decision is deliberately NOT recorded, so the record never
+    reaches BOUGHT. All steps as Admin. Returns record_id."""
+    as_role('Admin', company_id)
+    r = client.post('/api/buyback/records', json=_payload(vin))
+    assert r.status_code == 201, r.get_json()
+    rid = r.get_json()['record']['id']
+    tracked['record_ids'].append(rid)
+
+    as_role('Admin', company_id)
+    oid = client.post(
+        f'/api/buyback/records/{rid}/offers',
+        json={'offer_type': 'initial', 'amount_eur': 9000, 'vat_status': 'no_vat'},
+    ).get_json()['offer']['id']
+
+    as_role('Admin', company_id)
+    client.post(f'/api/buyback/records/{rid}/offers/{oid}/decision', json={'decision': 'accepted'})
+
+    as_role('Admin', company_id)
+    client.put(f'/api/buyback/records/{rid}/inspection', json={'inspection_rating': 4})
+
+    as_role('Admin', company_id)
+    fr = client.post(
+        f'/api/buyback/records/{rid}/offers',
+        json={'offer_type': 'final', 'amount_eur': 8500, 'vat_status': 'no_vat'},
+    )
+    assert fr.status_code == 201, fr.get_json()
+    # NB: no decision recorded — record stays in FINAL_OFFER.
+    detail = client.get(f'/api/buyback/records/{rid}').get_json()['record']
+    assert detail['status'] == 'FINAL_OFFER'
+    return rid
+
+
+def _count_carpark_vehicles_by_vin(vin):
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        cur.execute('SELECT count(*) AS c FROM carpark_vehicles WHERE vin = %s', (vin,))
+        return cur.fetchone()['c']
+    finally:
+        release_db(conn)
+
+
 def _login_finalizer(as_role, tracked, company_id=1):
     """Log in as a fresh Admin AND give that uid a real `users` row (see
     module docstring's FK gotcha) — use this right before any request that
@@ -184,15 +228,18 @@ def test_finalize_creates_carpark_vehicle(client, as_role, _tracked):
     r = client.post(f'/api/buyback/records/{rid}/finalize', json={})
     assert r.status_code == 200, r.get_json()
     body = r.get_json()
-    assert body['success'] is True
     rec = body['record']
+    # Track the created vehicle for cleanup BEFORE any intermediate assertion,
+    # so a later failed assertion never leaks a real carpark_vehicles row.
+    veh_id = rec.get('carpark_vehicle_id')
+    if veh_id:
+        _tracked['vehicle_ids'].append(veh_id)
+
+    assert body['success'] is True
     assert rec['status'] == 'BOUGHT'
-    assert rec['carpark_vehicle_id']
+    assert veh_id
     assert float(rec['purchase_price_eur']) == 8500
     assert 'handoff_error' not in body
-
-    veh_id = rec['carpark_vehicle_id']
-    _tracked['vehicle_ids'].append(veh_id)
 
     from carpark.repositories.vehicle_repository import VehicleRepository
     veh = VehicleRepository().get_by_id(veh_id)
@@ -271,6 +318,31 @@ def test_finalize_dup_vin_keeps_bought_null_and_retryable(client, as_role, monke
     assert detail['carpark_vehicle_id'] is None
 
 
+def test_finalize_non_valueerror_handoff_failure_is_200_not_500(client, as_role, monkeypatch, _tracked):
+    """A NON-ValueError fault from the hand-off (e.g. a DB error, here a
+    RuntimeError) must NOT 500 — the route-boundary catch is `except
+    Exception`, so it degrades to the same retryable 200 + handoff_error as a
+    dup-VIN, leaving the record BOUGHT with a null carpark_vehicle_id."""
+    from carpark.services.vehicle_service import VehicleService
+
+    rid = _to_bought(client, as_role, _tracked, _vin())
+    _login_finalizer(as_role, _tracked)
+
+    with monkeypatch.context() as m:
+        m.setattr(
+            VehicleService, 'create_vehicle',
+            lambda self, data, created_by: (_ for _ in ()).throw(RuntimeError('db fault')),
+        )
+        r = client.post(f'/api/buyback/records/{rid}/finalize', json={})
+        assert r.status_code == 200, r.get_json()
+        assert r.status_code != 500
+        body = r.get_json()
+        assert body['success'] is True
+        assert body['record']['status'] == 'BOUGHT'
+        assert body['record']['carpark_vehicle_id'] is None
+        assert body.get('handoff_error')
+
+
 def test_retry_after_dup_vin_failure_succeeds(client, as_role, monkeypatch, _tracked):
     from carpark.services.vehicle_service import VehicleService
 
@@ -307,6 +379,32 @@ def test_retry_wrong_status_is_409(client, as_role, _tracked):
     as_role('Admin', 1)
     r2 = client.post(f'/api/buyback/records/{rid}/handoff/retry', json={})
     assert r2.status_code == 409, r2.get_json()
+
+
+# ── FINALIZE — client decision must be recorded first (CRITICAL) ──────────
+
+def test_finalize_on_final_offer_is_409_and_creates_no_vehicle(client, as_role, _tracked):
+    """SECURITY: a record still in FINAL_OFFER (final offer posted but the
+    seller's decision NEVER recorded) must NOT be finalizable — otherwise an
+    Acquisition user holding both offer.manage and record.finalize could post
+    a final offer and immediately buy a real CarPark vehicle at a price the
+    seller never accepted, skipping the sales decision step. finalize must
+    409 ('record the client decision first') and create NO carpark vehicle."""
+    vin = _vin()
+    rid = _to_final_offer(client, as_role, _tracked, vin)
+
+    assert _count_carpark_vehicles_by_vin(vin) == 0  # sanity: none before
+
+    _login_finalizer(as_role, _tracked)
+    r = client.post(f'/api/buyback/records/{rid}/finalize', json={})
+    assert r.status_code == 409, r.get_json()
+
+    # The record must NOT have been bought, and crucially NO vehicle created.
+    assert _count_carpark_vehicles_by_vin(vin) == 0
+    detail = client.get(f'/api/buyback/records/{rid}').get_json()['record']
+    assert detail['status'] == 'FINAL_OFFER'
+    assert detail['carpark_vehicle_id'] is None
+    assert detail['purchase_price_eur'] is None
 
 
 # ── FINALIZE — already handed off ────────────────────────────────────────
@@ -366,9 +464,29 @@ def test_finalize_cross_company_forbidden(client, as_role, monkeypatch, _tracked
     assert r.status_code == 403
 
 
+def test_retry_cross_company_forbidden(client, as_role, monkeypatch, _tracked):
+    """Same _guard_company boundary as finalize, pinned on the retry endpoint
+    too: Admin (clears the record.finalize decorator) + monkeypatched
+    permitted-company set excluding the record's company -> 403."""
+    import buyback.routes._shared as shared
+
+    rid = _to_bought(client, as_role, _tracked, _vin(), company_id=1)
+
+    as_role('Admin', 1)
+    monkeypatch.setattr(shared, '_permitted_company_ids', lambda: {2})
+    r = client.post(f'/api/buyback/records/{rid}/handoff/retry', json={})
+    assert r.status_code == 403
+
+
 def test_finalize_missing_record_404(client, as_role):
     as_role('Admin', 1)
     r = client.post('/api/buyback/records/999999999/finalize', json={})
+    assert r.status_code == 404
+
+
+def test_retry_missing_record_404(client, as_role):
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records/999999999/handoff/retry', json={})
     assert r.status_code == 404
 
 
