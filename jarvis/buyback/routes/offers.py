@@ -21,6 +21,9 @@ in BuyBackService.post_offer / record_decision (Task 8); this route only
 translates their ValueError into a 409, mirroring records.py's
 cancel_record/reopen_record translation of service.transition's ValueError.
 """
+from datetime import date
+from decimal import Decimal, InvalidOperation
+
 from flask import request, jsonify
 from flask_login import login_required, current_user
 
@@ -59,6 +62,34 @@ def post_offer(record_id):
             'success': False,
             'error': f"offer_type is required and must be one of {_OFFER_TYPES!r}",
         }), 400
+
+    # amount_eur is a NOT NULL NUMERIC column — a missing/non-numeric value
+    # would otherwise reach OfferRepository.create's INSERT and raise a
+    # psycopg2 NotNullViolation/InvalidTextRepresentation (NOT a ValueError,
+    # so the except-ValueError below would NOT catch it) → a 500. Validate it
+    # up front, mirroring the offer_type check style: require it present and
+    # coercible to a Decimal.
+    amount_raw = data.get('amount_eur')
+    if amount_raw is None or (isinstance(amount_raw, str) and not amount_raw.strip()):
+        return jsonify({'success': False, 'error': 'amount_eur is required'}), 400
+    try:
+        Decimal(str(amount_raw))
+    except (InvalidOperation, ValueError, TypeError):
+        return jsonify({'success': False, 'error': 'amount_eur must be a number'}), 400
+
+    # valid_until is optional, but a malformed date string would 500 the same
+    # way (bad literal reaching the DATE column). When present, require it to
+    # parse as an ISO date (YYYY-MM-DD). Absent → the repo defaults it to
+    # CURRENT_DATE + 7 days in SQL, so a None/omitted value is fine.
+    valid_until = data.get('valid_until')
+    if valid_until is not None and valid_until != '':
+        try:
+            date.fromisoformat(str(valid_until))
+        except (ValueError, TypeError):
+            return jsonify({
+                'success': False,
+                'error': 'valid_until must be an ISO date (YYYY-MM-DD)',
+            }), 400
 
     try:
         offer = _shared.service.post_offer(record, offer_type, data, current_user.id)

@@ -117,6 +117,48 @@ def test_post_offer_missing_record_404(client, as_role):
     assert r.status_code == 404
 
 
+def test_post_offer_missing_amount_eur_is_400_not_500(client, as_role):
+    """amount_eur is a NOT NULL NUMERIC column — a missing value flowing into
+    OfferRepository.create's INSERT raises psycopg2.NotNullViolation (NOT a
+    ValueError), which the route's `except ValueError` would NOT catch, giving
+    a 500. The route must validate amount_eur up front and 400 instead.
+    Asserts NOT 500 explicitly."""
+    rid = _make_record(client, as_role)
+    as_role('Admin', 1)
+    r = client.post(f'/api/buyback/records/{rid}/offers',
+                     json={'offer_type': 'initial', 'vat_status': 'no_vat'})
+    assert r.status_code == 400, r.get_json()
+    assert r.status_code != 500
+
+
+def test_post_offer_non_numeric_amount_eur_is_400(client, as_role):
+    rid = _make_record(client, as_role)
+    as_role('Admin', 1)
+    r = client.post(f'/api/buyback/records/{rid}/offers',
+                     json=_offer_payload(amount_eur='not-a-number'))
+    assert r.status_code == 400, r.get_json()
+
+
+def test_post_offer_malformed_valid_until_is_400(client, as_role):
+    """A malformed valid_until would 500 the same way (bad literal reaching
+    the DATE column / COALESCE) — validate it as an ISO date up front."""
+    rid = _make_record(client, as_role)
+    as_role('Admin', 1)
+    r = client.post(f'/api/buyback/records/{rid}/offers',
+                     json=_offer_payload(valid_until='31-13-2020'))
+    assert r.status_code == 400, r.get_json()
+
+
+def test_post_offer_valid_until_iso_accepted(client, as_role):
+    """Counterpart: a well-formed ISO valid_until still posts (proves the 400
+    above is the malformed-date guard, not a blanket rejection of the field)."""
+    rid = _make_record(client, as_role)
+    as_role('Admin', 1)
+    r = client.post(f'/api/buyback/records/{rid}/offers',
+                     json=_offer_payload(valid_until='2030-01-31'))
+    assert r.status_code == 201, r.get_json()
+
+
 def test_post_second_pending_offer_is_409(client, as_role):
     """One-pending-offer-per-record invariant (BuyBackService.post_offer),
     surfaced as a route-level 409: posting a second offer round while the
@@ -204,6 +246,25 @@ def test_stale_offer_decision_409(client, as_role):
     replay = client.post(f'/api/buyback/records/{rid}/offers/{oid}/decision', json={'decision': 'declined'})
     assert replay.status_code == 409
     assert 'error' in replay.get_json()
+
+
+def test_decision_bogus_offer_id_on_valid_record_is_409(client, as_role):
+    """RULING (fix round 1): a valid record + a nonexistent/non-latest
+    offer_id folds into the "not the current decidable offer" / stale bucket —
+    we deliberately do NOT distinguish "wrong id" from "stale id" for a client
+    recording a decision. record_decision's `latest['id'] != offer_id` guard
+    raises ValueError → the route returns 409 (not 404). Pinned here."""
+    rid = _make_record(client, as_role)
+    as_role('Admin', 1)
+    # A real pending offer exists (so the record is in INITIAL_OFFER), but the
+    # decision targets a different, nonexistent offer_id.
+    real_oid = client.post(f'/api/buyback/records/{rid}/offers', json=_offer_payload()).get_json()['offer']['id']
+
+    as_role('Sales', 1)
+    r = client.post(f'/api/buyback/records/{rid}/offers/{real_oid + 999999}/decision',
+                     json={'decision': 'accepted'})
+    assert r.status_code == 409, r.get_json()
+    assert 'error' in r.get_json()
 
 
 def test_decision_missing_record_404(client, as_role):
