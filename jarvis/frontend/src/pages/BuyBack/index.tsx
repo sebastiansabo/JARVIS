@@ -29,7 +29,7 @@ export default function BuyBack() {
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
   const canCreate = isAdmin || !!user?.permissions?.['buyback.record.create']
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['buyback-records', { status, acquisition_type: acquisitionType, q }],
     queryFn: () =>
       buybackApi.listRecords({
@@ -105,6 +105,12 @@ export default function BuyBack() {
 
       {isLoading ? (
         <TableSkeleton rows={8} columns={8} />
+      ) : isError ? (
+        <EmptyState
+          icon={<Car className="h-10 w-10" />}
+          title="Eroare la încărcarea solicitărilor"
+          description="Nu am putut încărca lista. Verifică conexiunea și încearcă din nou."
+        />
       ) : !records.length ? (
         <EmptyState icon={<Car className="h-10 w-10" />} title="Nicio solicitare" description="Nu există solicitări BuyBack / TradeIn pentru filtrele curente." />
       ) : (

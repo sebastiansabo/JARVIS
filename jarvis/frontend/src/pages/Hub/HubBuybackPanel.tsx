@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, Plus, Car } from 'lucide-react'
 import { buybackApi } from '@/api/buyback'
+import { useAuth } from '@/hooks/useAuth'
 import { recordStatus } from '@/pages/BuyBack/recordStatus'
 import BuyBackForm from '@/pages/BuyBack/BuyBackForm'
 import type { BuybackRecord } from '@/types/buyback'
@@ -22,7 +23,11 @@ type Overlay = null | { kind: 'new' }
 export default function HubBuybackPanel({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { user } = useAuth()
   const [overlay, setOverlay] = useState<Overlay>(null)
+
+  const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
+  const canCreate = isAdmin || !!user?.permissions?.['buyback.record.create']
 
   const { data, isLoading } = useQuery({
     queryKey: ['buyback-records', 'hub'],
@@ -43,10 +48,12 @@ export default function HubBuybackPanel({ onBack }: { onBack: () => void }) {
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ChevronLeft className="h-4 w-4 mr-1" />Înapoi
         </Button>
-        <Button size="sm" onClick={() => setOverlay({ kind: 'new' })}>
-          <Plus className="h-4 w-4" />
-          Solicitare nouă
-        </Button>
+        {canCreate && (
+          <Button size="sm" onClick={() => setOverlay({ kind: 'new' })}>
+            <Plus className="h-4 w-4" />
+            Solicitare nouă
+          </Button>
+        )}
       </div>
 
       {isLoading ? (
@@ -57,10 +64,12 @@ export default function HubBuybackPanel({ onBack }: { onBack: () => void }) {
           title="Nicio solicitare"
           description="Nu există solicitări BuyBack / TradeIn încă."
           action={
-            <Button size="sm" onClick={() => setOverlay({ kind: 'new' })}>
-              <Plus className="h-4 w-4" />
-              Solicitare nouă
-            </Button>
+            canCreate ? (
+              <Button size="sm" onClick={() => setOverlay({ kind: 'new' })}>
+                <Plus className="h-4 w-4" />
+                Solicitare nouă
+              </Button>
+            ) : undefined
           }
         />
       ) : (
