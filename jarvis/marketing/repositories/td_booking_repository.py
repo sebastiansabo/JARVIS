@@ -158,8 +158,12 @@ class TdBookingRepository(BaseRepository):
         return self.execute_many(_work)
 
     def list_open_slots(self, page_id: int) -> list:
+        # Enriched with the vehicle's mark/model/plate so the admin editor's
+        # move/swap picker reads as a car, not a bare VIN (extra columns are
+        # additive; the confirm/reassign callers only read s.*).
         return self.query_all(
-            "SELECT s.* FROM mkt_td_slots s "
+            "SELECT s.*, v.mark, v.model, v.registration_number FROM mkt_td_slots s "
+            "LEFT JOIN fp_vehicles v ON v.vin = s.vin "
             "WHERE s.page_id=%s AND s.status='open' "
             "AND NOT EXISTS (SELECT 1 FROM mkt_td_bookings b "
             "                WHERE b.slot_id=s.id AND b.status IN ('pending_confirm','confirmed')) "
