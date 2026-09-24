@@ -34,6 +34,7 @@ import {
   MapPin,
   Loader2,
   KeyRound,
+  ArrowLeftRight,
 } from 'lucide-react'
 import { SincronTimesheetView } from '@/components/shared/SincronTimesheetView'
 import { MarqueeWidget } from '@/components/happy/MarqueeWidget'
@@ -89,12 +90,13 @@ const Digest = lazy(() => import('@/pages/Digest'))
 const VoucherRedeem = lazy(() => import('@/pages/Public/VoucherRedeem'))
 const HubDrivingPanel = lazy(() => import('@/pages/Hub/HubDrivingPanel'))
 const HubFieldSalesPanel = lazy(() => import('@/pages/Hub/HubFieldSalesPanel'))
+const HubBuybackPanel = lazy(() => import('@/pages/Hub/HubBuybackPanel'))
 
 const VOUCHER_FORM_SLUG = 'voucher-issuance'
 
 // ─── Types ──────────────────────────────────────────────
 
-type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals' | 'driving' | 'courtesy' | 'field_sales'
+type ActiveModule = null | 'invoices' | 'hr' | 'vouchers' | 'forms' | 'chat' | 'approvals' | 'driving' | 'courtesy' | 'field_sales' | 'buyback'
 type HrSubTab = 'pontaje' | 'team-pontaje' | 'bonuses' | 'leave-permits' | 'sincron'
 
 // Labels for the HR sub-sections — used both by the tile grid and the breadcrumb.
@@ -125,6 +127,7 @@ export const appTiles: (AppTile & { shortLabel?: string })[] = [
   { key: 'driving', label: 'Driving Sessions', shortLabel: 'Driving', icon: Car, bg: 'bg-teal-600', fg: 'text-white' },
   { key: 'courtesy', label: 'Mașini de curtoazie', shortLabel: 'Curtoazie', icon: KeyRound, bg: 'bg-indigo-600', fg: 'text-white' },
   { key: 'field_sales', label: 'Field Sales', shortLabel: 'Teren', icon: MapPin, bg: 'bg-teal-600', fg: 'text-white' },
+  { key: 'buyback', label: 'BuyBack / TradeIn', shortLabel: 'BuyBack', icon: ArrowLeftRight, bg: 'bg-amber-600', fg: 'text-white' },
 ]
 
 const MONTHS_RO = ['Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie', 'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie']
@@ -242,6 +245,7 @@ export default function Hub() {
     driving: -1, // always show when allowed
     courtesy: -1, // always show when allowed (same gate as driving)
     field_sales: -1, // always show when allowed
+    buyback: -1, // always show when allowed
   }
 
   const hasVouchersPerm = !authUser?.permissions || (authUser.permissions['vouchers.profile.view'] ?? true)
@@ -251,12 +255,13 @@ export default function Hub() {
       if (t.key === 'driving' && !authUser?.can_access_carpark) return false
       if (t.key === 'courtesy' && !authUser?.can_access_carpark) return false
       if (t.key === 'field_sales' && !authUser?.can_access_field_sales) return false
+      if (t.key === 'buyback' && !authUser?.can_access_buyback) return false
       // Vouchers stays visible even at 0 (permission-gated above) — like approvals;
       // other tiles auto-hide when empty.
       if (t.key !== 'approvals' && t.key !== 'vouchers' && tileCounts[t.key] === 0) return false
       return true
     })
-  }, [hasVouchersPerm, tileCounts, authUser?.can_access_carpark, authUser?.can_access_field_sales])
+  }, [hasVouchersPerm, tileCounts, authUser?.can_access_carpark, authUser?.can_access_field_sales, authUser?.can_access_buyback])
 
   return (
     <div className="space-y-6 pb-16 sm:pb-0">
@@ -401,6 +406,11 @@ export default function Hub() {
           {activeModule === 'field_sales' && (
             <Suspense fallback={<div className="py-8 text-center text-muted-foreground text-sm">Loading...</div>}>
               <HubFieldSalesPanel />
+            </Suspense>
+          )}
+          {activeModule === 'buyback' && (
+            <Suspense fallback={<div className="py-8 text-center text-muted-foreground text-sm">Loading...</div>}>
+              <HubBuybackPanel onBack={() => setActiveModule(null)} />
             </Suspense>
           )}
 
