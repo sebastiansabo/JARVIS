@@ -22,7 +22,7 @@ logger = logging.getLogger('jarvis.core.media')
 media_bp = Blueprint('media', __name__)
 
 _ALLOWED_PREFIXES = ('private/carpark/', 'private/logos/', 'private/foi-parcurs/damage/',
-                     'private/foi-parcurs/route-sheets/')
+                     'private/foi-parcurs/route-sheets/', 'private/buyback/')
 
 # Only these raster image types are ever served inline from our own origin.
 # Everything else (text/html, image/svg+xml, application/*, ...) is forced to
