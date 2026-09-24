@@ -65,6 +65,7 @@ describe('PublicTdBooking', () => {
     renderPage()
     expect(await screen.findByText('MG ZS')).toBeInTheDocument()
     expect(screen.getByText('B-100-XYZ')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion
     expect(screen.getByRole('button', { name: '10:00' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '11:00' })).toBeInTheDocument()
   })
@@ -72,6 +73,7 @@ describe('PublicTdBooking', () => {
   it('keeps the CTA disabled until slot + details + both consents are provided', async () => {
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
     const cta = screen.getByRole('button', { name: 'Trimite programările' })
     expect(cta).toBeDisabled()
 
@@ -93,6 +95,7 @@ describe('PublicTdBooking', () => {
   it('submits with the licence + both consents in the body', async () => {
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
 
     fireEvent.click(screen.getByRole('button', { name: '10:00' }))
     fill('Nume complet', 'Andrei Popescu')
@@ -108,6 +111,7 @@ describe('PublicTdBooking', () => {
     await waitFor(() => expect(submitBooking).toHaveBeenCalledTimes(1))
     expect(submitBooking).toHaveBeenCalledWith('vara', {
       slot_ids: [100],
+      preferred: [],
       name: 'Andrei Popescu',
       phone: '+40721234567',
       email: 'andrei@exemplu.ro',
@@ -123,6 +127,7 @@ describe('PublicTdBooking', () => {
   it('selects several intervals as a group, lists them, removes one, and submits slot_ids', async () => {
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
 
     // Pick both intervals -> both appear in the "Programările tale" summary.
     fireEvent.click(screen.getByRole('button', { name: '10:00' }))
@@ -131,8 +136,8 @@ describe('PublicTdBooking', () => {
     // Two removable summary entries.
     expect(screen.getAllByRole('button', { name: /^Elimină/ })).toHaveLength(2)
 
-    // Remove the 11:00 pick.
-    fireEvent.click(screen.getByRole('button', { name: /Elimină.*11:00/ }))
+    // Remove the 2nd pick (labels are "Elimină <choice> — <car>", not by time).
+    fireEvent.click(screen.getAllByRole('button', { name: /^Elimină/ })[1])
     expect(screen.getAllByRole('button', { name: /^Elimină/ })).toHaveLength(1)
 
     // Re-add it, fill details, submit -> both slot_ids in one group.
@@ -147,14 +152,18 @@ describe('PublicTdBooking', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Trimite programările' }))
     await waitFor(() => expect(submitBooking).toHaveBeenCalledTimes(1))
+    // Global ranking (Batch 1): only the 1st pick is booked (slot_ids); the rest
+    // ride along as ranked preferences.
     expect(submitBooking).toHaveBeenCalledWith('vara', expect.objectContaining({
-      slot_ids: [100, 101],
+      slot_ids: [100],
+      preferred: [expect.objectContaining({ car: 'MG ZS' })],
     }))
   })
 
   it('keeps the CTA enabled without a licence photo (it is optional)', async () => {
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
 
     fireEvent.click(screen.getByRole('button', { name: '10:00' }))
     fill('Nume complet', 'Andrei Popescu')
@@ -176,6 +185,7 @@ describe('PublicTdBooking', () => {
   it('reads an uploaded licence photo into a base64 data URL, previews it, and includes it in the submit payload', async () => {
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
 
     const file = new File(['fake-image-bytes'], 'permis.png', { type: 'image/png' })
     const input = screen.getByLabelText('Poză permis (opțional)') as HTMLInputElement
@@ -207,6 +217,7 @@ describe('PublicTdBooking', () => {
   it('rejects an oversized licence photo and does not set a preview', async () => {
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
 
     const big = new File([new Uint8Array(2.6 * 1024 * 1024)], 'big.png', { type: 'image/png' })
     const input = screen.getByLabelText('Poză permis (opțional)') as HTMLInputElement
@@ -220,6 +231,7 @@ describe('PublicTdBooking', () => {
   it('opens the GDPR text in a "Citește" popup (first consent link)', async () => {
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
     expect(screen.queryByText(/Îți prelucrăm datele/)).not.toBeInTheDocument()
     // Two "Citește" links (GDPR then Conditions); the first opens the GDPR popup.
     fireEvent.click(screen.getAllByRole('button', { name: 'Citește' })[0])
@@ -229,6 +241,7 @@ describe('PublicTdBooking', () => {
   it('opens the conditions popup with the built-in default when the page has none', async () => {
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
     expect(screen.queryByText(/permis de conducere valid/)).not.toBeInTheDocument()
     fireEvent.click(screen.getAllByRole('button', { name: 'Citește' })[1])
     expect(await screen.findByText(/permis de conducere valid/)).toBeInTheDocument()
@@ -241,6 +254,7 @@ describe('PublicTdBooking', () => {
     })
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
     fireEvent.click(screen.getAllByRole('button', { name: 'Citește' })[1])
     expect(await screen.findByText('Reguli speciale pentru acest eveniment.')).toBeInTheDocument()
   })
@@ -249,23 +263,24 @@ describe('PublicTdBooking', () => {
     getPage.mockResolvedValueOnce(MULTI_DAY_PAGE)
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
 
     // Two day pills in the day-selector group.
     const dayGroup = screen.getByRole('group', { name: 'Alege ziua' })
     const dayPills = within(dayGroup).getAllByRole('button')
     expect(dayPills).toHaveLength(2)
 
-    // Default = first day: car A's 10:00 is shown; car B (day 2 only) is empty here.
+    // Default = first day: car A's 10:00 is shown; car B (day 2 only) has none here.
     expect(screen.getByRole('button', { name: '10:00' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '14:00' })).not.toBeInTheDocument()
-    expect(screen.getByText('Niciun interval liber în această zi')).toBeInTheDocument()
 
     // Pick the day-1 slot -> it lands in the summary.
     fireEvent.click(screen.getByRole('button', { name: '10:00' }))
     expect(screen.getByRole('button', { name: /Elimină.*MG ZS/ })).toBeInTheDocument()
 
-    // Switch to day 2: picker swaps to day-2 slots...
+    // Switch to day 2: picker swaps to day-2 slots (expand car B to reveal them)...
     fireEvent.click(dayPills[1])
+    fireEvent.click(screen.getByRole('button', { name: /Dacia Duster/ }))
     expect(screen.queryByRole('button', { name: '10:00' })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: '14:00' })).toBeInTheDocument()
 
@@ -280,6 +295,7 @@ describe('PublicTdBooking', () => {
   it('shows no day selector for a single-day event', async () => {
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
     expect(screen.queryByRole('group', { name: 'Alege ziua' })).not.toBeInTheDocument()
   })
 
@@ -309,6 +325,7 @@ describe('PublicTdBooking', () => {
   it('keeps the waitlist behind a trigger button (modal), not inline', async () => {
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
     // The waitlist form is NOT rendered until the trigger opens the modal.
     expect(screen.queryByLabelText('Mașina preferată (opțional)')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Nu găsești un interval potrivit/ }))
@@ -318,10 +335,10 @@ describe('PublicTdBooking', () => {
   it('enables the waitlist trigger only when no slot is selected', async () => {
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
     const trigger = screen.getByRole('button', { name: /Nu găsești un interval potrivit/ })
     expect(trigger).toBeEnabled()
-    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion
-    fireEvent.click(screen.getByRole('button', { name: '10:00' })) // pick a slot
+    fireEvent.click(screen.getByRole('button', { name: '10:00' })) // pick a slot (car already expanded above)
     expect(trigger).toBeDisabled()
   })
 
@@ -329,6 +346,7 @@ describe('PublicTdBooking', () => {
     submitWaitlist.mockResolvedValue({ ok: true, id: 7 })
     renderPage()
     await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
     fill('Nume complet', 'Andrei Popescu')
     fill('Telefon', '0721234567')
     fill('Email', 'andrei@exemplu.ro')
