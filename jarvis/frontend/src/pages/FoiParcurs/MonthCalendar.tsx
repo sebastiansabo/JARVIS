@@ -48,11 +48,17 @@ function carName(vehicle: FpVehicle | undefined, vin?: string | null): string {
   return vin || '—'
 }
 
+/** An active TD event's overall window (deduped across its cars) — drawn as a
+ *  tinted day-span on the grid with red start/end "limit" edges. */
+export interface EventWindow { title: string; startsAt: string; endsAt: string }
+
 interface MonthCalendarProps {
   /** The displayed month (any day within it). */
   monthDate: Date
   /** Sessions bucketed by naive departure day key ("YYYY-MM-DD"). */
   byDay: Map<string, FoiContract[]>
+  /** Active TD event windows to overlay as gated day-spans (violet + red limits). */
+  eventWindows?: EventWindow[]
   vinVehicle: Map<string, FpVehicle>
   /** Open a session's detail modal. */
   onOpenDetail: (c: FoiContract) => void
@@ -73,9 +79,33 @@ interface MonthCalendarProps {
  * grid. Drag across day cells proposes a new session; dropping a (planned)
  * session's row onto a day reschedules it — both delegated to the host.
  */
-export default function MonthCalendar({ monthDate, byDay, vinVehicle, onOpenDetail, onAdd, onRescheduleToDay, dayTestIdPrefix }: MonthCalendarProps) {
+export default function MonthCalendar({ monthDate, byDay, eventWindows, vinVehicle, onOpenDetail, onAdd, onRescheduleToDay, dayTestIdPrefix }: MonthCalendarProps) {
   const todayKey = keyOf(new Date())
   const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1)
+  // Day-keys covered by each active event window, tagged with the start/end
+  // "limit" days so the grid can draw the gate (violet span + red edges).
+  const eventDayInfo = useMemo(() => {
+    const map = new Map<string, { isStart: boolean; isEnd: boolean; title: string }>()
+    for (const ev of eventWindows ?? []) {
+      const start = naiveDate(ev.startsAt)
+      const end = naiveDate(ev.endsAt) ?? start
+      if (!start || !end) continue
+      const startKey = keyOf(start), endKey = keyOf(end)
+      let d = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+      const last = new Date(end.getFullYear(), end.getMonth(), end.getDate())
+      while (d <= last) {
+        const k = keyOf(d)
+        const prev = map.get(k)
+        map.set(k, {
+          isStart: (prev?.isStart ?? false) || k === startKey,
+          isEnd: (prev?.isEnd ?? false) || k === endKey,
+          title: prev?.title ?? ev.title,
+        })
+        d = addDays(d, 1)
+      }
+    }
+    return map
+  }, [eventWindows])
   const cells = useMemo(() => {
     const gridStart = startOfWeek(monthStart)
     return Array.from({ length: 42 }, (_, i) => addDays(gridStart, i))
@@ -129,6 +159,7 @@ export default function MonthCalendar({ monthDate, byDay, vinVehicle, onOpenDeta
             const inMonth = d.getMonth() === monthDate.getMonth()
             const count = byDay.get(k)?.length ?? 0
             const weekend = d.getDay() === 0 || d.getDay() === 6
+            const ev = eventDayInfo.get(k)
             return (
               <button
                 key={k}
@@ -147,8 +178,12 @@ export default function MonthCalendar({ monthDate, byDay, vinVehicle, onOpenDeta
                   if (r && r[0] !== r[1]) onAdd(`${r[0]}T09:00`, `${r[1]}T18:00`)
                 }}
                 className={cn(
-                  'relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm',
+                  'relative flex aspect-square flex-col items-center justify-center overflow-hidden rounded-lg text-sm',
                   weekend && 'bg-zinc-200/40 dark:bg-red-950/25',
+                  // Event window: violet gate with red "limit" edges on its first/last day.
+                  ev && 'bg-violet-100/70 dark:bg-violet-500/20',
+                  ev?.isStart && 'border-l-2 border-red-500',
+                  ev?.isEnd && 'border-r-2 border-red-500',
                   !inMonth && 'text-muted-foreground/40',
                   inMonthRange(k) && 'bg-primary/25',
                   highlightKeys.has(k) && 'bg-blue-500/25 ring-1 ring-blue-500/50',
@@ -156,6 +191,20 @@ export default function MonthCalendar({ monthDate, byDay, vinVehicle, onOpenDeta
                   k === todayKey && 'ring-1 ring-primary',
                 )}
               >
+                {ev?.isStart && (
+                  <span className="pointer-events-none absolute inset-x-0 top-0 truncate px-0.5 text-[7px] font-semibold leading-tight text-violet-700 dark:text-violet-200">
+                    {ev.title}
+                  </span>
+                )}
+                {ev && (
+                  <span
+                    data-testid={`mc-eventday-${k}`}
+                    data-event-start={ev.isStart ? 'true' : undefined}
+                    data-event-end={ev.isEnd ? 'true' : undefined}
+                    aria-hidden
+                    className="pointer-events-none absolute inset-x-0 bottom-0 h-1 bg-violet-500/60"
+                  />
+                )}
                 {d.getDate()}
                 {count > 0 && <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-primary" />}
               </button>

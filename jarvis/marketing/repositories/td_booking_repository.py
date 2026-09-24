@@ -427,3 +427,50 @@ class TdBookingRepository(BaseRepository):
                 "confirmed_at=NOW(), updated_at=NOW() WHERE id=%s", (fp_id, booking_id))
             return {'fp_id': fp_id}
         return self.execute_many(_work)
+
+    def reassign_booking_atomic(self, booking_id, new_slot_id, new_car_id, new_advisor_id,
+                                vin, frm, to, fp_row, old_fp_id) -> dict:
+        """Move a booking to a different slot (a slot = car+interval, so this covers
+        both time-move and car-swap) under the per-VIN advisory lock. Deletes the
+        booking's old PLANNED fișă FIRST (so it can't self-conflict), re-runs the
+        3-way availability check for the NEW car/time, re-points the booking (the
+        partial-unique active-slot index guards a double-book -> TdConflict), and
+        rebuilds the PLANNED fișă when the booking had one. Returns {'fp_id': id|None}."""
+        def _work(cursor):
+            cursor.execute('SELECT pg_advisory_xact_lock(hashtext(%s))', (vin,))
+            if old_fp_id:
+                cursor.execute("DELETE FROM foi_de_parcurs WHERE id=%s AND status='PLANNED'", (old_fp_id,))
+                if cursor.rowcount == 0:
+                    # The linked fișă is no longer PLANNED (car handed over / drive in
+                    # progress) — it survives the delete and the rebuild below would
+                    # collide on the UNIQUE contract_id. Refuse rather than 500.
+                    raise TdConflict('drive already in progress')
+            cursor.execute(self._CONFLICT_SQL, (vin, to, frm))
+            if cursor.fetchone():
+                raise TdConflict('overlapping TD session')
+            cursor.execute(self._LOCK_SQL, (vin,))
+            if cursor.fetchone():
+                raise TdConflict('vehicle locked/blocked')
+            cursor.execute(self._OPEN_SQL, (vin,))
+            if cursor.fetchone():
+                raise TdConflict('vehicle already out')
+            try:
+                cursor.execute(
+                    "UPDATE mkt_td_bookings SET slot_id=%s, car_id=%s, advisor_user_id=%s, "
+                    "updated_at=NOW() WHERE id=%s", (new_slot_id, new_car_id, new_advisor_id, booking_id))
+            except psycopg2.errors.UniqueViolation:
+                # The active-slot partial-unique index rejected the move: that slot
+                # is already held by another pending/confirmed booking.
+                raise TdConflict('slot already booked')
+            new_fp_id = None
+            if fp_row is not None:
+                cols = list(fp_row.keys())
+                ph = ', '.join(['%s'] * len(cols))
+                cursor.execute(
+                    f"INSERT INTO foi_de_parcurs ({', '.join(cols)}) VALUES ({ph}) RETURNING id",
+                    tuple(fp_row[c] for c in cols))
+                new_fp_id = cursor.fetchone()['id']
+                cursor.execute("UPDATE mkt_td_bookings SET foi_de_parcurs_id=%s WHERE id=%s",
+                               (new_fp_id, booking_id))
+            return {'fp_id': new_fp_id}
+        return self.execute_many(_work)
