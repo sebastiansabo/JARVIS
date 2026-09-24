@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Switch } from '@/components/ui/switch'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { MultiSelectPills } from '@/components/shared/MultiSelectPills'
@@ -603,6 +604,7 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [emailSubject, setEmailSubject] = useState('')
   const [emailBody, setEmailBody] = useState('')
+  const [requirePhoto, setRequirePhoto] = useState(false)
   const [notifyIds, setNotifyIds] = useState<(number | string)[]>([])
   const [opensAt, setOpensAt] = useState('')
   const [closesAt, setClosesAt] = useState('')
@@ -626,6 +628,7 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
       setLogoUrl(page.logo_url ?? null)
       setEmailSubject(page.email_subject ?? '')
       setEmailBody(page.email_body ?? '')
+      setRequirePhoto(!!page.require_license_photo)
       setNotifyIds(page.notify_user_ids ?? [])
       setOpensAt(isoToLocal(page.opens_at))
       setClosesAt(isoToLocal(page.closes_at))
@@ -656,6 +659,7 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
       if (nextEmailSubject !== (page.email_subject ?? null)) body.email_subject = nextEmailSubject
       const nextEmailBody = htmlOrNull(emailBody)
       if (nextEmailBody !== (page.email_body ?? null)) body.email_body = nextEmailBody
+      if (requirePhoto !== !!page.require_license_photo) body.require_license_photo = requirePhoto
 
       const nextNotifyIds = notifyIds.map(Number)
       const origNotifyIds = page.notify_user_ids ?? []
@@ -754,6 +758,15 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
             />
           </div>
           <LogoUploadField value={logoUrl} onChange={setLogoUrl} />
+          <label className="flex items-center justify-between gap-3 rounded-lg border p-3">
+            <div>
+              <span className="text-sm font-medium">Poză permis obligatorie</span>
+              <p className="text-xs text-muted-foreground">
+                Clientul trebuie să încarce poza permisului pentru a trimite programarea.
+              </p>
+            </div>
+            <Switch checked={requirePhoto} onCheckedChange={setRequirePhoto} />
+          </label>
           <div className="space-y-1.5">
             <Label className="text-xs">Consilieri notificați</Label>
             <MultiSelectPills
