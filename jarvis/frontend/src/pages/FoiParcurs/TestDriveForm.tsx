@@ -340,9 +340,12 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
 
   // Fetch ALL vehicles (incl. archived + blocked) under a distinct key so we
   // don't collide with the active-only ['fp-vehicles'] cache other views use.
+  // 'light' payload (no heavy mileage/session subqueries) keeps the form's car
+  // picker fast; a distinct key avoids serving this subset to the Driving Park
+  // list, which shares ['fp-vehicles','all',documentType] and needs the full row.
   const { data: vehiclesData } = useQuery({
-    queryKey: ['fp-vehicles', 'all', documentType],
-    queryFn: () => foiParcursApi.getVehicles(false, documentType),
+    queryKey: ['fp-vehicles', 'all', 'light', documentType],
+    queryFn: () => foiParcursApi.getVehicles(false, documentType, true),
   })
   const allVehicles = vehiclesData?.vehicles ?? []
   const vehiclesForCompany = useMemo(
