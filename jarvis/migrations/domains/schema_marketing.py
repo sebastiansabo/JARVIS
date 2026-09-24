@@ -422,7 +422,8 @@ def create_schema_marketing(conn, cursor):
     # ── Migration: Add missing permissions_v2 for uncovered modules ──
     from .schema_roles import (_seed_missing_permissions_v2, _seed_mobile_permissions_v2,
                                _seed_checkin_bypass_permission, _seed_business_control_permissions_v2,
-                               _seed_sidebar_permissions_v2, _seed_carpark_permissions_v2)
+                               _seed_sidebar_permissions_v2, _seed_carpark_permissions_v2,
+                               _seed_buyback_permissions_v2)
     _seed_missing_permissions_v2(cursor, conn)
     _seed_mobile_permissions_v2(cursor, conn)
     _seed_checkin_bypass_permission(cursor, conn)
@@ -432,6 +433,10 @@ def create_schema_marketing(conn, cursor):
     # Must run AFTER the sidebar sweep so carpark.module.access grants exist for
     # the boolean backfill, and so finance.view is created too late for the sweep.
     _seed_carpark_permissions_v2(cursor, conn)
+    # Must also run AFTER the sidebar sweep — same reasoning as carpark above —
+    # so the sweep's generic module.access defaults don't get a chance to run
+    # before these explicit per-role buyback grants exist.
+    _seed_buyback_permissions_v2(cursor, conn)
 
     # Seed marketing dropdown_options if not present
     cursor.execute("SELECT COUNT(*) as cnt FROM dropdown_options WHERE dropdown_type = 'mkt_project_type'")

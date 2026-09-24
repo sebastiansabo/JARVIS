@@ -28,6 +28,7 @@ class UserRepository(BaseRepository):
                    r.can_adjust_punches,
                    r.can_access_carpark, r.can_edit_carpark, r.can_delete_carpark,
                    r.can_access_carpark_mobile, r.can_view_carpark_finance,
+                   r.can_access_buyback,
                    c.id as company_id
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.id
@@ -54,6 +55,7 @@ class UserRepository(BaseRepository):
                    r.can_adjust_punches,
                    r.can_access_carpark, r.can_edit_carpark, r.can_delete_carpark,
                    r.can_access_carpark_mobile, r.can_view_carpark_finance,
+                   r.can_access_buyback,
                    c.id as company_id
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.id
@@ -136,6 +138,7 @@ class UserRepository(BaseRepository):
                    r.can_adjust_punches,
                    r.can_access_carpark, r.can_edit_carpark, r.can_delete_carpark,
                    r.can_access_carpark_mobile, r.can_view_carpark_finance,
+                   r.can_access_buyback,
                    c.id as company_id
             FROM users u
             LEFT JOIN roles r ON u.role_id = r.id

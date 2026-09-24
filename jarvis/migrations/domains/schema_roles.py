@@ -1222,6 +1222,91 @@ def _seed_carpark_permissions_v2(cursor, conn):
     conn.commit()
 
 
+def _seed_buyback_permissions_v2(cursor, conn):
+    """Seed Buyback module permissions into permissions_v2 and grant EXPLICIT
+    per-role defaults, mirroring _seed_carpark_permissions_v2.
+
+    Perms: buyback.module.access (module toggle) plus five record-level
+    actions (view/create/edit/delete/finalize) and two role-scoped manage
+    actions (offer.manage, inspection.manage). Defaults:
+      - Admin/Manager: 'all' scope on everything.
+      - Sales role: module.access + view/create/edit at 'own' scope (no
+        delete/finalize/offer/inspection authority).
+      - Acquisition role: record.view + offer.manage + record.finalize at
+        'all' scope (needs to see all records to close purchases).
+      - Service role: record.view + inspection.manage at 'all' scope.
+      - Viewer: explicit deny on every buyback permission, so the generic
+        module.access sweep in _seed_sidebar_permissions_v2 cannot widen it.
+
+    Sales/Acquisition/Service may not exist as roles in every environment —
+    grants use INSERT ... SELECT ... FROM roles WHERE name = ..., so a
+    missing role name is a harmless no-op (no roles are created here).
+
+    MUST run AFTER _seed_sidebar_permissions_v2 (same post-sweep call site as
+    _seed_carpark_permissions_v2) so these explicit grants are not overwritten
+    by the sweep's generic defaults. Idempotent (ON CONFLICT DO NOTHING) —
+    safe to run on every boot.
+    """
+    # entity, entity_label, action, action_label, description, is_scope_based, sort
+    perms = [
+        ('module',     'Buyback Module',      'access',   'Access',   'Acces la modulul Buyback (achizitii auto de la clienti)', False, 0),
+        ('record',     'Buyback Records',     'view',     'View',     'View buyback records',                                     True,  1),
+        ('record',     'Buyback Records',     'create',   'Create',   'Create buyback records',                                   True,  2),
+        ('record',     'Buyback Records',     'edit',     'Edit',     'Edit buyback records',                                     True,  3),
+        ('record',     'Buyback Records',     'delete',   'Delete',   'Delete buyback records',                                   True,  4),
+        ('record',     'Buyback Records',     'finalize', 'Finalize', 'Finalize a buyback record (complete the purchase)',        True,  5),
+        ('offer',      'Buyback Offers',      'manage',   'Manage',   'Create and manage offers made to sellers',                 False, 6),
+        ('inspection', 'Vehicle Inspection',  'manage',   'Manage',   'Record and manage vehicle inspections',                    False, 7),
+    ]
+    for entity, entity_label, action, action_label, desc, scope_based, sort in perms:
+        cursor.execute('''
+            INSERT INTO permissions_v2 (module_key, module_label, module_icon, entity_key, entity_label,
+                                        action_key, action_label, description, is_scope_based, sort_order)
+            VALUES ('buyback', 'Buyback', 'bi-arrow-left-right', %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (module_key, entity_key, action_key) DO NOTHING
+        ''', (entity, entity_label, action, action_label, desc, scope_based, sort))
+
+    def _grant(role_name, entity, action, scope):
+        granted = scope != 'deny'
+        cursor.execute('''
+            INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+            SELECT r.id, p.id, %s, %s
+            FROM roles r CROSS JOIN permissions_v2 p
+            WHERE r.name = %s AND p.module_key = 'buyback'
+              AND p.entity_key = %s AND p.action_key = %s
+            ON CONFLICT (role_id, permission_id) DO NOTHING
+        ''', (scope, granted, role_name, entity, action))
+
+    all_entities_actions = [(entity, action) for entity, _el, action, _al, _d, _sb, _s in perms]
+
+    for role_name in ('Admin', 'Manager'):
+        for entity, action in all_entities_actions:
+            _grant(role_name, entity, action, 'all')
+
+    # Sales: module access + own-scope view/create/edit only.
+    _grant('Sales', 'module', 'access', 'all')
+    for entity, action in (('record', 'view'), ('record', 'create'), ('record', 'edit')):
+        _grant('Sales', entity, action, 'own')
+
+    # Acquisition: view + offer management + finalize authority.
+    for entity, action in (('record', 'view'), ('offer', 'manage'), ('record', 'finalize')):
+        _grant('Acquisition', entity, action, 'all')
+
+    # Service: view + inspection management.
+    for entity, action in (('record', 'view'), ('inspection', 'manage')):
+        _grant('Service', entity, action, 'all')
+
+    # Viewer: explicit deny on everything, so the generic sweep can't widen it.
+    for entity, action in all_entities_actions:
+        _grant('Viewer', entity, action, 'deny')
+
+    # ── Permission column on roles table ──
+    cursor.execute("ALTER TABLE roles ADD COLUMN IF NOT EXISTS can_access_buyback BOOLEAN DEFAULT FALSE")
+    cursor.execute("UPDATE roles SET can_access_buyback = TRUE WHERE name = 'Admin'")
+
+    conn.commit()
+
+
 def _seed_sidebar_permissions_v2(cursor, conn):
     """Add module.access entries for modules missing them and seed controlling/vouchers/facturare/service permissions.
 
