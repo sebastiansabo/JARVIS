@@ -421,7 +421,7 @@ class TdBookingService:
         advisor_id = car.get('default_advisor_user_id') if car else None
         advisor_name = self._advisor_name(advisor_id)
 
-        fp_row = self._build_fp_row(booking, page, car, slot, advisor_name)
+        fp_row = self._build_fp_row(booking, page, car, slot, advisor_name, crm_client_id)
         res = self.repo.confirm_booking_atomic(
             booking['id'], car['vin'], slot['starts_at'], slot['ends_at'], fp_row)
         # confirm_booking_atomic already flipped status + foi_de_parcurs_id; this
@@ -470,7 +470,7 @@ class TdBookingService:
         return self.repo.expire_pending(now)
 
     # ---- helpers ----
-    def _build_fp_row(self, booking, page, car, slot, advisor_name) -> dict:
+    def _build_fp_row(self, booking, page, car, slot, advisor_name, crm_client_id=None) -> dict:
         """Build the PLANNED foi_de_parcurs TD row. Mirrors the draft-case of
         api_submit_test_drive's contract_data, minus FILLED-only fields, and fills
         every NOT NULL-without-default column (contract_id UNIQUE; km_*, distance_km,
@@ -488,9 +488,15 @@ class TdBookingService:
             'contract_id': f"TDB-{booking['id']}",
             'vin': car['vin'],
             'company_id': page['company_id'],
-            'client_id': None,                       # crm_clients != fp_clients; text cols carry identity
+            # Link the CRM client the confirm flow just found/created. foi_de_parcurs.client_id
+            # is a soft ref the staff TD flow points at crm_clients (the FK to fp_clients was
+            # dropped), so get_contract_by_id's crm_clients (cc) join resolves email/company/cui
+            # and the staff Activate form prefills the Client section. None when CRM create failed
+            # (best-effort) -- the text identity columns below still carry name/phone.
+            'client_id': crm_client_id,
             'client_name': booking['customer_name'],
             'client_phone': booking['customer_phone_e164'],
+            'client_email': booking.get('customer_email'),
             'route_type': 'TD',
             'advisor_name': advisor_name,            # users.name of the car's default advisor
             'departure_datetime': slot['starts_at'],

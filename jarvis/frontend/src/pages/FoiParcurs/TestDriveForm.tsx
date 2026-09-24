@@ -421,6 +421,14 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
     if (c.client_id && c.client_name) {
       setSelectedClient({ id: c.client_id, display_name: c.client_name, phone: c.client_phone ?? null })
     }
+    // Restore the driving licence captured at planning (public TD fișe store the
+    // photo/number/expiry directly on the row, with no CRM contact to source them
+    // from). Without this the Activate form shows an empty *mandatory* upload and
+    // staff must re-capture what the customer already provided. Guarded so a blank
+    // never clears a value the contact-driven path (company clients) supplies.
+    if (c.driver_license_photo) setDriverLicensePhoto(c.driver_license_photo)
+    if (c.driver_license_number) setDriverLicenseNumber(c.driver_license_number)
+    if (c.driver_license_expiry) setDriverLicenseExpiry(c.driver_license_expiry)
     // Event/campaign are mutually exclusive in the UI (the checkbox handler
     // enforces it), but an event-tagged draft ALSO carries a backend-bridged
     // mkt_project_id (submit auto-links a marketing project when event_id is
