@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { PlayCircle, RotateCcw, FileDown, Trash2, Clock, Pencil, Phone, Gauge, User2, CalendarDays, MessageSquare, Building2, Route, FileText, IdCard } from 'lucide-react'
+import { PlayCircle, RotateCcw, FileDown, Trash2, Clock, Pencil, Phone, Gauge, User2, CalendarDays, MessageSquare, Building2, Route, FileText, IdCard, Mail } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
@@ -145,10 +145,13 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
               <dd className="mt-0.5 truncate font-medium">{cc.primary}</dd>
               {cc.secondary && <dd className="truncate text-[11px] text-muted-foreground" title={cc.secondary}>{cc.secondary}</dd>}
             </div>
-            {!party.isInternal && c.client_company && <Field label="Companie" value={c.client_company} icon={<Building2 className="h-3 w-3" />} />}
+            {!party.isInternal && c.client_company && <Field label="Firmă client" value={c.client_company} icon={<Building2 className="h-3 w-3" />} />}
             <Field label="Telefon" value={party.phone} icon={<Phone className="h-3 w-3" />} />
+            {!party.isInternal && c.client_email && <Field label="Email" value={c.client_email} icon={<Mail className="h-3 w-3" />} />}
             {!party.isInternal && <Field label="Consilier" value={c.advisor_name || '—'} icon={<User2 className="h-3 w-3" />} />}
+            {c.company_name && <Field label="Companie" value={c.company_name} icon={<Building2 className="h-3 w-3" />} />}
             <Field label="Vehicul" value={vehicleName} icon={<Gauge className="h-3 w-3" />} />
+            {(vehicle?.brand || vehicle?.mark) && <Field label="Marcă" value={(vehicle?.brand || vehicle?.mark)!} icon={<Gauge className="h-3 w-3" />} />}
             <Field label="VIN" value={c.vin || '—'} mono />
             <Field label="Kilometraj" value={`${c.km_start ?? vehicle?.mileage_floor ?? '—'}${isDone && c.km_end != null ? ` → ${c.km_end}` : ''} km`} />
             {c.distance_km != null && <Field label="Km estimat" value={`${c.distance_km} km`} icon={<Route className="h-3 w-3" />} />}

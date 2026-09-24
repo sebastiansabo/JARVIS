@@ -101,6 +101,17 @@ export interface TdAdminBooking {
   updated_at: string
 }
 
+export interface TdOpenSlot {
+  id: number
+  car_id: number
+  vin: string
+  starts_at: string
+  ends_at: string
+  mark?: string | null
+  model?: string | null
+  registration_number?: string | null
+}
+
 export type TdWaitlistStatus = 'new' | 'contacted' | 'done' | 'dismissed'
 
 export interface TdWaitlistEntry {
@@ -149,6 +160,13 @@ export const tdAdminApi = {
 
   reassignAdvisor: (bid: number, advisor_user_id: number) =>
     api.patch<{ ok: boolean }>(`${B}/bookings/${bid}/advisor`, { advisor_user_id }),
+
+  deleteBooking: (bid: number) => api.delete<{ ok: boolean }>(`${B}/bookings/${bid}`),
+
+  editBooking: (bid: number, body: Record<string, unknown>) =>
+    api.patch<{ ok: boolean; booking: TdAdminBooking }>(`${B}/bookings/${bid}`, body),
+
+  listOpenSlots: (id: number) => api.get<{ slots: TdOpenSlot[] }>(`${B}/pages/${id}/open-slots`),
 
   listWaitlist: (id: number) => api.get<{ waitlist: TdWaitlistEntry[] }>(`${B}/pages/${id}/waitlist`),
 

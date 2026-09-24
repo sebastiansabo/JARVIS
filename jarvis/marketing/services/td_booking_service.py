@@ -259,7 +259,11 @@ class TdBookingService:
             confirm_link=confirm_link, cancel_link=cancel_link,
             email_subject=page.get('email_subject'), email_body=page.get('email_body'),
         )
-        send_customer_message('email', email, subject, body)
+        # The confirmation comes from the event's name (e.g. "Audi Test Drive"),
+        # not the generic "Jarvis" — the SMTP address is unchanged, only the
+        # sender display name. Staff control it via the event title.
+        send_customer_message('email', email, subject, body,
+                              from_name=(page.get('title') or '').strip() or None)
         data = {'group_id': group_id, 'booked': booked, 'unavailable': unavailable}
         # Backward-compatible single-slot shape (a group of one): the original
         # callers/tests read booking_id + status directly off the response.

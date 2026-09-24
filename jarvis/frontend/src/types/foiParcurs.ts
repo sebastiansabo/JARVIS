@@ -253,6 +253,7 @@ export interface FoiContract {
   client_id: number | null
   client_name?: string
   client_phone?: string
+  client_email?: string | null
   company_id: number
   company_name?: string
   // The client's OWN company (crm_clients.company_name) — distinct from
