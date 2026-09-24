@@ -23,6 +23,8 @@ export interface TdAdminPage {
   logo_url?: string | null
   email_subject?: string | null
   email_body?: string | null
+  waitlist_email_subject?: string | null
+  waitlist_email_body?: string | null
   require_license_photo?: boolean
   notify_user_ids: number[] | null
   created_by: number | null
@@ -90,6 +92,9 @@ export interface TdAdminBooking {
   customer_name: string
   customer_phone_e164: string
   customer_email: string
+  car_vin?: string | null
+  car_mark?: string | null
+  car_model?: string | null
   crm_client_id: number | null
   foi_de_parcurs_id: number | null
   advisor_user_id: number | null
@@ -137,6 +142,8 @@ export const tdAdminApi = {
   createPage: (body: Record<string, unknown>) => api.post<TdAdminPage>(`${B}/pages`, body),
 
   updatePage: (id: number, body: Record<string, unknown>) => api.patch<TdAdminPage>(`${B}/pages/${id}`, body),
+
+  deletePage: (id: number) => api.delete<{ ok: boolean }>(`${B}/pages/${id}`),
 
   setStatus: (id: number, status: string) => api.post<TdAdminPage>(`${B}/pages/${id}/status`, { status }),
 

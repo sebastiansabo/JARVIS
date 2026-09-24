@@ -681,6 +681,9 @@ def create_schema_marketing(conn, cursor):
     # gets the other (each ALTER is independently idempotent).
     cursor.execute("ALTER TABLE mkt_td_booking_pages ADD COLUMN IF NOT EXISTS email_subject TEXT")
     cursor.execute("ALTER TABLE mkt_td_booking_pages ADD COLUMN IF NOT EXISTS email_body TEXT")
+    # Staff-authored waitlist-join confirmation email (merge tags {nume}/{eveniment}).
+    cursor.execute("ALTER TABLE mkt_td_booking_pages ADD COLUMN IF NOT EXISTS waitlist_email_subject TEXT")
+    cursor.execute("ALTER TABLE mkt_td_booking_pages ADD COLUMN IF NOT EXISTS waitlist_email_body TEXT")
     # Per-event: is the driving-licence photo mandatory on the public form?
     cursor.execute("ALTER TABLE mkt_td_booking_pages ADD COLUMN IF NOT EXISTS "
                    "require_license_photo BOOLEAN NOT NULL DEFAULT FALSE")

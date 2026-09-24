@@ -25,6 +25,7 @@ _PAGE_COLS = {
     'closes_at', 'min_lead_minutes', 'slot_minutes', 'buffer_minutes',
     'max_bookings_per_contact', 'access_code', 'title', 'intro', 'thank_you',
     'conditions_text', 'logo_url', 'email_subject', 'email_body',
+    'waitlist_email_subject', 'waitlist_email_body',
     'require_license_photo', 'notify_user_ids', 'created_by',
 }
 
@@ -69,6 +70,13 @@ class TdBookingRepository(BaseRepository):
                 'ORDER BY created_at DESC', (company_id,))
         return self.query_all(
             'SELECT * FROM mkt_td_booking_pages WHERE deleted_at IS NULL ORDER BY created_at DESC')
+
+    def soft_delete_page(self, page_id: int):
+        """Archive an event page (deleted_at stamp). list_pages / get_page_by_slug
+        already filter deleted_at IS NULL, so it drops from the list + frees the slug."""
+        return self.execute(
+            'UPDATE mkt_td_booking_pages SET deleted_at=NOW() WHERE id=%s AND deleted_at IS NULL '
+            'RETURNING id', (page_id,), returning=True)
 
     def update_page(self, page_id: int, data: dict):
         fields = {k: v for k, v in data.items() if k in _PAGE_COLS}
@@ -236,12 +244,17 @@ class TdBookingRepository(BaseRepository):
             'SELECT * FROM mkt_td_bookings WHERE group_id=%s ORDER BY id', (group_id,))
 
     def list_bookings(self, page_id, status=None) -> list:
+        # Resolve the booked car's vin/mark/model so the admin can see + filter
+        # reservations by car ("who is on which car").
+        base = (
+            'SELECT b.*, car.vin AS car_vin, v.mark AS car_mark, v.model AS car_model '
+            'FROM mkt_td_bookings b '
+            'LEFT JOIN mkt_td_booking_cars car ON car.id = b.car_id '
+            'LEFT JOIN fp_vehicles v ON v.vin = car.vin '
+            'WHERE b.page_id=%s')
         if status:
-            return self.query_all(
-                'SELECT * FROM mkt_td_bookings WHERE page_id=%s AND status=%s ORDER BY created_at DESC',
-                (page_id, status))
-        return self.query_all(
-            'SELECT * FROM mkt_td_bookings WHERE page_id=%s ORDER BY created_at DESC', (page_id,))
+            return self.query_all(base + ' AND b.status=%s ORDER BY b.created_at DESC', (page_id, status))
+        return self.query_all(base + ' ORDER BY b.created_at DESC', (page_id,))
 
     def count_active_by_contact(self, phone, email) -> int:
         row = self.query_one(
