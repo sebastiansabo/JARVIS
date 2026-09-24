@@ -103,6 +103,11 @@ export default function PublicTdBooking() {
   const [conditionsOpen, setConditionsOpen] = useState(false)
   const [done, setDone] = useState(false)
   const [takenNote, setTakenNote] = useState('')
+  // Waiting list (always available): preferred car + note; reuses the customer's
+  // details entered above.
+  const [waitlistCar, setWaitlistCar] = useState('')
+  const [waitlistNote, setWaitlistNote] = useState('')
+  const [waitlistDone, setWaitlistDone] = useState(false)
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['td-page', slug],
@@ -231,6 +236,14 @@ export default function PublicTdBooking() {
     },
   })
 
+  const waitlist = useMutation({
+    mutationFn: () => tdApi.submitWaitlist(slug!, {
+      name: name.trim(), phone: phoneFull, email: email.trim(), gdpr_consent: gdprConsent,
+      preferred_car_vin: waitlistCar || null, note: waitlistNote.trim() || null,
+    }),
+    onSuccess: () => setWaitlistDone(true),
+  })
+
   if (isLoading) return <BookingSkeleton />
   if (isError || !data) return <CenteredMessage title="Această pagină nu este disponibilă." />
   if (done) return (
@@ -259,6 +272,8 @@ export default function PublicTdBooking() {
     ? (notOpenYet ? 'Programările nu sunt încă deschise' : 'Programările s-au închis')
     : !detailsFilled ? 'Completează câmpurile'
     : 'Alege cel puțin un interval'
+  // The waiting list needs only contact + GDPR (no slot, no licence photo).
+  const waitlistReady = !!name.trim() && phoneValid && EMAIL_RE.test(email.trim()) && gdprConsent
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] text-[#0E1B2C] dark:bg-[#0B1522] dark:text-slate-100">
@@ -685,6 +700,64 @@ export default function PublicTdBooking() {
           </button>
           {!canSubmit && !submit.isPending && (
             <p className="mt-2 text-center text-xs text-slate-400 dark:text-slate-500">{ctaHint}</p>
+          )}
+        </section>
+
+        {/* Waiting list — always available, for people who can't find a slot or
+            want a different time/car. Reuses the details entered above. */}
+        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm
+                            dark:border-slate-700/60 dark:bg-[#14243A]"
+                 aria-label="Listă de așteptare">
+          {waitlistDone ? (
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              ✅ Ești pe lista de așteptare. Te contactăm dacă se eliberează un loc potrivit.
+            </p>
+          ) : (
+            <>
+              <h2 className="text-base font-semibold">Nu găsești un interval potrivit?</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Înscrie-te pe lista de așteptare și te contactăm dacă apare o oră liberă.
+              </p>
+              <div className="mt-3 space-y-3">
+                <Field id="wl-car" label="Mașina preferată (opțional)">
+                  <select id="wl-car" value={waitlistCar} onChange={(e) => setWaitlistCar(e.target.value)} className={inputCls}>
+                    <option value="">Orice mașină</option>
+                    {data.cars.map((c) => (
+                      <option key={c.id} value={c.vin}>{c.label}{c.plate ? ` (${c.plate})` : ''}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field id="wl-note" label="Mesaj (opțional)">
+                  <textarea
+                    id="wl-note" rows={2} value={waitlistNote} onChange={(e) => setWaitlistNote(e.target.value)}
+                    placeholder="Ex: prefer după-amiaza"
+                    className={inputCls}
+                  />
+                </Field>
+                {waitlist.isError && (
+                  <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+                    Nu am putut trimite cererea. Verifică datele și încearcă din nou.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  disabled={!waitlistReady || waitlist.isPending}
+                  onClick={() => waitlist.mutate()}
+                  className="w-full rounded-xl border border-[#2743E6] py-2.5 text-sm font-semibold text-[#2743E6]
+                             outline-none motion-safe:transition-colors hover:bg-[#2743E6]/5
+                             focus-visible:ring-2 focus-visible:ring-[#2743E6] focus-visible:ring-offset-2
+                             disabled:cursor-not-allowed disabled:opacity-40
+                             dark:text-[#8CA1FF] dark:focus-visible:ring-offset-[#14243A]"
+                >
+                  {waitlist.isPending ? 'Se trimite…' : 'Înscrie-mă pe lista de așteptare'}
+                </button>
+                {!waitlistReady && (
+                  <p className="text-center text-xs text-slate-400 dark:text-slate-500">
+                    Completează numele, telefonul, emailul și bifează acordul GDPR de mai sus.
+                  </p>
+                )}
+              </div>
+            </>
           )}
         </section>
       </div>
