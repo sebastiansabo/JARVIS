@@ -125,8 +125,20 @@ describe('ActionPanel permission gating', () => {
     expect(screen.getByText(/Redeschide/)).toBeInTheDocument()
   })
 
-  it('reopen is hidden for a non-admin/non-finalize user on LOST status', () => {
+  it('reopen shows for a manager (empty permissions) on LOST status', () => {
+    renderPanel('LOST', {}, { role: 'manager' })
+    expect(screen.getByText(/Redeschide/)).toBeInTheDocument()
+  })
+
+  it('reopen is hidden for a plain user on LOST status', () => {
     renderPanel('LOST', {})
+    expect(screen.queryByText(/Redeschide/)).not.toBeInTheDocument()
+  })
+
+  it('reopen is hidden for an Acquisition user (finalize permission, non-admin) on LOST status', () => {
+    // Backend reopen gates role-only (admin/superadmin/Manager); buyback.record.finalize
+    // is ALSO granted to Acquisition — must NOT reveal a button that 403s on click.
+    renderPanel('LOST', { 'buyback.record.finalize': true })
     expect(screen.queryByText(/Redeschide/)).not.toBeInTheDocument()
   })
 
