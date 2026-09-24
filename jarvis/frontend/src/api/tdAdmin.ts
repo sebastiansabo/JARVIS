@@ -30,6 +30,19 @@ export interface TdAdminPage {
   deleted_at: string | null
 }
 
+/** A driving session on a car that overlaps the event's windows — surfaced so
+ *  staff aren't surprised when a "busy" car shows no public slots. */
+export interface TdSessionConflict {
+  id: number
+  contract_id: string
+  status: string
+  route_type: string
+  departure_datetime: string
+  return_datetime: string | null
+  client_name: string | null
+  advisor_name: string | null
+}
+
 export interface TdAdminCar {
   id: number
   page_id: number
@@ -40,6 +53,19 @@ export interface TdAdminCar {
   is_active: boolean
   created_at: string
   updated_at: string
+  conflicts?: TdSessionConflict[]
+}
+
+/** One band for the Driving Hub Calendar overlay: an event car committed for
+ *  the event's window range. */
+export interface TdCalendarEvent {
+  page_id: number
+  title: string | null
+  slug: string
+  status: 'draft' | 'open' | 'closed'
+  vin: string
+  starts_at: string
+  ends_at: string
 }
 
 export interface TdAdminWindow {
@@ -92,7 +118,10 @@ export const tdAdminApi = {
 
   addWindow: (id: number, body: Record<string, unknown>) => api.post<TdAdminWindow>(`${B}/pages/${id}/windows`, body),
 
-  listWindows: (id: number) => api.get<{ windows: TdAdminWindow[] }>(`${B}/pages/${id}/windows`),
+  listWindows: (id: number) => api.get<{ windows: TdAdminWindow[]; slot_count: number }>(`${B}/pages/${id}/windows`),
+
+  calendarEvents: (companyId: number, from: string, to: string) =>
+    api.get<{ events: TdCalendarEvent[] }>(`${B}/calendar-events?company_id=${companyId}&from=${from}&to=${to}`),
 
   deleteWindow: (wid: number) => api.delete<{ ok: boolean }>(`${B}/windows/${wid}`),
 
