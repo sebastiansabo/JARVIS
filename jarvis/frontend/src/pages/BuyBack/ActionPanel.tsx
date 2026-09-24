@@ -42,6 +42,10 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
+  // Reopen mirrors the backend's role-only _is_admin() gate (admin/superadmin/Manager);
+  // there is NO buyback.record.reopen permission, so an Acquisition user holding
+  // buyback.record.finalize must NOT see it (would 403 on click).
+  const isAdminOrManager = ['admin', 'superadmin', 'manager'].includes((user?.role_name ?? '').toLowerCase())
   const can = (k: string) => isAdmin || !!user?.permissions?.[k]
 
   const invalidate = () => {
@@ -57,7 +61,7 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   const showFinalize = status === 'BOUGHT' && !record.carpark_vehicle_id && can('buyback.record.finalize')
   const showCarparkLabel = status === 'BOUGHT' && !!record.carpark_vehicle_id
   const showCancel = can('buyback.record.edit') && !TERMINAL_STATUSES.includes(status)
-  const showReopen = status === 'LOST' && (isAdmin || can('buyback.record.finalize'))
+  const showReopen = status === 'LOST' && isAdminOrManager
 
   const nothingToShow =
     !showInitialOffer &&
