@@ -93,9 +93,20 @@ class PhotoRepository(BaseRepository):
 
     def store_base64_images(self, record_id: int, images: List[str],
                              max_bytes: int) -> List[Dict[str, Any]]:
-        """Decode a batch of base64 (data-URL) or already-uploaded-key image
-        values, upload each to Spaces under the record's prefix, and create
-        a buyback_photos row per image.
+        """Decode a batch of base64 data-URL image values, upload each to
+        Spaces under the record's prefix, and create a buyback_photos row
+        per image.
+
+        SECURITY: every entry MUST be a `data:` URL — a bare string is
+        rejected, NOT treated as an existing Spaces key. spaces_service.
+        resolve_image_bytes() would otherwise happily `fetch()` any
+        non-`data:` string as a Spaces object key, letting a caller copy
+        another tenant's private object (e.g. another company's
+        `private/carpark/<id>/...` photo) into their own gallery just by
+        naming its key in `images[]`. This check runs as its own pass,
+        BEFORE any entry is decoded/fetched, so a single bad entry never
+        triggers a live Spaces fetch for ANY image in the batch (all-or-
+        nothing, mirrors the size-cap check below).
 
         The combined decoded size of the whole batch is checked against
         `max_bytes` BEFORE any upload happens, so an oversized batch never
@@ -104,6 +115,10 @@ class PhotoRepository(BaseRepository):
         The first image becomes `is_primary` only when the record's gallery
         is currently empty (i.e. this call is populating it from scratch).
         """
+        for img in images:
+            if not isinstance(img, str) or not img.startswith('data:'):
+                raise ValueError('images must be data: URLs')
+
         decoded = [spaces_service.resolve_image_bytes(img) for img in images]
         total = sum(len(data) for data in decoded if data)
         if total > max_bytes:
