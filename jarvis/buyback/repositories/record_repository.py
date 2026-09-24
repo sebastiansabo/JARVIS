@@ -1,11 +1,22 @@
 """Data access for buyback_records (vehicle buyback/trade-in lifecycle).
 
 Mirrors foi_parcurs/repositories/foi_parcurs_repository.py::get_contracts:
-raw parameterized SQL via BaseRepository's query_one/query_all/execute, a
-lean `_LIST_COLUMNS` constant for the list endpoint, and a sort whitelist +
-ASC/DESC guard — the ONLY place an identifier is interpolated into SQL text.
-Every other value (including dict-driven INSERT/UPDATE columns, which come
-from server-controlled dicts, never raw request bodies) is bound via %s.
+raw parameterized SQL via BaseRepository's query_one/query_all/execute, and a
+lean `_LIST_COLUMNS` constant for the list endpoint.
+
+Injection posture — every WHERE/SET/INSERT/VALUES *value* is bound via %s;
+the only things ever interpolated into SQL text are identifiers, in exactly
+three controlled spots:
+  (a) `list()` interpolates `sort_by`/`sort_dir` — both first validated
+      against `_SORT_WHITELIST` / {ASC,DESC}, so a caller value that isn't
+      an exact match is discarded and can never reach the query.
+  (b) `create()` interpolates the INSERT column NAMES from the caller's
+      `data.keys()` (only the VALUES are %s-bound). This is intentional —
+      keys are server-controlled — so callers MUST pass a service/route-built
+      dict, NEVER unfiltered request JSON.
+  (c) `update()` interpolates the SET column names too, but restricts them to
+      the `_UPDATABLE_COLUMNS` whitelist first; any unrecognized key is
+      silently dropped and never becomes a SQL identifier.
 """
 
 from core.base_repository import BaseRepository
