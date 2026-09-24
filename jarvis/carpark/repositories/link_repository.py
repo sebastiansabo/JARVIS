@@ -5,7 +5,7 @@ from core.base_repository import BaseRepository
 
 ALLOWED_ENTITY_TYPES = {
     'invoice', 'dms_document', 'dms_folder', 'project',
-    'hr_event', 'crm_deal', 'crm_client',
+    'hr_event', 'crm_deal', 'crm_client', 'buyback',
 }
 
 # SQL fragments to resolve display labels per entity type
@@ -51,6 +51,17 @@ _ENTITY_JOINS = {
         "COALESCE(cc.display_name, 'Client #' || vl.linked_entity_id::text)",
         "COALESCE(cc.company_name, '')",
         'crm_client',
+    ),
+    # The vehicle THIS link's own vehicle was hand-off-created FROM (Task 14
+    # of the buyback backend build): linked_entity_id is the originating
+    # buyback_records.id. record_code is the human-scannable identifier
+    # (see buyback/routes/_shared.py::_gen_record_code); vin as the sublabel
+    # mirrors how a CarPark vehicle would otherwise be identified.
+    'buyback': (
+        'LEFT JOIN buyback_records br ON br.id = vl.linked_entity_id AND vl.linked_entity_type = %s',
+        "COALESCE(br.record_code, 'Buyback #' || vl.linked_entity_id::text)",
+        "COALESCE(br.vin, '')",
+        'buyback',
     ),
 }
 
