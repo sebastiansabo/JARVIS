@@ -332,3 +332,104 @@ def test_create_rejects_non_list_images(client, as_role):
     as_role('Admin', 1)
     r = client.post('/api/buyback/records', json=_payload(images='not-a-list'))
     assert r.status_code == 400
+
+
+# ── FIX ROUND 1: tenant-boundary unification, fail-closed scoping, 413 rollback
+
+def test_out_of_scope_company_mutation_forbidden(client, as_role, monkeypatch):
+    """The mutate boundary must EQUAL the read boundary: a caller whose
+    permitted-company set is {1} (e.g. a Manager org-responsible only for
+    company 1) must be 403'd on PUT and DELETE of a company-2 record it could
+    not LIST — no admin-ish role-name shortcut may bypass this.
+
+    The org-responsibility mapping is simulated by monkeypatching
+    `_shared._permitted_company_ids` to {1} (the coordinator's blessed
+    fallback — seeding a real Sincron responsable mapping in the shared DB is
+    impractical). We authenticate as Admin purely so the
+    @v2_permission_required('...','edit'/'delete') decorator passes (Manager
+    lacks seeded buyback role_permissions_v2 in the bare test schema); the
+    behavior under test is _guard_company's boundary, which now depends solely
+    on the (monkeypatched) permitted set, not the role name."""
+    import buyback.routes._shared as shared
+    monkeypatch.setattr(shared, '_permitted_company_ids', lambda: {1})
+
+    as_role('Admin', 1)
+    foreign = shared.records_repo.create({
+        'record_code': f'BB-FOREIGN-{os.urandom(4).hex()}',
+        'company_id': 2, 'vin': _vin(), 'brand': 'X', 'model': 'Y',
+        'created_by': 1, 'status': 'PENDING_EVALUATION',
+    })
+    try:
+        put = client.put(f"/api/buyback/records/{foreign['id']}", json={'mileage_km': 1})
+        assert put.status_code == 403, put.get_json()
+        dele = client.delete(f"/api/buyback/records/{foreign['id']}")
+        assert dele.status_code == 403, dele.get_json()
+    finally:
+        shared.records_repo.delete(foreign['id'])
+
+
+def test_in_scope_company_mutation_allowed_with_bounded_set(client, as_role, monkeypatch):
+    """Counterpart to the above: the same bounded permitted set {1} must ALLOW
+    mutating a company-1 record (proves the 403 above is the boundary at work,
+    not a blanket block)."""
+    import buyback.routes._shared as shared
+    monkeypatch.setattr(shared, '_permitted_company_ids', lambda: {1})
+
+    as_role('Admin', 1)
+    own = shared.records_repo.create({
+        'record_code': f'BB-OWN-{os.urandom(4).hex()}',
+        'company_id': 1, 'vin': _vin(), 'brand': 'X', 'model': 'Y',
+        'created_by': 1, 'status': 'PENDING_EVALUATION',
+    })
+    try:
+        put = client.put(f"/api/buyback/records/{own['id']}", json={'mileage_km': 7})
+        assert put.status_code == 200, put.get_json()
+        assert put.get_json()['record']['mileage_km'] == 7
+    finally:
+        shared.records_repo.delete(own['id'])
+
+
+def test_company_less_own_scope_user_sees_no_records(client, as_role):
+    """Fail-closed: a company-less own-scope caller must receive NONE of any
+    other company's records from GET /records — never fall through to an
+    unfiltered (all-companies) list."""
+    # Seed a company-1 record that WOULD leak if the list fell through to
+    # company_id=None (= all companies).
+    as_role('Admin', 1)
+    leaked = client.post('/api/buyback/records', json=_payload()).get_json()['record']
+
+    # A company-less Sales user (own scope, company_id=None).
+    as_role('Sales', None)
+    body = client.get('/api/buyback/records').get_json()
+    assert body['total'] == 0
+    assert body['records'] == []
+    assert all(rec['id'] != leaked['id'] for rec in body['records'])
+
+
+def test_company_less_own_scope_user_cannot_create(client, as_role):
+    """Fail-closed on CREATE too: a company-less non-'all' caller gets 403,
+    not a 500 from a NOT NULL company_id violation."""
+    as_role('Sales', None)
+    r = client.post('/api/buyback/records', json=_payload())
+    assert r.status_code == 403
+
+
+def test_create_oversized_images_rolls_back_record(client, as_role, monkeypatch):
+    """A 413 (oversized image batch) must leave NO ghost record: the
+    just-inserted row is rolled back before the 413 is returned."""
+    import buyback.routes._shared as shared
+    monkeypatch.setattr(shared, 'MAX_CREATE_BYTES', 10)
+    monkeypatch.setattr(
+        'buyback.repositories.photo_repository.spaces_service.upload',
+        lambda data, key, ct: key,
+    )
+    as_role('Admin', 1)
+    vin = _vin()
+    raw = os.urandom(100)
+    data_url = 'data:image/jpeg;base64,' + base64.b64encode(raw).decode()
+    r = client.post('/api/buyback/records', json=_payload(vin=vin, images=[data_url]))
+    assert r.status_code == 413
+
+    # No ghost row for the attempted VIN.
+    _rows, total = shared.records_repo.list(company_id=1, q=vin, per_page=100)
+    assert total == 0

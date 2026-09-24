@@ -48,7 +48,13 @@ def _scoped_company_id():
     caller (Sales) is always pinned to their own company, ignoring any
     request-supplied company_id; only an 'all'-scope caller (Admin/Manager)
     may use the tenant-switcher (_acting_company_id, which itself only
-    allows companies the caller may act on)."""
+    allows companies the caller may act on).
+
+    Returns None for a non-'all'-scope caller who has NO company — callers
+    MUST fail closed on that (never pass None to RecordRepository.list for a
+    non-'all' caller: list() treats company_id=None as "no company filter",
+    i.e. ALL companies, a cross-tenant leak). See list_records/create_record.
+    """
     if g.permission_scope != 'all':
         return getattr(current_user, 'company_id', None)
     return _shared._acting_company_id()
@@ -69,6 +75,11 @@ def list_records():
         page, per_page = 1, 25
 
     company_id = _scoped_company_id()
+    if g.permission_scope != 'all' and company_id is None:
+        # Fail closed: a company-less own/department caller must NEVER fall
+        # through to an unfiltered (all-companies) list. Return an empty page
+        # rather than leaking every tenant's records.
+        return jsonify({'records': [], 'total': 0, 'page': page, 'per_page': per_page})
 
     rows, total = _shared.records_repo.list(
         company_id=company_id,
@@ -138,9 +149,16 @@ def create_record():
     if raw_images is not None and not isinstance(raw_images, list):
         return jsonify({'success': False, 'error': 'images must be an array'}), 400
 
+    company_id = _scoped_company_id()
+    if company_id is None:
+        # Fail closed rather than INSERT company_id=NULL (a NOT NULL violation
+        # → raw 500). A non-'all' caller with no company has no tenant to
+        # create in; a global admin normally carries a company or passes one.
+        return jsonify({'success': False, 'error': 'No company assigned to your account'}), 403
+
     create_data = {k: data[k] for k in _CREATE_FIELDS if k in data}
     create_data['vin'] = vin
-    create_data['company_id'] = _scoped_company_id()
+    create_data['company_id'] = company_id
     create_data['created_by'] = current_user.id
     create_data['record_code'] = _shared._gen_record_code(vin)
     create_data['status'] = lifecycle.PENDING_EVALUATION
@@ -167,6 +185,13 @@ def create_record():
                 record['id'], images, _shared.MAX_CREATE_BYTES,
             )
         except ValueError as e:
+            # Roll back the just-inserted record so an oversized create leaves
+            # NO ghost row. store_base64_images checks the batch size BEFORE any
+            # Spaces upload, so nothing was uploaded and no child rows exist —
+            # the record delete (its FK CASCADE would clear children anyway) is
+            # all that's needed. The audit event is logged only AFTER this
+            # block succeeds, so there's no orphaned event to clean up either.
+            _shared.records_repo.delete(record['id'])
             return jsonify({'success': False, 'error': str(e)}), 413
 
     _shared.events_repo.log(
@@ -262,6 +287,13 @@ def reopen_record(record_id):
     record = _shared.records_repo.get_by_id(record_id)
     if not record:
         return jsonify({'success': False, 'error': 'Record not found'}), 404
+
+    # Tenant boundary applies to reopen too — an admin/manager scoped to
+    # company A must not reopen a company-B record (the _is_admin() check
+    # above is only the role-capability gate, NOT the company boundary).
+    err = _shared._guard_company(record)
+    if err:
+        return err
 
     try:
         updated = _shared.service.transition(
