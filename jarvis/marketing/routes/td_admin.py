@@ -113,6 +113,17 @@ def td_update_page(pid):
     return jsonify(page)
 
 
+@marketing_bp.route('/api/td/pages/<int:pid>', methods=['DELETE'])
+@login_required
+def td_delete_page(pid):
+    """Archive (soft-delete) an event page. Company-scoped."""
+    _, err = _scoped_page(pid)
+    if err:
+        return err
+    _repo.soft_delete_page(pid)
+    return jsonify({'ok': True})
+
+
 @marketing_bp.route('/api/td/pages/<int:pid>/status', methods=['POST'])
 @login_required
 def td_set_status(pid):

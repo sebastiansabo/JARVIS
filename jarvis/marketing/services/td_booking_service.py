@@ -101,6 +101,30 @@ def render_confirmation_email(*, name, booked_lines, confirm_link, cancel_link,
     return subject, body
 
 
+def render_waitlist_email(*, name, event_title, subject_tpl=None, body_tpl=None):
+    """(subject, html_body) for the waitlist-join confirmation. Staff-authored
+    `subject_tpl`/`body_tpl` (from the event) use merge tags; blank falls back to a
+    built-in default. Tags: {nume} -> customer name, {eveniment} -> event title.
+    {nume} is HTML-escaped in the body and substituted LAST (so a name that is
+    literally '{eveniment}' stays inert), CR/LF-stripped in the subject header."""
+    raw_name = name or ''
+    esc_name = html.escape(raw_name)
+    ev = html.escape(event_title or '')
+    subject_name = raw_name.replace('\r', ' ').replace('\n', ' ')
+    subject = ((subject_tpl or '').strip() or 'Ești pe lista de așteptare') \
+        .replace('{eveniment}', event_title or '').replace('{nume}', subject_name)
+    tpl = (body_tpl or '').strip()
+    if tpl:
+        body = tpl.replace('{eveniment}', ev).replace('{nume}', esc_name)
+    else:
+        body = (
+            f"<p>Bună, {esc_name}!</p>"
+            f"<p>Te-am adăugat pe lista de așteptare{f' pentru {ev}' if ev else ''}. "
+            f"Te contactăm de îndată ce se eliberează un interval potrivit.</p>"
+        )
+    return subject, body
+
+
 def _normalize_e164(phone) -> str | None:
     """Strip spaces/dashes from a candidate phone and return it iff it is a valid
     E.164 number ('+' + 7-15 digits); otherwise None. The frontend composes E.164
@@ -303,6 +327,19 @@ class TdBookingService:
             'note': (str(note or '').strip()[:500] or None),
             'gdpr_consent': True, 'ip': ip,
         })
+        # Best-effort waitlist confirmation email — a mail hiccup must never fail
+        # the join. Sender = the event name (from_name), like the booking confirm.
+        to_email = (str(email or '').strip() or None)
+        if to_email:
+            try:
+                subject, body = render_waitlist_email(
+                    name=name, event_title=page.get('title'),
+                    subject_tpl=page.get('waitlist_email_subject'),
+                    body_tpl=page.get('waitlist_email_body'))
+                send_customer_message('email', to_email, subject, body,
+                                      from_name=(page.get('title') or '').strip() or None)
+            except Exception:
+                logger.warning('waitlist confirmation email failed for %s', entry['id'], exc_info=True)
         return ServiceResult(True, 201, data={'ok': True, 'id': entry['id']})
 
     # ---- confirm ----
