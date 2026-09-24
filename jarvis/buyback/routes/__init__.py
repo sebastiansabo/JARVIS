@@ -3,3 +3,4 @@
 """
 from . import records  # noqa: F401
 from . import offers  # noqa: F401
+from . import inspection  # noqa: F401
