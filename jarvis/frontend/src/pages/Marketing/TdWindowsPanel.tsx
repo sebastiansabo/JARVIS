@@ -22,6 +22,7 @@ export default function TdWindowsPanel({ pageId }: { pageId: number }) {
     queryFn: () => tdAdminApi.listWindows(pageId),
   })
   const windows = data?.windows ?? []
+  const slotCount = data?.slot_count ?? 0
 
   const [date, setDate] = useState('')
   const [start, setStart] = useState('09:00')
@@ -46,7 +47,20 @@ export default function TdWindowsPanel({ pageId }: { pageId: number }) {
 
   return (
     <div className="space-y-3">
-      <h4 className="text-sm font-semibold">Intervale disponibile</h4>
+      <div className="flex flex-wrap items-center gap-2">
+        <h4 className="text-sm font-semibold">Intervale disponibile</h4>
+        {slotCount > 0 && (
+          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            {slotCount} sloturi generate
+          </span>
+        )}
+      </div>
+      {windows.length > 0 && slotCount === 0 && (
+        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800
+                      dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300">
+          ⚠️ Nu există sloturi generate — adaugă cel puțin o mașină ca intervalele să devină rezervabile.
+        </p>
+      )}
       <div className="flex flex-wrap items-end gap-2">
         <div className="space-y-1.5">
           <Label className="text-xs">Data</Label>

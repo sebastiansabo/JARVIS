@@ -170,14 +170,15 @@ def test_create_page_add_car_window_materialize(client, company_id):
                          json={'window_date': '2099-10-01', 'start_time': '10:00', 'end_time': '11:00'})
     assert win_r.status_code == 201
 
+    # Adding a window auto-materializes, so slots already exist (no more silent
+    # "open but empty" events). The windows list surfaces the count.
+    win_list = client.get(f'/marketing/api/td/pages/{pid}/windows').get_json()
+    assert win_list['slot_count'] > 0
+
+    # Explicit materialize is therefore idempotent from here (already generated).
     m = client.post(f'/marketing/api/td/pages/{pid}/materialize')
     assert m.status_code == 200
-    inserted = m.get_json()['inserted']
-    assert inserted > 0
-
-    # materialize is idempotent (bulk_insert_slots no-ops on conflict)
-    m2 = client.post(f'/marketing/api/td/pages/{pid}/materialize')
-    assert m2.get_json()['inserted'] == 0
+    assert m.get_json()['inserted'] == 0
 
 
 def test_missing_required_fields_400(client, company_id):

@@ -826,6 +826,28 @@ class FoiParcursRepository(BaseRepository):
             "ORDER BY w.window_date, w.start_time",
             (vin, to, frm))
 
+    def find_sessions_overlapping_event(self, vin: str, page_id: int) -> list:
+        """Non-terminal foi_de_parcurs sessions on `vin` whose window overlaps ANY
+        availability window of the given Event TD page. The inverse of
+        find_event_reservation: used to WARN staff when they add a car to an event
+        that already has a driving session during the event's dates (otherwise the
+        car looks bookable in the admin but shows zero slots on the public form,
+        since is_car_free hides it). Windows are local wall-clock (Europe/
+        Bucharest), matching slot materialization; overlap is inclusive."""
+        return self.query_all(
+            "SELECT DISTINCT fp.id, fp.contract_id, fp.status, fp.route_type, "
+            "       fp.departure_datetime, fp.return_datetime, "
+            "       COALESCE(fp.client_name, c.name) AS client_name, fp.advisor_name "
+            "FROM mkt_td_booking_windows w "
+            "JOIN foi_de_parcurs fp ON fp.vin = %s "
+            "LEFT JOIN fp_clients c ON c.id = fp.client_id "
+            "WHERE w.page_id = %s "
+            "  AND fp.status NOT IN ('COMPLETED','CANCELLED','MISSED','PENDING') "
+            "  AND fp.departure_datetime <= (w.window_date + w.end_time) AT TIME ZONE 'Europe/Bucharest' "
+            "  AND COALESCE(fp.return_datetime, fp.departure_datetime) >= (w.window_date + w.start_time) AT TIME ZONE 'Europe/Bucharest' "
+            "ORDER BY fp.departure_datetime",
+            (vin, page_id))
+
     def get_open_session(self, vin: str, exclude_id: int | None = None) -> dict | None:
         """The earliest genuinely-OUT live session for a car: a live Test Drive
         (source='td_form') that's been handed over (status='FILLED') and not yet

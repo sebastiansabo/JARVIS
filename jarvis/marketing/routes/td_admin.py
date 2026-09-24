@@ -63,6 +63,10 @@ def td_set_status(pid):
     page = _repo.set_page_status(pid, status)
     if not page:
         return jsonify({'error': 'not found'}), 404
+    # Auto-materialize on open so a staff member never ends up with an "open"
+    # event that shows zero slots because they forgot the Materialize step.
+    if status == 'open':
+        _slots.materialize_slots(pid)
     return jsonify(page)
 
 
@@ -76,7 +80,11 @@ def td_add_car(pid):
         return jsonify({'error': 'vin required'}), 400
     car = _repo.add_car(pid, d['vin'], d.get('vehicle_id'),
                          d.get('default_advisor_user_id'), d.get('sort_order', 0))
-    return jsonify(car), 201
+    # Keep slots in sync for the new car, and warn (non-blocking) if the car is
+    # already committed to another driving session during the event's windows.
+    _slots.materialize_slots(pid)
+    conflicts = _fp.find_sessions_overlapping_event(d['vin'], pid)
+    return jsonify({**car, 'conflicts': conflicts}), 201
 
 
 @marketing_bp.route('/api/td/cars/<int:cid>', methods=['DELETE'])
@@ -89,7 +97,13 @@ def td_remove_car(cid):
 @marketing_bp.route('/api/td/pages/<int:pid>/cars', methods=['GET'])
 @login_required
 def td_list_cars(pid):
-    return jsonify({'cars': _repo.list_cars(pid)})
+    # Attach any driving-session conflicts per car (a car already booked during
+    # the event's windows shows no slots on the public form) so the admin can
+    # flag it. Few cars per event, so the per-car check is fine.
+    cars = _repo.list_cars(pid)
+    for c in cars:
+        c['conflicts'] = _fp.find_sessions_overlapping_event(c['vin'], pid)
+    return jsonify({'cars': cars})
 
 
 # ---- windows ----
@@ -102,13 +116,16 @@ def td_add_window(pid):
         return jsonify({'error': 'window_date, start_time and end_time required'}), 400
     w = _repo.add_window(pid, d['window_date'], d['start_time'], d['end_time'],
                           d.get('slot_minutes'))
+    # A new window has no slots until materialized — do it now so the event is
+    # immediately bookable.
+    _slots.materialize_slots(pid)
     return jsonify(w), 201
 
 
 @marketing_bp.route('/api/td/pages/<int:pid>/windows', methods=['GET'])
 @login_required
 def td_list_windows(pid):
-    return jsonify({'windows': _repo.list_windows(pid)})
+    return jsonify({'windows': _repo.list_windows(pid), 'slot_count': _repo.count_slots(pid)})
 
 
 @marketing_bp.route('/api/td/windows/<int:wid>', methods=['DELETE'])
@@ -124,6 +141,22 @@ def td_remove_window(wid):
 @login_required
 def td_materialize(pid):
     return jsonify({'inserted': _slots.materialize_slots(pid)})
+
+
+# ---- calendar overlay ----
+
+@marketing_bp.route('/api/td/calendar-events', methods=['GET'])
+@login_required
+def td_calendar_events():
+    """Active Event TD pages (one band per event car) overlapping [from, to],
+    for the Driving Hub Calendar overlay. Mirrors the calendar's own filters:
+    company_id + date range."""
+    company_id = request.args.get('company_id', type=int)
+    frm = request.args.get('from')
+    to = request.args.get('to')
+    if not company_id or not frm or not to:
+        return jsonify({'error': 'company_id, from and to required'}), 400
+    return jsonify({'events': _repo.list_events_for_calendar(company_id, frm, to)})
 
 
 # ---- bookings ----

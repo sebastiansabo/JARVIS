@@ -88,3 +88,17 @@ def test_draft_event_reserves(event):
     td.set_page_status(p['id'], 'draft')
     rows = fp.find_event_reservation(_VIN, *_INSIDE)
     assert rows and rows[0]['slug'] == _SLUG
+
+
+def test_calendar_events_return_naive_local_window_bounds(event):
+    """The calendar overlay must get NAIVE local wall-clock bounds (no tz shift):
+    a 10:00-13:00 window stays 10:00-13:00, so the calendar's naiveDate renders
+    the band at the right hour."""
+    p, _c = event
+    rows = td.list_events_for_calendar(p['company_id'], '2099-12-01', '2099-12-01')
+    mine = [r for r in rows if r['slug'] == _SLUG]
+    assert len(mine) == 1
+    r = mine[0]
+    assert r['vin'] == _VIN
+    assert 'T10:00' in str(r['starts_at']) and 'T13:00' in str(r['ends_at'])
+
