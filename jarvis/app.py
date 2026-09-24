@@ -281,6 +281,9 @@ def _register_blueprints(flask_app: Flask):
     from carpark import carpark_bp
     flask_app.register_blueprint(carpark_bp)
 
+    from buyback import buyback_bp
+    flask_app.register_blueprint(buyback_bp)
+
     from core.telemetry import telemetry_bp
     flask_app.register_blueprint(telemetry_bp)
 

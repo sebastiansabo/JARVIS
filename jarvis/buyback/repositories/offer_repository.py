@@ -39,6 +39,18 @@ class OfferRepository(BaseRepository):
     def get(self, offer_id) -> dict | None:
         return self.query_one('SELECT * FROM buyback_offers WHERE id = %s', (offer_id,))
 
+    def list_for_record(self, record_id) -> list:
+        """All offers ever made on `record_id`, newest first. Mirrors
+        EventRepository.list_for_record's shape — used by the record detail
+        route (Task 9) to show the full offer history, as opposed to
+        latest_for_record/pending_for_record which the service layer uses
+        for the single-offer invariants."""
+        return self.query_all(
+            'SELECT * FROM buyback_offers WHERE record_id = %s '
+            'ORDER BY created_at DESC, id DESC',
+            (record_id,),
+        )
+
     def latest_for_record(self, record_id) -> dict | None:
         """Most recent offer for a record, irrespective of decision status."""
         return self.query_one(

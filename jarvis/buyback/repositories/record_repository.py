@@ -173,3 +173,14 @@ class RecordRepository(BaseRepository):
         (e.g. via buyback_events) — it is not itself written by this method."""
         sql = 'UPDATE buyback_records SET status = %s, updated_at = NOW() WHERE id = %s RETURNING *'
         return self.execute(sql, (status, id), returning=True)
+
+    def delete(self, id) -> int:
+        """Hard delete a buyback_records row — this table has no deleted_at
+        column (unlike e.g. buyback_photos), so a record delete is
+        permanent. buyback_offers/buyback_photos/buyback_events all declare
+        `record_id BIGINT ... REFERENCES buyback_records(id) ON DELETE
+        CASCADE`, so their rows for this record are removed automatically by
+        Postgres — no explicit child cleanup needed here. Returns the
+        rowcount (0 if `id` didn't exist, 1 if it did) so callers (the
+        DELETE route) can tell a not-found id from a real delete."""
+        return self.execute('DELETE FROM buyback_records WHERE id = %s', (id,))

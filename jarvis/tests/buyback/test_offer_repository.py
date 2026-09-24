@@ -111,6 +111,21 @@ def test_record_decision_accepted(require_real_db):
     assert repo.pending_for_record(rid) is None
 
 
+def test_list_for_record_returns_all_newest_first(require_real_db):
+    rid = _record()['id']
+    repo = OfferRepository()
+    first = repo.create(rid, 'initial', 1000, 'no_vat', None, None, 1)
+    second = repo.create(rid, 'revised', 1200, 'no_vat', None, None, 1)
+    offers = repo.list_for_record(rid)
+    assert [o['id'] for o in offers] == [second['id'], first['id']]
+
+
+def test_list_for_record_empty_when_none(require_real_db):
+    rid = _record()['id']
+    repo = OfferRepository()
+    assert repo.list_for_record(rid) == []
+
+
 def test_record_decision_declined_with_reason(require_real_db):
     rid = _record()['id']
     repo = OfferRepository()
