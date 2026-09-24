@@ -287,6 +287,47 @@ def test_confirm_maps_licence_and_consents_onto_fp(open_page):
     assert crm and crm['driver_license_number'] == 'AB 123456'
 
 
+def test_confirm_links_crm_client_and_surfaces_email(open_page):
+    """A confirmed public booking links its fișă to the CRM client (client_id) and
+    carries the customer email, so the detail read (what the staff Activate form +
+    the session popup load) resolves the Client section + email instead of blank."""
+    from foi_parcurs.repositories.foi_parcurs_repository import FoiParcursRepository
+    svc, p, c, sent = open_page
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(_SLUG, slot['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x')
+    cr = svc.confirm_booking(make_booking_token(r.data['booking_id'], 'confirm', current_app.secret_key))
+    assert cr.success
+    fp_id = cr.data['fp_id']
+
+    crm = repo.query_one('SELECT id FROM crm_clients WHERE phone=%s', (_PHONE,))
+    fp = repo.query_one('SELECT client_id, client_email FROM foi_de_parcurs WHERE id=%s', (fp_id,))
+    assert fp['client_id'] == crm['id']          # links the CRM client (not None)
+    assert fp['client_email'] == _EMAIL          # physical column carries the email
+
+    detail = FoiParcursRepository().get_contract_by_id(fp_id)
+    assert detail['client_email'] == _EMAIL      # detail read surfaces it
+
+
+def test_email_surfaces_even_without_crm_link(open_page, monkeypatch):
+    """If CRM find/create fails (best-effort → client_id None), the fișă still
+    carries the email on its own column and the detail read falls back to it."""
+    from foi_parcurs.repositories.foi_parcurs_repository import FoiParcursRepository
+    svc, p, c, sent = open_page
+    monkeypatch.setattr(svc, '_find_or_create_crm_client', lambda booking: None)
+    slot = _first_slot(svc, p)
+    r = svc.submit_booking(_SLUG, slot['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x')
+    cr = svc.confirm_booking(make_booking_token(r.data['booking_id'], 'confirm', current_app.secret_key))
+    assert cr.success
+    fp_id = cr.data['fp_id']
+
+    fp = repo.query_one('SELECT client_id, client_email FROM foi_de_parcurs WHERE id=%s', (fp_id,))
+    assert fp['client_id'] is None
+    assert fp['client_email'] == _EMAIL
+
+    detail = FoiParcursRepository().get_contract_by_id(fp_id)
+    assert detail['client_email'] == _EMAIL      # RED until COALESCE(fp.client_email, ...)
+
+
 _PHOTO_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
 

@@ -432,7 +432,7 @@ class FoiParcursRepository(BaseRepository):
             'SELECT fp.*, '
             'COALESCE(fp.client_name, cc.display_name, c.name) AS client_name, '
             'COALESCE(fp.client_phone, cc.phone, c.phone) AS client_phone, '
-            'COALESCE(cc.email, c.email) AS client_email, '
+            'COALESCE(fp.client_email, cc.email, c.email) AS client_email, '
             "COALESCE(NULLIF(TRIM(CONCAT_WS(', ', cc.street, cc.city, cc.region)), ''), c.address) AS client_address, "
             'co.company AS company_name, '
             'co.reg_no AS company_reg_no, co.iban AS company_iban, co.bank AS company_bank, '

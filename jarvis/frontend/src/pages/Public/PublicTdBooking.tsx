@@ -108,6 +108,9 @@ export default function PublicTdBooking() {
   const [waitlistCar, setWaitlistCar] = useState('')
   const [waitlistNote, setWaitlistNote] = useState('')
   const [waitlistDone, setWaitlistDone] = useState(false)
+  // Waitlist lives in a modal behind a CTA under "Trimite programările"; the CTA
+  // is only for people who couldn't pick a slot, so it's disabled once one is.
+  const [waitlistOpen, setWaitlistOpen] = useState(false)
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['td-page', slug],
@@ -701,21 +704,38 @@ export default function PublicTdBooking() {
           {!canSubmit && !submit.isPending && (
             <p className="mt-2 text-center text-xs text-slate-400 dark:text-slate-500">{ctaHint}</p>
           )}
-        </section>
 
-        {/* Waiting list — always available, for people who can't find a slot or
-            want a different time/car. Reuses the details entered above. */}
-        <section className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm
-                            dark:border-slate-700/60 dark:bg-[#14243A]"
-                 aria-label="Listă de așteptare">
+          {/* Waiting-list CTA — for people who couldn't pick a slot. Disabled once
+              a day+interval is selected (then they should just submit). Opens the
+              waitlist form in a modal. */}
+          <button
+            type="button"
+            disabled={selectedIds.length > 0}
+            onClick={() => setWaitlistOpen(true)}
+            className="mt-3 w-full rounded-xl border border-slate-300 py-2.5 text-sm font-semibold text-slate-600
+                       outline-none motion-safe:transition-colors hover:bg-slate-50
+                       focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2
+                       disabled:cursor-not-allowed disabled:opacity-40
+                       dark:border-slate-600 dark:text-slate-300 dark:hover:bg-white/5 dark:focus-visible:ring-offset-[#14243A]"
+          >
+            Nu găsești un interval potrivit?
+          </button>
+        </section>
+      </div>
+
+      {/* Waiting list modal — reuses the contact details entered above. */}
+      <Dialog open={waitlistOpen} onOpenChange={setWaitlistOpen}>
+        <DialogContent className="max-w-[440px]">
+          <DialogHeader>
+            <DialogTitle>Nu găsești un interval potrivit?</DialogTitle>
+          </DialogHeader>
           {waitlistDone ? (
             <p className="text-sm text-slate-600 dark:text-slate-300">
               ✅ Ești pe lista de așteptare. Te contactăm dacă se eliberează un loc potrivit.
             </p>
           ) : (
             <>
-              <h2 className="text-base font-semibold">Nu găsești un interval potrivit?</h2>
-              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
                 Înscrie-te pe lista de așteptare și te contactăm dacă apare o oră liberă.
               </p>
               <div className="mt-3 space-y-3">
@@ -759,8 +779,8 @@ export default function PublicTdBooking() {
               </div>
             </>
           )}
-        </section>
-      </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Consent "Citește" popups — full text, scrollable; fall back to a
           sensible built-in default when the tenant/page hasn't set its own. */}
