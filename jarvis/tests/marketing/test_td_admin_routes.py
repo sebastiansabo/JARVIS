@@ -400,3 +400,64 @@ def test_reassign_advisor_missing_field_400(client, company_id):
     })
     r = client.patch(f'/marketing/api/td/bookings/{booking["id"]}/advisor', json={})
     assert r.status_code == 400
+
+
+# ---- admin delete/edit reservation: company scoping + cascade ----
+
+def _seed_confirmed_booking(company_id):
+    """A page + car + slot + CONFIRMED booking linked to a PLANNED fișă (both under
+    _SLUG/_VIN2 so the module _cleanup() purges them). Returns (booking, fp_id)."""
+    page = repo.create_page({'company_id': company_id, 'slug': _SLUG, 'created_by': _USER1_ID,
+                             'status': 'open', 'min_lead_minutes': 0, 'title': 'Del/edit test'})
+    car = repo.add_car(page['id'], vin=_VIN2, default_advisor_user_id=_USER1_ID)
+    repo.add_window(page['id'], '2099-10-06', '09:00', '10:00')
+    from marketing.services.td_slot_service import TdSlotService
+    TdSlotService().materialize_slots(page['id'])
+    slot = repo.list_open_slots(page['id'])[0]
+    fp = repo.execute(
+        "INSERT INTO foi_de_parcurs (contract_id, vin, company_id, route_type, km_start, km_end, "
+        "distance_km, fuel_tank_capacity_liters, fuel_gauge_start_level, fuel_gauge_end_level, "
+        "fuel_start_liters, fuel_end_liters, fuel_consumed_liters, status, advisor_name) "
+        "VALUES (%s,%s,%s,'TD',0,0,0,0,'1/1','1/1',0,0,0,'PLANNED',%s) RETURNING *",
+        (f'ADM-DEL-{_VIN2}', _VIN2, company_id, ''), returning=True)
+    booking = repo.create_booking({
+        'page_id': page['id'], 'slot_id': slot['id'], 'car_id': car['id'],
+        'customer_name': 'Del Test', 'customer_phone_e164': '+40721000055',
+        'customer_email': 'del@ex.com', 'expires_at': '2099-10-06 08:00:00+00'})
+    repo.mark_confirmed(booking['id'], None, fp['id'], _USER1_ID)
+    return booking, fp['id']
+
+
+def test_delete_booking_denied_for_other_company_404(client, company_id, monkeypatch):
+    """IDOR guard: a caller with no access to the booking's company gets 404 and
+    the reservation + its fișă are left untouched."""
+    import marketing.routes.td_admin as td_admin_mod
+    booking, fp_id = _seed_confirmed_booking(company_id)
+    monkeypatch.setattr(td_admin_mod, 'get_actable_company_ids', lambda uid: set())
+    r = client.delete(f'/marketing/api/td/bookings/{booking["id"]}')
+    assert r.status_code == 404
+    assert repo.get_booking(booking['id'])['status'] == 'confirmed'
+    assert repo.query_one('SELECT id FROM foi_de_parcurs WHERE id=%s', (fp_id,)) is not None
+
+
+def test_delete_booking_cascades_when_permitted(client, company_id, monkeypatch):
+    import marketing.routes.td_admin as td_admin_mod
+    booking, fp_id = _seed_confirmed_booking(company_id)
+    monkeypatch.setattr(td_admin_mod, 'get_actable_company_ids', lambda uid: {company_id})
+    r = client.delete(f'/marketing/api/td/bookings/{booking["id"]}')
+    assert r.status_code == 200
+    assert repo.get_booking(booking['id'])['status'] == 'cancelled'
+    assert repo.query_one('SELECT id FROM foi_de_parcurs WHERE id=%s', (fp_id,)) is None
+
+
+def test_edit_booking_contact_via_route(client, company_id, monkeypatch):
+    import marketing.routes.td_admin as td_admin_mod
+    booking, fp_id = _seed_confirmed_booking(company_id)
+    monkeypatch.setattr(td_admin_mod, 'get_actable_company_ids', lambda uid: {company_id})
+    r = client.patch(f'/marketing/api/td/bookings/{booking["id"]}',
+                     json={'name': 'New Name', 'email': 'new@ex.com'})
+    assert r.status_code == 200
+    b = repo.get_booking(booking['id'])
+    assert b['customer_name'] == 'New Name' and b['customer_email'] == 'new@ex.com'
+    fp = repo.query_one('SELECT client_name, client_email FROM foi_de_parcurs WHERE id=%s', (fp_id,))
+    assert fp['client_name'] == 'New Name' and fp['client_email'] == 'new@ex.com'
