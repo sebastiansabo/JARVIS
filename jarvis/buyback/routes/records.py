@@ -199,6 +199,18 @@ def create_record():
         {'vin_in_carpark': vin_in_carpark},
     )
 
+    # Heads-up to the acquisition team that a new record was submitted (now in
+    # PENDING_EVALUATION). Non-blocking: Notifier.notify_acquisition already
+    # wraps its body in try/except (logs + swallows send_email/dealer failures)
+    # and no-ops when no BUYBACK_ACQUISITION_EMAIL/advisor/creator recipient
+    # resolves, so the record + its 'created' event are already committed and
+    # this can never turn a successful create into a 500. The getattr guard is
+    # belt-and-suspenders: the service singleton always carries a Notifier now,
+    # but this keeps create working even if that ever changes to notifier=None.
+    notifier = getattr(_shared.service, 'notifier', None)
+    if notifier is not None:
+        notifier.notify_acquisition(record)
+
     response = {'success': True, 'record': _shared._serialize(record)}
     if vin_in_carpark:
         response['vin_in_carpark'] = True
