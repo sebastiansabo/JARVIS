@@ -56,6 +56,7 @@ export default function TdBookingsPanel({ pageId, users }: { pageId: number; use
   })
 
   // ---- edit dialog ----
+  const [carFilter, setCarFilter] = useState<string>('') // '' = all cars, else a vin
   const [editing, setEditing] = useState<TdAdminBooking | null>(null)
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
@@ -101,11 +102,28 @@ export default function TdBookingsPanel({ pageId, users }: { pageId: number; use
     onError: onErr,
   })
 
-  if (isLoading) return <TableSkeleton rows={3} columns={5} />
+  const carLabel = (b: TdAdminBooking) => [b.car_mark, b.car_model].filter(Boolean).join(' ') || b.car_vin || '—'
+  const carOptions = Array.from(
+    new Map(bookings.filter((b) => b.car_vin).map((b) => [b.car_vin as string, carLabel(b)])).entries(),
+  ).sort((a, c) => a[1].localeCompare(c[1]))
+  const shown = carFilter ? bookings.filter((b) => b.car_vin === carFilter) : bookings
+
+  if (isLoading) return <TableSkeleton rows={3} columns={6} />
 
   return (
     <div className="space-y-3">
-      <h4 className="text-sm font-semibold">Rezervări</h4>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="text-sm font-semibold">Rezervări</h4>
+        {carOptions.length > 1 && (
+          <Select value={carFilter || 'all'} onValueChange={(v) => setCarFilter(v === 'all' ? '' : v)}>
+            <SelectTrigger className="h-8 w-60"><SelectValue placeholder="Toate mașinile" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toate mașinile</SelectItem>
+              {carOptions.map(([vin, label]) => <SelectItem key={vin} value={vin}>{label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
       {!bookings.length ? (
         <p className="text-sm text-muted-foreground">Nicio rezervare încă.</p>
       ) : (
@@ -113,6 +131,7 @@ export default function TdBookingsPanel({ pageId, users }: { pageId: number; use
           <TableHeader>
             <TableRow>
               <TableHead>Client</TableHead>
+              <TableHead>Mașină</TableHead>
               <TableHead>Contact</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Consilier</TableHead>
@@ -120,9 +139,10 @@ export default function TdBookingsPanel({ pageId, users }: { pageId: number; use
             </TableRow>
           </TableHeader>
           <TableBody>
-            {bookings.map((b) => (
+            {shown.map((b) => (
               <TableRow key={b.id}>
                 <TableCell className="text-sm font-medium">{b.customer_name}</TableCell>
+                <TableCell className="text-sm">{carLabel(b)}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">
                   <div>{b.customer_phone_e164}</div>
                   <div>{b.customer_email}</div>

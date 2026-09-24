@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { CalendarClock, ChevronLeft, Copy, ExternalLink, Link2, Lock, Plus, Search, Settings, Unlock, Upload, X } from 'lucide-react'
+import { CalendarClock, ChevronLeft, Copy, ExternalLink, Link2, Lock, Plus, Search, Settings, Trash2, Unlock, Upload, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -289,6 +289,16 @@ export default function TdBookingAdmin({ companyId: initialCompanyId = 0 }: { co
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Schimbarea statusului a eșuat'),
   })
 
+  const deletePageMut = useMutation({
+    mutationFn: (id: number) => tdAdminApi.deletePage(id),
+    onSuccess: (_r, id) => {
+      toast.success('Eveniment arhivat')
+      if (selectedPageId === id) setSelectedPageId(null)
+      qc.invalidateQueries({ queryKey: ['td-pages', companyId] })
+    },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Arhivarea a eșuat'),
+  })
+
   const materializeMut = useMutation({
     mutationFn: (id: number) => tdAdminApi.materialize(id),
     onSuccess: (res) => toast.success(`${res.inserted} sloturi create`),
@@ -439,6 +449,7 @@ export default function TdBookingAdmin({ companyId: initialCompanyId = 0 }: { co
                     <TableHead>Companie</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Creat</TableHead>
+                    <TableHead className="text-right">Acțiuni</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -454,6 +465,19 @@ export default function TdBookingAdmin({ companyId: initialCompanyId = 0 }: { co
                       <TableCell><Badge variant={STATUS_VARIANT[p.status]}>{STATUS_LABEL[p.status]}</Badge></TableCell>
                       <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                         {new Date(p.created_at).toLocaleDateString('ro-RO')}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive"
+                          aria-label="Arhivează evenimentul"
+                          disabled={deletePageMut.isPending}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (window.confirm(`Arhivezi evenimentul „${p.title || p.slug}”? Nu va mai apărea în listă și slug-ul se eliberează.`)) deletePageMut.mutate(p.id)
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -615,6 +639,8 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [emailSubject, setEmailSubject] = useState('')
   const [emailBody, setEmailBody] = useState('')
+  const [waitlistEmailSubject, setWaitlistEmailSubject] = useState('')
+  const [waitlistEmailBody, setWaitlistEmailBody] = useState('')
   const [requirePhoto, setRequirePhoto] = useState(false)
   const [notifyIds, setNotifyIds] = useState<(number | string)[]>([])
   const [opensAt, setOpensAt] = useState('')
@@ -639,6 +665,8 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
       setLogoUrl(page.logo_url ?? null)
       setEmailSubject(page.email_subject ?? '')
       setEmailBody(page.email_body ?? '')
+      setWaitlistEmailSubject(page.waitlist_email_subject ?? '')
+      setWaitlistEmailBody(page.waitlist_email_body ?? '')
       setRequirePhoto(!!page.require_license_photo)
       setNotifyIds(page.notify_user_ids ?? [])
       setOpensAt(isoToLocal(page.opens_at))
@@ -670,6 +698,10 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
       if (nextEmailSubject !== (page.email_subject ?? null)) body.email_subject = nextEmailSubject
       const nextEmailBody = htmlOrNull(emailBody)
       if (nextEmailBody !== (page.email_body ?? null)) body.email_body = nextEmailBody
+      const nextWlSubject = waitlistEmailSubject.trim() || null
+      if (nextWlSubject !== (page.waitlist_email_subject ?? null)) body.waitlist_email_subject = nextWlSubject
+      const nextWlBody = htmlOrNull(waitlistEmailBody)
+      if (nextWlBody !== (page.waitlist_email_body ?? null)) body.waitlist_email_body = nextWlBody
       if (requirePhoto !== !!page.require_license_photo) body.require_license_photo = requirePhoto
 
       const nextNotifyIds = notifyIds.map(Number)
@@ -756,6 +788,34 @@ function EventSettingsDialog({ open, onOpenChange, page, users, onSaved }: {
               <code className="rounded bg-background px-1">{'{programari}'}</code> lista mașini + ore ·{' '}
               <code className="rounded bg-background px-1">{'{link}'}</code> buton de confirmare ·{' '}
               <code className="rounded bg-background px-1">{'{anulare}'}</code> link de anulare
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-lg border border-dashed p-3">
+            <Label className="text-xs font-semibold">Email listă de așteptare</Label>
+            <p className="text-xs text-muted-foreground">
+              Trimis clientului după înscrierea pe lista de așteptare. Lasă gol pentru textul implicit.
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Subiect</Label>
+              <Input
+                value={waitlistEmailSubject}
+                onChange={(e) => setWaitlistEmailSubject(e.target.value)}
+                placeholder="Ești pe lista de așteptare"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Conținut</Label>
+              <RichTextEditor
+                content={waitlistEmailBody}
+                onChange={setWaitlistEmailBody}
+                placeholder="Bună {nume}, te-am adăugat pe lista de așteptare…"
+              />
+            </div>
+            <div className="rounded-md bg-muted/50 p-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Etichete disponibile:</span>{' '}
+              <code className="rounded bg-background px-1">{'{nume}'}</code> numele clientului ·{' '}
+              <code className="rounded bg-background px-1">{'{eveniment}'}</code> numele evenimentului
             </div>
           </div>
 

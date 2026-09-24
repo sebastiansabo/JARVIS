@@ -596,3 +596,19 @@ def test_cancel_deletes_planned_fp_and_frees_slot(open_page):
     free_ids = {s['id'] for s in svc.slots.available_slots(
         p['id'], datetime(2099, 1, 1, tzinfo=timezone.utc))}
     assert slot['id'] in free_ids
+
+
+def test_waitlist_join_sends_confirmation_email(open_page, monkeypatch):
+    """Joining the waiting list sends a best-effort confirmation email from the
+    event's name, using the (default) waitlist template."""
+    svc, p, c, sent = open_page
+    svc.repo.execute("UPDATE mkt_td_booking_pages SET title=%s WHERE id=%s", ('Audi Test Drive', p['id']))
+    captured = {}
+    monkeypatch.setattr(svc_mod, 'send_customer_message',
+                        lambda *a, **k: (captured.update(args=a, kwargs=k) or (True, '')))
+    r = svc.submit_waitlist(_SLUG, name='Ana', phone=_PHONE, email='ana-wl@ex.com',
+                            gdpr_consent=True, ip='1.2.3.4')
+    assert r.success and r.status_code == 201
+    assert captured['args'][0] == 'email' and captured['args'][1] == 'ana-wl@ex.com'
+    assert 'așteptare' in captured['args'][2].lower()          # subject
+    assert captured['kwargs'].get('from_name') == 'Audi Test Drive'
