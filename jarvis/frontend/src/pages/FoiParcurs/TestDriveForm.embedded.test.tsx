@@ -69,7 +69,8 @@ describe('TestDriveForm embedded mode', () => {
     // (is_rental resolves from the company's document types → rental UI.)
     expect(await screen.findByText(/predare mașină de curtoazie/i)).toBeInTheDocument()
     // …and the vehicle pool query is scoped to service.
-    expect(foiParcursApi.getVehicles).toHaveBeenCalledWith(false, 'service')
+    // light=true → picker payload (skips the heavy mileage/session subqueries)
+    expect(foiParcursApi.getVehicles).toHaveBeenCalledWith(false, 'service', true)
   })
 
   it('seeds the departure datetime from a ?departure= search param (desktop calendar route)', async () => {

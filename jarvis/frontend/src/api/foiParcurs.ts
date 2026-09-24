@@ -257,8 +257,11 @@ export const foiParcursApi = {
     api.post<{ success: boolean; client: FoiClient }>(`${BASE}/clients`, data),
 
   // ── Vehicles (Stock) ──
-  getVehicles: (activeOnly = true, documentType?: string) =>
-    api.get<{ vehicles: FpVehicle[] }>(`${BASE}/vehicles`, { active_only: String(activeOnly), ...(documentType ? { document_type: documentType } : {}) }),
+  // light=true → picker payload (base fields + blocked_now), skipping the heavy
+  // per-vehicle mileage/session subqueries. The car dropdown falls back to the
+  // stored odometer_km when mileage_floor is absent.
+  getVehicles: (activeOnly = true, documentType?: string, light = false) =>
+    api.get<{ vehicles: FpVehicle[] }>(`${BASE}/vehicles`, { active_only: String(activeOnly), ...(documentType ? { document_type: documentType } : {}), ...(light ? { light: '1' } : {}) }),
 
   // Full vehicle incl. document blobs — the list is lean, so the edit form
   // fetches the docs here on demand.
