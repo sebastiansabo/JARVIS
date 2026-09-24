@@ -51,6 +51,7 @@ import {
   Plus,
   ClipboardCheck,
   Loader2,
+  ScanLine,
   X,
   UserPlus,
   Trash2,
@@ -209,6 +210,18 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
   const [driverLicensePhoto, setDriverLicensePhoto] = useState<string | null>(null)
   const [driverLicenseNumber, setDriverLicenseNumber] = useState('')
   const [driverLicenseExpiry, setDriverLicenseExpiry] = useState('')
+  // OCR the licence photo → fill number/expiry. Parity with CreateClientPanel's
+  // scan, but available even when the client is already selected (e.g. an event
+  // booking prefills the photo but the number needs surfacing/verifying).
+  const licenceOcr = useMutation({
+    mutationFn: (image: string) => foiParcursApi.driverLicenseOcr(image),
+    onSuccess: (res) => {
+      if (res.data?.license_number) setDriverLicenseNumber(res.data.license_number)
+      if (res.data?.expiry_date) setDriverLicenseExpiry(res.data.expiry_date)
+      toast.success('Date preluate din permis')
+    },
+    onError: () => toast.error('Nu am putut citi permisul'),
+  })
 
   // Trip
   // Seed the departure slot from the prop (Hub overlay) or the ?departure=
@@ -1561,15 +1574,40 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
               </p>
             )
           ) : (
-            <DriverLicenseSection
-              photo={driverLicensePhoto}
-              onPhotoChange={setDriverLicensePhoto}
-              invalid={errFull(missing.license)}
-              hasClient={!!selectedClient}
-              onSelectClient={setSelectedClient}
-              onLicenseNumber={setDriverLicenseNumber}
-              onLicenseExpiry={setDriverLicenseExpiry}
-            />
+            <>
+              <DriverLicenseSection
+                photo={driverLicensePhoto}
+                onPhotoChange={setDriverLicensePhoto}
+                invalid={errFull(missing.license)}
+                hasClient={!!selectedClient}
+                onSelectClient={setSelectedClient}
+                onLicenseNumber={setDriverLicenseNumber}
+                onLicenseExpiry={setDriverLicenseExpiry}
+              />
+              {/* Serie/număr + valabilitate — visible & editable (prefilled for
+                  event bookings from the customer's captured licence), with a scan
+                  to re-read them from the photo (parity with the create-client flow). */}
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs">Serie și număr permis</Label>
+                  <Input value={driverLicenseNumber} onChange={(e) => setDriverLicenseNumber(e.target.value)} placeholder="Ex: AB 123456" />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Valabilitate</Label>
+                  <Input value={driverLicenseExpiry} onChange={(e) => setDriverLicenseExpiry(e.target.value)} placeholder="AAAA-LL-ZZ" />
+                </div>
+              </div>
+              {driverLicensePhoto && (
+                <Button
+                  type="button" variant="secondary" size="sm" className="mt-2"
+                  disabled={licenceOcr.isPending}
+                  onClick={() => licenceOcr.mutate(driverLicensePhoto)}
+                >
+                  {licenceOcr.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ScanLine className="h-4 w-4 mr-2" />}
+                  Scanează și preia din Permis
+                </Button>
+              )}
+            </>
           )}
         </CardContent>
       </Card>

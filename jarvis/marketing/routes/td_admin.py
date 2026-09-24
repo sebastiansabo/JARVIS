@@ -265,7 +265,9 @@ def td_list_open_slots(pid):
     page = _repo.get_page(pid)
     if not page or not _may_act_on_company(page['company_id']):
         return jsonify({'error': 'not found'}), 404
-    return jsonify({'slots': _repo.list_open_slots(pid)})
+    # is_car_free-filtered (not just TD-booking occupancy) so the picker's hours
+    # match the event car's REAL availability, like the public form.
+    return jsonify({'slots': _slots.free_open_slots(pid)})
 
 
 # ---- waitlist ----
