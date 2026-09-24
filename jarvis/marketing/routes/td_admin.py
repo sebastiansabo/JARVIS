@@ -167,6 +167,26 @@ def td_list_bookings(pid):
     return jsonify({'bookings': _repo.list_bookings(pid, request.args.get('status'))})
 
 
+# ---- waitlist ----
+
+@marketing_bp.route('/api/td/pages/<int:pid>/waitlist', methods=['GET'])
+@login_required
+def td_list_waitlist(pid):
+    return jsonify({'waitlist': _repo.list_waitlist(pid)})
+
+
+@marketing_bp.route('/api/td/waitlist/<int:wid>', methods=['PATCH'])
+@login_required
+def td_update_waitlist(wid):
+    status = (request.get_json(silent=True) or {}).get('status')
+    if status not in ('new', 'contacted', 'done', 'dismissed'):
+        return jsonify({'error': 'bad status'}), 400
+    row = _repo.set_waitlist_status(wid, status, getattr(current_user, 'id', None))
+    if not row:
+        return jsonify({'error': 'not found'}), 404
+    return jsonify(row)
+
+
 @marketing_bp.route('/api/td/bookings/<int:bid>/advisor', methods=['PATCH'])
 @login_required
 def td_reassign_advisor(bid):

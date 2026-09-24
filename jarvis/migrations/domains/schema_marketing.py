@@ -773,6 +773,28 @@ def create_schema_marketing(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_bookings_group ON mkt_td_bookings(group_id)')
 
+    # Waiting list: interested customers when they can't find a slot (or want a
+    # different time/car). Preference only -- reserves nothing; staff follow up.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_td_waitlist (
+            id SERIAL PRIMARY KEY,
+            page_id INTEGER NOT NULL REFERENCES mkt_td_booking_pages(id) ON DELETE CASCADE,
+            customer_name TEXT NOT NULL,
+            customer_phone_e164 TEXT NOT NULL,
+            customer_email TEXT,
+            preferred_car_vin TEXT,
+            note TEXT,
+            gdpr_consent BOOLEAN NOT NULL DEFAULT FALSE,
+            ip TEXT,
+            status TEXT NOT NULL DEFAULT 'new',
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            handled_at TIMESTAMPTZ,
+            handled_by INTEGER REFERENCES users(id),
+            CONSTRAINT mkt_td_waitlist_status_check CHECK (status IN ('new','contacted','done','dismissed'))
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_td_waitlist_page ON mkt_td_waitlist(page_id)')
+
 
 def _seed_sim_benchmarks(cursor):
     """Seed campaign simulator benchmarks from exercitiu.xlsx Foaie2."""
