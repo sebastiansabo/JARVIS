@@ -264,6 +264,7 @@ def _user_json(user) -> dict:
         'can_access_facturare':   _mod('facturare', None),
         'can_access_controlling': _mod('controlling', None),
         'can_access_test_drive':  _mod('test_drive', None),
+        'can_access_buyback':     _mod('buyback', 'can_access_buyback'),
         # Mobile-specific toggles
         'can_access_approvals_mobile':    _mobile('approvals'),
         'can_access_forms_mobile':        _mobile('forms'),

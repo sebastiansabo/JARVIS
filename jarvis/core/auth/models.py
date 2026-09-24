@@ -70,6 +70,9 @@ class User(UserMixin):
         self.can_access_carpark_mobile = user_data.get('can_access_carpark_mobile', False)
         self.can_view_carpark_finance = user_data.get('can_view_carpark_finance', False)
 
+        # Buyback permissions
+        self.can_access_buyback = user_data.get('can_access_buyback', False)
+
         # Permission mapping for has_permission method
         self._permission_map = {
             'system.settings': self.can_access_settings,
@@ -93,6 +96,7 @@ class User(UserMixin):
             'carpark.edit': self.can_edit_carpark,
             'carpark.delete': self.can_delete_carpark,
             'carpark.finance': self.can_view_carpark_finance,
+            'buyback.access': self.can_access_buyback,
         }
 
     @property
