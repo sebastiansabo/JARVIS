@@ -3,11 +3,12 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
-const { getPage, submitBooking } = vi.hoisted(() => ({
+const { getPage, submitBooking, submitWaitlist } = vi.hoisted(() => ({
   getPage: vi.fn(),
   submitBooking: vi.fn(),
+  submitWaitlist: vi.fn(),
 }))
-vi.mock('@/api/td', () => ({ tdApi: { getPage, submitBooking } }))
+vi.mock('@/api/td', () => ({ tdApi: { getPage, submitBooking, submitWaitlist } }))
 
 import PublicTdBooking from './PublicTdBooking'
 
@@ -303,5 +304,24 @@ describe('PublicTdBooking', () => {
     renderPage()
     await screen.findByText('Test Drive Vara')
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
+  })
+
+  it('keeps the waitlist behind a trigger button (modal), not inline', async () => {
+    renderPage()
+    await screen.findByText('MG ZS')
+    // The waitlist form is NOT rendered until the trigger opens the modal.
+    expect(screen.queryByLabelText('Mașina preferată (opțional)')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Nu găsești un interval potrivit/ }))
+    expect(await screen.findByLabelText('Mașina preferată (opțional)')).toBeInTheDocument()
+  })
+
+  it('enables the waitlist trigger only when no slot is selected', async () => {
+    renderPage()
+    await screen.findByText('MG ZS')
+    const trigger = screen.getByRole('button', { name: /Nu găsești un interval potrivit/ })
+    expect(trigger).toBeEnabled()
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion
+    fireEvent.click(screen.getByRole('button', { name: '10:00' })) // pick a slot
+    expect(trigger).toBeDisabled()
   })
 })
