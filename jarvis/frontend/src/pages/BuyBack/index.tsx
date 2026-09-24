@@ -117,6 +117,7 @@ export default function BuyBack() {
                 <TableHead>VIN</TableHead>
                 <TableHead>Vânzător</TableHead>
                 <TableHead className="text-right">Preț cerut €</TableHead>
+                <TableHead className="text-right">Preț achiziție €</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Consilier</TableHead>
                 <TableHead>Creat</TableHead>
@@ -137,6 +138,9 @@ export default function BuyBack() {
                     <TableCell className="text-sm">{r.seller_name || '—'}</TableCell>
                     <TableCell className="text-right text-sm whitespace-nowrap">
                       {r.client_asking_price_eur != null ? r.client_asking_price_eur.toLocaleString('ro-RO') : '—'}
+                    </TableCell>
+                    <TableCell className="text-right text-sm whitespace-nowrap">
+                      {r.purchase_price_eur != null ? r.purchase_price_eur.toLocaleString('ro-RO') : '—'}
                     </TableCell>
                     <TableCell>
                       <Badge className={rs.badgeClass}>{rs.label}</Badge>
