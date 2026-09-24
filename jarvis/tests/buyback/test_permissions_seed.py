@@ -89,3 +89,73 @@ def test_can_access_buyback_column_exists(require_real_db):
         assert val is True
     finally:
         release_db(conn)
+
+
+def test_can_access_buyback_true_for_every_module_access_role(require_real_db):
+    """The can_access_buyback boolean must be backfilled for EVERY role that
+    holds buyback.module.access — not just Admin. Manager and Sales are seeded
+    with module.access unconditionally in this DB (both exist); Acquisition
+    and Service also receive module.access now but may be absent in the shared
+    DB, so each assertion is guarded on the role actually existing (mirroring
+    how the seed no-ops for absent role names). Regression guard for the
+    Admin-only hardcoded UPDATE bug.
+    """
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        _seed_buyback_permissions_v2(cur, conn)
+        conn.commit()
+
+        def _flag(role_name):
+            cur.execute("SELECT can_access_buyback FROM roles WHERE name = %s", (role_name,))
+            row = cur.fetchone()
+            if row is None:
+                return None  # role absent in this DB -> assertion skipped
+            return row['can_access_buyback'] if isinstance(row, dict) else row[0]
+
+        # Admin/Manager (all grants) and Sales (explicit module.access) always
+        # exist in the seeded DB and MUST resolve TRUE.
+        for role_name in ('Admin', 'Manager', 'Sales'):
+            assert _flag(role_name) is True, f'{role_name} should have can_access_buyback=TRUE'
+
+        # Acquisition/Service now also get module.access — TRUE when present,
+        # harmlessly skipped when the role name is absent from the shared DB.
+        for role_name in ('Acquisition', 'Service'):
+            flag = _flag(role_name)
+            if flag is not None:
+                assert flag is True, f'{role_name} should have can_access_buyback=TRUE when present'
+
+        # Viewer is explicit-deny on module.access -> must stay FALSE.
+        viewer = _flag('Viewer')
+        if viewer is not None:
+            assert viewer is False, 'Viewer should have can_access_buyback=FALSE'
+    finally:
+        release_db(conn)
+
+
+def test_acquisition_and_service_get_module_access(require_real_db):
+    """Acquisition and Service must be granted buyback.module.access at scope
+    'all' (controller ruling) so they can reach the module UI. Guarded on the
+    role existing so it's a no-op when the role name is absent.
+    """
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        _seed_buyback_permissions_v2(cur, conn)
+        conn.commit()
+
+        for role_name in ('Acquisition', 'Service'):
+            cur.execute("SELECT 1 FROM roles WHERE name = %s", (role_name,))
+            if cur.fetchone() is None:
+                continue  # role absent in this DB -> guarded no-op
+            cur.execute("""SELECT rp.scope FROM role_permissions_v2 rp
+                           JOIN permissions_v2 p ON p.id = rp.permission_id
+                           JOIN roles r ON r.id = rp.role_id
+                           WHERE p.module_key = 'buyback' AND r.name = %s
+                             AND p.entity_key = 'module' AND p.action_key = 'access'""",
+                        (role_name,))
+            row = cur.fetchone()
+            scope = (row['scope'] if isinstance(row, dict) else row[0]) if row else None
+            assert scope == 'all', f'{role_name} should hold buyback.module.access scope=all'
+    finally:
+        release_db(conn)
