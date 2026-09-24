@@ -22,6 +22,9 @@ export interface TdPublicPage {
     thank_you?: string
     conditions_text?: string | null
     logo_url?: string | null
+    opens_at?: string | null
+    closes_at?: string | null
+    require_license_photo?: boolean
     company_name?: string
     gdpr_text?: string | null
   }
@@ -58,7 +61,7 @@ export const tdApi = {
     gdpr_consent: boolean; conditions_accepted: boolean
     // Ranked backup times (2nd/3rd/4th choice) per car — preference only, they
     // reserve nothing; captured on the booking for the team.
-    preferred?: { car: string; plate: string | null; choices: string[] }[]
+    preferred?: { car: string; plate: string | null; time: string }[]
     utm?: Record<string, string>
   }) => api.post<TdSubmitResult>(`/api/td/pages/${slug}/bookings`, body),
 

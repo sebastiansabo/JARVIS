@@ -16,6 +16,8 @@ import {
 // picker never shows a long machine datetime.
 const dayFmt = new Intl.DateTimeFormat('ro-RO', { weekday: 'short', day: '2-digit', month: 'short' })
 const timeFmt = new Intl.DateTimeFormat('ro-RO', { hour: '2-digit', minute: '2-digit' })
+// opens_at/closes_at are true instants → format in the viewer's local zone.
+const regFmt = new Intl.DateTimeFormat('ro-RO', { day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit' })
 
 const EMAIL_RE = /.+@.+\..+/
 
@@ -70,14 +72,10 @@ function dayKeyOf(startsAt: string): string {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 }
 
-// A customer can book up to this many CARS in one group (one primary interval
-// each); beyond it, a brand-new car's chips go quiet.
-const MAX_SLOTS = 5
-
-// Per car, the customer ranks up to this many times: the 1st pick is the real
-// booking (it holds the slot), the 2nd/3rd/4th are preferred alternatives that
+// A booking is ONE global ranked list: the 1st pick (any car) is the real
+// booking (it holds the slot); the 2nd/3rd/4th are ranked preferences that
 // reserve nothing and may be shifted by the team.
-const MAX_CHOICES_PER_CAR = 4
+const MAX_PICKS = 4
 const CHOICE_LABELS = ['Prima opțiune', 'A doua opțiune', 'A treia opțiune', 'A patra opțiune']
 
 export default function PublicTdBooking() {
@@ -89,6 +87,9 @@ export default function PublicTdBooking() {
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   // The day currently shown in the car picker (null -> first available day).
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  // Accordion: which car's hour-slots are expanded (null = all collapsed). Keeps
+  // a long multi-car list compact — tap a car to reveal its times.
+  const [expandedCar, setExpandedCar] = useState<number | null>(null)
   const [name, setName] = useState('')
   const [dialCode, setDialCode] = useState('+40')
   const [phone, setPhone] = useState('')
@@ -150,31 +151,13 @@ export default function PublicTdBooking() {
     ? selectedDay
     : (days[0]?.key ?? null)
 
-  const sameStart = (a: TdSlot, b: TdSlot) =>
-    new Date(a.starts_at).getTime() === new Date(b.starts_at).getTime()
-  // Picks are kept in selection ORDER; per car the first pick is the primary
-  // (the real, slot-holding booking) and later picks are ranked alternatives.
+  // Picks are kept in GLOBAL selection order: index 0 is the real booking
+  // (reserved), the rest are ranked preferences. carPicks groups a car's picks
+  // for its collapsed accordion badge (each pick's rank is its GLOBAL index).
   const carPicks = (carId: number) => selectedIds.filter((id) => slotsById[id]?.car_id === carId)
-  const primaryCount = (data?.cars || []).filter((c) => carPicks(c.id).length > 0).length
-  // Ranked selection rules:
-  //  - a car holds at most MAX_CHOICES_PER_CAR picks (1st + up to 3 backups)
-  //  - at most MAX_SLOTS cars (primaries) per group
-  //  - two cars may not share the same PRIMARY hour (one driver, one booking);
-  //    backup alternatives are flexible and never clash-checked.
   const toggleSlot = (s: TdSlot) => setSelectedIds((prev) => {
     if (prev.includes(s.id)) return prev.filter((x) => x !== s.id)
-    const picks = prev.filter((id) => slotsById[id]?.car_id === s.car_id)
-    if (picks.length >= MAX_CHOICES_PER_CAR) return prev
-    if (picks.length === 0) { // this pick would become the car's PRIMARY
-      const carsWithPick = new Set(prev.map((id) => slotsById[id]?.car_id))
-      if (carsWithPick.size >= MAX_SLOTS) return prev
-      const primaryClash = prev.some((id) => {
-        const o = slotsById[id]
-        const oIsPrimary = prev.filter((x) => slotsById[x]?.car_id === o?.car_id)[0] === id
-        return !!o && oIsPrimary && o.car_id !== s.car_id && sameStart(o, s)
-      })
-      if (primaryClash) return prev
-    }
+    if (prev.length >= MAX_PICKS) return prev // 1 booking + up to 3 preferences
     return [...prev, s.id]
   })
 
@@ -207,20 +190,19 @@ export default function PublicTdBooking() {
 
   const submit = useMutation({
     mutationFn: () => {
-      // Only the primary (1st pick per car) is an actual booking; the ranked
-      // backups ride along as human-readable preferences — they reserve nothing.
-      const primarySlotIds: number[] = []
-      const preferred: { car: string; plate: string | null; choices: string[] }[] = []
-      for (const c of (data?.cars || [])) {
-        const picks = carPicks(c.id)
-        if (!picks.length) continue
-        primarySlotIds.push(picks[0])
-        const backups = picks.slice(1)
-          .map((id) => slotsById[id])
-          .filter(Boolean)
-          .map((s) => `${dayFmt.format(new Date(s!.starts_at))}, ${timeFmt.format(new Date(s!.starts_at))}`)
-        if (backups.length) preferred.push({ car: c.label, plate: c.plate ?? null, choices: backups })
-      }
+      // Global ranking: ONLY the 1st pick (selectedIds[0]) is an actual booking;
+      // the rest ride along as ranked, human-readable preferences (reserve nothing).
+      const primarySlotIds = selectedIds.length ? [selectedIds[0]] : []
+      const carOf = (id: number) => data?.cars.find((c) => c.id === slotsById[id]?.car_id)
+      const preferred = selectedIds.slice(1).map((id) => {
+        const s = slotsById[id]
+        const car = carOf(id)
+        return {
+          car: car?.label ?? '',
+          plate: car?.plate ?? null,
+          time: s ? `${dayFmt.format(new Date(s.starts_at))}, ${timeFmt.format(new Date(s.starts_at))}` : '',
+        }
+      }).filter((p) => p.time)
       return tdApi.submitBooking(slug!, {
         slot_ids: primarySlotIds,
         preferred,
@@ -259,10 +241,24 @@ export default function PublicTdBooking() {
     />
   )
 
+  // Registration window (opens_at/closes_at are true instants — compare directly,
+  // NOT via naiveDate). Outside the window the form is view-only.
+  const nowMs = Date.now()
+  const opensAtMs = data.page.opens_at ? new Date(data.page.opens_at).getTime() : null
+  const closesAtMs = data.page.closes_at ? new Date(data.page.closes_at).getTime() : null
+  const notOpenYet = opensAtMs !== null && nowMs < opensAtMs
+  const closed = closesAtMs !== null && nowMs > closesAtMs
+  const registrationOpen = !notOpenYet && !closed
+
+  const requirePhoto = !!data.page.require_license_photo
   const detailsFilled = !!name.trim() && phoneValid && EMAIL_RE.test(email.trim())
     && !!license.trim() && gdprConsent && conditionsAccepted
-  const canSubmit = selectedIds.length > 0 && detailsFilled && !submit.isPending
-  const ctaHint = !detailsFilled ? 'Completează câmpurile' : 'Alege cel puțin un interval'
+    && (!requirePhoto || !!licensePhoto)
+  const canSubmit = selectedIds.length > 0 && detailsFilled && registrationOpen && !submit.isPending
+  const ctaHint = !registrationOpen
+    ? (notOpenYet ? 'Programările nu sunt încă deschise' : 'Programările s-au închis')
+    : !detailsFilled ? 'Completează câmpurile'
+    : 'Alege cel puțin un interval'
 
   return (
     <div className="min-h-screen bg-[#F6F7F9] text-[#0E1B2C] dark:bg-[#0B1522] dark:text-slate-100">
@@ -297,6 +293,15 @@ export default function PublicTdBooking() {
       </header>
 
       <div className="mx-auto max-w-[520px] px-5 py-8 sm:py-12">
+        {!registrationOpen && (
+          <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-center text-sm
+                          text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-300"
+               role="status">
+            {notOpenYet && opensAtMs !== null
+              ? <>Programările se deschid pe <strong>{regFmt.format(new Date(opensAtMs))}</strong>.</>
+              : 'Programările pentru acest eveniment s-au închis.'}
+          </div>
+        )}
         {/* 1) Details first — the customer fills their own data before picking. */}
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm
                             dark:border-slate-700/60 dark:bg-[#14243A]"
@@ -356,7 +361,7 @@ export default function PublicTdBooking() {
                 group. Never required to submit (see detailsFilled/canSubmit
                 below, which don't reference it). */}
             <div>
-              <p className={labelCls}>Poză permis (opțional)</p>
+              <p className={labelCls}>Poză permis {requirePhoto ? '(obligatoriu)' : '(opțional)'}</p>
               {licensePhoto ? (
                 <div className="flex items-center gap-3">
                   <img
@@ -385,12 +390,14 @@ export default function PublicTdBooking() {
                   <input
                     type="file" accept="image/*" className="sr-only"
                     onChange={handlePhotoFile} disabled={photoBusy}
-                    aria-label="Poză permis (opțional)"
+                    aria-label={requirePhoto ? 'Poză permis (obligatoriu)' : 'Poză permis (opțional)'}
                   />
                 </label>
               )}
               <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
-                Opțional — nu este necesară pentru a trimite programarea.
+                {requirePhoto
+                  ? 'Obligatorie pentru a trimite programarea.'
+                  : 'Opțional — nu este necesară pentru a trimite programarea.'}
               </p>
             </div>
           </div>
@@ -431,28 +438,28 @@ export default function PublicTdBooking() {
               <p className="mt-1 text-sm capitalize text-slate-500 dark:text-slate-400">{days[0].label}</p>
             ) : null}
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-              Prima oră aleasă la fiecare mașină este cea rezervată. Poți adăuga și alte
+              Prima oră aleasă (la orice mașină) este cea rezervată. Poți adăuga și alte
               ore preferate (a 2-a, a 3-a, a 4-a) — acestea sunt orientative și pot fi
               ajustate împreună cu echipa.
             </p>
           </div>
 
           <div className="space-y-4">
-            {data.cars.map((car) => {
+            {data.cars.filter((car) => (slotsByCar[car.id] || []).some((s) => dayKeyOf(s.starts_at) === activeDay)).map((car) => {
               const carSlots = (slotsByCar[car.id] || []).filter((s) => dayKeyOf(s.starts_at) === activeDay)
-              // This car's picks in rank order (may span days); index 0 = primary.
-              const picks = carPicks(car.id)
-              const carFull = picks.length >= MAX_CHOICES_PER_CAR
-              // Other cars' PRIMARY start times — a new primary here may not clash.
-              const otherPrimaries = (data.cars)
-                .filter((c) => c.id !== car.id)
-                .map((c) => slotsById[carPicks(c.id)[0]])
-                .filter(Boolean) as TdSlot[]
+              const picks = carPicks(car.id) // this car's picks; rank = global index in selectedIds
+              const expanded = expandedCar === car.id
               return (
                 <article key={car.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm
+                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm
                              dark:border-slate-700/60 dark:bg-[#14243A]">
-                  <div className="mb-3 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setExpandedCar(expanded ? null : car.id)}
+                    aria-expanded={expanded}
+                    className="flex w-full items-center gap-2 p-4 text-left outline-none
+                               focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2743E6]"
+                  >
                     <h3 className="text-base font-semibold">{car.label}</h3>
                     {car.plate && (
                       <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs
@@ -460,30 +467,48 @@ export default function PublicTdBooking() {
                         {car.plate}
                       </span>
                     )}
-                  </div>
+                    {/* Collapsed: badge each of this car's picks with its GLOBAL
+                        rank (1 = rezervat) so a picked car reads at a glance. */}
+                    {!expanded && picks.length > 0 && (
+                      <span className="ml-1 flex flex-wrap items-center gap-1">
+                        {picks.map((id) => {
+                          const s = slotsById[id]
+                          if (!s) return null
+                          const r = selectedIds.indexOf(id)
+                          return (
+                            <span key={id} className={
+                              'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ' +
+                              (r === 0 ? 'bg-[#2743E6] text-white'
+                                       : 'bg-[#2743E6]/10 text-[#2743E6] dark:bg-[#2743E6]/25 dark:text-[#C9D4FF]')
+                            }>
+                              {r + 1} · {timeFmt.format(new Date(s.starts_at))}
+                            </span>
+                          )
+                        })}
+                      </span>
+                    )}
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                      className={'ml-auto h-4 w-4 shrink-0 text-slate-400 motion-safe:transition-transform '
+                        + (expanded ? 'rotate-180' : '')}>
+                      <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
 
-                  {carSlots.length === 0 ? (
-                    <p className="text-sm text-slate-400 dark:text-slate-500">Niciun interval liber în această zi</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {carSlots.map((s) => {
-                        const rank = picks.indexOf(s.id) // -1 unpicked, 0 primary, ≥1 backup
+                  {expanded && (
+                    <div className="flex flex-wrap gap-2 px-4 pb-4">
+                    {carSlots.map((s) => {
+                        const rank = selectedIds.indexOf(s.id) // GLOBAL: -1 unpicked, 0 rezervat, ≥1 preferință
                         const active = rank >= 0
                         const isPrimary = rank === 0
-                        // An unpicked chip goes quiet when the car is full, or —
-                        // only if it would be this car's PRIMARY — the car cap is
-                        // hit or it clashes with another car's primary hour.
-                        const wouldBePrimary = picks.length === 0
-                        const clash = wouldBePrimary && otherPrimaries.some((o) => sameStart(o, s))
-                        const capped = wouldBePrimary && primaryCount >= MAX_SLOTS
-                        const disabled = !active && (carFull || clash || capped)
+                        // Unpicked chips go quiet once the full ranked list is set
+                        // (1 booking + up to 3 preferences).
+                        const disabled = !active && selectedIds.length >= MAX_PICKS
                         return (
                           <button
                             key={s.id}
                             type="button"
                             aria-pressed={active}
                             disabled={disabled}
-                            title={clash ? 'Ai deja o rezervare la această oră' : undefined}
                             onClick={() => toggleSlot(s)}
                             className={
                               'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium ' +
@@ -520,10 +545,15 @@ export default function PublicTdBooking() {
             {data.cars.length === 0 && (
               <p className="text-sm text-slate-400 dark:text-slate-500">Momentan nu sunt mașini disponibile.</p>
             )}
-            {primaryCount >= MAX_SLOTS && (
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Poți programa până la {MAX_SLOTS} mașini. Deselectează una ca să adaugi alta.
-              </p>
+            {data.cars.length > 0
+              && !data.cars.some((car) => (slotsByCar[car.id] || []).some((s) => dayKeyOf(s.starts_at) === activeDay)) && (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center
+                              dark:border-slate-600 dark:bg-[#14243A]">
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Momentan nu există intervale libere{days.length > 1 ? ' în această zi' : ''}.
+                </p>
+                {/* Waiting-list request CTA is wired here (see WaitlistPanel). */}
+              </div>
             )}
           </div>
         </section>
@@ -536,72 +566,60 @@ export default function PublicTdBooking() {
                  aria-label="Programările tale">
           <h2 className="mb-3 text-base font-semibold">
             Programările tale
-            {primaryCount > 0 && (
+            {selectedIds.length > 0 && (
               <span className="ml-1 font-normal text-slate-400 dark:text-slate-500">
-                ({primaryCount} {primaryCount === 1 ? 'mașină' : 'mașini'})
+                ({selectedIds.length})
               </span>
             )}
           </h2>
 
-          {primaryCount > 0 ? (
-            <ul className="mb-4 space-y-3">
-              {data.cars.filter((c) => carPicks(c.id).length > 0).map((car) => {
-                const picks = carPicks(car.id)
+          {selectedIds.length > 0 ? (
+            <ul className="mb-4 space-y-2">
+              {selectedIds.map((id, i) => {
+                const s = slotsById[id]
+                if (!s) return null
+                const car = carsById[s.car_id]
+                const isPrimary = i === 0
                 return (
-                  <li key={car.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-700/60">
-                    <div className="mb-2 flex items-center gap-2">
-                      <span className="text-sm font-semibold">{car.label}</span>
-                      {car.plate && (
-                        <span className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs
-                                         font-medium text-slate-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300">
-                          {car.plate}
-                        </span>
-                      )}
-                    </div>
-                    <div className="space-y-1.5">
-                      {picks.map((id, i) => {
-                        const s = slotsById[id]
-                        if (!s) return null
-                        const isPrimary = i === 0
-                        return (
-                          <div key={id} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                            <span className={
-                              'grid h-4 w-4 shrink-0 place-items-center rounded-full text-[10px] font-bold ' +
-                              (isPrimary ? 'bg-[#2743E6] text-white' : 'bg-[#2743E6]/15 text-[#2743E6] dark:text-[#C9D4FF]')
-                            }>
-                              {i + 1}
-                            </span>
-                            <span className="font-medium">{CHOICE_LABELS[i]}</span>
-                            <span className="text-slate-500 dark:text-slate-400">
-                              {dayFmt.format(new Date(s.starts_at))}, {timeFmt.format(new Date(s.starts_at))}
-                            </span>
-                            <span className={
-                              'ml-auto text-xs ' +
-                              (isPrimary ? 'font-medium text-[#2743E6] dark:text-[#8CA1FF]' : 'text-slate-400 dark:text-slate-500')
-                            }>
-                              {isPrimary ? 'rezervat' : 'ora poate fi modificată'}
-                            </span>
-                            <button
-                              type="button"
-                              aria-label={`Elimină ${CHOICE_LABELS[i]} — ${car.label}`}
-                              onClick={() => toggleSlot(s)}
-                              className="shrink-0 rounded-md px-1 text-lg leading-none text-slate-400 outline-none
-                                         hover:text-[#2743E6] focus-visible:ring-2 focus-visible:ring-[#2743E6]
-                                         dark:hover:text-white"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        )
-                      })}
-                    </div>
+                  <li key={id}
+                    className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-slate-200 p-3
+                               text-sm dark:border-slate-700/60">
+                    <span className={
+                      'grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold ' +
+                      (isPrimary ? 'bg-[#2743E6] text-white' : 'bg-[#2743E6]/15 text-[#2743E6] dark:text-[#C9D4FF]')
+                    }>
+                      {i + 1}
+                    </span>
+                    <span className="font-medium">{CHOICE_LABELS[i] ?? `Opțiunea ${i + 1}`}</span>
+                    <span className="text-slate-600 dark:text-slate-300">
+                      {car?.label ?? ''}{car?.plate ? ` (${car.plate})` : ''}
+                    </span>
+                    <span className="text-slate-500 dark:text-slate-400">
+                      {dayFmt.format(new Date(s.starts_at))}, {timeFmt.format(new Date(s.starts_at))}
+                    </span>
+                    <span className={
+                      'ml-auto text-xs ' +
+                      (isPrimary ? 'font-medium text-[#2743E6] dark:text-[#8CA1FF]' : 'text-slate-400 dark:text-slate-500')
+                    }>
+                      {isPrimary ? 'rezervat' : 'preferință'}
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Elimină ${CHOICE_LABELS[i] ?? 'opțiunea'} — ${car?.label ?? ''}`}
+                      onClick={() => toggleSlot(s)}
+                      className="shrink-0 rounded-md px-1 text-lg leading-none text-slate-400 outline-none
+                                 hover:text-[#2743E6] focus-visible:ring-2 focus-visible:ring-[#2743E6]
+                                 dark:hover:text-white"
+                    >
+                      ×
+                    </button>
                   </li>
                 )
               })}
             </ul>
           ) : (
             <p className="mb-4 text-sm text-slate-400 dark:text-slate-500">
-              Alege cel puțin o oră mai sus — prima aleasă la fiecare mașină este cea rezervată.
+              Alege cel puțin o oră mai sus — prima aleasă (la orice mașină) este cea rezervată.
             </p>
           )}
 
