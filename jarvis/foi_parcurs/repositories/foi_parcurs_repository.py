@@ -433,7 +433,12 @@ class FoiParcursRepository(BaseRepository):
             'COALESCE(fp.client_name, cc.display_name, c.name) AS client_name, '
             'COALESCE(fp.client_phone, cc.phone, c.phone) AS client_phone, '
             'COALESCE(fp.client_email, cc.email, c.email) AS client_email, '
-            "COALESCE(NULLIF(TRIM(CONCAT_WS(', ', cc.street, cc.city, cc.region)), ''), c.address) AS client_address, "
+            # fp.client_id is a soft ref that may point at crm_clients (cc) OR the legacy
+            # fp_clients (c). Only fall back to c.address when NO crm client matched, so a
+            # CRM-linked row with a blank address can't surface a colliding fp_clients
+            # address. (fp_clients is effectively deprecated/empty; see JAR follow-up.)
+            "COALESCE(NULLIF(TRIM(CONCAT_WS(', ', cc.street, cc.city, cc.region)), ''), "
+            "         CASE WHEN cc.id IS NULL THEN c.address END) AS client_address, "
             'co.company AS company_name, '
             'co.reg_no AS company_reg_no, co.iban AS company_iban, co.bank AS company_bank, '
             'co.street AS company_street, co.city AS company_city, co.county AS company_county, '
