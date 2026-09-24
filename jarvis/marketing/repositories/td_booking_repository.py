@@ -333,8 +333,12 @@ class TdBookingRepository(BaseRepository):
             tuple(fields.values()), returning=True)
 
     def list_waitlist(self, page_id: int) -> list:
+        # Resolve the preferred car's mark/model so the admin sees "MG MGS9 PHEV
+        # Luxury", not a bare VIN.
         return self.query_all(
-            'SELECT * FROM mkt_td_waitlist WHERE page_id=%s ORDER BY created_at DESC', (page_id,))
+            'SELECT w.*, v.mark AS preferred_car_mark, v.model AS preferred_car_model '
+            'FROM mkt_td_waitlist w LEFT JOIN fp_vehicles v ON v.vin = w.preferred_car_vin '
+            'WHERE w.page_id=%s ORDER BY w.created_at DESC', (page_id,))
 
     def count_recent_waitlist_by_ip(self, ip, since) -> int:
         row = self.query_one(
