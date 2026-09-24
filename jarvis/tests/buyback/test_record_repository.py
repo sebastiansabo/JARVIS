@@ -134,3 +134,15 @@ def test_set_status(require_real_db):
     rec = repo.create(_base())
     updated = repo.set_status(rec['id'], 'INITIAL_OFFER', actor=1)
     assert updated['status'] == 'INITIAL_OFFER'
+
+
+def test_delete_removes_row_and_returns_rowcount(require_real_db):
+    repo = RecordRepository()
+    rec = repo.create(_base())
+    assert repo.delete(rec['id']) == 1
+    assert repo.get_by_id(rec['id']) is None
+
+
+def test_delete_missing_id_returns_zero(require_real_db):
+    repo = RecordRepository()
+    assert repo.delete(999999999) == 0
