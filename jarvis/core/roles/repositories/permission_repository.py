@@ -349,6 +349,7 @@ class PermissionRepository(BaseRepository):
             'can_edit_carpark':         perms.get('carpark.vehicles.edit', False),
             'can_delete_carpark':       perms.get('carpark.vehicles.delete', False),
             'can_view_carpark_finance': perms.get('carpark.finance.view', False),
+            'can_access_buyback':       perms.get('buyback.module.access', False),
         }
         updates = ', '.join([f"{col} = %s" for col in bool_updates.keys()])
         values = list(bool_updates.values()) + [role_id]

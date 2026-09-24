@@ -415,6 +415,7 @@ def api_current_user():
                 'can_access_chat':       _access('digest',     'can_access_digest'),
                 'can_access_field_sales': _access('field_sales', None),
                 'can_access_carpark':    _access('carpark',     'can_access_carpark'),
+                'can_access_buyback':    _access('buyback',     'can_access_buyback'),
                 'can_access_service':    _access('service',     None),
                 'can_access_ticketing':  _access('ticketing',   None),
                 'can_access_controlling': _access('controlling', None),
