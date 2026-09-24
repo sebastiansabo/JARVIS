@@ -44,7 +44,7 @@ _CREATE_FIELDS = (
 
 
 def _scoped_company_id():
-    """Resolve the company_id to act on for CREATE/LIST: an 'own'-scope
+    """Resolve the company_id to act on for CREATE: an 'own'-scope
     caller (Sales) is always pinned to their own company, ignoring any
     request-supplied company_id; only an 'all'-scope caller (Admin/Manager)
     may use the tenant-switcher (_acting_company_id, which itself only
@@ -53,11 +53,67 @@ def _scoped_company_id():
     Returns None for a non-'all'-scope caller who has NO company — callers
     MUST fail closed on that (never pass None to RecordRepository.list for a
     non-'all' caller: list() treats company_id=None as "no company filter",
-    i.e. ALL companies, a cross-tenant leak). See list_records/create_record.
+    i.e. ALL companies, a cross-tenant leak). See create_record.
+
+    NOTE: LIST uses `_list_scoped_company_id` below instead — this helper
+    alone is not sufficient for listing, because `_acting_company_id()`'s
+    validation only fires for a REQUEST-supplied company_id; an 'all'-scope
+    caller who is NOT a true global admin (e.g. a Manager granted 'all'
+    scope) and supplies no company_id at all falls through to
+    `current_user.company_id` unchecked, which can be None — and
+    `g.permission_scope == 'all'` would then wrongly skip list_records' own
+    empty-page guard, which only fires for `!= 'all'`. That combination is
+    the cross-tenant read IDOR fixed here (see _list_scoped_company_id).
     """
     if g.permission_scope != 'all':
         return getattr(current_user, 'company_id', None)
     return _shared._acting_company_id()
+
+
+def _list_scoped_company_id():
+    """Resolve the (company_id, allowed) pair to filter GET /records by.
+
+    `allowed=False` means the caller must get an EMPTY page — the route
+    must NEVER fall through to RecordRepository.list(company_id=None) (="no
+    filter", i.e. every tenant) for anyone but a true global admin.
+
+    - own/department scope (`g.permission_scope != 'all'`): unchanged
+      behavior — pinned to the caller's own company_id, ignoring any
+      request-supplied company_id; company_id=None (company-less caller)
+      fails closed (empty page).
+    - 'all' scope, true global admin (`_permitted_company_ids()` is None):
+      unchanged — the existing tenant-switcher semantics
+      (`_acting_company_id()`: optional ?company_id, else no filter).
+    - 'all' scope, NOT a true global admin (e.g. a Manager granted 'all'
+      scope): bounded by `_permitted_company_ids()` — the SAME set
+      `_guard_company` uses for single-record IDOR, so LIST access can never
+      exceed detail/mutate access. A request-supplied company_id outside
+      that set, or an absent one that doesn't resolve to a permitted
+      company (including a company-less caller), yields an empty page
+      rather than an unfiltered cross-tenant list.
+    """
+    if g.permission_scope != 'all':
+        company_id = getattr(current_user, 'company_id', None)
+        return company_id, company_id is not None
+
+    permitted = _shared._permitted_company_ids()
+    if permitted is None:
+        return _shared._acting_company_id(), True
+
+    requested = request.args.get('company_id')
+    if requested not in (None, ''):
+        try:
+            requested_id = int(requested)
+        except (TypeError, ValueError):
+            requested_id = None
+        if requested_id is None or requested_id not in permitted:
+            return None, False
+        return requested_id, True
+
+    company_id = getattr(current_user, 'company_id', None)
+    if company_id is None or company_id not in permitted:
+        return None, False
+    return company_id, True
 
 
 # ═══════════════════════════════════════════════
@@ -74,11 +130,13 @@ def list_records():
     except (ValueError, TypeError):
         page, per_page = 1, 25
 
-    company_id = _scoped_company_id()
-    if g.permission_scope != 'all' and company_id is None:
-        # Fail closed: a company-less own/department caller must NEVER fall
-        # through to an unfiltered (all-companies) list. Return an empty page
-        # rather than leaking every tenant's records.
+    company_id, allowed = _list_scoped_company_id()
+    if not allowed:
+        # Fail closed: a caller whose effective company_id doesn't resolve to
+        # one they're permitted to see (company-less own/department caller,
+        # or a bounded 'all'-scope caller with no/foreign company_id) must
+        # NEVER fall through to an unfiltered (all-companies) list. Return an
+        # empty page rather than leaking every tenant's records.
         return jsonify({'records': [], 'total': 0, 'page': page, 'per_page': per_page})
 
     rows, total = _shared.records_repo.list(
@@ -112,10 +170,16 @@ def get_record(record_id):
     if not record:
         return jsonify({'success': False, 'error': 'Record not found'}), 404
 
-    if g.permission_scope != 'all':
-        err = _shared._guard_company(record)
-        if err:
-            return err
+    # SECURITY: unconditional — a caller with 'all' permission_scope is not
+    # necessarily a true global admin (e.g. a Manager granted 'all' scope is
+    # bounded by _permitted_company_ids()); _guard_company itself already
+    # no-ops (returns None) for a real global admin (permitted set is the
+    # unrestricted None sentinel), so gating this call on permission_scope
+    # was redundant AND let any bounded 'all'-scope caller read ANY
+    # company's record by id enumeration.
+    err = _shared._guard_company(record)
+    if err:
+        return err
 
     offers = _shared.offers_repo.list_for_record(record_id)
     photos = _shared.photos_repo.get_by_record(record_id)
@@ -148,6 +212,22 @@ def create_record():
     raw_images = data.get('images')
     if raw_images is not None and not isinstance(raw_images, list):
         return jsonify({'success': False, 'error': 'images must be an array'}), 400
+
+    # Type-validate/coerce the intake fields BEFORE building create_data, so
+    # a badly-typed value (e.g. mileage_km: 'abc', manufacture_date:
+    # '2020-13-99', other_details: {...}) 400s here instead of reaching
+    # RecordRepository.create and raising an uncaught psycopg2/DB error (a
+    # raw 500).
+    try:
+        data = _shared.validate_intake(data)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+    # A record must not be able to reach BOUGHT with NULL brand/model — that
+    # makes VehicleService.create_vehicle raise 'Brand is required' forever
+    # (an un-hand-off-able record). Require both, non-empty, at intake.
+    if not _shared.is_nonempty_str(data.get('brand')) or not _shared.is_nonempty_str(data.get('model')):
+        return jsonify({'success': False, 'error': 'brand and model are required'}), 400
 
     company_id = _scoped_company_id()
     if company_id is None:
@@ -185,14 +265,23 @@ def create_record():
                 record['id'], images, _shared.MAX_CREATE_BYTES,
             )
         except ValueError as e:
-            # Roll back the just-inserted record so an oversized create leaves
-            # NO ghost row. store_base64_images checks the batch size BEFORE any
-            # Spaces upload, so nothing was uploaded and no child rows exist —
-            # the record delete (its FK CASCADE would clear children anyway) is
-            # all that's needed. The audit event is logged only AFTER this
-            # block succeeds, so there's no orphaned event to clean up either.
+            # Roll back the just-inserted record so a rejected image batch
+            # leaves NO ghost row — whether the batch was rejected for size
+            # (checked BEFORE any Spaces upload) or for a malformed entry
+            # (e.g. invalid base64, or a bare Spaces-key string rejected by
+            # M5's data:-URL guard): either way nothing was uploaded and no
+            # child rows exist, so the record delete (its FK CASCADE would
+            # clear children anyway) is all that's needed. The audit event is
+            # logged only AFTER this block succeeds, so there's no orphaned
+            # event to clean up either.
+            #
+            # Only the size cap is a 413 (Payload Too Large); every other
+            # ValueError here (malformed base64, non-data: URL entry, ...) is
+            # a 400 (Bad Request) — a decode failure is NOT a size problem
+            # and a flat 413 for it would be misleading.
             _shared.records_repo.delete(record['id'])
-            return jsonify({'success': False, 'error': str(e)}), 413
+            status = 413 if str(e) == 'payload too large' else 400
+            return jsonify({'success': False, 'error': str(e)}), status
 
     _shared.events_repo.log(
         record['id'], 'created', current_user.id,
@@ -241,6 +330,23 @@ def update_record(record_id):
         }), 409
 
     data = request.get_json(silent=True) or {}
+
+    # Same type-validate/coerce pass as CREATE, BEFORE building update_data —
+    # a badly-typed value must 400 here, not reach RecordRepository.update
+    # and raise an uncaught psycopg2/DB error.
+    try:
+        data = _shared.validate_intake(data)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+    # brand/model may be omitted on a partial update, but if supplied they
+    # must not be blanked out (same "never NULL brand/model" invariant as
+    # CREATE — see create_record).
+    if 'brand' in data and not _shared.is_nonempty_str(data['brand']):
+        return jsonify({'success': False, 'error': 'brand cannot be empty'}), 400
+    if 'model' in data and not _shared.is_nonempty_str(data['model']):
+        return jsonify({'success': False, 'error': 'model cannot be empty'}), 400
+
     # SECURITY: gate through the same intake-only whitelist as CREATE, not
     # the raw request body. RecordRepository.update()'s own
     # `_UPDATABLE_COLUMNS` guard only protects against a caller-controlled
@@ -331,6 +437,26 @@ def delete_record(record_id):
     err = _shared._guard_company(record)
     if err:
         return err
+
+    # A record's audit trail (and, once it's handed off, its CarPark
+    # vehicle/back-link) must never be destroyed by a delete. Only allow a
+    # hard delete for a record that never reached a financial/terminal
+    # outcome: still pending, or a dead-end (LOST/CANCELLED) that was never
+    # bought — AND never got a carpark_vehicle_id (belt-and-suspenders: a
+    # BOUGHT record is already excluded by status, but this also blocks the
+    # pathological case of a non-BOUGHT status somehow carrying a
+    # carpark_vehicle_id).
+    _DELETABLE_STATUSES = (
+        lifecycle.PENDING_EVALUATION, lifecycle.LOST, lifecycle.CANCELLED,
+    )
+    if record['status'] not in _DELETABLE_STATUSES or record.get('carpark_vehicle_id') is not None:
+        return jsonify({
+            'success': False,
+            'error': f"Cannot delete a record in status {record['status']!r} "
+                     f"(already handed off to CarPark or otherwise financially "
+                     f"finalized) — only {', '.join(repr(s) for s in _DELETABLE_STATUSES)} "
+                     f"records with no CarPark vehicle link may be deleted",
+        }), 409
 
     _shared.records_repo.delete(record_id)
     return jsonify({'success': True})
