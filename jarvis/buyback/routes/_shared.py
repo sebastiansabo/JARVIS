@@ -28,12 +28,26 @@ from buyback.services.buyback_service import BuyBackService
 from buyback.services.email import Notifier
 from core.organization.manager_utils import get_actable_company_ids
 
+# Cross-module repos reused (not reimplemented) by lookups.py: the CRM client
+# repo for the seller search/create, the CarPark vehicle repo for the
+# trade-in target search, and the core Settings dropdown repo for
+# admin-configurable option lists. Safe as top-level imports — neither crm
+# nor carpark imports anything from buyback (no import cycle), and app.py
+# registers crm_bp/carpark_bp before buyback_bp anyway (app.py::
+# _register_blueprints).
+from crm.repositories.client_repository import ClientRepository
+from carpark.repositories.vehicle_repository import VehicleRepository
+from core.settings.dropdowns.repositories.dropdown_repository import DropdownRepository
+
 # ── Singleton repo/service instances (mirrors carpark/routes/vehicles.py's
 # module-level `_vehicle_service = VehicleService()`) ──
 records_repo = RecordRepository()
 offers_repo = OfferRepository()
 photos_repo = PhotoRepository()
 events_repo = EventRepository()
+client_repo = ClientRepository()
+carpark_vehicle_repo = VehicleRepository()
+dropdown_repo = DropdownRepository()
 # BuyBackService itself never imports buyback.services.email at module top
 # level (Ruling R2, buyback_service.py's docstring) — that import cycle risk
 # doesn't apply HERE: _shared.py is a leaf the routes import, and email.py's
