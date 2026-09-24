@@ -165,6 +165,33 @@ class TdBookingRepository(BaseRepository):
             "                WHERE b.slot_id=s.id AND b.status IN ('pending_confirm','confirmed')) "
             "ORDER BY s.car_id, s.starts_at", (page_id,))
 
+    def count_slots(self, page_id: int) -> int:
+        """Total materialized slots for a page (regardless of live availability) —
+        drives the admin's 'no slots generated' warning."""
+        row = self.query_one('SELECT COUNT(*) AS n FROM mkt_td_slots WHERE page_id=%s', (page_id,))
+        return int(row['n']) if row else 0
+
+    def list_events_for_calendar(self, company_id: int, date_from, date_to) -> list:
+        """Active (draft/open) Event TD pages for a company, one row per (page,
+        car), spanning the earliest→latest availability window that falls in
+        [date_from, date_to]. Feeds the Driving Hub Calendar overlay so staff see
+        which cars are committed to an event. Returns NAIVE local wall-clock
+        timestamps (window_date + time, no zone): the calendar's naiveDate reads
+        times as wall-clock and strips any zone, exactly as for a session's
+        departure/return -- an AT TIME ZONE conversion here would shift the band
+        (e.g. render a 10:00 window at 07:00)."""
+        return self.query_all(
+            "SELECT p.id AS page_id, p.title, p.slug, p.status, c.vin, "
+            "       MIN(w.window_date + w.start_time) AS starts_at, "
+            "       MAX(w.window_date + w.end_time)   AS ends_at "
+            "FROM mkt_td_booking_pages p "
+            "JOIN mkt_td_booking_cars c ON c.page_id = p.id AND c.is_active "
+            "JOIN mkt_td_booking_windows w ON w.page_id = p.id "
+            "WHERE p.company_id = %s AND p.deleted_at IS NULL AND p.status IN ('draft','open') "
+            "  AND w.window_date BETWEEN %s AND %s "
+            "GROUP BY p.id, p.title, p.slug, p.status, c.vin "
+            "ORDER BY starts_at", (company_id, date_from, date_to))
+
     # ---- bookings ----
     def create_booking(self, data: dict) -> dict:
         """Whitelisted insert. Lets psycopg2.errors.UniqueViolation propagate when the

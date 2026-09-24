@@ -7,6 +7,7 @@ import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { foiParcursApi } from '@/api/foiParcurs'
+import { tdAdminApi } from '@/api/tdAdmin'
 import type { FoiContract } from '@/types/foiParcurs'
 import { sessionStatus, carColor, internalComment } from './sessionStatus'
 import { naiveDate } from '@/lib/naiveDate'
@@ -69,6 +70,15 @@ export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', 
   const { data: vehiclesData } = useQuery({
     queryKey: ['fp-vehicles', documentType],
     queryFn: () => foiParcursApi.getVehicles(true, documentType),
+    staleTime: 30_000,
+  })
+  // Overlay: active Evenimente TD (their committed cars) as distinct bands, so
+  // staff see which cars are reserved for an event. Sales context only (test
+  // drives), and needs a concrete company (the endpoint is per-company).
+  const { data: tdEventsData } = useQuery({
+    queryKey: ['td-calendar-events', companyId, rangeFrom, rangeTo],
+    queryFn: () => tdAdminApi.calendarEvents(companyId, rangeFrom, rangeTo),
+    enabled: companyId > 0 && documentType === 'sales',
     staleTime: 30_000,
   })
   const vehiclesList = vehiclesData?.vehicles ?? []
@@ -152,7 +162,7 @@ export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', 
   // multi-day session that started earlier still shows on the days it covers.
   const rangeStart = dayCols.length ? dayKey(dayCols[0]) : ''
   const rangeEnd = dayCols.length ? dayKey(dayCols[dayCols.length - 1]) : ''
-  const events: TimeGridEvent[] = view === 'month'
+  const sessionEvents: TimeGridEvent[] = view === 'month'
     ? []
     : tdContracts.flatMap((c): TimeGridEvent[] => {
         const dep = dayKey(naiveDate(c.departure_datetime)!)
@@ -176,6 +186,33 @@ export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', 
           draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
         }]
       })
+
+  // Evenimente TD overlay bands (distinct violet, non-draggable). Synthetic
+  // negative ids are never in `byId`, so onEventClick is a safe no-op. Same
+  // brand / car filters as the sessions.
+  const eventBands: TimeGridEvent[] = view === 'month'
+    ? []
+    : (tdEventsData?.events ?? []).flatMap((e, idx): TimeGridEvent[] => {
+        if (brand && vinBrand.get(e.vin) !== brand) return []
+        if (carFilter && e.vin !== carFilter) return []
+        const dep = naiveDate(e.starts_at) ? dayKey(naiveDate(e.starts_at)!) : null
+        if (!dep) return []
+        const retKey = naiveDate(e.ends_at) ? dayKey(naiveDate(e.ends_at)!) : dep
+        const spanEnd = retKey > dep ? retKey : dep
+        if (dep > rangeEnd || spanEnd < rangeStart) return []
+        return [{
+          id: -1_000_000 - idx,
+          dayKey: dep,
+          endDayKey: retKey > dep ? retKey : undefined,
+          startMin: minsOfDay(e.starts_at),
+          endMin: minsOfDay(e.ends_at),
+          color: 'bg-violet-100 text-violet-700 dark:bg-violet-500/25 dark:text-violet-100',
+          title: `Eveniment: ${e.title || e.slug}`,
+          subtitle: carLabel(e.vin),
+          draggable: false,
+        }]
+      })
+  const events: TimeGridEvent[] = [...sessionEvents, ...eventBands]
 
   const go = (dir: 1 | -1) => {
     if (view === 'week') setWeekOffset((o) => o + dir) // slide the 7-day window one day
