@@ -5,3 +5,4 @@ from . import records  # noqa: F401
 from . import offers  # noqa: F401
 from . import inspection  # noqa: F401
 from . import photos  # noqa: F401
+from . import finalize  # noqa: F401
