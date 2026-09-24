@@ -29,24 +29,46 @@ _svc = TdBookingService()
 _fp = FoiParcursRepository()
 
 
-def _may_act_on_company(company_id):
-    """Company boundary for the booking mutation endpoints: Admin/superadmin act on
-    any company, everyone else only on their get_actable_company_ids() scope."""
+def _allowed_companies():
+    """The caller's company scope: None means "all" (Admin/superadmin bypass),
+    otherwise the get_actable_company_ids() set. List endpoints call this once and
+    filter against the returned set (rather than _may_act_on_company per row)."""
     if (getattr(current_user, 'role_name', '') or '').lower() in ('admin', 'superadmin'):
-        return True
-    return company_id in get_actable_company_ids(current_user.id)
+        return None
+    return get_actable_company_ids(current_user.id)
+
+
+def _may_act_on_company(company_id):
+    allowed = _allowed_companies()
+    return allowed is None or company_id in allowed
+
+
+def _scoped_page(pid):
+    """Load a page and enforce the caller may act on its company. Returns
+    (page, None) or (None, error_response). 404 (not 403) everywhere so an outsider
+    can't enumerate which ids exist across companies."""
+    page = _repo.get_page(pid)
+    if not page or not _may_act_on_company(page['company_id']):
+        return None, (jsonify({'error': 'not found'}), 404)
+    return page, None
+
+
+def _scoped_by_page_id(page_id):
+    """Scope an entity whose page_id was resolved from a child row (car/window/
+    waitlist)."""
+    if page_id is None:
+        return None, (jsonify({'error': 'not found'}), 404)
+    return _scoped_page(page_id)
 
 
 def _scoped_booking(bid):
-    """Load a booking and enforce the caller may act on its page's company. Returns
-    (booking, None) or (None, error_response). 404 (not 403) so an outsider can't
-    enumerate which booking ids exist across companies."""
+    """Load a booking and enforce the caller may act on its page's company."""
     booking = _repo.get_booking(bid)
     if not booking:
         return None, (jsonify({'error': 'not found'}), 404)
-    page = _repo.get_page(booking['page_id'])
-    if not page or not _may_act_on_company(page['company_id']):
-        return None, (jsonify({'error': 'not found'}), 404)
+    _, err = _scoped_page(booking['page_id'])
+    if err:
+        return None, err
     return booking, None
 
 
@@ -56,8 +78,14 @@ def _scoped_booking(bid):
 @login_required
 def td_create_page():
     data = request.get_json(silent=True) or {}
-    if not data.get('company_id') or not data.get('slug'):
+    try:
+        company_id = int(data.get('company_id'))
+    except (TypeError, ValueError):
+        company_id = None
+    if not company_id or not data.get('slug'):
         return jsonify({'error': 'company_id and slug required'}), 400
+    if not _may_act_on_company(company_id):
+        return jsonify({'error': 'not found'}), 404
     data['created_by'] = current_user.id
     page = _repo.create_page(data)
     return jsonify(page), 201
@@ -66,12 +94,19 @@ def td_create_page():
 @marketing_bp.route('/api/td/pages', methods=['GET'])
 @login_required
 def td_list_pages():
-    return jsonify({'pages': _repo.list_pages(request.args.get('company_id', type=int))})
+    allowed = _allowed_companies()
+    pages = _repo.list_pages(request.args.get('company_id', type=int))
+    if allowed is not None:
+        pages = [p for p in pages if p['company_id'] in allowed]
+    return jsonify({'pages': pages})
 
 
 @marketing_bp.route('/api/td/pages/<int:pid>', methods=['PATCH'])
 @login_required
 def td_update_page(pid):
+    _, err = _scoped_page(pid)
+    if err:
+        return err
     page = _repo.update_page(pid, request.get_json(silent=True) or {})
     if not page:
         return jsonify({'error': 'not found'}), 404
@@ -84,6 +119,9 @@ def td_set_status(pid):
     status = (request.get_json(silent=True) or {}).get('status')
     if status not in ('draft', 'open', 'closed'):
         return jsonify({'error': 'bad status'}), 400
+    _, err = _scoped_page(pid)
+    if err:
+        return err
     page = _repo.set_page_status(pid, status)
     if not page:
         return jsonify({'error': 'not found'}), 404
@@ -102,6 +140,9 @@ def td_add_car(pid):
     d = request.get_json(silent=True) or {}
     if not d.get('vin'):
         return jsonify({'error': 'vin required'}), 400
+    _, err = _scoped_page(pid)
+    if err:
+        return err
     car = _repo.add_car(pid, d['vin'], d.get('vehicle_id'),
                          d.get('default_advisor_user_id'), d.get('sort_order', 0))
     # Keep slots in sync for the new car, and warn (non-blocking) if the car is
@@ -114,6 +155,10 @@ def td_add_car(pid):
 @marketing_bp.route('/api/td/cars/<int:cid>', methods=['DELETE'])
 @login_required
 def td_remove_car(cid):
+    car = _repo.get_car(cid)
+    _, err = _scoped_by_page_id(car['page_id'] if car else None)
+    if err:
+        return err
     _repo.remove_car(cid)
     return jsonify({'ok': True})
 
@@ -121,6 +166,9 @@ def td_remove_car(cid):
 @marketing_bp.route('/api/td/pages/<int:pid>/cars', methods=['GET'])
 @login_required
 def td_list_cars(pid):
+    _, err = _scoped_page(pid)
+    if err:
+        return err
     # Attach any driving-session conflicts per car (a car already booked during
     # the event's windows shows no slots on the public form) so the admin can
     # flag it. Few cars per event, so the per-car check is fine.
@@ -138,6 +186,9 @@ def td_add_window(pid):
     d = request.get_json(silent=True) or {}
     if not d.get('window_date') or not d.get('start_time') or not d.get('end_time'):
         return jsonify({'error': 'window_date, start_time and end_time required'}), 400
+    _, err = _scoped_page(pid)
+    if err:
+        return err
     w = _repo.add_window(pid, d['window_date'], d['start_time'], d['end_time'],
                           d.get('slot_minutes'))
     # A new window has no slots until materialized — do it now so the event is
@@ -149,12 +200,19 @@ def td_add_window(pid):
 @marketing_bp.route('/api/td/pages/<int:pid>/windows', methods=['GET'])
 @login_required
 def td_list_windows(pid):
+    _, err = _scoped_page(pid)
+    if err:
+        return err
     return jsonify({'windows': _repo.list_windows(pid), 'slot_count': _repo.count_slots(pid)})
 
 
 @marketing_bp.route('/api/td/windows/<int:wid>', methods=['DELETE'])
 @login_required
 def td_remove_window(wid):
+    w = _repo.query_one('SELECT page_id FROM mkt_td_booking_windows WHERE id=%s', (wid,))
+    _, err = _scoped_by_page_id(w['page_id'] if w else None)
+    if err:
+        return err
     _repo.delete_window(wid)
     return jsonify({'ok': True})
 
@@ -164,6 +222,9 @@ def td_remove_window(wid):
 @marketing_bp.route('/api/td/pages/<int:pid>/materialize', methods=['POST'])
 @login_required
 def td_materialize(pid):
+    _, err = _scoped_page(pid)
+    if err:
+        return err
     return jsonify({'inserted': _slots.materialize_slots(pid)})
 
 
@@ -180,6 +241,8 @@ def td_calendar_events():
     to = request.args.get('to')
     if not company_id or not frm or not to:
         return jsonify({'error': 'company_id, from and to required'}), 400
+    if not _may_act_on_company(company_id):
+        return jsonify({'error': 'not found'}), 404
     return jsonify({'events': _repo.list_events_for_calendar(company_id, frm, to)})
 
 
@@ -188,6 +251,9 @@ def td_calendar_events():
 @marketing_bp.route('/api/td/pages/<int:pid>/bookings', methods=['GET'])
 @login_required
 def td_list_bookings(pid):
+    _, err = _scoped_page(pid)
+    if err:
+        return err
     return jsonify({'bookings': _repo.list_bookings(pid, request.args.get('status'))})
 
 
@@ -207,6 +273,9 @@ def td_list_open_slots(pid):
 @marketing_bp.route('/api/td/pages/<int:pid>/waitlist', methods=['GET'])
 @login_required
 def td_list_waitlist(pid):
+    _, err = _scoped_page(pid)
+    if err:
+        return err
     return jsonify({'waitlist': _repo.list_waitlist(pid)})
 
 
@@ -216,6 +285,10 @@ def td_update_waitlist(wid):
     status = (request.get_json(silent=True) or {}).get('status')
     if status not in ('new', 'contacted', 'done', 'dismissed'):
         return jsonify({'error': 'bad status'}), 400
+    wl = _repo.query_one('SELECT page_id FROM mkt_td_waitlist WHERE id=%s', (wid,))
+    _, err = _scoped_by_page_id(wl['page_id'] if wl else None)
+    if err:
+        return err
     row = _repo.set_waitlist_status(wid, status, getattr(current_user, 'id', None))
     if not row:
         return jsonify({'error': 'not found'}), 404
@@ -228,9 +301,9 @@ def td_reassign_advisor(bid):
     uid = (request.get_json(silent=True) or {}).get('advisor_user_id')
     if not uid:
         return jsonify({'error': 'advisor_user_id required'}), 400
-    booking = _repo.get_booking(bid)
-    if not booking:
-        return jsonify({'error': 'not found'}), 404
+    booking, err = _scoped_booking(bid)
+    if err:
+        return err
     _repo.execute(
         'UPDATE mkt_td_bookings SET advisor_user_id=%s, updated_at=NOW() WHERE id=%s',
         (uid, bid))
