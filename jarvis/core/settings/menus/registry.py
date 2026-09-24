@@ -141,6 +141,18 @@ MODULES = [
         'status': 'active',
         'sort_order': 10,
     },
+    {
+        'module_key': 'buyback',
+        'name': 'BuyBack / TradeIn',
+        'description': 'Vehicle buyback & trade-in intake',
+        # Same icon used for the buyback module in permissions_v2 seeding
+        # (migrations/domains/schema_roles.py::_seed_buyback_permissions_v2).
+        'icon': 'bi-arrow-left-right',
+        'url': '/buyback',
+        'color': '#14b8a6',
+        'status': 'active',
+        'sort_order': 11,
+    },
 ]
 
 
