@@ -98,6 +98,17 @@ class TdSlotService:
                 })
         return out
 
+    def free_open_slots(self, page_id: int) -> list:
+        """list_open_slots (car mark/model/plate enriched) filtered by the live
+        is_car_free check, so the admin reservation editor's move/swap picker only
+        offers slots where the car is genuinely available -- matching the public
+        form's real availability, not just TD-booking occupancy. No lead-time
+        cutoff (staff may rebook near-term)."""
+        return [
+            s for s in self.repo.list_open_slots(page_id)
+            if self.is_car_free(s['vin'], _as_datetime(s['starts_at']), _as_datetime(s['ends_at']))
+        ]
+
 
 # BaseRepository.query_one/query_all (via dict_from_row) serialize every date/time/
 # datetime column to its ISO string on the way out, so values read back from the DB
