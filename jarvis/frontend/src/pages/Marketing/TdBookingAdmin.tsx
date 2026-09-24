@@ -30,6 +30,7 @@ import type { UserDetail } from '@/types/users'
 import TdCarsPanel from './TdCarsPanel'
 import TdWindowsPanel from './TdWindowsPanel'
 import TdBookingsPanel from './TdBookingsPanel'
+import TdWaitlistPanel from './TdWaitlistPanel'
 import TdBookingHelp from './TdBookingHelp'
 
 const NONE = '__none__'
@@ -384,11 +385,16 @@ export default function TdBookingAdmin({ companyId: initialCompanyId = 0 }: { co
             <Tabs key={selectedPage.id} defaultValue="bookings">
               <TabsList>
                 <TabsTrigger value="bookings">Rezervări</TabsTrigger>
+                <TabsTrigger value="waitlist">Listă de așteptare</TabsTrigger>
                 <TabsTrigger value="details">Detalii eveniment</TabsTrigger>
               </TabsList>
 
               <TabsContent value="bookings" className="pt-4">
                 <TdBookingsPanel pageId={selectedPage.id} users={userList} />
+              </TabsContent>
+
+              <TabsContent value="waitlist" className="pt-4">
+                <TdWaitlistPanel pageId={selectedPage.id} />
               </TabsContent>
 
               <TabsContent value="details" className="space-y-6 pt-4">

@@ -169,6 +169,20 @@ def submit_booking(slug):
     return _result_response(result)
 
 
+@td_public_bp.route('/pages/<slug>/waitlist', methods=['POST'])
+def submit_waitlist(slug):
+    """Join the event's waiting list -- preference only, reserves NO slot. For
+    customers who can't find a suitable interval (or want a different time/car).
+    The service enforces the same public guards as booking (page open, E.164
+    phone, GDPR consent, per-IP throttle)."""
+    data = request.get_json(silent=True) or {}
+    result = _svc.submit_waitlist(
+        slug, name=data.get('name'), phone=data.get('phone'), email=data.get('email'),
+        preferred_car_vin=data.get('preferred_car_vin'), note=data.get('note'),
+        gdpr_consent=bool(data.get('gdpr_consent')), ip=_client_ip())
+    return _result_response(result)
+
+
 @td_public_bp.route('/bookings/confirm', methods=['POST'])
 def confirm_booking():
     """Confirm a pending booking from its signed one-tap token."""
