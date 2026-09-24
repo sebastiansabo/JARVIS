@@ -6,6 +6,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+from email.utils import formataddr
 from typing import Optional
 from core.utils.logging_config import get_logger
 
@@ -125,7 +126,10 @@ def send_email(
             msg.attach(MIMEText(html_body, 'html'))
 
         msg['Subject'] = subject
-        msg['From'] = f"{sender_name} <{config['from_email']}>" if sender_name else config['from_email']
+        # formataddr quotes a display name containing commas and RFC-2047-encodes
+        # non-ASCII (Romanian diacritics in event titles) so the From header stays
+        # well-formed for strict MTAs/clients.
+        msg['From'] = formataddr((sender_name, config['from_email'])) if sender_name else config['from_email']
         msg['To'] = to_email
 
         # Build CC list from global CC and department CC

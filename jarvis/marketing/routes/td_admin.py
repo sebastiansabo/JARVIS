@@ -191,6 +191,17 @@ def td_list_bookings(pid):
     return jsonify({'bookings': _repo.list_bookings(pid, request.args.get('status'))})
 
 
+@marketing_bp.route('/api/td/pages/<int:pid>/open-slots', methods=['GET'])
+@login_required
+def td_list_open_slots(pid):
+    """Open (unbooked) slots for the reservation editor's move/swap picker.
+    Company-scoped like the mutation endpoints."""
+    page = _repo.get_page(pid)
+    if not page or not _may_act_on_company(page['company_id']):
+        return jsonify({'error': 'not found'}), 404
+    return jsonify({'slots': _repo.list_open_slots(pid)})
+
+
 # ---- waitlist ----
 
 @marketing_bp.route('/api/td/pages/<int:pid>/waitlist', methods=['GET'])

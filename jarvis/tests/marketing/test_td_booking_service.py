@@ -420,6 +420,19 @@ def test_admin_reassign_blocked_when_drive_in_progress(open_page):
         svc.admin_reassign_slot(booking, s2['id'])
 
 
+def test_confirmation_email_sender_is_the_event_title(open_page, monkeypatch):
+    """The confirmation email's sender display name is the event's title
+    (e.g. 'Audi Test Drive'), not the generic 'Jarvis'."""
+    svc, p, c, sent = open_page
+    svc.repo.execute("UPDATE mkt_td_booking_pages SET title=%s WHERE id=%s", ('Audi Test Drive', p['id']))
+    captured = {}
+    monkeypatch.setattr(svc_mod, 'send_customer_message',
+                        lambda *a, **k: (captured.update(k) or (True, '')))
+    slot = _first_slot(svc, p)
+    svc.submit_booking(_SLUG, slot['id'], 'Ana', _PHONE, _EMAIL, {}, '1.2.3.4', 'ua', 'x')
+    assert captured.get('from_name') == 'Audi Test Drive'
+
+
 _PHOTO_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
 
