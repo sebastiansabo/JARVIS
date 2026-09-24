@@ -10,16 +10,22 @@ Two endpoints, both gated by @v2_permission_required('buyback', 'record',
 migrations/domains/schema_roles.py::_seed_buyback_permissions_v2):
 
   - POST /records/<id>/finalize
-    The NORMAL case: a record reaches here already BOUGHT with
-    carpark_vehicle_id still NULL — Task 10's offer-decision route
-    (offers.py::record_decision, via BuyBackService.record_decision)
-    already transitions accept@FINAL_OFFER -> BOUGHT; the hand-off itself
-    was deliberately left out of that transition (see
+    Operates ONLY on a record already moved to BOUGHT (with
+    carpark_vehicle_id still NULL) by Task 10's offer-decision route
+    (offers.py::record_decision, via BuyBackService.record_decision, which
+    flips accept@FINAL_OFFER -> BOUGHT). That decision route is the ONLY
+    path that verifies the seller actually accepted the final offer — the
+    hand-off itself was deliberately left out of that transition (see
     buyback_service.py's record_decision docstring) and lives here instead.
-    Defensively also accepts a record still sitting in FINAL_OFFER (e.g. a
-    caller that hits this route before/without going through the decision
-    route) by transitioning it to BOUGHT first. Any other status, or a
-    BOUGHT record that already has a carpark_vehicle_id, is a 409.
+    finalize does NOT transition a still-FINAL_OFFER record to BOUGHT
+    itself: a bare state-graph transition wouldn't check acceptance, so the
+    same Acquisition user who holds both offer.manage AND record.finalize
+    could otherwise buy a car at a price the seller never agreed to. A
+    still-FINAL_OFFER record is a 409 ("record the client decision first");
+    any other non-BOUGHT status is a 409; a BOUGHT record that already has a
+    carpark_vehicle_id is a 409 ("already handed off"). The purchase price
+    is taken from the record's latest offer only after asserting it is a
+    'final' offer with client_decision 'accepted'.
 
   - POST /records/<id>/handoff/retry
     Retries ONLY the hand-off sub-step, for a BOUGHT record whose
@@ -32,8 +38,9 @@ Both apply the SAME company-scoping/IDOR guard as records.py/offers.py
 (_shared._guard_company), loaded via the SAME repo the record routes use
 (_shared.records_repo.get_by_id), 404 before that guard runs.
 
-The hand-off's own ValueError (invalid/duplicate VIN — see
-carpark_handoff.py) is deliberately turned into a 200 (not a 409/500): the
+A hand-off failure (ANY exception — VehicleService's invalid/duplicate-VIN
+ValueError, or a DB fault mid-create — see carpark_handoff.py and
+_attempt_handoff) is deliberately turned into a 200 (not a 409/500): the
 finalize/retry REQUEST itself succeeded (the record is correctly BOUGHT with
 its purchase price stamped); only the CarPark-side vehicle creation failed,
 which is a normal, retryable outcome that must never un-BOUGHT the record or
@@ -47,6 +54,8 @@ carpark repos, but never inline SQL in this route file).
 """
 from datetime import datetime, timezone
 
+import logging
+
 from flask import jsonify
 from flask_login import login_required, current_user
 
@@ -56,6 +65,8 @@ from buyback.routes import _shared
 from buyback.services.carpark_handoff import handoff_to_carpark
 from core.roles.decorators import v2_permission_required
 
+logger = logging.getLogger('jarvis.buyback')
+
 
 def _attempt_handoff(record_id, record):
     """Run handoff_to_carpark for `record` (already BOUGHT, carpark_vehicle_id
@@ -63,15 +74,31 @@ def _attempt_handoff(record_id, record):
 
     Success: stamps carpark_vehicle_id on the record, returns 200 with the
     fresh record.
-    Failure (ValueError from the hand-off, e.g. duplicate VIN): the record is
-    left exactly as it was (still BOUGHT, still NULL carpark_vehicle_id) so
-    POST /handoff/retry can be called again later; the response is still
+    Failure (ANY exception from the hand-off, e.g. VehicleService's
+    duplicate/invalid-VIN ValueError, or a DB fault mid-create): the record
+    is left exactly as it was (still BOUGHT, still NULL carpark_vehicle_id)
+    so POST /handoff/retry can be called again later; the response is still
     `success: True` (the finalize/retry request itself succeeded) plus a
-    `handoff_error` message.
+    `handoff_error` message, 200.
+
+    The catch is deliberately broad (`except Exception`, not just
+    `ValueError`): the hand-off is a best-effort side step off an
+    already-committed BOUGHT record — a non-ValueError fault (e.g. a DB error
+    in VehicleService.create_vehicle's post-insert change_status) must never
+    surface as a 500 that leaves the record BOUGHT-with-null-vehicle AND
+    signals a hard error to the caller. (Accepted rare residual: if such a
+    fault lands AFTER the carpark_vehicles INSERT but before we can stamp
+    carpark_vehicle_id, a real orphan vehicle exists whose VIN would then
+    block the dup-VIN guard on a later /handoff/retry — a rare mid-create DB
+    fault, not solved here.)
     """
     try:
         vehicle = handoff_to_carpark(record, current_user.id)
-    except ValueError as e:
+    except Exception as e:
+        logger.warning(
+            'CarPark hand-off failed for buyback record %s — left BOUGHT with '
+            'null carpark_vehicle_id, retryable', record_id, exc_info=True,
+        )
         fresh = _shared.records_repo.get_by_id(record_id)
         return jsonify({
             'success': True,
@@ -99,36 +126,55 @@ def finalize_record(record_id):
     if err:
         return err
 
-    if record['status'] == lifecycle.BOUGHT:
-        if record.get('carpark_vehicle_id') is not None:
+    # finalize operates ONLY on a record already moved to BOUGHT by Task 10's
+    # decision route (offers.py::record_decision -> BuyBackService.record_decision,
+    # which flips accept@FINAL_OFFER -> BOUGHT and is the ONLY path that
+    # verifies the seller actually accepted the final offer). A record still
+    # sitting in FINAL_OFFER means the client's decision was never recorded —
+    # finalize must NOT transition it to BOUGHT itself (a bare state-graph
+    # transition wouldn't check acceptance, so the same Acquisition user who
+    # holds both offer.manage AND record.finalize could buy a car at a price
+    # the seller never agreed to). It's a 409 telling the caller to record the
+    # decision first.
+    if record['status'] != lifecycle.BOUGHT:
+        if record['status'] == lifecycle.FINAL_OFFER:
             return jsonify({
                 'success': False,
-                'error': 'Record already handed off to CarPark',
+                'error': 'Record the client decision on the final offer first '
+                         '(it must be accepted before finalizing)',
             }), 409
-    elif record['status'] == lifecycle.FINAL_OFFER:
-        # Defensive path — the normal flow (Task 10's decision route) already
-        # transitions accept@FINAL_OFFER -> BOUGHT before this route is ever
-        # called, but tolerate being called directly on a still-FINAL_OFFER
-        # record by doing that transition here first.
-        try:
-            record = _shared.service.transition(record, lifecycle.BOUGHT, current_user.id)
-        except ValueError as e:
-            return jsonify({'success': False, 'error': str(e)}), 409
-    else:
         return jsonify({
             'success': False,
             'error': f"Cannot finalize a record in status {record['status']!r} "
-                     f"(expected {lifecycle.FINAL_OFFER!r}, or {lifecycle.BOUGHT!r} "
-                     f"with no CarPark vehicle yet)",
+                     f"(only {lifecycle.BOUGHT!r} with no CarPark vehicle yet "
+                     f"can be finalized)",
+        }), 409
+
+    if record.get('carpark_vehicle_id') is not None:
+        return jsonify({
+            'success': False,
+            'error': 'Record already handed off to CarPark',
         }), 409
 
     # The accepted FINAL offer is the source of truth for the purchase price
-    # — looked up server-side (never trusted from the request body).
+    # — looked up server-side (never trusted from the request body). Because
+    # the record is BOUGHT, its latest offer IS the accepted final offer; we
+    # ASSERT that (offer_type 'final' + client_decision 'accepted') rather
+    # than assume it, so the price can never come from a mislabeled/undecided
+    # offer.
     final_offer = _shared.offers_repo.latest_for_record(record_id)
-    purchase_price = final_offer['amount_eur'] if final_offer else None
+    if (
+        final_offer is None
+        or final_offer.get('offer_type') != 'final'
+        or final_offer.get('client_decision') != 'accepted'
+    ):
+        return jsonify({
+            'success': False,
+            'error': 'No accepted final offer found for this record',
+        }), 409
 
     record = _shared.records_repo.update(record_id, {
-        'purchase_price_eur': purchase_price,
+        'purchase_price_eur': final_offer['amount_eur'],
         'bought_at': datetime.now(timezone.utc),
         'finalized_by': current_user.id,
     })
