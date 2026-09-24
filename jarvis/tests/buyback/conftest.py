@@ -271,3 +271,31 @@ def as_role(client, monkeypatch):
         return uid
 
     return _as_role
+
+
+# ---------------------------------------------------------------------------
+# Buyback schema: ensure tables exist before any buyback test runs
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope='session', autouse=True)
+def _ensure_buyback_schema():
+    """Create the buyback_* tables once per test session against the real
+    DB, so later tasks' repository/route tests find them present on the
+    shared localhost/defaultdb (Task 0's harness runs against real Postgres,
+    not the mocked psycopg2 the rest of the suite uses).
+
+    No-op when REAL_DB_AVAILABLE is False (e.g. CI without a local DB) —
+    DB-backed tests already skip themselves via `require_real_db`/`as_role`,
+    so there's nothing for this fixture to prepare in that case.
+    """
+    if not REAL_DB_AVAILABLE:
+        return
+    from migrations.domains.schema_buyback import create_schema_buyback
+
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        create_schema_buyback(conn, cur)
+        conn.commit()
+    finally:
+        release_db(conn)
