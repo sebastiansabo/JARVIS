@@ -13,9 +13,10 @@ directly instead, both as the correct IDOR posture (an 'own'-scope caller
 has no business picking an arbitrary company_id) and because this helper's
 DB-backed org lookup only resolves for real `users` rows.
 """
+import decimal
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from flask import request, jsonify, abort, make_response, g
 from flask_login import current_user
@@ -199,3 +200,102 @@ def _serialize(obj):
     if isinstance(obj, (_dt.date, _dt.datetime)):
         return obj.isoformat()
     return obj
+
+
+# ── Intake validation/coercion (shared by CREATE + UPDATE) ─────────────────
+#
+# records.py's create_record/update_record build their column dict straight
+# from client-supplied JSON and hand it to RecordRepository.create/update,
+# which bind every value as a %s parameter — a badly-typed value (e.g.
+# mileage_km: 'abc', or a dict where a text column is expected) doesn't fail
+# in Python at all; it reaches psycopg2/Postgres and raises a DB-level error
+# (psycopg2.errors.* — NOT a ValueError), which no route `except ValueError`
+# catches, surfacing as a raw uncaught 500. `_validate_intake` runs BEFORE
+# that, on the raw request dict, and turns any bad value into a clean
+# ValueError the route can catch and 400 on.
+
+_INTAKE_INT_FIELDS = ('mileage_km', 'engine_capacity_cm3', 'keys_count', 'general_condition')
+_INTAKE_NUMERIC_FIELDS = ('client_asking_price_eur', 'reconditioning_cost_eur')
+_INTAKE_DATE_FIELDS = ('manufacture_date', 'first_registration_date')
+_INTAKE_BOOL_FIELDS = ('has_damage', 'is_trade_in', 'service_history_uptodate', 'extra_wheels')
+# Scalar-only text fields — a dict/list here would otherwise reach psycopg2's
+# adapter and raise "can't adapt type 'dict'"/'list' (a ProgrammingError, not
+# a ValueError) -> uncaught 500.
+_INTAKE_TEXT_FIELDS = (
+    'brand', 'model', 'variant', 'equipment', 'damage_details', 'other_details',
+    'seller_name', 'seller_email', 'seller_phone', 'seller_cui',
+    'client_source', 'drive_folder_link', 'target_vehicle_text',
+    'vat_status', 'acquisition_type', 'client_type',
+)
+
+_TRUE_STRINGS = {'true', '1', 'yes', 'y', 'on'}
+_FALSE_STRINGS = {'false', '0', 'no', 'n', 'off'}
+
+
+def _coerce_bool(field, value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int) and value in (0, 1):  # bool is an int subclass; caught above already
+        return bool(value)
+    if isinstance(value, str):
+        low = value.strip().lower()
+        if low in _TRUE_STRINGS:
+            return True
+        if low in _FALSE_STRINGS:
+            return False
+    raise ValueError(f'{field} must be a boolean')
+
+
+def is_nonempty_str(value):
+    """True for a non-blank string — used to enforce brand/model at CREATE
+    (and, when supplied, at UPDATE)."""
+    return isinstance(value, str) and value.strip() != ''
+
+
+def validate_intake(data: dict) -> dict:
+    """Validate + coerce the client-suppliable "intake" fields shared by
+    CREATE and UPDATE (records.py's `_CREATE_FIELDS` whitelist). Only keys
+    PRESENT (and non-None) in `data` are checked, so a partial UPDATE
+    payload that omits a field is unaffected. Returns a NEW dict (shallow
+    copy of `data`) with the checked fields coerced to their proper Python
+    type; raises ValueError(message) on the first invalid value — callers
+    must catch this and return 400 (never let it propagate to the DB
+    layer).
+    """
+    out = dict(data)
+
+    for field in _INTAKE_INT_FIELDS:
+        if out.get(field) is not None:
+            try:
+                out[field] = int(out[field])
+            except (TypeError, ValueError):
+                raise ValueError(f'{field} must be an integer')
+
+    if out.get('general_condition') is not None and not (1 <= out['general_condition'] <= 5):
+        raise ValueError('general_condition must be between 1 and 5')
+    if out.get('keys_count') is not None and out['keys_count'] < 0:
+        raise ValueError('keys_count must be >= 0')
+
+    for field in _INTAKE_NUMERIC_FIELDS:
+        if out.get(field) is not None:
+            try:
+                out[field] = decimal.Decimal(str(out[field]))
+            except (decimal.InvalidOperation, TypeError, ValueError):
+                raise ValueError(f'{field} must be numeric')
+
+    for field in _INTAKE_DATE_FIELDS:
+        if out.get(field) is not None:
+            try:
+                date.fromisoformat(str(out[field]))
+            except (TypeError, ValueError):
+                raise ValueError(f'{field} must be an ISO date (YYYY-MM-DD)')
+
+    for field in _INTAKE_BOOL_FIELDS:
+        if out.get(field) is not None:
+            out[field] = _coerce_bool(field, out[field])
+
+    for field in _INTAKE_TEXT_FIELDS:
+        if isinstance(out.get(field), (dict, list)):
+            raise ValueError(f'{field} must be a plain value, not an object/array')
+
+    return out
