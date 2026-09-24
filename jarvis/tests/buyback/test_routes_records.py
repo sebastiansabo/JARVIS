@@ -472,3 +472,339 @@ def test_create_oversized_images_rolls_back_record(client, as_role, monkeypatch)
     # No ghost row for the attempted VIN.
     _rows, total = shared.records_repo.list(company_id=1, q=vin, per_page=100)
     assert total == 0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FINAL REVIEW PASS: read-IDOR guard (C1), delete guard (I2), intake
+# validation (I3), image-src + base64 hardening (M5/M7)
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── C1 — CRITICAL cross-tenant READ IDOR (two paths) ─────────────────────
+
+def test_get_detail_forbidden_for_bounded_all_scope_non_admin(client, as_role, monkeypatch):
+    """get_record used to only call _guard_company when
+    g.permission_scope != 'all', so ANY 'all'-scope caller who ISN'T a true
+    global admin (Manager/Acquisition/Service are all seeded 'all' scope per
+    migrations/domains/schema_roles.py) could read ANY company's record
+    detail (seller PII, offer amounts, purchase price) by id enumeration.
+
+    Simulate that caller the same way test_out_of_scope_company_mutation_
+    forbidden does: authenticate as Admin (so the module-level
+    @v2_permission_required('...','view') passes and g.permission_scope is
+    really 'all'), then monkeypatch _permitted_company_ids to a bounded set
+    that excludes the foreign record's company — this is the IDOR boundary
+    _guard_company must now enforce unconditionally."""
+    import buyback.routes._shared as shared
+    as_role('Admin', 1)
+    foreign = shared.records_repo.create({
+        'record_code': f'BB-FOREIGN-{os.urandom(4).hex()}',
+        'company_id': 2, 'vin': _vin(), 'brand': 'X', 'model': 'Y',
+        'created_by': 1, 'status': 'PENDING_EVALUATION',
+    })
+    try:
+        monkeypatch.setattr(shared, '_permitted_company_ids', lambda: {1})
+        r = client.get(f"/api/buyback/records/{foreign['id']}")
+        assert r.status_code == 403, r.get_json()
+    finally:
+        shared.records_repo.delete(foreign['id'])
+
+
+def test_get_detail_global_admin_reads_any_company_regression(client, as_role):
+    """Regression guard: a TRUE global admin (can_access_settings ->
+    _permitted_company_ids() is the unrestricted None sentinel) must still
+    be able to read a record belonging to a company OTHER than the one
+    they're currently acting as — the unconditional _guard_company call
+    must not have broken the global-admin bypass."""
+    as_role('Admin', 2)
+    foreign = client.post('/api/buyback/records', json=_payload()).get_json()['record']
+    assert foreign['company_id'] == 2
+
+    as_role('Admin', 1)
+    r = client.get(f"/api/buyback/records/{foreign['id']}")
+    assert r.status_code == 200
+    assert r.get_json()['record']['id'] == foreign['id']
+
+
+def test_list_bounded_all_scope_company_less_caller_gets_empty_page(client, as_role, monkeypatch):
+    """list_records' old empty-page guard only fired for
+    g.permission_scope != 'all', so a bounded 'all'-scope caller (real role
+    scope 'all', but NOT can_access_settings) whose permitted set doesn't
+    include any company fell straight through to
+    RecordRepository.list(company_id=None) — i.e. every tenant's records.
+    Seed a company-1 record that WOULD leak under the old behavior, then
+    read the list back as that bounded, company-less caller."""
+    import buyback.routes._shared as shared
+    as_role('Admin', 1)
+    leaked = client.post('/api/buyback/records', json=_payload()).get_json()['record']
+
+    monkeypatch.setattr(shared, '_permitted_company_ids', lambda: set())
+    body = client.get('/api/buyback/records').get_json()
+    assert body['total'] == 0
+    assert body['records'] == []
+    assert all(rec['id'] != leaked['id'] for rec in body['records'])
+
+
+def test_list_bounded_all_scope_out_of_set_company_param_gets_empty_page(client, as_role, monkeypatch):
+    """A bounded 'all'-scope caller explicitly requesting a company_id
+    OUTSIDE their permitted set must also get an empty page — never that
+    other company's records."""
+    import buyback.routes._shared as shared
+    as_role('Admin', 1)
+    other = shared.records_repo.create({
+        'record_code': f'BB-OTHER-{os.urandom(4).hex()}',
+        'company_id': 2, 'vin': _vin(), 'brand': 'X', 'model': 'Y',
+        'created_by': 1, 'status': 'PENDING_EVALUATION',
+    })
+    try:
+        monkeypatch.setattr(shared, '_permitted_company_ids', lambda: {1})
+        body = client.get('/api/buyback/records?company_id=2').get_json()
+        assert body['total'] == 0
+        assert body['records'] == []
+    finally:
+        shared.records_repo.delete(other['id'])
+
+
+def test_list_global_admin_lists_any_company_regression(client, as_role):
+    """Regression guard: a TRUE global admin's LIST stays unrestricted —
+    an explicit ?company_id filter for a company other than the one
+    they're currently acting as still returns that company's records."""
+    as_role('Admin', 3)
+    rec = client.post('/api/buyback/records', json=_payload()).get_json()['record']
+
+    as_role('Admin', 1)
+    body = client.get('/api/buyback/records?company_id=3').get_json()
+    assert any(r['id'] == rec['id'] for r in body['records'])
+
+
+# ── I2 — delete must not hard-delete financial/terminal records ─────────
+
+def test_delete_refuses_bought_record(client, as_role):
+    """A BOUGHT record's audit trail (and its CarPark vehicle back-link)
+    must never be destroyed by a delete — refuse with 409 and keep the
+    row."""
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    from buyback.routes._shared import service, records_repo
+    rec = records_repo.get_by_id(rid)
+    rec = service.transition(rec, 'INITIAL_OFFER', actor=1)
+    rec = service.transition(rec, 'INSPECTION', actor=1)
+    rec = service.transition(rec, 'FINAL_OFFER', actor=1)
+    service.transition(rec, 'BOUGHT', actor=1)
+
+    r = client.delete(f'/api/buyback/records/{rid}')
+    assert r.status_code == 409, r.get_json()
+    assert records_repo.get_by_id(rid) is not None
+
+
+def test_delete_refuses_when_carpark_vehicle_linked_even_if_status_deletable(client, as_role):
+    """Belt-and-suspenders half of the guard: a carpark_vehicle_id link
+    blocks delete even for an otherwise-deletable status (PENDING_EVALUATION
+    here) — a record must never be deletable once it carries a CarPark
+    back-link, regardless of how it got one."""
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    from buyback.routes._shared import records_repo
+    records_repo.update(rid, {'carpark_vehicle_id': 999999})
+
+    r = client.delete(f'/api/buyback/records/{rid}')
+    assert r.status_code == 409, r.get_json()
+    assert records_repo.get_by_id(rid) is not None
+
+
+def test_delete_allows_pending_evaluation_record(client, as_role):
+    """Counterpart to the BOUGHT refusal: an untouched PENDING_EVALUATION
+    record is still freely deletable (already covered by
+    test_delete_removes_record above; kept here alongside the CANCELLED/LOST
+    cases so all three "deletable" statuses are exercised together)."""
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    r = client.delete(f'/api/buyback/records/{rid}')
+    assert r.status_code == 200
+    from buyback.routes._shared import records_repo
+    assert records_repo.get_by_id(rid) is None
+
+
+def test_delete_allows_cancelled_record(client, as_role):
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    cancel = client.post(f'/api/buyback/records/{rid}/cancel', json={'reason': 'x'})
+    assert cancel.status_code == 200, cancel.get_json()
+
+    r = client.delete(f'/api/buyback/records/{rid}')
+    assert r.status_code == 200, r.get_json()
+    from buyback.routes._shared import records_repo
+    assert records_repo.get_by_id(rid) is None
+
+
+def test_delete_allows_lost_record(client, as_role):
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    from buyback.routes._shared import service, records_repo
+    rec = records_repo.get_by_id(rid)
+    rec = service.transition(rec, 'INITIAL_OFFER', actor=1)
+    service.transition(rec, 'LOST', actor=1)
+
+    r = client.delete(f'/api/buyback/records/{rid}')
+    assert r.status_code == 200, r.get_json()
+    assert records_repo.get_by_id(rid) is None
+
+
+# ── I3 — create/update intake type validation (400, never 500) ──────────
+
+def test_create_bad_mileage_type_is_400_not_500(client, as_role):
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(mileage_km='abc'))
+    assert r.status_code == 400
+    assert r.status_code != 500
+
+
+def test_create_bad_manufacture_date_is_400(client, as_role):
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(manufacture_date='2020-13-99'))
+    assert r.status_code == 400
+
+
+def test_create_non_scalar_other_details_is_400(client, as_role):
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(other_details={'a': 1}))
+    assert r.status_code == 400
+
+
+def test_create_out_of_range_general_condition_is_400(client, as_role):
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(general_condition=9))
+    assert r.status_code == 400
+
+
+def test_create_negative_keys_count_is_400(client, as_role):
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(keys_count=-1))
+    assert r.status_code == 400
+
+
+def test_create_bad_asking_price_type_is_400(client, as_role):
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(client_asking_price_eur='not-a-number'))
+    assert r.status_code == 400
+
+
+def test_create_missing_brand_is_400(client, as_role):
+    as_role('Admin', 1)
+    data = _payload()
+    data.pop('brand')
+    r = client.post('/api/buyback/records', json=data)
+    assert r.status_code == 400
+
+
+def test_create_missing_model_is_400(client, as_role):
+    as_role('Admin', 1)
+    data = _payload()
+    data.pop('model')
+    r = client.post('/api/buyback/records', json=data)
+    assert r.status_code == 400
+
+
+def test_create_blank_brand_is_400(client, as_role):
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(brand='   '))
+    assert r.status_code == 400
+
+
+def test_create_valid_payload_with_all_intake_types_still_201(client, as_role):
+    """Regression guard: a fully-populated, well-typed payload still creates
+    successfully and the validator's coercions (bool/int/Decimal) round-trip
+    correctly."""
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(
+        mileage_km=50000, general_condition=4, keys_count=2,
+        client_asking_price_eur=1234.56, manufacture_date='2020-01-15',
+        has_damage=True, is_trade_in='false',
+    ))
+    assert r.status_code == 201, r.get_json()
+    rec = r.get_json()['record']
+    assert rec['mileage_km'] == 50000
+    assert rec['has_damage'] is True
+    assert rec['is_trade_in'] is False
+
+
+def test_update_bad_type_is_400(client, as_role):
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    r = client.put(f'/api/buyback/records/{rid}', json={'general_condition': 9})
+    assert r.status_code == 400
+
+
+def test_update_non_scalar_field_is_400(client, as_role):
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    r = client.put(f'/api/buyback/records/{rid}', json={'damage_details': ['x']})
+    assert r.status_code == 400
+
+
+def test_update_blank_brand_is_400(client, as_role):
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    r = client.put(f'/api/buyback/records/{rid}', json={'brand': ''})
+    assert r.status_code == 400
+
+
+def test_update_omitted_brand_model_still_ok(client, as_role):
+    """UPDATE only requires brand/model non-empty WHEN present — a partial
+    update that omits both entirely must not be rejected."""
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    r = client.put(f'/api/buyback/records/{rid}', json={'mileage_km': 999})
+    assert r.status_code == 200, r.get_json()
+
+
+# ── M5 — base64 images[] restricted to data: URLs ────────────────────────
+
+def test_create_rejects_bare_key_image_entry_no_spaces_fetch(client, as_role, monkeypatch):
+    """A bare string in images[] must NOT be treated as an existing Spaces
+    object key — resolve_image_bytes() would otherwise fetch() it, letting a
+    caller copy another tenant's private object (e.g. another company's
+    carpark photo) into their own gallery just by naming its key. Assert a
+    400 AND that no Spaces fetch ever happens."""
+    from core.services import spaces_service
+    calls = []
+    monkeypatch.setattr(
+        spaces_service, 'fetch',
+        lambda key: (calls.append(key), (b'x', 'image/jpeg'))[1],
+    )
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(images=['private/carpark/1/x.jpg']))
+    assert r.status_code == 400, r.get_json()
+    assert calls == []
+
+
+# ── M7 — malformed base64 is 400, not a misleading 413 ───────────────────
+
+def test_create_malformed_base64_is_400_not_413(client, as_role, monkeypatch):
+    monkeypatch.setattr(
+        'buyback.repositories.photo_repository.spaces_service.upload',
+        lambda data, key, ct: key,
+    )
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(
+        images=['data:image/jpeg;base64,@@@notbase64@@@'],
+    ))
+    assert r.status_code == 400, r.get_json()
+
+
+def test_create_oversized_images_is_exactly_413(client, as_role, monkeypatch):
+    """Regression guard, stricter than the pre-existing
+    test_create_with_oversized_images_returns_413 (which accepted 413 OR 400
+    to stay agnostic about the eventual malformed-vs-oversized split): after
+    M7's except-split, a genuinely oversized (well-formed) batch must be
+    exactly 413, never 400."""
+    import buyback.routes._shared as shared
+    monkeypatch.setattr(shared, 'MAX_CREATE_BYTES', 10)
+    monkeypatch.setattr(
+        'buyback.repositories.photo_repository.spaces_service.upload',
+        lambda data, key, ct: key,
+    )
+    as_role('Admin', 1)
+    raw = os.urandom(100)
+    data_url = 'data:image/jpeg;base64,' + base64.b64encode(raw).decode()
+    r = client.post('/api/buyback/records', json=_payload(images=[data_url]))
+    assert r.status_code == 413, r.get_json()
