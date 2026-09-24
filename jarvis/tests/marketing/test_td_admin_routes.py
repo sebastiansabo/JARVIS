@@ -148,6 +148,17 @@ def company_id(app):
     return _resolve_company_id()
 
 
+@pytest.fixture(autouse=True)
+def _default_actable_scope(app, monkeypatch):
+    """Every td_admin endpoint is now company-scoped via get_actable_company_ids.
+    Seed user 1 isn't a real org responsable, so grant it the seed company by
+    default → the existing tests exercise the authorized happy path. Scoping tests
+    override this monkeypatch to assert the 404 denial."""
+    import marketing.routes.td_admin as td_admin_mod
+    cid = _resolve_company_id()
+    monkeypatch.setattr(td_admin_mod, 'get_actable_company_ids', lambda uid: {cid})
+
+
 # ---- create page -> add car -> add window -> materialize ----
 
 def test_create_page_add_car_window_materialize(client, company_id):
@@ -461,3 +472,20 @@ def test_edit_booking_contact_via_route(client, company_id, monkeypatch):
     assert b['customer_name'] == 'New Name' and b['customer_email'] == 'new@ex.com'
     fp = repo.query_one('SELECT client_name, client_email FROM foi_de_parcurs WHERE id=%s', (fp_id,))
     assert fp['client_name'] == 'New Name' and fp['client_email'] == 'new@ex.com'
+
+
+def test_page_endpoints_deny_other_company_404(client, company_id, monkeypatch):
+    """The page-keyed admin reads/mutations reject a caller outside the page's
+    company (proves _scoped_page across the surface, not just the booking routes)."""
+    import marketing.routes.td_admin as td_admin_mod
+    page = repo.create_page({'company_id': company_id, 'slug': _SLUG, 'created_by': _USER1_ID,
+                             'status': 'open', 'min_lead_minutes': 0})
+    monkeypatch.setattr(td_admin_mod, 'get_actable_company_ids', lambda uid: set())
+    pid = page['id']
+    assert client.get(f'/marketing/api/td/pages/{pid}/bookings').status_code == 404
+    assert client.get(f'/marketing/api/td/pages/{pid}/waitlist').status_code == 404
+    assert client.get(f'/marketing/api/td/pages/{pid}/cars').status_code == 404
+    assert client.post(f'/marketing/api/td/pages/{pid}/status', json={'status': 'closed'}).status_code == 404
+    assert client.patch(f'/marketing/api/td/pages/{pid}', json={'title': 'x'}).status_code == 404
+    # And the list is filtered, not just per-id gated.
+    assert all(p['id'] != pid for p in client.get('/marketing/api/td/pages').get_json()['pages'])
