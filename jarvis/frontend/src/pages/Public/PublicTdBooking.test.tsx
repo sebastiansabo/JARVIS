@@ -324,4 +324,20 @@ describe('PublicTdBooking', () => {
     fireEvent.click(screen.getByRole('button', { name: '10:00' })) // pick a slot
     expect(trigger).toBeDisabled()
   })
+
+  it('shows a full thank-you screen after joining the waitlist (not back to the form)', async () => {
+    submitWaitlist.mockResolvedValue({ ok: true, id: 7 })
+    renderPage()
+    await screen.findByText('MG ZS')
+    fill('Nume complet', 'Andrei Popescu')
+    fill('Telefon', '0721234567')
+    fill('Email', 'andrei@exemplu.ro')
+    const [gdpr] = screen.getAllByRole('checkbox')
+    fireEvent.click(gdpr)
+    fireEvent.click(screen.getByRole('button', { name: /Nu găsești un interval potrivit/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Înscrie-mă pe lista de așteptare/ }))
+    // The whole form is replaced by a dedicated thank-you screen.
+    expect(await screen.findByText('Ești pe lista de așteptare')).toBeInTheDocument()
+    expect(screen.queryByText('Programările tale')).not.toBeInTheDocument()
+  })
 })

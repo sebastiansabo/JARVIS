@@ -37,6 +37,7 @@ function wrap(ui: React.ReactNode) {
 
 describe('TdBookingAdmin', () => {
   beforeEach(() => {
+    localStorage.clear() // selection/tab are now persisted — isolate each test
     listPages.mockReset()
     createPage.mockReset()
     updatePage.mockReset()
@@ -81,6 +82,19 @@ describe('TdBookingAdmin', () => {
     fireEvent.change(screen.getByPlaceholderText(/Caută după slug/), { target: { value: 'audi' } })
     expect(screen.getByText('audi-td')).toBeInTheDocument()
     expect(screen.queryByText('bmw-td')).not.toBeInTheDocument()
+  })
+
+  it('remembers the selected event across a remount (refresh persistence)', async () => {
+    listPages.mockResolvedValue({
+      pages: [{ id: 1, company_id: 7, slug: 'bmw-td', title: 'BMW Test Drive', status: 'draft', created_at: '2026-09-20T10:00:00Z' }],
+    })
+    const { unmount } = wrap(<TdBookingAdmin companyId={7} />)
+    fireEvent.click(await screen.findByText('bmw-td'))
+    await screen.findByRole('tab', { name: 'Rezervări' }) // drilled in
+    unmount()
+    // Remount = a page refresh: it restores the drilled-in event, not the list.
+    wrap(<TdBookingAdmin companyId={7} />)
+    expect(await screen.findByRole('button', { name: /Toate paginile/ })).toBeInTheDocument()
   })
 
   it('creates a page with the Driving Hub header company preselected', async () => {

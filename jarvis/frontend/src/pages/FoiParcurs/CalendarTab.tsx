@@ -14,7 +14,7 @@ import { naiveDate } from '@/lib/naiveDate'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
 import SessionTypeChooser from './SessionTypeChooser'
-import MonthCalendar from './MonthCalendar'
+import MonthCalendar, { type EventWindow } from './MonthCalendar'
 import DriveTypeToggle from './DriveTypeToggle'
 import type { DocType } from './documentType'
 
@@ -187,28 +187,44 @@ export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', 
         }]
       })
 
-  // Evenimente TD overlay bands (distinct violet, non-draggable). Synthetic
-  // negative ids are never in `byId`, so onEventClick is a safe no-op. Same
-  // brand / car filters as the sessions.
+  // Dedupe the per-car event rows into ONE window per event (min start / max end
+  // across its committed cars), honouring the brand / car filters. Feeds both the
+  // week/day gate band and the month overlay so an event reads as a single gated
+  // window, not one band per car.
+  const eventWindows: EventWindow[] = (() => {
+    const byEvent = new Map<string, EventWindow>()
+    for (const e of tdEventsData?.events ?? []) {
+      if (brand && vinBrand.get(e.vin) !== brand) continue
+      if (carFilter && e.vin !== carFilter) continue
+      const key = e.slug || e.title || e.starts_at
+      const cur = byEvent.get(key)
+      if (!cur) byEvent.set(key, { title: e.title || e.slug, startsAt: e.starts_at, endsAt: e.ends_at })
+      else {
+        if (e.starts_at < cur.startsAt) cur.startsAt = e.starts_at
+        if (e.ends_at > cur.endsAt) cur.endsAt = e.ends_at
+      }
+    }
+    return Array.from(byEvent.values())
+  })()
+
+  // Week/day: one violet gate band per event window (non-draggable). Synthetic
+  // negative ids are never in `byId`, so onEventClick is a safe no-op.
   const eventBands: TimeGridEvent[] = view === 'month'
     ? []
-    : (tdEventsData?.events ?? []).flatMap((e, idx): TimeGridEvent[] => {
-        if (brand && vinBrand.get(e.vin) !== brand) return []
-        if (carFilter && e.vin !== carFilter) return []
-        const dep = naiveDate(e.starts_at) ? dayKey(naiveDate(e.starts_at)!) : null
+    : eventWindows.flatMap((w, idx): TimeGridEvent[] => {
+        const dep = naiveDate(w.startsAt) ? dayKey(naiveDate(w.startsAt)!) : null
         if (!dep) return []
-        const retKey = naiveDate(e.ends_at) ? dayKey(naiveDate(e.ends_at)!) : dep
+        const retKey = naiveDate(w.endsAt) ? dayKey(naiveDate(w.endsAt)!) : dep
         const spanEnd = retKey > dep ? retKey : dep
         if (dep > rangeEnd || spanEnd < rangeStart) return []
         return [{
           id: -1_000_000 - idx,
           dayKey: dep,
           endDayKey: retKey > dep ? retKey : undefined,
-          startMin: minsOfDay(e.starts_at),
-          endMin: minsOfDay(e.ends_at),
+          startMin: minsOfDay(w.startsAt),
+          endMin: minsOfDay(w.endsAt),
           color: 'bg-violet-100 text-violet-700 dark:bg-violet-500/25 dark:text-violet-100',
-          title: `Eveniment: ${e.title || e.slug}`,
-          subtitle: carLabel(e.vin),
+          title: `Eveniment: ${w.title}`,
           draggable: false,
         }]
       })
@@ -281,6 +297,7 @@ export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', 
         <MonthCalendar
           monthDate={cursor}
           byDay={byDay}
+          eventWindows={eventWindows}
           vinVehicle={vinVehicle}
           onOpenDetail={setSelected}
           onAdd={(departure, ret) => setSlotChooser({ departure, ret })}

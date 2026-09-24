@@ -446,6 +446,81 @@ class TdBookingService:
         self._delete_planned_fp(booking)
         return ServiceResult(True, 200, data={'status': 'cancelled'})
 
+    def admin_delete_booking(self, booking):
+        """Staff removal of a reservation from the admin (any status, no token):
+        free the slot by soft-cancelling the booking ('cancelled' is outside the
+        active partial-unique index, keeping an audit trail) and hard-deleting its
+        PLANNED fișă. Idempotent on an already-cancelled booking."""
+        self._delete_planned_fp(booking)
+        if booking['status'] not in ('cancelled', 'expired'):
+            self.repo.mark_cancelled(booking['id'])
+
+    def admin_update_contact(self, booking, *, name=None, phone=None, email=None):
+        """Edit the customer's contact on a reservation (any status) and cascade the
+        identity onto its linked fișă. Only the passed fields change; phone is
+        re-normalized to E.164 (raises ValueError on an invalid number)."""
+        new_name = (name if name is not None else booking['customer_name'] or '').strip() or booking['customer_name']
+        if phone is not None:
+            new_phone = _normalize_e164(phone)
+            if not new_phone:
+                raise ValueError('Invalid phone number')
+        else:
+            new_phone = booking['customer_phone_e164']
+        new_email = email if email is not None else booking['customer_email']
+        self.repo.execute(
+            "UPDATE mkt_td_bookings SET customer_name=%s, customer_phone_e164=%s, "
+            "customer_email=%s, updated_at=NOW() WHERE id=%s",
+            (new_name, new_phone, new_email, booking['id']))
+        fp_id = booking.get('foi_de_parcurs_id')
+        if fp_id:
+            self.fp.execute(
+                "UPDATE foi_de_parcurs SET client_name=%s, client_phone=%s, client_email=%s "
+                "WHERE id=%s", (new_name, new_phone, new_email, fp_id))
+
+    def admin_set_status(self, booking, status):
+        """Force a booking's status from the admin (no customer email link).
+        'confirmed' runs the confirm cascade (find/create CRM client + create the
+        PLANNED fișă via the atomic path); 'cancelled' runs the cancel cascade
+        (frees the fișă/slot). Both idempotent; other statuses are rejected."""
+        if status == 'cancelled':
+            self.admin_delete_booking(booking)
+            return
+        if status == 'confirmed':
+            if booking['status'] == 'confirmed':
+                return
+            if booking['status'] != 'pending_confirm':
+                raise ValueError('Only a pending booking can be confirmed')
+            crm_client_id = self._find_or_create_crm_client(booking)
+            self._confirm_pending(booking, crm_client_id)
+            return
+        raise ValueError('Unsupported status')
+
+    def admin_reassign_slot(self, booking, new_slot_id):
+        """Move a reservation to a different slot (a slot = car+interval, so this is
+        both 'change time' and 'swap car'). Validates the target slot belongs to the
+        page and is open; the atomic reassign re-checks the new car's availability
+        and rebuilds the linked PLANNED fișă. Raises ValueError (bad/closed slot) or
+        TdConflict (car/slot taken)."""
+        slot = self.repo.query_one(
+            "SELECT * FROM mkt_td_slots WHERE id=%s AND page_id=%s AND status='open'",
+            (new_slot_id, booking['page_id']))
+        if not slot:
+            raise ValueError('Slot not available')
+        car = self.repo.get_car(slot['car_id'])
+        advisor_id = car.get('default_advisor_user_id') if car else None
+        advisor_name = self._advisor_name(advisor_id)
+        # Rebuild the fișă only when the booking already had one (confirmed). A
+        # pending booking just re-points its slot; its fișă is created at confirm.
+        fp_row = None
+        if booking.get('foi_de_parcurs_id'):
+            page = self.repo.get_page(booking['page_id'])
+            fp_row = self._build_fp_row(booking, page, car, slot, advisor_name,
+                                        booking.get('crm_client_id'))
+        return self.repo.reassign_booking_atomic(
+            booking['id'], new_slot_id, slot['car_id'], advisor_id,
+            slot['vin'], slot['starts_at'], slot['ends_at'], fp_row,
+            booking.get('foi_de_parcurs_id'))
+
     def _cancel_group(self, group_id):
         """Cancel every booking in a group and free each one's PLANNED fișă."""
         bookings = self.repo.get_group(group_id)

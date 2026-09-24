@@ -256,6 +256,15 @@ export default function PublicTdBooking() {
       note={takenNote}
     />
   )
+  // Joining the waiting list is a terminal action too — full thank-you screen,
+  // not back to the (now irrelevant) booking form.
+  if (waitlistDone) return (
+    <ThankYouScreen
+      logoUrl={data.page.logo_url}
+      heading="Ești pe lista de așteptare"
+      message="Mulțumim! Te contactăm dacă se eliberează un interval potrivit."
+    />
+  )
 
   // Registration window (opens_at/closes_at are true instants — compare directly,
   // NOT via naiveDate). Outside the window the form is view-only.
@@ -729,12 +738,7 @@ export default function PublicTdBooking() {
           <DialogHeader>
             <DialogTitle>Nu găsești un interval potrivit?</DialogTitle>
           </DialogHeader>
-          {waitlistDone ? (
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              ✅ Ești pe lista de așteptare. Te contactăm dacă se eliberează un loc potrivit.
-            </p>
-          ) : (
-            <>
+          <>
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 Înscrie-te pe lista de așteptare și te contactăm dacă apare o oră liberă.
               </p>
@@ -778,7 +782,6 @@ export default function PublicTdBooking() {
                 )}
               </div>
             </>
-          )}
         </DialogContent>
       </Dialog>
 
@@ -868,10 +871,14 @@ function BookingSkeleton() {
 /** Post-submit "done" screen: the event logo, the "check your email" heading,
  *  the page's staff-authored rich-text thank-you (or a sensible default), and an
  *  optional note about slots taken between load and submit. */
-function ThankYouScreen({ logoUrl, thankYouHtml, note }: {
+function ThankYouScreen({ logoUrl, thankYouHtml, note, heading = 'Verifică emailul', message }: {
   logoUrl?: string | null
   thankYouHtml?: string
   note?: string
+  /** Screen heading — booking default, or a waitlist-specific title. */
+  heading?: string
+  /** Fallback body when there's no staff-authored rich thank-you. */
+  message?: string
 }) {
   const hasThankYou = !isEmptyRichHtml(thankYouHtml)
   return (
@@ -885,7 +892,7 @@ function ThankYouScreen({ logoUrl, thankYouHtml, note }: {
             className="mx-auto mb-6 h-11 w-auto max-w-[190px] object-contain"
           />
         )}
-        <h1 className="text-2xl font-semibold tracking-tight">Verifică emailul</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{heading}</h1>
         {hasThankYou ? (
           <RichTextDisplay
             content={sanitizeRichHtml(thankYouHtml!)}
@@ -893,7 +900,7 @@ function ThankYouScreen({ logoUrl, thankYouHtml, note }: {
           />
         ) : (
           <p className="mt-2 text-[15px] leading-relaxed text-slate-500 dark:text-slate-400">
-            Confirmă toate programările dintr-un singur link — ți l-am trimis pe email.
+            {message ?? 'Confirmă toate programările dintr-un singur link — ți l-am trimis pe email.'}
           </p>
         )}
         {note && (

@@ -17,13 +17,37 @@ from flask import jsonify, request
 from flask_login import login_required, current_user
 
 from marketing import marketing_bp
-from marketing.repositories.td_booking_repository import TdBookingRepository
+from marketing.repositories.td_booking_repository import TdBookingRepository, TdConflict
 from marketing.services.td_slot_service import TdSlotService
+from marketing.services.td_booking_service import TdBookingService
 from foi_parcurs.repositories.foi_parcurs_repository import FoiParcursRepository
+from core.organization.manager_utils import get_actable_company_ids
 
 _repo = TdBookingRepository()
 _slots = TdSlotService()
+_svc = TdBookingService()
 _fp = FoiParcursRepository()
+
+
+def _may_act_on_company(company_id):
+    """Company boundary for the booking mutation endpoints: Admin/superadmin act on
+    any company, everyone else only on their get_actable_company_ids() scope."""
+    if (getattr(current_user, 'role_name', '') or '').lower() in ('admin', 'superadmin'):
+        return True
+    return company_id in get_actable_company_ids(current_user.id)
+
+
+def _scoped_booking(bid):
+    """Load a booking and enforce the caller may act on its page's company. Returns
+    (booking, None) or (None, error_response). 404 (not 403) so an outsider can't
+    enumerate which booking ids exist across companies."""
+    booking = _repo.get_booking(bid)
+    if not booking:
+        return None, (jsonify({'error': 'not found'}), 404)
+    page = _repo.get_page(booking['page_id'])
+    if not page or not _may_act_on_company(page['company_id']):
+        return None, (jsonify({'error': 'not found'}), 404)
+    return booking, None
 
 
 # ---- pages ----
@@ -206,3 +230,43 @@ def td_reassign_advisor(bid):
         _fp.execute('UPDATE foi_de_parcurs SET advisor_name=%s WHERE id=%s',
                     ((user or {}).get('name', ''), booking['foi_de_parcurs_id']))
     return jsonify({'ok': True})
+
+
+@marketing_bp.route('/api/td/bookings/<int:bid>', methods=['DELETE'])
+@login_required
+def td_delete_booking(bid):
+    """Remove a reservation (any status, even confirmed): soft-cancel the booking
+    (frees the slot) + hard-delete its linked PLANNED fișă. Company-scoped."""
+    booking, err = _scoped_booking(bid)
+    if err:
+        return err
+    _svc.admin_delete_booking(booking)
+    return jsonify({'ok': True})
+
+
+@marketing_bp.route('/api/td/bookings/<int:bid>', methods=['PATCH'])
+@login_required
+def td_edit_booking(bid):
+    """Edit a reservation (any status). Applies whichever fields are present, each
+    cascading onto the linked fișă: client contact (name/phone/email), slot_id
+    (move time / swap car -- a slot is car+interval), and status (confirm/cancel).
+    Company-scoped; 400 on bad input, 409 on a slot/car conflict."""
+    booking, err = _scoped_booking(bid)
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    try:
+        if any(k in data for k in ('name', 'phone', 'email')):
+            _svc.admin_update_contact(booking, name=data.get('name'),
+                                      phone=data.get('phone'), email=data.get('email'))
+            booking = _repo.get_booking(bid)
+        if data.get('slot_id') is not None:
+            _svc.admin_reassign_slot(booking, int(data['slot_id']))
+            booking = _repo.get_booking(bid)
+        if data.get('status') is not None:
+            _svc.admin_set_status(booking, data['status'])
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except TdConflict as e:
+        return jsonify({'error': str(e)}), 409
+    return jsonify({'ok': True, 'booking': _repo.get_booking(bid)})

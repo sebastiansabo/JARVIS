@@ -77,4 +77,17 @@ describe('MonthCalendar', () => {
     fireEvent.click(screen.getAllByLabelText('Detalii sesiune')[0]) // first listed day = 04 Aug
     expect(props.onOpenDetail).toHaveBeenCalledWith(sameDay)
   })
+
+  it('overlays the TD event window on the month grid with start/end limits', () => {
+    renderMc({ eventWindows: [{ title: 'Test Drive Audi', startsAt: '2026-08-10T09:00', endsAt: '2026-08-12T17:00' }] })
+    // Every day in the [10..12] window is marked as within the event.
+    expect(screen.getByTestId('mc-eventday-2026-08-10')).toHaveAttribute('data-event-start', 'true')
+    expect(screen.getByTestId('mc-eventday-2026-08-11')).toBeInTheDocument()
+    expect(screen.getByTestId('mc-eventday-2026-08-12')).toHaveAttribute('data-event-end', 'true')
+    // Days outside the window carry no marker.
+    expect(screen.queryByTestId('mc-eventday-2026-08-13')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('mc-eventday-2026-08-09')).not.toBeInTheDocument()
+    // The event name is surfaced on the grid.
+    expect(screen.getByText('Test Drive Audi')).toBeInTheDocument()
+  })
 })
