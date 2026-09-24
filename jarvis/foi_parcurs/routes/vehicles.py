@@ -32,7 +32,10 @@ def _to_num_or_none(value):
 def api_list_vehicles():
     active_only = request.args.get('active_only', 'true').lower() == 'true'
     document_type = (request.args.get('document_type') or '').strip() or None
-    vehicles = _vehicle_repo.get_all(active_only=active_only, document_type=document_type)
+    # light=1 → picker payload: base fields + blocked_now, without the heavy
+    # per-vehicle mileage/session subqueries (used by the Test-Drive car dropdown).
+    light = request.args.get('light', '').lower() in ('1', 'true')
+    vehicles = _vehicle_repo.get_all(active_only=active_only, document_type=document_type, light=light)
     return jsonify({'success': True, 'vehicles': vehicles})
 
 

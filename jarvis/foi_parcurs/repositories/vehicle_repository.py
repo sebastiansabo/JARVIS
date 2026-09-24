@@ -124,6 +124,35 @@ class FPVehicleRepository(BaseRepository):
         ') up ON TRUE'
     )
 
+    # Lightweight list for pickers (e.g. the Test-Drive form car dropdown). Same
+    # base scalars, plus the cheap indexed active-block flag (blocked_now) so a
+    # blocked car is still greyed out — but WITHOUT the heavy per-vehicle
+    # subqueries the full list carries: the mileage_floor correlated MAX(km_end)
+    # (dominant cost as the drive history grows) and the on_drive / next_block /
+    # upcoming_planned LATERALs a picker never renders. The form falls back to
+    # the stored odometer_km when mileage_floor is absent.
+    _LIST_SELECT_LIGHT = (
+        'SELECT v.id, v.vin, v.mark, v.brand, v.model, v.color, v.fuel_type, '
+        'v.fuel_tank_capacity_liters, v.battery_capacity_kwh, v.odometer_km, '
+        'v.category, v.company_id, v.car_id, v.registration_number, v.is_active, '
+        'v.document_type, '
+        'v.locked_out, v.lockout_category, v.lockout_note, v.lockout_until, '
+        'v.archive_category, v.archive_note, v.archived_at, '
+        '(ab.active_block_end IS NOT NULL) AS blocked_now, '
+        'ab.active_block_category, ab.active_block_end, '
+        'v.created_at, v.updated_at, v.vignette_valid_until, v.itp_valid_until, '
+        'v.insurance_valid_until, c.company AS company_name '
+        'FROM fp_vehicles v '
+        'LEFT JOIN companies c ON c.id = v.company_id '
+        'LEFT JOIN LATERAL ('
+        '  SELECT b.category AS active_block_category, b.end_date AS active_block_end '
+        '  FROM fp_vehicle_blocks b '
+        '  WHERE b.vehicle_id = v.id AND b.is_active '
+        '    AND CURRENT_DATE BETWEEN b.start_date AND b.end_date '
+        '  ORDER BY b.end_date DESC LIMIT 1'
+        ') ab ON TRUE'
+    )
+
     def report_fleet(self, company_id=None, document_type=None, odo_order='high', top=5, brand=None):
         """Fleet composition for the Rapoarte tab: active-car count by fuel type,
         and the top-N cars by known mileage. `odo_order` 'high' (default) lists
@@ -160,11 +189,15 @@ class FPVehicleRepository(BaseRepository):
 
         return {'fuel_composition': fuel_composition, 'top_odometer': top_odometer}
 
-    def get_all(self, active_only=True, document_type=None):
+    def get_all(self, active_only=True, document_type=None, light=False):
         """Get all vehicles (lean — no document blobs), optionally active-only
         and/or filtered to a single document_type pool (sales/service).
         document_type=None (default) returns all pools — back-compat for
-        management views that need the whole fleet."""
+        management views that need the whole fleet.
+
+        light=True drops the heavy per-vehicle subqueries (mileage_floor,
+        on_drive, next_block, upcoming_planned) for picker fetches that only
+        need base fields + the blocked_now flag — see _LIST_SELECT_LIGHT."""
         where_clauses = []
         params = []
         if active_only:
@@ -173,8 +206,9 @@ class FPVehicleRepository(BaseRepository):
             where_clauses.append('v.document_type = %s')
             params.append(document_type)
         where_sql = f" WHERE {' AND '.join(where_clauses)}" if where_clauses else ''
+        select = self._LIST_SELECT_LIGHT if light else self._LIST_SELECT
         return self.query_all(
-            f'{self._LIST_SELECT}{where_sql} ORDER BY v.mark, v.model, v.vin',
+            f'{select}{where_sql} ORDER BY v.mark, v.model, v.vin',
             tuple(params) if params else None,
         )
 
