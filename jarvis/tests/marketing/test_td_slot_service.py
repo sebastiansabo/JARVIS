@@ -64,12 +64,18 @@ def test_materialize_generates_two_slots(page):
 def test_available_filters_by_3way(page, monkeypatch):
     svc = TdSlotService()
     svc.materialize_slots(page['id'])
-    # car busy -> no availability
-    monkeypatch.setattr(svc, 'is_car_free', lambda vin, frm, to: False)
-    assert svc.available_slots(page['id'], datetime(2099, 1, 1, tzinfo=timezone.utc)) == []
-    # car free -> both slots
-    monkeypatch.setattr(svc, 'is_car_free', lambda vin, frm, to: True)
-    assert len(svc.available_slots(page['id'], datetime(2099, 1, 1, tzinfo=timezone.utc))) == 2
+    now = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    # available_slots now batches availability per VIN (no per-slot is_car_free);
+    # drive the FP-conflict gate directly. Slots materialize in Europe/Bucharest
+    # (+03:00), so the conflict must cover that local window -- an all-day local
+    # session overlaps both slots -> busy.
+    monkeypatch.setattr(svc.fp, 'find_conflicts',
+                        lambda vin, frm, to: [{'departure_datetime': '2099-10-01T00:00:00+03:00',
+                                               'return_datetime': '2099-10-02T00:00:00+03:00'}])
+    assert svc.available_slots(page['id'], now) == []
+    # no conflict + no lock/open-session/hold for the (unknown) test VIN -> both slots.
+    monkeypatch.setattr(svc.fp, 'find_conflicts', lambda vin, frm, to: [])
+    assert len(svc.available_slots(page['id'], now)) == 2
 
 
 def test_available_respects_lead_time(page):
