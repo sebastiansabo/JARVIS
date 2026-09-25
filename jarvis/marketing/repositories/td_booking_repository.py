@@ -332,6 +332,19 @@ class TdBookingRepository(BaseRepository):
             (vin, now, to, frm))
         return row is not None
 
+    def pending_hold_windows(self, vin, now) -> list:
+        """Live pending_confirm hold windows on `vin` -- the batched counterpart of
+        has_pending_overlap. Returns every still-live hold's [starts_at, ends_at) so
+        available_slots can overlap-check many slots in memory (one query per VIN)
+        instead of one has_pending_overlap query per slot. `now` (real current time)
+        drops holds already past expires_at. The half-open overlap (start < to AND
+        end > frm) is applied by the caller, matching has_pending_overlap."""
+        return self.query_all(
+            "SELECT s.starts_at, s.ends_at FROM mkt_td_bookings b "
+            "JOIN mkt_td_slots s ON s.id = b.slot_id "
+            "WHERE s.vin = %s AND b.status = 'pending_confirm' AND b.expires_at > %s",
+            (vin, now))
+
     # ---- waitlist ----
     _WAITLIST_COLS = ('page_id', 'customer_name', 'customer_phone_e164',
                       'customer_email', 'preferred_car_vin', 'note',
