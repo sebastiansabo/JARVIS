@@ -10,6 +10,11 @@ const { getPage, submitBooking, submitWaitlist } = vi.hoisted(() => ({
 }))
 vi.mock('@/api/td', () => ({ tdApi: { getPage, submitBooking, submitWaitlist } }))
 
+// Licence photos are downscaled client-side (same util foi de parcurs uses) so
+// the stored base64 stays small. Mocked here: jsdom has no real canvas/Image.
+const { fileToCompressedDataUrl } = vi.hoisted(() => ({ fileToCompressedDataUrl: vi.fn() }))
+vi.mock('@/lib/imageCompress', () => ({ fileToCompressedDataUrl }))
+
 import PublicTdBooking from './PublicTdBooking'
 
 const PAGE = {
@@ -55,6 +60,7 @@ describe('PublicTdBooking', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getPage.mockResolvedValue(PAGE)
+    fileToCompressedDataUrl.mockResolvedValue('data:image/jpeg;base64,CMP')
     submitBooking.mockResolvedValue({
       group_id: 'g1', booked: [{ booking_id: 1, slot_id: 100, car_id: 10, starts_at: null, ends_at: null }],
       unavailable: [], booking_id: 1, status: 'pending_confirm',
@@ -182,7 +188,7 @@ describe('PublicTdBooking', () => {
     expect(submitBooking).toHaveBeenCalledWith('vara', expect.objectContaining({ license_photo: null }))
   })
 
-  it('reads an uploaded licence photo into a base64 data URL, previews it, and includes it in the submit payload', async () => {
+  it('compresses an uploaded licence photo, previews it, and includes it in the submit payload', async () => {
     renderPage()
     await screen.findByText('MG ZS')
     fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
@@ -191,9 +197,11 @@ describe('PublicTdBooking', () => {
     const input = screen.getByLabelText('Poză permis (opțional)') as HTMLInputElement
     fireEvent.change(input, { target: { files: [file] } })
 
+    // The raw file is downscaled via imageCompress before it is stored/sent.
+    await waitFor(() => expect(fileToCompressedDataUrl).toHaveBeenCalledWith(file))
     // Preview swaps the upload control for the thumbnail + remove control.
     const remove = await screen.findByRole('button', { name: 'Șterge' })
-    expect(screen.getByAltText('Poză permis')).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/))
+    expect(screen.getByAltText('Poză permis')).toHaveAttribute('src', 'data:image/jpeg;base64,CMP')
 
     fireEvent.click(screen.getByRole('button', { name: '10:00' }))
     fill('Nume complet', 'Andrei Popescu')
@@ -207,25 +215,42 @@ describe('PublicTdBooking', () => {
 
     await waitFor(() => expect(submitBooking).toHaveBeenCalledTimes(1))
     const payload = submitBooking.mock.calls[0][1]
-    expect(payload.license_photo).toMatch(/^data:image\/png;base64,/)
+    expect(payload.license_photo).toBe('data:image/jpeg;base64,CMP')
 
     // Remove control clears the preview back to the upload control.
     fireEvent.click(remove)
     expect(screen.queryByRole('button', { name: 'Șterge' })).not.toBeInTheDocument()
   })
 
-  it('rejects an oversized licence photo and does not set a preview', async () => {
+  it('offers a camera-capture option and compresses the captured photo', async () => {
+    renderPage()
+    await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ }))
+
+    const cam = screen.getByLabelText('Fă o poză permisului (cameră)') as HTMLInputElement
+    expect(cam).toHaveAttribute('capture', 'environment')
+
+    const file = new File(['img'], 'permis.jpg', { type: 'image/jpeg' })
+    fireEvent.change(cam, { target: { files: [file] } })
+
+    await screen.findByRole('button', { name: 'Șterge' })
+    expect(fileToCompressedDataUrl).toHaveBeenCalledWith(file)
+    expect(screen.getByAltText('Poză permis')).toHaveAttribute('src', 'data:image/jpeg;base64,CMP')
+  })
+
+  it('rejects an oversized source file before compressing and does not set a preview', async () => {
     renderPage()
     await screen.findByText('MG ZS')
     fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion (slots hidden until then)
 
-    const big = new File([new Uint8Array(2.6 * 1024 * 1024)], 'big.png', { type: 'image/png' })
+    const big = new File([new Uint8Array(11 * 1024 * 1024)], 'big.png', { type: 'image/png' }) // > 10MB source cap
     const input = screen.getByLabelText('Poză permis (opțional)') as HTMLInputElement
     fireEvent.change(input, { target: { files: [big] } })
 
-    // Stays on the upload control -- the oversized file was rejected, not previewed.
+    // Rejected before it reaches the compressor; stays on the upload control, no preview.
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Șterge' })).not.toBeInTheDocument())
-    expect(screen.getByText('Adaugă poza permisului')).toBeInTheDocument()
+    expect(fileToCompressedDataUrl).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Poză permis (opțional)')).toBeInTheDocument()
   })
 
   it('opens the GDPR text in a "Citește" popup (first consent link)', async () => {

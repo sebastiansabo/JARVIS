@@ -2,7 +2,9 @@ import { useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
+import { Camera, Upload } from 'lucide-react'
 import { tdApi, type TdSlot, type TdCar } from '@/api/td'
+import { fileToCompressedDataUrl } from '@/lib/imageCompress'
 import { composePhone, COUNTRY_DIAL_CODES } from '@/pages/FoiParcurs/phoneFormat'
 import { ApiError } from '@/api/client'
 import { RichTextDisplay } from '@/components/shared/RichTextEditor'
@@ -55,15 +57,6 @@ const DEFAULT_CONDITIONS_TEXT =
   'imputată acestuia, conform legii.\n' +
   '6. Organizatorul își rezervă dreptul de a întrerupe sau anula test drive-ul ' +
   'în cazul nerespectării acestor condiții.'
-
-function readAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(new Error('read failed'))
-    reader.onload = () => resolve(reader.result as string)
-    reader.readAsDataURL(file)
-  })
-}
 
 /** Local-calendar-day key for a slot (year-month-date), used both to build the
  *  distinct-day list and to filter each car's slots to the selected day. */
@@ -188,7 +181,11 @@ export default function PublicTdBooking() {
     }
     setPhotoBusy(true)
     try {
-      setLicensePhoto(await readAsDataUrl(file))
+      // Downscale client-side (same util foi de parcurs uses) so the stored
+      // base64 stays small -- a phone photo is otherwise several MB.
+      const compressed = await fileToCompressedDataUrl(file)
+      if (!compressed) { toast.error('Nu am putut procesa imaginea'); return }
+      setLicensePhoto(compressed)
     } catch {
       toast.error('Nu am putut citi fișierul')
     } finally {
@@ -407,19 +404,39 @@ export default function PublicTdBooking() {
                   </button>
                 </div>
               ) : (
-                <label
-                  className="flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-lg
-                             border border-dashed border-slate-300 text-sm text-slate-500 outline-none
-                             hover:border-slate-400 focus-within:ring-2 focus-within:ring-[#2743E6]
-                             dark:border-slate-600 dark:text-slate-400 dark:hover:border-slate-500"
-                >
-                  {photoBusy ? 'Se încarcă…' : 'Adaugă poza permisului'}
-                  <input
-                    type="file" accept="image/*" className="sr-only"
-                    onChange={handlePhotoFile} disabled={photoBusy}
-                    aria-label={requirePhoto ? 'Poză permis (obligatoriu)' : 'Poză permis (opțional)'}
-                  />
-                </label>
+                <div className="flex gap-2">
+                  {/* Camera: capture="environment" opens the rear camera on mobile.
+                      Upload: the plain file picker (gallery / desktop file). Both
+                      route through handlePhotoFile, which downscales before storing. */}
+                  <label
+                    className="flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg
+                               border border-dashed border-slate-300 text-sm text-slate-500 outline-none
+                               hover:border-slate-400 focus-within:ring-2 focus-within:ring-[#2743E6]
+                               dark:border-slate-600 dark:text-slate-400 dark:hover:border-slate-500"
+                  >
+                    <Camera className="h-4 w-4" />
+                    {photoBusy ? 'Se încarcă…' : 'Fă o poză'}
+                    <input
+                      type="file" accept="image/*" capture="environment" className="sr-only"
+                      onChange={handlePhotoFile} disabled={photoBusy}
+                      aria-label="Fă o poză permisului (cameră)"
+                    />
+                  </label>
+                  <label
+                    className="flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-lg
+                               border border-dashed border-slate-300 text-sm text-slate-500 outline-none
+                               hover:border-slate-400 focus-within:ring-2 focus-within:ring-[#2743E6]
+                               dark:border-slate-600 dark:text-slate-400 dark:hover:border-slate-500"
+                  >
+                    <Upload className="h-4 w-4" />
+                    {photoBusy ? 'Se încarcă…' : 'Încarcă poză'}
+                    <input
+                      type="file" accept="image/*" className="sr-only"
+                      onChange={handlePhotoFile} disabled={photoBusy}
+                      aria-label={requirePhoto ? 'Poză permis (obligatoriu)' : 'Poză permis (opțional)'}
+                    />
+                  </label>
+                </div>
               )}
               <p className="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
                 {requirePhoto
