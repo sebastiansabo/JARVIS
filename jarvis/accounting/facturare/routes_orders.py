@@ -40,6 +40,7 @@ from .services.advance_alloc import (  # pure per-car advance math, shared with 
     WHOLE_EUR, CENTS, _PCT_CLOSE_TOL,
     _round_half_up, _snap_pct, _car_slice_eur, _per_car_advance_eur,
 )
+from .services.document_numbering import per_car_number  # per-car doc number rule (shared)
 
 
 def _quant_for(inv_row) -> Decimal:
@@ -1643,22 +1644,46 @@ def api_generate_pdf(invoice_id):
 
     doc_mode = inv_row.get("doc_mode", "per_car")
 
-    # For INVOICE type: compute per-vehicle proforma reference number for notes
+    # For INVOICE type: print the per-vehicle proforma reference in the note.
+    # The proforma numbers its cars in ITS OWN line order (base + position), so
+    # the reference for a car must be that car's actual proforma number — looked
+    # up by line_id — not the advance invoice's own page index. Using the page
+    # index printed the proforma's base number for every car (Aurento/CTR-338:
+    # a single-car advance for line 738 showed 1290 instead of 1302).
     import re as _re
+    import json as _json_pf
     _linked_proforma_no = None
+    _linked_proforma_docnum = {}
+    _linked_proforma_line_ids = None
+    _linked_proforma_doc_mode = "per_car"
     if inv_type_str == "INVOICE" and doc_mode != "single_doc":
         linked = _repo.query_one(
-            "SELECT i.invoice_number, i.doc_mode FROM facturare_invoice_links l "
+            "SELECT i.id, i.invoice_number, i.doc_mode, i.line_ids FROM facturare_invoice_links l "
             "JOIN facturare_invoices i ON i.id = l.source_invoice_id "
             "WHERE l.target_invoice_id = %s AND l.link_type = 'PRECEDES'",
             (invoice_id,))
         if linked and linked.get("doc_mode", "per_car") != "single_doc":
             _linked_proforma_no = linked.get("invoice_number")
+            _linked_proforma_doc_mode = linked.get("doc_mode", "per_car")
+            _linked_proforma_docnum = _repo.get_document_number_map(linked["id"])
+            _pl = linked.get("line_ids")
+            if isinstance(_pl, str):
+                _pl = _json_pf.loads(_pl)
+            # A whole-anexa proforma stores line_ids as NULL; its cars were
+            # numbered over all anexa lines in line_number order (mirrors
+            # _ordered_line_ids), so use that ordering for the positional
+            # fallback when the proforma has no stored per-car number map.
+            _linked_proforma_line_ids = list(_pl) if _pl else [l["id"] for l in all_lines]
 
-    def _note_for_car(idx):
+    def _note_for_car(line_id):
         if not _linked_proforma_no:
             return base_note
-        return _re.sub(r'\(No:\s*\d+\)', f'(No: {_linked_proforma_no + idx})', base_note)
+        no = per_car_number(_linked_proforma_no, _linked_proforma_doc_mode,
+                            _linked_proforma_line_ids, line_id,
+                            stored=_linked_proforma_docnum)
+        if no is None:
+            return base_note
+        return _re.sub(r'\(No:\s*\d+\)', f'(No: {no})', base_note)
     mode = request.args.get("mode", "merged")
     # Storno: use multipage renderer with per-invoice line items
     if inv_type_str == "STORNO" and storno_groups:
@@ -1700,7 +1725,7 @@ def api_generate_pdf(invoice_id):
             line = order_lines[idx]
             fallback_no = start_no if doc_mode == 'single_doc' else start_no + idx
             inv_no = _resolve_doc_no(docnum, lines[idx]["id"], fallback_no)
-            renderer.note = _note_for_car(idx)
+            renderer.note = _note_for_car(lines[idx]["id"])
             single_buf = io.BytesIO()
             from reportlab.lib.pagesizes import A4
             from reportlab.pdfgen import canvas as rc
@@ -1718,7 +1743,7 @@ def api_generate_pdf(invoice_id):
             for i, line in enumerate(order_lines):
                 fallback_no = start_no if doc_mode == 'single_doc' else start_no + i
                 inv_no = _resolve_doc_no(docnum, lines[i]["id"], fallback_no)
-                renderer.note = _note_for_car(i)
+                renderer.note = _note_for_car(lines[i]["id"])
                 single_buf = io.BytesIO()
                 from reportlab.lib.pagesizes import A4
                 from reportlab.pdfgen import canvas as rc
@@ -1740,7 +1765,7 @@ def api_generate_pdf(invoice_id):
             for i, line in enumerate(order_lines):
                 fallback_no = start_no + (0 if doc_mode == 'single_doc' else i)
                 inv_no = _resolve_doc_no(docnum, lines[i]["id"], fallback_no)
-                renderer.note = _note_for_car(i)
+                renderer.note = _note_for_car(lines[i]["id"])
                 renderer.render_one(c, inv_no, line)
                 c.showPage()
             c.save()
