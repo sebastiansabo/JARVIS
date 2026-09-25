@@ -27,7 +27,7 @@ const EMAIL_RE = /.+@.+\..+/
 // logo upload on TdBookingAdmin. This public route renders with no Layout
 // (see App.tsx), so there's no ambient <Toaster/> to surface toast.error() --
 // this page mounts its own below.
-const MAX_PHOTO_BYTES = 2.5 * 1024 * 1024 // 2.5MB
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024 // 5MB
 
 // Fallback texts for the "Citește" consent popups when the tenant/page hasn't
 // configured its own (page.gdpr_text / page.conditions_text). Kept short and
@@ -183,7 +183,7 @@ export default function PublicTdBooking() {
       return
     }
     if (file.size > MAX_PHOTO_BYTES) {
-      toast.error('Poza este prea mare (max 2.5MB)')
+      toast.error('Poza este prea mare (max 5MB)')
       return
     }
     setPhotoBusy(true)
