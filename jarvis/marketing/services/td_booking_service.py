@@ -615,8 +615,13 @@ class TdBookingService:
             'client_email': booking.get('customer_email'),
             'route_type': 'TD',
             'advisor_name': advisor_name,            # users.name of the car's default advisor
-            'departure_datetime': slot['starts_at'],
-            'return_datetime': slot['ends_at'],
+            # Slots are tz-aware UTC, but foi_de_parcurs stores TD datetimes as NAIVE
+            # Bucharest wall-clock (the Hub / SessionDetailModal read them via naiveDate,
+            # never shifting the zone -- see foi_parcurs/routes/test_drive.py). Copying the
+            # raw UTC value here put a 09:00-local slot on the fișă as 06:00 (3h early,
+            # "outside project hours"). Convert to local wall-clock and drop the zone.
+            'departure_datetime': _as_aware(slot['starts_at']).astimezone(_LOCAL_TZ).replace(tzinfo=None),
+            'return_datetime': _as_aware(slot['ends_at']).astimezone(_LOCAL_TZ).replace(tzinfo=None),
             'event_id': page.get('event_id'),
             'mkt_project_id': page.get('project_id'),
             'source': 'td_form',
