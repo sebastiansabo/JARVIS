@@ -39,8 +39,11 @@ from foi_parcurs.repositories.foi_parcurs_repository import FoiParcursRepository
 
 logger = logging.getLogger('jarvis.marketing.td_booking')
 
-# How long a submitted booking stays confirmable before expire_pending sweeps it.
-_PENDING_TTL_MINUTES = 45
+# How long a submitted booking stays confirmable (via the email link) before
+# expire_pending sweeps it. 72h gives event customers time to confirm. NOTE: the
+# slot is held (hidden from other customers via has_pending_overlap / the
+# list_open_slots pending exclusion) for this whole window while pending.
+_PENDING_TTL_MINUTES = 4320  # 72 hours
 # Per-IP throttle: at most this many booking attempts in the trailing hour.
 _MAX_ATTEMPTS_PER_IP_PER_HOUR = 8
 # UTM keys we persist; anything else in the submitted utm blob is dropped (spec §7).
