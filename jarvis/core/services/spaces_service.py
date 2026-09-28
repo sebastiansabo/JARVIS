@@ -55,16 +55,19 @@ def upload(data, key, content_type, acl='private'):
 
 
 def cdn_url(key):
-    """Public URL for a *public-read* object (see upload). Uses the ops-provided
-    DO_SPACES_CDN_BASE when set (point it at the .cdn. edge host for edge
-    caching, or the origin host to serve straight from Spaces); otherwise
-    constructs the CDN edge URL from bucket+region. Returns the key unchanged
-    when Spaces is not configured so callers degrade gracefully.
-    NOTE: only resolves to a working URL if the object was uploaded public-read."""
+    """Public URL for a *public-read* object (see upload). Serves from the DO
+    Spaces CDN *edge* host (region.cdn.digitaloceanspaces.com) for edge caching.
+
+    DO_SPACES_CDN_BASE is honored only when it already points at a CDN edge
+    (contains '.cdn.') or a custom CDN domain (non-digitaloceanspaces host); the
+    stock value points at the non-cached origin, so we upgrade to the edge host
+    by default. Returns the key unchanged when Spaces is not configured so
+    callers degrade gracefully. Only resolves to a working URL for public-read
+    objects."""
     if not key:
         return key
-    base = os.environ.get('DO_SPACES_CDN_BASE')
-    if base:
+    base = (os.environ.get('DO_SPACES_CDN_BASE') or '').strip()
+    if base and ('.cdn.' in base or 'digitaloceanspaces.com' not in base):
         return f"{base.rstrip('/')}/{key}"
     if not is_enabled():
         return key
