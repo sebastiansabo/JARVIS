@@ -34,20 +34,25 @@ def _call(app, client_id, latest):
     return status, body, fp.get_latest_license_for_client
 
 
-def test_returns_client_prior_license(app):
+def test_reports_license_on_file_without_leaking_the_photo(app):
     lic = {'driver_license_photo': 'data:image/png;base64,PRIOR',
            'driver_license_number': 'PB999', 'driver_license_expiry': '2031-02-02',
            'driver_license_serie': ''}
     status, body, getter = _call(app, 52432, lic)
     assert status == 200
     assert body['success'] is True
-    assert body['license']['driver_license_photo'] == 'data:image/png;base64,PRIOR'
-    assert body['license']['driver_license_number'] == 'PB999'
+    assert body['has_license'] is True
+    assert body['driver_license_number'] == 'PB999'
+    assert body['driver_license_expiry'] == '2031-02-02'
+    # The sensitive photo image must never be returned to the client.
+    assert 'driver_license_photo' not in body
+    assert 'license' not in body
     getter.assert_called_once_with(52432)
 
 
-def test_returns_null_when_no_license_on_file(app):
+def test_has_license_false_when_none_on_file(app):
     status, body, _ = _call(app, 52432, None)
     assert status == 200
     assert body['success'] is True
-    assert body['license'] is None
+    assert body['has_license'] is False
+    assert 'driver_license_photo' not in body

@@ -256,15 +256,16 @@ export const foiParcursApi = {
   createClient: (data: CreateClientPayload) =>
     api.post<{ success: boolean; client: FoiClient }>(`${BASE}/clients`, data),
 
-  // ── Client's last captured driving licence (activate-form prefill) ──
-  //    Reuses a returning person-client's licence instead of re-scanning.
+  // ── Whether a client already has a licence on file (activate-form prefill) ──
+  //    Lets a returning person-client skip a re-scan. Never returns the photo
+  //    image (sensitive PII); the activate endpoint reuses it server-side.
   getClientLastLicense: (clientId: number) =>
-    api.get<{ success: boolean; license: {
-      driver_license_photo?: string | null
+    api.get<{
+      success: boolean
+      has_license: boolean
       driver_license_number?: string | null
       driver_license_expiry?: string | null
-      driver_license_serie?: string | null
-    } | null }>(`${BASE}/clients/${clientId}/last-license`),
+    }>(`${BASE}/clients/${clientId}/last-license`),
 
   // ── Vehicles (Stock) ──
   // light=true → picker payload (base fields + blocked_now), skipping the heavy

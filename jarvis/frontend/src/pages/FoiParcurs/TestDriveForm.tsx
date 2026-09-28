@@ -210,6 +210,10 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
   const [driverLicensePhoto, setDriverLicensePhoto] = useState<string | null>(null)
   const [driverLicenseNumber, setDriverLicenseNumber] = useState('')
   const [driverLicenseExpiry, setDriverLicenseExpiry] = useState('')
+  // A returning person-client already has a licence on file (from a prior
+  // session); the backend reuses the photo at activation, so we don't force a
+  // re-scan even though no photo is loaded into the form.
+  const [clientLicenseOnFile, setClientLicenseOnFile] = useState(false)
   // OCR the licence photo → fill number/expiry. Parity with CreateClientPanel's
   // scan, but available even when the client is already selected (e.g. an event
   // booking prefills the photo but the number needs surfacing/verifying).
@@ -663,6 +667,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
     prevClientIdRef.current = cur
     if (prev != null && prev !== cur) {
       setDriverLicensePhoto(null); setDriverLicenseNumber(''); setDriverLicenseExpiry('')
+      setClientLicenseOnFile(false)
       licensePrefilledFor.current = null
     }
   }, [selectedClient?.id])  // eslint-disable-line react-hooks/exhaustive-deps
@@ -687,14 +692,16 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
     staleTime: 60_000,
   })
   useEffect(() => {
-    const lic = lastLicenseData?.license
     const cid = selectedClient?.id != null ? String(selectedClient.id) : null
-    if (!lic || !lic.driver_license_photo || isCompanyClient || !cid) return
+    if (!lastLicenseData || isCompanyClient || !cid) return
     if (licensePrefilledFor.current === cid) return
     licensePrefilledFor.current = cid
-    if (!driverLicensePhoto) setDriverLicensePhoto(lic.driver_license_photo)
-    if (!driverLicenseNumber && lic.driver_license_number) setDriverLicenseNumber(lic.driver_license_number)
-    if (!driverLicenseExpiry && lic.driver_license_expiry) setDriverLicenseExpiry(String(lic.driver_license_expiry).slice(0, 10))
+    // The photo lives server-side and is reused at activation — we only learn
+    // WHETHER one is on file (so we don't force a re-scan) and prefill the
+    // serie/number + expiry for display/edit.
+    setClientLicenseOnFile(!!lastLicenseData.has_license)
+    if (!driverLicenseNumber && lastLicenseData.driver_license_number) setDriverLicenseNumber(lastLicenseData.driver_license_number)
+    if (!driverLicenseExpiry && lastLicenseData.driver_license_expiry) setDriverLicenseExpiry(String(lastLicenseData.driver_license_expiry).slice(0, 10))
   }, [lastLicenseData, isCompanyClient, selectedClient?.id])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Full client hydration + inline edit (Client card) ──
@@ -801,7 +808,9 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
     client: !selectedClient,
     // A company client's license comes from its chosen contact (gated below
     // via `contact`), not the standalone photo upload — never double-block on it.
-    license: isCompanyClient ? false : !driverLicensePhoto,
+    // A returning person-client with a licence already on file (reused
+    // server-side at activation) also satisfies the gate without a fresh upload.
+    license: isCompanyClient ? false : (!driverLicensePhoto && !clientLicenseOnFile),
     // Person-client completeness gate: the person IS the driver, so a live
     // session needs their phone on file (the license photo is gated by
     // `license` above). A company gets phone from its contact; internal
@@ -1621,6 +1630,11 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
             )
           ) : (
             <>
+              {clientLicenseOnFile && !driverLicensePhoto && (
+                <p className="mb-2 rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
+                  Permis deja la dosar — se refolosește automat la activare. Încarcă o poză doar dacă vrei să-l actualizezi.
+                </p>
+              )}
               <DriverLicenseSection
                 photo={driverLicensePhoto}
                 onPhotoChange={setDriverLicensePhoto}

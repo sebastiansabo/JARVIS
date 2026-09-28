@@ -33,13 +33,23 @@ def api_search_clients():
 @foi_parcurs_bp.route('/api/foi-parcurs/clients/<int:client_id>/last-license', methods=['GET'])
 @login_required
 def api_client_last_license(client_id):
-    """Most recent driving licence captured on any of this client's sessions.
+    """Whether this client already has a driving licence on file (from a prior
+    session), plus its serie/number/expiry — so the activate form can skip forcing
+    a re-scan for a returning person-client and prefill those fields.
 
-    Lets the activate form prefill a returning person-client's licence (photo +
-    serie/number + expiry) instead of forcing a re-scan, matching the backend's
-    activation reuse. Returns {success, license: {...}|null}."""
-    lic = _fp_repo.get_latest_license_for_client(client_id)
-    return jsonify({'success': True, 'license': lic or None})
+    Deliberately does NOT return the licence *photo*: the image is sensitive PII
+    and this endpoint is org-wide login-gated with an enumerable client id, so
+    exposing the photo would be a harvesting vector. The activate endpoint reuses
+    the actual photo server-side (see get_latest_license_for_client), so the client
+    never needs the bytes. Returns {success, has_license, driver_license_number,
+    driver_license_expiry}."""
+    lic = _fp_repo.get_latest_license_for_client(client_id) or {}
+    return jsonify({
+        'success': True,
+        'has_license': bool((lic.get('driver_license_photo') or '').strip()),
+        'driver_license_number': lic.get('driver_license_number'),
+        'driver_license_expiry': lic.get('driver_license_expiry'),
+    })
 
 
 # ════════════════════════════════════════════════════════════════
