@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -21,7 +21,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { cn, useDebounce } from '@/lib/utils'
 import { fileToCompressedDataUrl } from '@/lib/imageCompress'
 import { AUTOVIT_EQUIPMENT, AUTOVIT_BRANDS, AUTOVIT_MODELS } from '@/data/autovitData'
-import { Autocomplete } from '@/components/shared/Autocomplete'
+import { Autocomplete, norm } from '@/components/shared/Autocomplete'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -41,20 +41,17 @@ import {
 //    (17 chars, no I/O/Q). ──
 const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/
 
-// Case/diacritic-insensitive normalizer (mirrors Autocomplete's `norm`).
-function normLoose(s: string): string {
-  return s
-    .replace(/ş/g, 's').replace(/ţ/g, 't').replace(/Ş/g, 'S').replace(/Ţ/g, 'T')
-    .normalize('NFKD').replace(/[̀-ͯ]/g, '')
-    .toLowerCase().trim()
-}
+// Stable empty option list — avoids allocating a fresh `[]` on every render for
+// brands that have no known models yet.
+const EMPTY_STRINGS: string[] = []
 
 // Map a parsed value to a known option's exact casing (so a CIV/talon "NISSAN"
 // becomes "Nissan"); returns the value unchanged when there's no match — the
-// Marca/Model autocompletes then offer "➕ Adaugă «value»".
+// Marca/Model autocompletes then offer "➕ Adaugă «value»". Uses Autocomplete's
+// shared case/diacritic-insensitive `norm`.
 function canonicalOption(value: string, options: readonly string[]): string {
-  const n = normLoose(value)
-  return options.find((o) => normLoose(o) === n) ?? value
+  const n = norm(value)
+  return options.find((o) => norm(o) === n) ?? value
 }
 
 // ── A lean CRM-client shape (only the fields this form reads/writes) — the
@@ -330,8 +327,9 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
 
   // ── Echipare (equipment): store selected AUTOVIT values as a comma-joined
   //    string in form.equipment; round-trips cleanly via this Set. ──
-  const selectedEquipment = new Set(
-    (form.equipment || '').split(',').map((s) => s.trim()).filter(Boolean),
+  const selectedEquipment = useMemo(
+    () => new Set((form.equipment || '').split(',').map((s) => s.trim()).filter(Boolean)),
+    [form.equipment],
   )
   const toggleEquipment = (value: string) => {
     const next = new Set(selectedEquipment)
@@ -375,7 +373,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
           // Canonicalize make/model to the AUTOVIT list casing (NISSAN → Nissan);
           // brand is processed before model so next.brand is already canonical.
           else if (k === 'brand') next.brand = canonicalOption(String(v), AUTOVIT_BRANDS)
-          else if (k === 'model') next.model = canonicalOption(String(v), AUTOVIT_MODELS[next.brand] ?? [])
+          else if (k === 'model') next.model = canonicalOption(String(v), AUTOVIT_MODELS[next.brand] ?? EMPTY_STRINGS)
           else (next as Record<string, unknown>)[k] = String(v)
           applied.push(k)
         }
@@ -479,10 +477,10 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
     const compressed = await Promise.all(files.map((f) => fileToCompressedDataUrl(f)))
     setImageBusy(false)
     const ok = compressed.filter((x): x is string => !!x)
-    if (ok.length) set('images', [...(form.images ?? []), ...ok])
+    if (ok.length) setForm((f) => ({ ...f, images: [...(f.images ?? []), ...ok] }))
   }
   function removeImage(idx: number) {
-    set('images', (form.images ?? []).filter((_, i) => i !== idx))
+    setForm((f) => ({ ...f, images: (f.images ?? []).filter((_, i) => i !== idx) }))
   }
 
   // ── Submit ──
@@ -781,7 +779,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
                 value={form.model}
                 onChange={(v) => set('model', v)}
                 onSelect={(v) => set('model', v)}
-                options={AUTOVIT_MODELS[form.brand] ?? []}
+                options={AUTOVIT_MODELS[form.brand] ?? EMPTY_STRINGS}
                 placeholder="320d"
                 allowCreate
                 canonicalize
