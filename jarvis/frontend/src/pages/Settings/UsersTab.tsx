@@ -140,6 +140,15 @@ export default function UsersTab() {
     onError: () => toast.error('Failed to update ghost mode'),
   })
 
+  const otpExemptMutation = useMutation({
+    mutationFn: ({ id, otp_exempt }: { id: number; otp_exempt: boolean }) =>
+      usersApi.setOtpExempt(id, otp_exempt),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'users'] })
+    },
+    onError: () => toast.error('Failed to update 2FA setting'),
+  })
+
   const filtered = users.filter(
     (u) =>
       !search ||
@@ -251,6 +260,7 @@ export default function UsersTab() {
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>2FA</TableHead>
                   {ghostPerm?.can_manage_ghosts && <TableHead>Ghost</TableHead>}
                   <TableHead className="w-20">Actions</TableHead>
                 </TableRow>
@@ -285,6 +295,29 @@ export default function UsersTab() {
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={user.contract_status === 'active' ? 'active' : user.contract_status === 'suspended' ? 'pending' : 'archived'} />
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const isViewer = (user.role_name || '').toLowerCase() === 'viewer'
+                        return (
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={!isViewer && !user.otp_exempt}
+                              disabled={isViewer}
+                              title={isViewer ? 'Viewers always sign in single-factor' : 'Two-factor (OTP) at login'}
+                              onCheckedChange={(v) => {
+                                if (!v && !window.confirm(`Disable two-factor (OTP) for ${user.name}? They will sign in with only email/phone + password.`)) return
+                                otpExemptMutation.mutate({ id: user.id, otp_exempt: !v })
+                              }}
+                            />
+                            {isViewer ? (
+                              <span className="text-xs text-muted-foreground">Viewer</span>
+                            ) : user.otp_exempt ? (
+                              <span className="text-xs font-medium text-amber-600">OTP off</span>
+                            ) : null}
+                          </div>
+                        )
+                      })()}
                     </TableCell>
                     {ghostPerm?.can_manage_ghosts && (
                       <TableCell>
