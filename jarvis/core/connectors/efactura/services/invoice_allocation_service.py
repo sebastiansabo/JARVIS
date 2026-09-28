@@ -242,25 +242,11 @@ class InvoiceAllocationService:
             if skipped_ids:
                 errors.append(f"Skipped {len(skipped_ids)} already allocated/not found invoices")
 
-            # Gate: a supplier with >1 EuroFib schema must have one explicitly chosen (in the
-            # "Edit Invoice Overrides" dialog) before its invoice is sent to Accounting.
-            from core.suppliers.repository import SupplierMasterRepository
-            from core.suppliers.resolver import SupplierResolver
-            sup_repo = SupplierMasterRepository()
-            resolver = SupplierResolver(sup_repo)
-            needs_schema = []
-            for inv in invoices:
-                if inv.get('konto_config_id') or inv.get('konto_per_line') or inv.get('konto_alloc_map') or not inv.get('company_id'):
-                    continue
-                res = resolver.resolve(name=inv.get('partner_name'), cui=inv.get('partner_cif'))
-                if not res.supplier_id:
-                    continue
-                if len(sup_repo.list_presets(res.supplier_id, inv['company_id'])) > 1:
-                    needs_schema.append(inv.get('invoice_number') or str(inv['id']))
-            if needs_schema:
-                return ServiceResult(success=False, error=(
-                    'Selectează schema EuroFib pentru: ' + ', '.join(needs_schema)),
-                    data={'needs_schema': needs_schema})
+            # EuroFib schema selection is NOT gated here. The schema selector was moved out of the
+            # "Edit Invoice Overrides" dialog into the Supplier Master, where each supplier keeps
+            # one active preset. Invoices sent without an explicit per-invoice override fall back to
+            # that active preset at export time (Procesare EuroFib — see core/suppliers/routes.py),
+            # so sending from e-Factura to Accounting is never blocked on a schema choice.
 
             # Step 2: Bulk insert into main invoices table (1 query)
             # Returns (mappings, skipped_duplicates)
@@ -287,6 +273,8 @@ class InvoiceAllocationService:
             konto_by_efactura = {inv['id']: inv for inv in invoices
                                  if inv.get('konto_config_id') or inv.get('konto_per_line') or inv.get('konto_alloc_map')}
             if konto_by_efactura:
+                from core.suppliers.repository import SupplierMasterRepository
+                sup_repo = SupplierMasterRepository()
                 for efactura_id, jarvis_id in mappings:
                     inv = konto_by_efactura.get(efactura_id)
                     if not inv:
