@@ -8,6 +8,27 @@ class ClientRepository(BaseRepository):
     def get_by_id(self, client_id):
         return self.query_one('SELECT * FROM crm_clients WHERE id = %s', (client_id,))
 
+    # Columns a caller may update via update(); anything else in the dict is ignored.
+    _UPDATABLE = {
+        'display_name', 'name_normalized', 'client_type', 'phone', 'phone_raw',
+        'email', 'street', 'city', 'region', 'company_name', 'cui', 'responsible',
+    }
+
+    def update(self, client_id, fields):
+        """Update whitelisted columns on a crm_clients row and return it.
+        Unknown keys are ignored; a no-op (returns the current row) when no
+        updatable field is supplied."""
+        cols = {k: v for k, v in (fields or {}).items() if k in self._UPDATABLE}
+        if not cols:
+            return self.get_by_id(client_id)
+        set_clause = ', '.join(f'{c} = %s' for c in cols)
+        params = list(cols.values()) + [client_id]
+        return self.execute(
+            f'UPDATE crm_clients SET {set_clause}, updated_at = now() '
+            f'WHERE id = %s RETURNING *',
+            params, returning=True,
+        )
+
     _ALLOWED_SORT = {
         'updated_at', 'created_at', 'display_name', 'id',
         'nr_reg', 'client_type', 'phone', 'email', 'city',
