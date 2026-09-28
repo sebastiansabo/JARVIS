@@ -302,13 +302,10 @@ def send_to_invoice_module():
         result = _alloc_service.send_to_invoice_module(invoice_ids, observer_user_ids=observer_user_ids)
 
         if not result.success:
-            # A schema-selection gate is a client-fixable validation error (400), not a 500.
-            needs_schema = (result.data or {}).get('needs_schema')
             return jsonify({
                 'success': False,
                 'error': result.error or 'Failed to send invoices to module',
-                'needs_schema': needs_schema,
-            }), 400 if needs_schema else 500
+            }), 500
 
         return jsonify({
             'success': True,

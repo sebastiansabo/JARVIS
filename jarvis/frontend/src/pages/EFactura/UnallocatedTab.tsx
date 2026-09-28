@@ -14,7 +14,6 @@ import {
   FileText,
   Trash2,
   CheckSquare,
-  Plus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -42,7 +41,6 @@ import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { cn, usePersistedState } from '@/lib/utils'
 import { efacturaApi, type EFacturaOverridesPayload } from '@/api/efactura'
-import { suppliersApi } from '@/api/suppliers'
 import { organizationApi } from '@/api/organization'
 import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
@@ -55,9 +53,6 @@ import { type InvoiceRow, type ColumnDef, columnDefMap, fmtDate } from './unallo
 import { ColumnToggle, loadColumns, saveColumns } from './unallocated/UnallocatedColumnToggle'
 import { EfacturaFilterBar } from './EfacturaFilterBar'
 import { InvoicePreviewModal } from '@/pages/Profile/InvoicePreviewModal'
-
-// One allocation zone within an invoice line (Per alocare / Phase 4).
-type AllocZone = { department: string; subdepartment: string | null; value: string; konto_config_id: number | null }
 
 // ── Main Component ──────────────────────────────────────────
 export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenCount = 0, search = '' }: { showHidden: boolean; onShowHiddenChange?: (v: boolean) => void; hiddenCount?: number; search?: string }) {
@@ -77,11 +72,6 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
   const [viewInvoice, setViewInvoice] = useState<InvoiceRow | null>(null)
   const [previewId, setPreviewId] = useState<number | null>(null)
   const [editInvoice, setEditInvoice] = useState<InvoiceRow | null>(null)
-  const [schemaId, setSchemaId] = useState<number | null>(null)
-  const [schemaMode, setSchemaMode] = useState<'invoice' | 'line' | 'alloc'>('invoice')
-  const [lineSchemas, setLineSchemas] = useState<Record<number, number | null>>({})
-  // Per-alloc (Phase 4): line_index → zones. `value` kept as string for smooth input; parsed on save.
-  const [zones, setZones] = useState<Record<number, AllocZone[]>>({})
   const [overrides, setOverrides] = useState({
     type_override: '',
     department_override: '',
@@ -163,39 +153,6 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
     staleTime: 5 * 60_000,
     enabled: !!editInvoice,
   })
-
-  // EuroFib schema for the invoice being allocated. Shown when the supplier has a saved schema;
-  // required (gated at Send-to-Module) when the supplier has more than one.
-  const { data: schemaData } = useQuery({
-    queryKey: ['efactura-schemas', editInvoice?.id],
-    queryFn: () => suppliersApi.schemasForEfactura(editInvoice!.id),
-    enabled: !!editInvoice,
-  })
-  const schemaCount = schemaData?.count ?? 0
-  const schemaLineItems = schemaData?.line_items ?? []
-  useEffect(() => {
-    if (!schemaData) return
-    setSchemaId((prev) => {
-      if (prev != null && schemaData.presets.some((p) => p.id === prev)) return prev
-      return schemaData.selected_id ?? (schemaData.count === 1 ? schemaData.presets[0].id : null)
-    })
-    const allocMap = schemaData.alloc_map || {}
-    const hasAlloc = Object.keys(allocMap).length > 0
-    setSchemaMode(hasAlloc ? 'alloc' : (schemaData.per_line ? 'line' : 'invoice'))
-    const sel: Record<number, number | null> = {}
-    for (const [k, v] of Object.entries(schemaData.line_selected || {})) sel[Number(k)] = v
-    setLineSchemas(sel)
-    const z: Record<number, AllocZone[]> = {}
-    for (const [k, arr] of Object.entries(allocMap)) {
-      z[Number(k)] = arr.map((zn) => ({
-        department: zn.department || '',
-        subdepartment: zn.subdepartment ?? null,
-        value: zn.value != null ? String(zn.value) : '',
-        konto_config_id: zn.konto_config_id ?? null,
-      }))
-    }
-    setZones(z)
-  }, [schemaData])
 
   // ── Mutations ─────────────────────────────────────────────
   const invalidateAll = () => {
@@ -469,20 +426,8 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
     })
     setSplitDept(!!(inv.department_override_2 || inv.subdepartment_override_2))
     setEditObserverIds(inv.observer_user_ids ?? [])
-    setSchemaId(null) // re-initialized from schemasForEfactura once it loads
-    setSchemaMode('invoice')
-    setLineSchemas({})
-    setZones({})
     setEditInvoice(inv)
   }
-
-  // ── Per-alloc zone helpers ────────────────────────────────
-  const addZone = (lineIdx: number) =>
-    setZones((m) => ({ ...m, [lineIdx]: [...(m[lineIdx] ?? []), { department: '', subdepartment: null, value: '', konto_config_id: null }] }))
-  const removeZone = (lineIdx: number, zoneIdx: number) =>
-    setZones((m) => ({ ...m, [lineIdx]: (m[lineIdx] ?? []).filter((_, i) => i !== zoneIdx) }))
-  const updateZone = (lineIdx: number, zoneIdx: number, patch: Partial<AllocZone>) =>
-    setZones((m) => ({ ...m, [lineIdx]: (m[lineIdx] ?? []).map((z, i) => (i === zoneIdx ? { ...z, ...patch } : z)) }))
 
   const saveOverrides = () => {
     if (!editInvoice) return
@@ -496,29 +441,8 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
         department_override_2: splitDept ? (overrides.department_override_2 || null) : null,
         subdepartment_override_2: splitDept ? (overrides.subdepartment_override_2 || null) : null,
         observer_user_ids: editObserverIds,
-        konto_config_id: schemaId,
-        konto_per_line: schemaMode === 'line',
-        konto_line_map: schemaMode === 'line'
-          ? Object.fromEntries(Object.entries(lineSchemas).filter(([, v]) => v != null).map(([k, v]) => [k, v as number]))
-          : {},
-        // Per alocare: {line_index: [{department, subdepartment, value, konto_config_id}]}; empty clears it.
-        konto_alloc_map: schemaMode === 'alloc'
-          ? Object.fromEntries(
-              Object.entries(zones)
-                .map(([k, arr]) => [
-                  k,
-                  arr
-                    .filter((z) => z.department && Number(z.value) > 0)
-                    .map((z) => ({
-                      department: z.department,
-                      subdepartment: z.subdepartment || null,
-                      value: Number(z.value),
-                      konto_config_id: z.konto_config_id,
-                    })),
-                ] as const)
-                .filter(([, arr]) => arr.length > 0),
-            )
-          : {},
+        // EuroFib schema (konto_*) is intentionally omitted: the schema selector was removed from
+        // this dialog, and omitting these keys leaves any previously-saved override untouched.
       },
     })
   }
@@ -1045,7 +969,7 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
 
       {/* Edit Overrides Dialog — widens in per-line schema mode */}
       <Dialog open={!!editInvoice} onOpenChange={() => setEditInvoice(null)}>
-        <DialogContent className={cn('sm:max-w-md', (schemaMode === 'line' || schemaMode === 'alloc') && schemaCount > 0 && 'sm:max-w-3xl')}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Edit Invoice Overrides</DialogTitle>
           </DialogHeader>
@@ -1065,123 +989,6 @@ export default function UnallocatedTab({ showHidden, onShowHiddenChange, hiddenC
                   <CurrencyDisplay value={editInvoice.total_amount} currency={editInvoice.currency} />
                 </div>
               </div>
-
-              {/* EuroFib schema — Per factură / Per linie. Required (gated at Send) when >1 schema. */}
-              {schemaCount > 0 && (
-                <div className={cn('space-y-2.5 rounded-md border p-3',
-                  schemaMode === 'invoice' && schemaCount > 1 && schemaId == null && 'border-amber-400 bg-amber-50/60 dark:border-amber-500/50 dark:bg-amber-950/20')}>
-                  <div className="flex items-center justify-between gap-3">
-                    <Label className="text-xs font-medium">
-                      {schemaMode === 'line' || schemaMode === 'alloc' ? 'Schemă de bază (credit)' : 'Schemă EuroFib'}
-                      {schemaMode === 'invoice' && schemaCount > 1 && <span className="text-destructive"> *</span>}
-                    </Label>
-                    {schemaCount > 1 && schemaLineItems.length > 0 && (
-                      <div className="inline-flex rounded-md border bg-muted/40 p-0.5 text-[11px] font-medium">
-                        <button type="button" onClick={() => setSchemaMode('invoice')}
-                          className={cn('rounded px-2 py-1', schemaMode === 'invoice' ? 'bg-background shadow-sm' : 'text-muted-foreground')}>Per factură</button>
-                        <button type="button" onClick={() => setSchemaMode('line')}
-                          className={cn('rounded px-2 py-1', schemaMode === 'line' ? 'bg-background shadow-sm' : 'text-muted-foreground')}>Per linie</button>
-                        <button type="button" onClick={() => setSchemaMode('alloc')}
-                          className={cn('rounded px-2 py-1', schemaMode === 'alloc' ? 'bg-background shadow-sm' : 'text-muted-foreground')}>Per alocare</button>
-                      </div>
-                    )}
-                  </div>
-                  <Select value={schemaId != null ? String(schemaId) : ''} onValueChange={(v) => setSchemaId(Number(v))}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={schemaMode === 'line' ? 'Schema activă (implicit)' : (schemaCount > 1 ? 'Selectează schema...' : 'Schema activă')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(schemaData?.presets ?? []).map((p) => (
-                        <SelectItem key={p.id} value={String(p.id)}>{p.name}{p.is_active ? ' · activă' : ''}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  {schemaMode === 'line' ? (
-                    <div className="space-y-1.5 border-t pt-2.5">
-                      <p className="text-[11px] text-muted-foreground">Fiecare linie postează net+TVA în schema ei; liniile nealese folosesc schema de bază.</p>
-                      {schemaLineItems.map((li, idx) => (
-                        <div key={idx} className="grid grid-cols-[1fr_auto] items-center gap-2">
-                          <div className="min-w-0">
-                            <div className="truncate text-xs">{li.name || li.description || `Linia ${idx + 1}`}</div>
-                            <div className="font-mono text-[10.5px] text-muted-foreground">net {li.amount != null ? Number(li.amount).toFixed(2) : '—'}</div>
-                          </div>
-                          <Select value={lineSchemas[idx] != null ? String(lineSchemas[idx]) : ''}
-                            onValueChange={(v) => setLineSchemas((m) => ({ ...m, [idx]: v ? Number(v) : null }))}>
-                            <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Schema de bază" /></SelectTrigger>
-                            <SelectContent>
-                              {(schemaData?.presets ?? []).map((p) => (<SelectItem key={p.id} value={String(p.id)}>{p.name}{p.is_active ? ' · activă' : ''}</SelectItem>))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ))}
-                    </div>
-                  ) : schemaMode === 'alloc' ? (
-                    <div className="space-y-2 border-t pt-2.5">
-                      <p className="text-[11px] text-muted-foreground">Împarte fiecare linie pe departamente (zone). Fiecare zonă postează valoarea ei net+TVA în schema aleasă; zonele fără schemă folosesc schema de bază.</p>
-                      {schemaLineItems.map((li, idx) => {
-                        const zs = zones[idx] ?? []
-                        const sum = zs.reduce((a, z) => a + (Number(z.value) || 0), 0)
-                        const net = li.amount != null ? Number(li.amount) : 0
-                        const balanced = Math.abs(sum - net) <= 0.01
-                        return (
-                          <div key={idx} className="space-y-2 rounded-md border p-2.5">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0">
-                                <div className="truncate text-xs font-medium">{li.name || li.description || `Linia ${idx + 1}`}</div>
-                                <div className="font-mono text-[10.5px] text-muted-foreground">net {li.amount != null ? Number(li.amount).toFixed(2) : '—'}</div>
-                              </div>
-                              {zs.length > 0 && (
-                                <span className={cn('shrink-0 rounded px-1.5 py-0.5 font-mono text-[10.5px]',
-                                  balanced ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300'
-                                           : 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300')}>
-                                  {sum.toFixed(2)} / {net.toFixed(2)}
-                                </span>
-                              )}
-                            </div>
-                            {zs.map((z, zi) => (
-                              <div key={zi} className="grid grid-cols-[1fr_5rem_10rem_auto] items-center gap-1.5">
-                                {brands.length > 0 ? (
-                                  <Select value={z.department || ''} onValueChange={(v) => updateZone(idx, zi, { department: v })}>
-                                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Departament" /></SelectTrigger>
-                                    <SelectContent>
-                                      {brands.filter(Boolean).map((b) => (<SelectItem key={b} value={b}>{b}</SelectItem>))}
-                                    </SelectContent>
-                                  </Select>
-                                ) : (
-                                  <Input className="h-8 text-xs" value={z.department}
-                                    onChange={(e) => updateZone(idx, zi, { department: e.target.value })} placeholder="Departament" />
-                                )}
-                                <Input className="h-8 text-xs" type="number" inputMode="decimal" value={z.value}
-                                  onChange={(e) => updateZone(idx, zi, { value: e.target.value })} placeholder="valoare" />
-                                <Select value={z.konto_config_id != null ? String(z.konto_config_id) : ''}
-                                  onValueChange={(v) => updateZone(idx, zi, { konto_config_id: v ? Number(v) : null })}>
-                                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Schema de bază" /></SelectTrigger>
-                                  <SelectContent>
-                                    {(schemaData?.presets ?? []).map((p) => (<SelectItem key={p.id} value={String(p.id)}>{p.name}{p.is_active ? ' · activă' : ''}</SelectItem>))}
-                                  </SelectContent>
-                                </Select>
-                                <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeZone(idx, zi)}>
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            ))}
-                            <Button type="button" variant="outline" size="sm" className="h-7 text-[11px]" onClick={() => addZone(idx)}>
-                              <Plus className="mr-1 h-3 w-3" /> Adaugă zonă
-                            </Button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-muted-foreground">
-                      {schemaCount > 1
-                        ? 'Acest furnizor are mai multe scheme — alege una înainte de a trimite în Accounting.'
-                        : 'Schema EuroFib pentru acest furnizor.'}
-                    </p>
-                  )}
-                </div>
-              )}
 
               {/* Type Override */}
               <div className="space-y-1">
