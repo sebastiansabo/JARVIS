@@ -342,7 +342,7 @@ def test_create_with_oversized_images_returns_413(client, as_role, monkeypatch):
     monkeypatch.setattr(shared, 'MAX_CREATE_BYTES', 10)
     monkeypatch.setattr(
         'buyback.repositories.photo_repository.spaces_service.upload',
-        lambda data, key, ct: key,
+        lambda data, key, ct, acl='private': key,
     )
 
     as_role('Admin', 1)
@@ -358,7 +358,7 @@ def test_create_filters_blank_image_entries(client, as_role, monkeypatch):
     for falsy entries and would TypeError on len(None))."""
     monkeypatch.setattr(
         'buyback.repositories.photo_repository.spaces_service.upload',
-        lambda data, key, ct: key,
+        lambda data, key, ct, acl='private': key,
     )
     as_role('Admin', 1)
     r = client.post('/api/buyback/records', json=_payload(images=['', None]))
@@ -460,7 +460,7 @@ def test_create_oversized_images_rolls_back_record(client, as_role, monkeypatch)
     monkeypatch.setattr(shared, 'MAX_CREATE_BYTES', 10)
     monkeypatch.setattr(
         'buyback.repositories.photo_repository.spaces_service.upload',
-        lambda data, key, ct: key,
+        lambda data, key, ct, acl='private': key,
     )
     as_role('Admin', 1)
     vin = _vin()
@@ -782,7 +782,7 @@ def test_create_rejects_bare_key_image_entry_no_spaces_fetch(client, as_role, mo
 def test_create_malformed_base64_is_400_not_413(client, as_role, monkeypatch):
     monkeypatch.setattr(
         'buyback.repositories.photo_repository.spaces_service.upload',
-        lambda data, key, ct: key,
+        lambda data, key, ct, acl='private': key,
     )
     as_role('Admin', 1)
     r = client.post('/api/buyback/records', json=_payload(
@@ -801,7 +801,7 @@ def test_create_oversized_images_is_exactly_413(client, as_role, monkeypatch):
     monkeypatch.setattr(shared, 'MAX_CREATE_BYTES', 10)
     monkeypatch.setattr(
         'buyback.repositories.photo_repository.spaces_service.upload',
-        lambda data, key, ct: key,
+        lambda data, key, ct, acl='private': key,
     )
     as_role('Admin', 1)
     raw = os.urandom(100)

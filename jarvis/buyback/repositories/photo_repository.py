@@ -129,7 +129,8 @@ class PhotoRepository(BaseRepository):
         created = []
         for idx, data in enumerate(decoded):
             key = f'private/buyback/{record_id}/{uuid4().hex}.jpg'
-            spaces_service.upload(data, key, 'image/jpeg')
+            # public-read: buyback photos are served off the Spaces CDN edge.
+            spaces_service.upload(data, key, 'image/jpeg', acl='public-read')
             is_primary = gallery_empty and idx == 0
             created.append(self.create(
                 record_id, url=key, is_primary=is_primary, file_size=len(data)

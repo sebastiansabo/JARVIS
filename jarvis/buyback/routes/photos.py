@@ -114,7 +114,9 @@ def upload_photos(record_id):
     try:
         for i, data in enumerate(payloads):
             key = f'private/buyback/{record_id}/{uuid.uuid4().hex}.jpg'
-            spaces_service.upload(data, key, 'image/jpeg')
+            # public-read so the object is served straight off the Spaces CDN
+            # edge (buyback photos are intentionally public — see cdn_url).
+            spaces_service.upload(data, key, 'image/jpeg', acl='public-read')
             uploaded_keys.append(key)
             photo = _shared.photos_repo.create(
                 record_id=record_id,
@@ -142,7 +144,7 @@ def upload_photos(record_id):
                 logger.exception('Rollback: failed to delete Spaces object %s', key)
         return jsonify({'success': False, 'error': 'Upload failed'}), 500
 
-    return jsonify({'success': True, 'photos': _shared._serialize(created)}), 201
+    return jsonify({'success': True, 'photos': _shared.serialize_photos(created)}), 201
 
 
 # ═══════════════════════════════════════════════
@@ -162,7 +164,7 @@ def list_photos(record_id):
         return err
 
     photos = _shared.photos_repo.get_by_record(record_id)
-    return jsonify({'photos': _shared._serialize(photos)})
+    return jsonify({'photos': _shared.serialize_photos(photos)})
 
 
 # ═══════════════════════════════════════════════

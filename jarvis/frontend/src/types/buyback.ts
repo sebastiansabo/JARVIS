@@ -89,6 +89,9 @@ export interface BuybackPhoto {
   id: number
   record_id: number
   url: string
+  // Public Spaces CDN edge URL (buyback photos are public-read). Absent when
+  // Spaces is not configured (e.g. local dev) → fall back to mediaUrl(url).
+  cdn_url?: string | null
   thumbnail_url?: string | null
   sort_order: number
   is_primary: boolean

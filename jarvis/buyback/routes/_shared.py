@@ -202,6 +202,24 @@ def _serialize(obj):
     return obj
 
 
+def serialize_photos(photos):
+    """Serialize buyback photos and attach the public CDN URL for each object
+    key. Buyback photos are uploaded public-read (see photos.py /
+    photo_repository), so the frontend can load them straight from the Spaces
+    CDN edge instead of the authenticated /api/media proxy. cdn_url is only
+    attached when Spaces is configured (absent locally → frontend falls back to
+    mediaUrl(url))."""
+    from core.services import spaces_service
+    enabled = spaces_service.is_enabled()
+    out = []
+    for p in (photos or []):
+        d = _serialize(p)
+        if enabled and isinstance(d, dict) and d.get('url'):
+            d['cdn_url'] = spaces_service.cdn_url(d['url'])
+        out.append(d)
+    return out
+
+
 # ── Intake validation/coercion (shared by CREATE + UPDATE) ─────────────────
 #
 # records.py's create_record/update_record build their column dict straight

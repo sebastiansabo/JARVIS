@@ -214,7 +214,7 @@ def get_record(record_id):
     return jsonify({
         'record': _shared._serialize(record),
         'offers': _shared._serialize(offers),
-        'photos': _shared._serialize(photos),
+        'photos': _shared.serialize_photos(photos),
         'events': _shared._serialize(events),
     })
 

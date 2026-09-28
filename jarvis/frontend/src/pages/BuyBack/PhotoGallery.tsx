@@ -46,6 +46,10 @@ import type { BuybackPhoto } from '@/types/buyback'
 // as a prop rather than owning the record query itself).
 const GALLERY_MAX_WIDTH = 600 // px — the whole gallery block never exceeds this width
 
+// Prefer the public Spaces CDN edge URL; fall back to the authenticated
+// /api/media proxy when cdn_url is absent (e.g. local dev without Spaces).
+const photoSrc = (p: BuybackPhoto): string => p.cdn_url || mediaUrl(p.thumbnail_url || p.url)
+
 export default function PhotoGallery({
   recordId,
   photos: photosProp,
@@ -156,7 +160,7 @@ export default function PhotoGallery({
         onClick={() => openPreview(idx)}
       >
         <img
-          src={mediaUrl(photos[idx].thumbnail_url || photos[idx].url)}
+          src={photoSrc(photos[idx])}
           alt={`Photo ${idx + 1}`}
           className="h-full w-full object-cover"
         />
@@ -220,7 +224,7 @@ export default function PhotoGallery({
               }`}
             >
               <img
-                src={mediaUrl(p.thumbnail_url || p.url)}
+                src={photoSrc(p)}
                 alt={`Thumbnail ${i + 1}`}
                 draggable={false}
                 className="h-full w-full object-cover"
@@ -283,7 +287,7 @@ function SortablePhotoTile({
         aria-label={`Deschide poza ${index + 1}`}
       >
         <img
-          src={mediaUrl(photo.thumbnail_url || photo.url)}
+          src={photoSrc(photo)}
           alt={`Photo ${index + 1}`}
           draggable={false}
           className="h-full w-full object-cover transition group-hover:scale-105"
@@ -468,7 +472,7 @@ function PhotoGridOverlay({
                 aria-label={`Deschide poza ${i + 1}`}
               >
                 <img
-                  src={mediaUrl(p.thumbnail_url || p.url)}
+                  src={photoSrc(p)}
                   alt={`Photo ${i + 1}`}
                   className="h-full w-full object-cover transition group-hover:scale-105"
                 />
@@ -528,7 +532,7 @@ function PhotoGridOverlay({
               </button>
             )}
             <img
-              src={mediaUrl(photos[preview].url)}
+              src={photoSrc(photos[preview])}
               alt={`Photo ${preview + 1}`}
               className="max-h-full max-w-full object-contain"
             />

@@ -68,7 +68,7 @@ def _noop_spaces(monkeypatch):
     """Every test in this file uploads through the multipart route, so
     default all of them to a no-op Spaces upload/delete; individual tests
     override this when they need to observe/fail specific calls."""
-    monkeypatch.setattr(photos_mod.spaces_service, 'upload', lambda data, key, ct: key)
+    monkeypatch.setattr(photos_mod.spaces_service, 'upload', lambda data, key, ct, acl='private': key)
     monkeypatch.setattr(photos_mod.spaces_service, 'delete', lambda key: None)
 
 
@@ -174,7 +174,7 @@ def test_upload_mid_batch_failure_rolls_back(client, as_role, monkeypatch):
     calls = {'n': 0}
     deleted_keys = []
 
-    def _flaky_upload(data, key, ct):
+    def _flaky_upload(data, key, ct, acl='private'):
         calls['n'] += 1
         if calls['n'] == 2:
             raise RuntimeError('simulated Spaces outage')
