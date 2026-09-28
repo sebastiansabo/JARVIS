@@ -20,6 +20,11 @@ const ACQUISITION_TYPE_OPTIONS = [
   { value: 'tradein', label: 'Trade-in' },
 ]
 
+// Terminal ("resolved") statuses live under the Arhivă tab; everything else
+// (the in-progress workflow) lives under Active.
+const RESOLVED_STATUSES = ['BOUGHT', 'LOST', 'CANCELLED']
+const isResolved = (s: string) => RESOLVED_STATUSES.includes(s)
+
 export default function BuyBack() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -28,6 +33,7 @@ export default function BuyBack() {
   const [q, setQ] = useState('')
   const [companyId, setCompanyId] = useState<number | null>(null)
   const [view, setView] = useState<'list' | 'kanban'>('list')
+  const [tab, setTab] = useState<'active' | 'archive'>('active')
 
   const { can } = usePermissions()
   const canCreate = can('buyback.record.create')
@@ -57,17 +63,28 @@ export default function BuyBack() {
   })
 
   const records = data?.records ?? []
+  // Active vs Arhivă split: resolved (terminal) records only under Arhivă.
+  const activeCount = useMemo(() => records.filter((r) => !isResolved(r.status)).length, [records])
+  const archiveCount = records.length - activeCount
+  const visibleRecords = useMemo(
+    () => records.filter((r) => (tab === 'archive' ? isResolved(r.status) : !isResolved(r.status))),
+    [records, tab],
+  )
+  // Status columns/options relevant to the current tab.
+  const tabStatusOptions = STATUS_FILTER_OPTIONS.filter((o) =>
+    tab === 'archive' ? isResolved(o.value) : !isResolved(o.value),
+  )
   // Group once by status; both the count chips and the Kanban columns read
   // from these buckets (avoids a filter pass per status + per column).
   const recordsByStatus = useMemo(() => {
     const buckets: Record<string, typeof records> = {}
-    for (const r of records) {
+    for (const r of visibleRecords) {
       const bucket = buckets[r.status] ?? []
       bucket.push(r)
       buckets[r.status] = bucket
     }
     return buckets
-  }, [records])
+  }, [visibleRecords])
 
   const goToRecord = (id: number) => navigate(`/app/buyback/${id}`)
   const onRecordKeyDown = (e: React.KeyboardEvent, id: number) => {
@@ -82,6 +99,23 @@ export default function BuyBack() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold">BuyBack / TradeIn</h1>
         <div className="flex items-center gap-2">
+          {companies.length > 1 && (
+            <Select
+              value={effectiveCompanyId != null ? String(effectiveCompanyId) : ''}
+              onValueChange={(v) => setCompanyId(Number(v))}
+            >
+              <SelectTrigger className="h-9 w-[200px]">
+                <SelectValue placeholder="Companie" />
+              </SelectTrigger>
+              <SelectContent>
+                {companies.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <div className="flex items-center rounded-md border p-0.5">
             <Button
               variant={view === 'list' ? 'secondary' : 'ghost'}
@@ -111,12 +145,33 @@ export default function BuyBack() {
         </div>
       </div>
 
+      {/* Active vs Arhivă (resolved) tabs. Switching resets the status filter
+          so a status from the other tab can't leave the list empty. */}
+      <div className="flex w-fit items-center gap-1 rounded-md border p-0.5">
+        <Button
+          variant={tab === 'active' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7"
+          onClick={() => { setTab('active'); setStatus('all') }}
+        >
+          Active <span className="ml-1 text-xs text-muted-foreground">{activeCount}</span>
+        </Button>
+        <Button
+          variant={tab === 'archive' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7"
+          onClick={() => { setTab('archive'); setStatus('all') }}
+        >
+          Arhivă <span className="ml-1 text-xs text-muted-foreground">{archiveCount}</span>
+        </Button>
+      </div>
+
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline">{records.length} solicitări</Badge>
+        <Badge variant="outline">{visibleRecords.length} solicitări</Badge>
         {/* Per-status chips only make sense with no status filter — a selected
             status collapses them to one chip that just repeats the total. */}
         {status === 'all' &&
-          STATUS_FILTER_OPTIONS.map((opt) => {
+          tabStatusOptions.map((opt) => {
             const count = recordsByStatus[opt.value]?.length ?? 0
             if (!count) return null
             return (
@@ -128,30 +183,13 @@ export default function BuyBack() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {companies.length > 1 && (
-          <Select
-            value={effectiveCompanyId != null ? String(effectiveCompanyId) : ''}
-            onValueChange={(v) => setCompanyId(Number(v))}
-          >
-            <SelectTrigger className="h-9 w-[220px]">
-              <SelectValue placeholder="Companie" />
-            </SelectTrigger>
-            <SelectContent>
-              {companies.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
         <Select value={status} onValueChange={setStatus}>
           <SelectTrigger className="h-9 w-[180px]">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Toate stările</SelectItem>
-            {STATUS_FILTER_OPTIONS.map((opt) => (
+            {tabStatusOptions.map((opt) => (
               <SelectItem key={opt.value} value={opt.value}>
                 {opt.label}
               </SelectItem>
@@ -184,11 +222,11 @@ export default function BuyBack() {
           title="Eroare la încărcarea solicitărilor"
           description="Nu am putut încărca lista. Verifică conexiunea și încearcă din nou."
         />
-      ) : !records.length ? (
-        <EmptyState icon={<Car className="h-10 w-10" />} title="Nicio solicitare" description="Nu există solicitări BuyBack / TradeIn pentru filtrele curente." />
+      ) : !visibleRecords.length ? (
+        <EmptyState icon={<Car className="h-10 w-10" />} title={tab === 'archive' ? 'Arhivă goală' : 'Nicio solicitare'} description={tab === 'archive' ? 'Nu există solicitări rezolvate (achiziționate, pierdute sau anulate) pentru filtrele curente.' : 'Nu există solicitări BuyBack / TradeIn active pentru filtrele curente.'} />
       ) : view === 'kanban' ? (
         <div className="flex gap-3 overflow-x-auto pb-2">
-          {STATUS_FILTER_OPTIONS.map((col) => {
+          {tabStatusOptions.map((col) => {
             const colRecords = recordsByStatus[col.value] ?? []
             const rs = recordStatus(col.value)
             return (
@@ -243,7 +281,7 @@ export default function BuyBack() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {records.map((r) => {
+              {visibleRecords.map((r) => {
                 const rs = recordStatus(r.status)
                 return (
                   <TableRow
