@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
+import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 
@@ -23,6 +24,8 @@ export function Autocomplete({
   invalid,
   disabled,
   max = 8,
+  allowCreate = false,
+  canonicalize = false,
 }: {
   value: string
   onChange: (v: string) => void
@@ -32,6 +35,14 @@ export function Autocomplete({
   invalid?: boolean
   disabled?: boolean
   max?: number
+  /** When true, a custom (non-matching) value shows an "Adaugă «…»" row that
+   *  commits the typed text via onSelect. Off by default so existing pickers
+   *  that must stay within their option list are unchanged. */
+  allowCreate?: boolean
+  /** When true, on blur a value that case/diacritic-insensitively matches an
+   *  option snaps to that option's exact casing (typed "NISSAN" → "Nissan").
+   *  Off by default. */
+  canonicalize?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -44,7 +55,12 @@ export function Autocomplete({
     return pool.slice(0, max)
   }, [value, options, max])
 
-  const showList = open && !disabled && matches.length > 0
+  // Offer to add the typed value when it's non-empty and not already an exact option.
+  const trimmed = value.trim()
+  const showCreate =
+    allowCreate && trimmed !== '' && !options.some((o) => norm(o) === norm(trimmed))
+
+  const showList = open && !disabled && (matches.length > 0 || showCreate)
 
   return (
     <div className="relative">
@@ -59,7 +75,13 @@ export function Autocomplete({
         onFocus={() => setOpen(true)}
         onBlur={() => {
           // delay so a suggestion click registers before the list unmounts
-          blurTimer.current = setTimeout(() => setOpen(false), 120)
+          blurTimer.current = setTimeout(() => {
+            setOpen(false)
+            if (canonicalize && value.trim() !== '') {
+              const hit = options.find((o) => norm(o) === norm(value))
+              if (hit && hit !== value) onSelect(hit)
+            }
+          }, 120)
         }}
         placeholder={placeholder}
         className={cn(invalid && 'ring-2 ring-destructive')}
@@ -82,6 +104,23 @@ export function Autocomplete({
               </button>
             </li>
           ))}
+          {showCreate && (
+            <li className={cn(matches.length > 0 && 'border-t')}>
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  if (blurTimer.current) clearTimeout(blurTimer.current)
+                  onSelect(trimmed)
+                  setOpen(false)
+                }}
+                className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-sm text-primary hover:bg-accent transition-colors"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Adaugă „{trimmed}"
+              </button>
+            </li>
+          )}
         </ul>
       )}
     </div>

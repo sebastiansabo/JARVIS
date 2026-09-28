@@ -20,7 +20,8 @@ import type { BuybackRecord } from '@/types/buyback'
 import { useAuth } from '@/hooks/useAuth'
 import { cn, useDebounce } from '@/lib/utils'
 import { fileToCompressedDataUrl } from '@/lib/imageCompress'
-import { AUTOVIT_EQUIPMENT } from '@/data/autovitData'
+import { AUTOVIT_EQUIPMENT, AUTOVIT_BRANDS, AUTOVIT_MODELS } from '@/data/autovitData'
+import { Autocomplete } from '@/components/shared/Autocomplete'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -39,6 +40,22 @@ import {
 // ── VIN validation — mirrors buyback/routes/_shared.py::VIN_RE exactly
 //    (17 chars, no I/O/Q). ──
 const VIN_RE = /^[A-HJ-NPR-Z0-9]{17}$/
+
+// Case/diacritic-insensitive normalizer (mirrors Autocomplete's `norm`).
+function normLoose(s: string): string {
+  return s
+    .replace(/ş/g, 's').replace(/ţ/g, 't').replace(/Ş/g, 'S').replace(/Ţ/g, 'T')
+    .normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().trim()
+}
+
+// Map a parsed value to a known option's exact casing (so a CIV/talon "NISSAN"
+// becomes "Nissan"); returns the value unchanged when there's no match — the
+// Marca/Model autocompletes then offer "➕ Adaugă «value»".
+function canonicalOption(value: string, options: readonly string[]): string {
+  const n = normLoose(value)
+  return options.find((o) => normLoose(o) === n) ?? value
+}
 
 // ── A lean CRM-client shape (only the fields this form reads/writes) — the
 //    API returns `any[]` since crm client serialization is shared/generic. ──
@@ -355,6 +372,10 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
           if (v === undefined || v === null || v === '') continue
           if (k === 'vin') next.vin = String(v).trim().toUpperCase()
           else if (k === 'engine_capacity_cm3') next.engine_capacity_cm3 = String(v)
+          // Canonicalize make/model to the AUTOVIT list casing (NISSAN → Nissan);
+          // brand is processed before model so next.brand is already canonical.
+          else if (k === 'brand') next.brand = canonicalOption(String(v), AUTOVIT_BRANDS)
+          else if (k === 'model') next.model = canonicalOption(String(v), AUTOVIT_MODELS[next.brand] ?? [])
           else (next as Record<string, unknown>)[k] = String(v)
           applied.push(k)
         }
@@ -571,13 +592,25 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
         </CardHeader>
         <CardContent className="space-y-3">
           {selectedClient && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="rounded-md bg-secondary px-3 py-1 text-sm">
-                {selectedClient.display_name || selectedClient.name || `Client #${selectedClient.id}`}
-              </span>
-              <Button variant="ghost" size="sm" onClick={clearClient}>
-                <X className="h-3.5 w-3.5 mr-1" />Schimbă
-              </Button>
+            <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="rounded-md bg-secondary px-2.5 py-1 text-sm font-medium">
+                    {selectedClient.display_name || selectedClient.name || `Client #${selectedClient.id}`}
+                  </span>
+                  <span className="rounded border px-2 py-0.5 text-[11px] text-muted-foreground">
+                    {selectedClient.client_type === 'company' ? 'Firmă' : 'Persoană fizică'}
+                  </span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={clearClient}>
+                  <X className="h-3.5 w-3.5 mr-1" />Schimbă
+                </Button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-1 text-xs">
+                <div><span className="text-muted-foreground">Telefon: </span>{selectedClient.phone || '—'}</div>
+                <div><span className="text-muted-foreground">Email: </span>{selectedClient.email || '—'}</div>
+                <div><span className="text-muted-foreground">CUI: </span>{selectedClient.cui || '—'}</div>
+              </div>
             </div>
           )}
 
@@ -731,20 +764,28 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Marca *</Label>
-              <Input
-                className={cn(err(!form.brand.trim()) && 'border-destructive')}
+              <Autocomplete
                 value={form.brand}
-                onChange={(e) => set('brand', e.target.value)}
+                onChange={(v) => set('brand', v)}
+                onSelect={(v) => set('brand', v)}
+                options={AUTOVIT_BRANDS as unknown as string[]}
                 placeholder="BMW"
+                allowCreate
+                canonicalize
+                invalid={err(!form.brand.trim())}
               />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Model *</Label>
-              <Input
-                className={cn(err(!form.model.trim()) && 'border-destructive')}
+              <Autocomplete
                 value={form.model}
-                onChange={(e) => set('model', e.target.value)}
+                onChange={(v) => set('model', v)}
+                onSelect={(v) => set('model', v)}
+                options={AUTOVIT_MODELS[form.brand] ?? []}
                 placeholder="320d"
+                allowCreate
+                canonicalize
+                invalid={err(!form.model.trim())}
               />
             </div>
             <div className="space-y-1.5">
