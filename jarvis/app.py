@@ -603,6 +603,80 @@ def _register_routes(flask_app: Flask):
         resp.headers['Cache-Control'] = 'no-store, max-age=0'
         return resp
 
+    @flask_app.route('/privacy')
+    def privacy_policy():
+        # Public privacy policy for the JARVIS mobile app (Google Play requires a
+        # reachable privacy-policy URL). NO auth — Play reviewers and stores must
+        # be able to load it. Static content, served inline.
+        html = '''<!doctype html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JARVIS — Politica de confidentialitate</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+         max-width: 760px; margin: 0 auto; padding: 2rem 1.25rem; line-height: 1.6; color: #1a1a1a; }
+  @media (prefers-color-scheme: dark) { body { background:#0e0e10; color:#e6e6e6; } a{color:#8ab4ff;} }
+  h1 { font-size: 1.6rem; } h2 { font-size: 1.15rem; margin-top: 2rem; }
+  .muted { opacity: .7; font-size: .9rem; }
+  ul { padding-left: 1.2rem; }
+</style>
+</head>
+<body>
+<h1>Politica de confidentialitate &mdash; JARVIS</h1>
+<p class="muted">Ultima actualizare: 28 septembrie 2026</p>
+
+<p><strong>JARVIS</strong> (denumita &bdquo;Aplicatia&rdquo;) este o aplicatie interna destinata exclusiv
+angajatilor grupului AutoWorld, folosita pentru pontaj, resurse umane, test drive si
+foi de parcurs. Accesul este permis numai pe baza de cont. Operatorul de date este
+<strong>SC AUTOWORLD SRL</strong>, Cluj-Napoca, Romania.</p>
+
+<h2>1. Ce date colectam</h2>
+<ul>
+  <li><strong>Date de cont:</strong> nume, adresa de e-mail, numar de telefon (pentru autentificare).</li>
+  <li><strong>Locatie precisa (GPS):</strong> utilizata exclusiv la momentul pontajului / check-in-ului,
+      pentru a confirma prezenta la locatia de lucru.</li>
+  <li><strong>Fotografii:</strong> imagini incarcate in cadrul functiilor de business (ex. permis de
+      conducere si raport de avarii la test drive).</li>
+  <li><strong>Identificatori de dispozitiv:</strong> pentru securitate si asocierea sesiunii.</li>
+  <li><strong>Date de utilizare si diagnosticare:</strong> jurnale de activitate si de erori, pentru
+      stabilitatea si imbunatatirea aplicatiei.</li>
+</ul>
+
+<h2>2. Cum folosim datele</h2>
+<p>Datele sunt folosite exclusiv pentru operarea functiilor interne ale aplicatiei (pontaj,
+HR, test drive, foi de parcurs) si pentru securitatea contului. Nu folosim datele in scopuri
+de publicitate.</p>
+
+<h2>3. Partajarea datelor</h2>
+<p>Nu vindem si nu partajam datele cu terti in scopuri comerciale. Datele sunt prelucrate in
+cadrul infrastructurii proprii a AutoWorld si al furnizorilor de servicii tehnice care asigura
+functionarea aplicatiei, strict pe baza instructiunilor noastre.</p>
+
+<h2>4. Securitate</h2>
+<p>Toate datele sunt transmise criptat (HTTPS/TLS). Accesul la aplicatie este protejat prin
+autentificare si, optional, verificare in doi pasi.</p>
+
+<h2>5. Pastrarea si stergerea datelor</h2>
+<p>Pastram datele pe durata relatiei de munca / utilizarii aplicatiei. Puteti solicita accesul,
+corectarea sau stergerea datelor personale contactandu-ne la adresa de mai jos.</p>
+
+<h2>6. Contact</h2>
+<p>Pentru orice solicitare privind datele personale: <strong>protectiadatelor@autoworld.ro</strong>
+(SC AUTOWORLD SRL, Cluj-Napoca, Romania).</p>
+
+<hr>
+<p class="muted">This is the privacy policy of JARVIS, an internal employee application of AutoWorld
+Group. Access is restricted to authorized employees. We collect account data (name, email, phone),
+precise location (only at check-in), photos (business documents), device identifiers and diagnostics,
+solely to operate internal features and secure accounts. Data is encrypted in transit, never sold, and
+you may request access or deletion at protectiadatelor@autoworld.ro.</p>
+</body>
+</html>'''
+        return html, 200, {'Content-Type': 'text/html; charset=utf-8'}
+
     @flask_app.route('/download')
     def download_page():
         base_url = flask_app.config.get('APP_BASE_URL', 'https://jarvis.autoworld.ro').rstrip('/')
