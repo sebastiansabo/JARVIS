@@ -1,10 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import {
   ArrowLeft,
   Car,
   Euro,
+  FileText,
+  IdCard,
   ImagePlus,
   Loader2,
   Search,
@@ -17,12 +20,14 @@ import type { BuybackRecord } from '@/types/buyback'
 import { useAuth } from '@/hooks/useAuth'
 import { cn, useDebounce } from '@/lib/utils'
 import { fileToCompressedDataUrl } from '@/lib/imageCompress'
+import { AUTOVIT_EQUIPMENT } from '@/data/autovitData'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select,
   SelectContent,
@@ -306,6 +311,65 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
   const vinTouched = attempted || form.vin.length > 0
   const canSubmit = form.brand.trim() !== '' && form.model.trim() !== '' && vinValid
 
+  // ── Echipare (equipment): store selected AUTOVIT values as a comma-joined
+  //    string in form.equipment; round-trips cleanly via this Set. ──
+  const selectedEquipment = new Set(
+    (form.equipment || '').split(',').map((s) => s.trim()).filter(Boolean),
+  )
+  const toggleEquipment = (value: string) => {
+    const next = new Set(selectedEquipment)
+    if (next.has(value)) next.delete(value)
+    else next.add(value)
+    set('equipment', Array.from(next).join(', '))
+  }
+
+  // ── CIV / talon import — AI-vision extraction of a RO vehicle document into
+  //    the intake fields (only fills the fields the document actually carries). ──
+  const civInputRef = useRef<HTMLInputElement>(null)
+  const talonInputRef = useRef<HTMLInputElement>(null)
+  const [decoding, setDecoding] = useState<null | 'civ' | 'talon'>(null)
+
+  const DECODE_KEYS = [
+    'vin', 'brand', 'model', 'variant',
+    'first_registration_date', 'engine_capacity_cm3', 'fuel_type',
+  ] as const
+
+  const handleDecodeDocument = async (file: File, docType: 'civ' | 'talon') => {
+    if (file.size > 12 * 1024 * 1024) {
+      toast.error('Fișierul este prea mare (max 12MB).')
+      return
+    }
+    setDecoding(docType)
+    try {
+      const res = await buybackApi.decodeDocument(file, docType)
+      if (!res.success || !res.data) {
+        toast.error(res.error || 'Nu am putut extrage date din document.')
+        return
+      }
+      const fields = res.data.vehicle_fields || {}
+      const applied: string[] = []
+      setForm((f) => {
+        const next = { ...f }
+        for (const k of DECODE_KEYS) {
+          const v = fields[k]
+          if (v === undefined || v === null || v === '') continue
+          if (k === 'vin') next.vin = String(v).trim().toUpperCase()
+          else if (k === 'engine_capacity_cm3') next.engine_capacity_cm3 = String(v)
+          else (next as Record<string, unknown>)[k] = String(v)
+          applied.push(k)
+        }
+        return next
+      })
+      if (applied.length) toast.success(`${docType.toUpperCase()} citit — ${applied.length} câmpuri completate, verifică-le.`)
+      else toast.warning(`Nu am găsit date utile în ${docType.toUpperCase()}.`)
+    } catch (err) {
+      const msg = (err as { data?: { error?: string } })?.data?.error || 'Importul documentului a eșuat.'
+      toast.error(msg)
+    } finally {
+      setDecoding(null)
+    }
+  }
+
   // ── Seller (CRM client) search ──
   const [selectedClient, setSelectedClient] = useState<LookupCrmClient | null>(null)
   const [showNewClient, setShowNewClient] = useState(false)
@@ -451,9 +515,12 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
             <Label className="text-xs">Consilier</Label>
             <Input
               value={form.advisor_name}
-              onChange={(e) => set('advisor_name', e.target.value)}
+              readOnly
+              disabled
               placeholder="Nume consilier"
+              className="disabled:opacity-100 disabled:cursor-default bg-muted/40"
             />
+            <p className="text-[11px] text-muted-foreground">Atribuit automat utilizatorului conectat.</p>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Achiziție de tip</Label>
@@ -559,17 +626,25 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
                 <Input placeholder="Nume complet *" value={newClientName} onChange={(e) => setNewClientName(e.target.value)} />
                 <Input placeholder="Telefon * (+40...)" value={newClientPhone} onChange={(e) => setNewClientPhone(e.target.value)} />
                 <Input placeholder="Email" value={newClientEmail} onChange={(e) => setNewClientEmail(e.target.value)} />
-                <Input placeholder="CUI" value={newClientCui} onChange={(e) => setNewClientCui(e.target.value)} />
+                {newClientIsCompany && (
+                  <Input placeholder="CUI *" value={newClientCui} onChange={(e) => setNewClientCui(e.target.value)} />
+                )}
               </div>
               <div className="flex items-center gap-2">
-                <Switch checked={newClientIsCompany} onCheckedChange={setNewClientIsCompany} />
+                <Switch
+                  checked={newClientIsCompany}
+                  onCheckedChange={(v) => {
+                    setNewClientIsCompany(v)
+                    if (!v) setNewClientCui('')
+                  }}
+                />
                 <Label className="text-xs">Persoană juridică (firmă)</Label>
               </div>
               {newClientError && <p className="text-xs text-destructive">{newClientError}</p>}
               <Button
                 type="button"
                 size="sm"
-                disabled={!newClientName.trim() || !newClientPhone.trim() || createClientMutation.isPending}
+                disabled={!newClientName.trim() || !newClientPhone.trim() || (newClientIsCompany && !newClientCui.trim()) || createClientMutation.isPending}
                 onClick={() => createClientMutation.mutate()}
               >
                 {createClientMutation.isPending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
@@ -602,7 +677,55 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
       {/* ── Specificații Autovehicul ── */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2"><Car className="h-4 w-4" />Specificații Autovehicul</CardTitle>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CardTitle className="text-base flex items-center gap-2"><Car className="h-4 w-4" />Specificații Autovehicul</CardTitle>
+            <div className="flex items-center gap-2">
+              <input
+                ref={civInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) handleDecodeDocument(file, 'civ')
+                  e.target.value = ''
+                }}
+              />
+              <input
+                ref={talonInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0]
+                  if (file) handleDecodeDocument(file, 'talon')
+                  e.target.value = ''
+                }}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={decoding !== null}
+                onClick={() => civInputRef.current?.click()}
+                title="Completează automat din poza/PDF-ul CIV-ului"
+              >
+                {decoding === 'civ' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <IdCard className="h-3.5 w-3.5" />}
+                Importă CIV
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={decoding !== null}
+                onClick={() => talonInputRef.current?.click()}
+                title="Completează automat din poza/PDF-ul talonului"
+              >
+                {decoding === 'talon' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+                Importă talon
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -643,9 +766,31 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs">Echipare</Label>
-            <Textarea value={form.equipment} onChange={(e) => set('equipment', e.target.value)} placeholder="Listă echipamente / opțiuni" rows={2} />
+          <div className="space-y-2">
+            <Label className="text-xs">
+              Echipare{selectedEquipment.size > 0 && <span className="text-muted-foreground"> · {selectedEquipment.size} selectate</span>}
+            </Label>
+            <div className="rounded-md border bg-muted/20 p-3 space-y-3 max-h-72 overflow-y-auto">
+              {AUTOVIT_EQUIPMENT.map((group) => (
+                <div key={group.category} className="space-y-2">
+                  <h4 className="text-[11px] font-semibold uppercase text-muted-foreground">{group.category}</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+                    {group.options.map((opt) => (
+                      <div key={opt.value} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`eq-${opt.value}`}
+                          checked={selectedEquipment.has(opt.value)}
+                          onCheckedChange={() => toggleEquipment(opt.value)}
+                        />
+                        <Label htmlFor={`eq-${opt.value}`} className="text-sm font-normal cursor-pointer">
+                          {opt.label}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
