@@ -620,6 +620,13 @@ export interface ActivateTestDrivePayload {
   event_id?: number
   /** Company-client driver gate (Task 11) — see TestDriveFormPayload. */
   driver_contact_id?: number
+  /** Person-client driving licence captured at activation. A draft booked ahead
+   *  of time carries no licence yet; the backend requires the photo (mirrors the
+   *  live-submit gate). A company client's licence comes from the contact via
+   *  driver_contact_id, so these are sent only for a person client. */
+  driver_license_photo?: string
+  driver_license_number?: string
+  driver_license_expiry?: string
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
   allow_open_session?: boolean
