@@ -74,6 +74,11 @@ def create_schema_roles(conn, cursor):
             IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'last_seen') THEN
                 ALTER TABLE users ADD COLUMN last_seen TIMESTAMP;
             END IF;
+            -- Per-user OTP/2FA exemption. Default FALSE (secure): everyone keeps
+            -- OTP unless an admin explicitly exempts them. Viewers skip OTP by role.
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'otp_exempt') THEN
+                ALTER TABLE users ADD COLUMN otp_exempt BOOLEAN NOT NULL DEFAULT FALSE;
+            END IF;
         END $$;
     ''')
 

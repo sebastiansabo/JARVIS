@@ -19,6 +19,7 @@ export interface UserDetail {
   position: string | null
   contract_work_date: string | null
   is_ghost?: boolean
+  otp_exempt?: boolean
 }
 
 export interface CreateUserInput {
