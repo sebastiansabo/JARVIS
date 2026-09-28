@@ -70,6 +70,33 @@ def _scoped_company_id():
     return _shared._acting_company_id()
 
 
+def _sync_client_contact(client_id, data):
+    """Push the intake's seller phone/email/CUI onto the linked CRM client,
+    overwriting existing values (per product decision). Only fields the form
+    actually supplies are written — an empty form field never clears existing
+    CRM data. Best-effort: a CRM write failure must never fail the buyback
+    save, so this swallows+logs."""
+    if not client_id:
+        return
+    updates = {}
+    phone = str(data.get('seller_phone') or '').strip()
+    if phone:
+        updates['phone'] = phone.replace(' ', '').replace('-', '')
+        updates['phone_raw'] = phone
+    email = str(data.get('seller_email') or '').strip()
+    if email:
+        updates['email'] = email
+    cui = str(data.get('seller_cui') or '').strip()
+    if cui:
+        updates['cui'] = cui
+    if not updates:
+        return
+    try:
+        _shared.client_repo.update(client_id, updates)
+    except Exception:
+        logger.warning('CRM client %s contact sync failed', client_id, exc_info=True)
+
+
 def _list_scoped_company_id():
     """Resolve the (company_id, allowed) pair to filter GET /records by.
 
@@ -288,6 +315,10 @@ def create_record():
         {'vin_in_carpark': vin_in_carpark},
     )
 
+    # Enrich the linked CRM client with the seller contact details entered here
+    # (overwrite; empty fields skipped). Best-effort — never fails the create.
+    _sync_client_contact(create_data.get('client_id'), data)
+
     # Heads-up to the acquisition team that a new record was submitted (now in
     # PENDING_EVALUATION). Non-blocking: Notifier.notify_acquisition already
     # wraps its body in try/except (logs + swallows send_email/dealer failures)
@@ -361,6 +392,11 @@ def update_record(record_id):
     # offer/inspection ever happened.
     update_data = {k: data[k] for k in _CREATE_FIELDS if k in data}
     updated = _shared.records_repo.update(record_id, update_data)
+
+    # Mirror any edited seller contact details back onto the linked CRM client
+    # (same overwrite policy as CREATE). Uses the record's effective client.
+    _sync_client_contact(update_data.get('client_id', record.get('client_id')), data)
+
     return jsonify({'success': True, 'record': _shared._serialize(updated)})
 
 
