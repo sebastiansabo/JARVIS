@@ -3,7 +3,7 @@
 import re
 from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required, current_user,
-    logger, _client_repo,
+    logger, _client_repo, _fp_repo,
 )
 
 
@@ -24,6 +24,22 @@ def api_search_clients():
 
     clients = _client_repo.search_clients(q, limit=limit)
     return jsonify({'success': True, 'clients': clients})
+
+
+# ════════════════════════════════════════════════════════════════
+# Client's last captured driving licence (activate-form prefill)
+# ════════════════════════════════════════════════════════════════
+
+@foi_parcurs_bp.route('/api/foi-parcurs/clients/<int:client_id>/last-license', methods=['GET'])
+@login_required
+def api_client_last_license(client_id):
+    """Most recent driving licence captured on any of this client's sessions.
+
+    Lets the activate form prefill a returning person-client's licence (photo +
+    serie/number + expiry) instead of forcing a re-scan, matching the backend's
+    activation reuse. Returns {success, license: {...}|null}."""
+    lic = _fp_repo.get_latest_license_for_client(client_id)
+    return jsonify({'success': True, 'license': lic or None})
 
 
 # ════════════════════════════════════════════════════════════════

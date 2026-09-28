@@ -408,6 +408,27 @@ class FoiParcursRepository(BaseRepository):
         )
         return int(row['floor']) if row and row.get('floor') is not None else 0
 
+    def get_latest_license_for_client(self, client_id) -> dict | None:
+        """Most recent driving licence captured on any of this client's sessions.
+
+        Returns the newest row (by created_at) that actually carries a licence
+        photo, as {driver_license_photo, driver_license_number,
+        driver_license_expiry, driver_license_serie}, or None when the client has
+        no licence on file anywhere. Lets a returning person-client reuse a
+        previously captured licence at activation instead of re-scanning it."""
+        if not client_id:
+            return None
+        return self.query_one(
+            '''SELECT driver_license_photo, driver_license_number,
+                      driver_license_expiry, driver_license_serie
+               FROM foi_de_parcurs
+               WHERE client_id = %s
+                 AND COALESCE(driver_license_photo, '') <> ''
+               ORDER BY created_at DESC
+               LIMIT 1''',
+            (client_id,),
+        )
+
     def get_odometer_readings(self, vin: str) -> list:
         """All drives for a VIN in chronological order (departure time, falling
         back to created_at) — every route_type, so odometer continuity/gap

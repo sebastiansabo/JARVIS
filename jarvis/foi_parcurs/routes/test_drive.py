@@ -542,6 +542,10 @@ def api_activate_test_drive(id):
         # FILLED session carries the actual driver, not the company placeholder.
         driver_snapshot = {}
         client_update = {}
+        # Licence reused from the client's prior sessions (person client only) when
+        # nothing is captured at activation — resolved in the person branch below
+        # and persisted onto this session so a returning client isn't re-scanned.
+        person_license = {}
         # The client (and its data) may be corrected at activation — the Client
         # card allows "Schimbă"/"Editează" when a planned draft goes live. The
         # activate payload carries the (possibly new) client_id; validate the
@@ -585,11 +589,30 @@ def api_activate_test_drive(id):
                 }
             elif _crm_client:
                 # Person client: the person is the driver — require a phone on
-                # file before the car goes out (mirrors the submit gate). The
-                # license photo captured at submit already lives on the contract.
+                # file AND the driving licence photo before the car goes out
+                # (mirrors the live-submit gate in api_submit_test_drive). A
+                # PLANNED draft booked ahead of time defers the licence to
+                # activation, so it must be supplied now — or already captured on
+                # the contract from an earlier step. Without this a draft could be
+                # activated with no licence on file at all.
                 if not str(_crm_client.get('phone') or '').strip():
                     return jsonify({'success': False,
                                     'error': 'Clientul trebuie să aibă un număr de telefon.'}), 400
+                if not (str(data.get('driver_license_photo') or '').strip()
+                        or str(contract.get('driver_license_photo') or '').strip()):
+                    # Returning client: reuse the most recent licence captured on
+                    # any of their prior sessions instead of forcing a re-scan.
+                    # Only block when the client has no licence on file anywhere.
+                    _prior = _fp_repo.get_latest_license_for_client(_client_id) or {}
+                    if not str(_prior.get('driver_license_photo') or '').strip():
+                        return jsonify({'success': False,
+                                        'error': 'Permisul de conducere (poză) este obligatoriu.'}), 400
+                    person_license = {
+                        'driver_license_photo': _prior.get('driver_license_photo'),
+                        'driver_license_number': _prior.get('driver_license_number'),
+                        'driver_license_expiry': _prior.get('driver_license_expiry'),
+                        'driver_license_serie': _prior.get('driver_license_serie'),
+                    }
 
         tank = int(data.get('fuel_tank_capacity_liters', contract.get('fuel_tank_capacity_liters') or 0))
         start_level = data.get('fuel_gauge_start_level') or contract.get('fuel_gauge_start_level') or '1'
@@ -626,6 +649,19 @@ def api_activate_test_drive(id):
             update['general_conditions_accepted'] = True
             update['general_conditions_accepted_at'] = datetime.now(timezone.utc)
             update['general_conditions_text'] = general_conditions_text
+        # Persist the driving licence captured at activation. A booked PLANNED
+        # draft carries no licence yet (create defers it), so the person-client
+        # activate form sends it here. Precedence: what's sent now (payload) wins,
+        # else the licence reused from the client's prior sessions (person_license,
+        # resolved above). Company clients take their licence from the selected
+        # contact via driver_snapshot below, which overrides both.
+        for _lic_key in ('driver_license_photo', 'driver_license_number',
+                         'driver_license_expiry', 'driver_license_serie'):
+            _lic_val = data.get(_lic_key)
+            if _lic_val is None or not str(_lic_val).strip():
+                _lic_val = person_license.get(_lic_key)
+            if _lic_val is not None and str(_lic_val).strip():
+                update[_lic_key] = str(_lic_val).strip()
         # Persist the resolved driver snapshot (company clients only; empty for
         # person clients, which already carry their snapshot from draft creation).
         update.update(driver_snapshot)

@@ -256,6 +256,16 @@ export const foiParcursApi = {
   createClient: (data: CreateClientPayload) =>
     api.post<{ success: boolean; client: FoiClient }>(`${BASE}/clients`, data),
 
+  // ── Client's last captured driving licence (activate-form prefill) ──
+  //    Reuses a returning person-client's licence instead of re-scanning.
+  getClientLastLicense: (clientId: number) =>
+    api.get<{ success: boolean; license: {
+      driver_license_photo?: string | null
+      driver_license_number?: string | null
+      driver_license_expiry?: string | null
+      driver_license_serie?: string | null
+    } | null }>(`${BASE}/clients/${clientId}/last-license`),
+
   // ── Vehicles (Stock) ──
   // light=true → picker payload (base fields + blocked_now), skipping the heavy
   // per-vehicle mileage/session subqueries. The car dropdown falls back to the

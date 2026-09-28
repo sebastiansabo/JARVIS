@@ -649,12 +649,23 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
     !!c.driver_license_number
   const contactGateOk = !isCompanyClient || contactGateFields(driverContact)
 
-  // A contact selected for a previous client must never leak into a new
-  // selection — reset whenever the selected client changes (including the
-  // "Schimbă" → null step before a new pick).
+  // A contact/licence selected for a previous client must never leak into a new
+  // selection. Reset whenever the selected client changes — but only drop the
+  // licence when genuinely switching AWAY from a client (e.g. "Schimbă"): the
+  // initial null→client transitions (draft load, scan-to-create) set client +
+  // licence together and must be preserved.
+  const licensePrefilledFor = useRef<string | null>(null)
+  const prevClientIdRef = useRef<string | null>(null)
   useEffect(() => {
     setDriverContact(null)
-  }, [selectedClient?.id])
+    const cur = selectedClient?.id != null ? String(selectedClient.id) : null
+    const prev = prevClientIdRef.current
+    prevClientIdRef.current = cur
+    if (prev != null && prev !== cur) {
+      setDriverLicensePhoto(null); setDriverLicenseNumber(''); setDriverLicenseExpiry('')
+      licensePrefilledFor.current = null
+    }
+  }, [selectedClient?.id])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-select the primary (or first) contact once the list loads.
   useEffect(() => {
@@ -662,6 +673,29 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
       setDriverContact(contacts.find((c) => c.is_primary) ?? contacts[0])
     }
   }, [isCompanyClient, contacts, driverContact])
+
+  // Reuse a returning person-client's licence: when the licence card is empty,
+  // prefill the client's most recently captured licence (photo + serie/number +
+  // expiry) so the consultant isn't forced to re-scan — mirrors the backend's
+  // activation reuse. Person clients only (a company client's licence comes from
+  // its contact). Prefilled at most once per client so it never clobbers a fresh
+  // upload or a photo the user deliberately removed.
+  const { data: lastLicenseData } = useQuery({
+    queryKey: ['fp-client-last-license', selectedClient?.id],
+    queryFn: () => foiParcursApi.getClientLastLicense(Number(selectedClient!.id)),
+    enabled: !!selectedClient?.id && !isCompanyClient && !driverLicensePhoto,
+    staleTime: 60_000,
+  })
+  useEffect(() => {
+    const lic = lastLicenseData?.license
+    const cid = selectedClient?.id != null ? String(selectedClient.id) : null
+    if (!lic || !lic.driver_license_photo || isCompanyClient || !cid) return
+    if (licensePrefilledFor.current === cid) return
+    licensePrefilledFor.current = cid
+    if (!driverLicensePhoto) setDriverLicensePhoto(lic.driver_license_photo)
+    if (!driverLicenseNumber && lic.driver_license_number) setDriverLicenseNumber(lic.driver_license_number)
+    if (!driverLicenseExpiry && lic.driver_license_expiry) setDriverLicenseExpiry(String(lic.driver_license_expiry).slice(0, 10))
+  }, [lastLicenseData, isCompanyClient, selectedClient?.id])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Full client hydration + inline edit (Client card) ──
   // The search row is lean; fetch the full CRM record so the card can show all
@@ -800,15 +834,17 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
   const draftValid = !(
     missing.company || missing.vehicle || missing.client || missing.departure || missing.returnInvalid
   )
-  // Activating a PLANNED draft only needs the deferred client signature on top of
-  // the draft fields — the activate endpoint requires client_signature, defaults
-  // gdpr_consent to true, and never reads a driver-license photo (so don't gate on it).
+  // Activating a PLANNED draft needs the deferred client signature AND the
+  // driver's licence photo (person client) on top of the draft fields — the
+  // activate endpoint now enforces the licence, mirroring the live-submit gate,
+  // so a draft booked ahead of time can't go out with no licence on file.
   // Activation (car actually goes out) keeps the operational fields required —
   // only *planning* was relaxed to name + date.
   const activateValid = !(
     missing.company || missing.vehicle || missing.client || missing.departure ||
     missing.odometer || missing.estimated || missing.fuel || missing.advisor || missing.returnInvalid ||
-    missing.clientSig || missing.conditions || missing.contact || missing.phone || missing.cui
+    missing.clientSig || missing.conditions || missing.contact || missing.phone || missing.cui ||
+    missing.license
   )
   const err = (bad: boolean) => attempted && bad          // plan-relevant fields (any attempt)
   const errFull = (bad: boolean) => submitAttempt && bad  // activation-only fields (submit/activate only)
@@ -984,6 +1020,13 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
       // company client's activation (400s without it); the backend derives
       // driver_license_serie itself from the contact, so it isn't sent here.
       ...(driverContact ? { driver_contact_id: driverContact.id } : {}),
+      // Person-client driving licence captured at activation — a draft booked
+      // ahead of time has none yet, and the backend now requires the photo
+      // (mirrors submit). A company client's licence comes from the contact via
+      // driver_contact_id above, so the standalone licence is person-only here.
+      ...(!isCompanyClient && driverLicensePhoto ? { driver_license_photo: driverLicensePhoto } : {}),
+      ...(!isCompanyClient && driverLicenseNumber.trim() ? { driver_license_number: driverLicenseNumber.trim() } : {}),
+      ...(!isCompanyClient && driverLicenseExpiry.trim() ? { driver_license_expiry: driverLicenseExpiry.trim() } : {}),
       // Service rental-pricing snapshot (S6b) — see svcPricingPayload above.
       ...svcPricingPayload,
     }
