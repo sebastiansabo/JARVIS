@@ -95,4 +95,16 @@ export const buybackApi = {
 
   deletePhoto: (id: number, photoId: number) =>
     api.delete(`${BASE}/records/${id}/photos/${photoId}`),
+
+  // AI-vision extraction of a CIV / talon into intake fields (buyback field names).
+  decodeDocument: (file: File, docType: 'civ' | 'talon') => {
+    const f = new FormData()
+    f.append('file', file)
+    f.append('doc_type', docType)
+    return api.post<{
+      success: boolean
+      data?: { vehicle_fields: Partial<Record<string, string | number>>; provider: string; confidence: number }
+      error?: string
+    }>(`${BASE}/documents/decode`, f)
+  },
 }
