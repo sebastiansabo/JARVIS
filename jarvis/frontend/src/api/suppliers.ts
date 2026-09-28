@@ -252,17 +252,6 @@ export const suppliersApi = {
             line_map?: Record<string, number | null>; alloc_map?: Record<string, number | null> },
   ) => api.post<{ success: boolean; mode: string }>(
       `/api/suppliers/invoices/${invoiceId}/schema-cascade`, body),
-  /** EuroFib schemas for an unallocated e-Factura invoice's supplier (× the invoice's company).
-   * Drives the schema selector in the e-Factura "Edit Invoice Overrides" dialog. */
-  schemasForEfactura: (efacturaInvoiceId: number) =>
-    api.get<{
-      success: boolean; presets: KontoPreset[]; active_id: number | null; selected_id: number | null
-      count: number; supplier_id: number | null; company_id: number | null
-      per_line: boolean
-      line_items: { name?: string | null; description?: string | null; amount: number | null; vat_rate: number | null }[]
-      line_selected: Record<string, number>
-      alloc_map: Record<string, { department: string; subdepartment?: string | null; value: number; konto_config_id: number | null }[]>
-    }>(`/api/suppliers/schemas-for-efactura?efactura_invoice_id=${efacturaInvoiceId}`),
   /** EuroFib MEDLINE single-file download (CSV or XLSX) — one supplier's invoices, an explicit
    * invoiceIds set, or all budgeted invoices for the period when invoiceIds is omitted;
    * grouped/ordered per build_csv. */
