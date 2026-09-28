@@ -2,12 +2,13 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Car, User, Euro, Wrench, Clock, FileText, Camera } from 'lucide-react'
 import { buybackApi } from '@/api/buyback'
-import { useAuth } from '@/hooks/useAuth'
 import { mediaUrl } from '@/lib/media'
 import { recordStatus } from './recordStatus'
+import { usePermissions } from './usePermissions'
+import { pickLatestOffer } from './offerUtils'
 import PhotoGallery from './PhotoGallery'
 import ActionPanel from './ActionPanel'
-import type { BuybackOffer, BuybackEvent } from '@/types/buyback'
+import type { BuybackEvent } from '@/types/buyback'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
@@ -46,18 +47,6 @@ function fmtDateTime(v: string | null | undefined): string {
 function fmtEur(v: number | null | undefined): string {
   if (v === null || v === undefined) return '—'
   return `${v.toLocaleString('ro-RO')} €`
-}
-
-// Latest offer overall (by created_at, tie-broken by id) — used for the
-// "Ofertă curentă" price row, independent of ActionPanel's pending-only pick.
-function latestOffer(offers: BuybackOffer[]): BuybackOffer | undefined {
-  if (!offers.length) return undefined
-  return offers.reduce((latest, o) => {
-    const oTime = new Date(o.created_at).getTime()
-    const latestTime = new Date(latest.created_at).getTime()
-    if (oTime !== latestTime) return oTime > latestTime ? o : latest
-    return o.id > latest.id ? o : latest
-  })
 }
 
 const DECISION_LABEL: Record<string, string> = {
@@ -108,11 +97,10 @@ function DetailSkeleton() {
 export default function BuyBackDetail() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { can } = usePermissions()
   const recordId = Number(id)
 
-  const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
-  const canEditPhotos = isAdmin || !!user?.permissions?.['buyback.record.edit']
+  const canEditPhotos = can('buyback.record.edit')
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['buyback-record', recordId],
@@ -140,7 +128,7 @@ export default function BuyBackDetail() {
 
   const { record, offers, photos, events } = data
   const rs = recordStatus(record.status)
-  const offer = latestOffer(offers)
+  const offer = pickLatestOffer(offers)
 
   return (
     <div className="space-y-4 p-4 md:p-6">
@@ -152,6 +140,9 @@ export default function BuyBackDetail() {
         <Badge className={rs.badgeClass}>{rs.label}</Badge>
         <span className="font-mono text-xs text-muted-foreground">{record.record_code}</span>
       </div>
+
+      {/* Primary workflow actions — kept at the top as the main action. */}
+      <ActionPanel record={record} offers={offers} />
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -262,33 +253,29 @@ export default function BuyBackDetail() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2"><Clock className="h-4 w-4" />Istoric</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {!events.length ? (
-              <p className="text-sm text-muted-foreground">Niciun eveniment</p>
-            ) : (
-              <ul className="space-y-3">
-                {events.map((ev) => (
-                  <li key={ev.id} className="flex gap-3 text-sm">
-                    <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
-                    <div>
-                      <p className="font-medium">{eventLabel(ev)}</p>
-                      <p className="text-xs text-muted-foreground">{fmtDateTime(ev.created_at)}</p>
-                      {eventDetail(ev) && <p className="text-xs text-muted-foreground">{eventDetail(ev)}</p>}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <ActionPanel record={record} offers={offers} />
-      </div>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2"><Clock className="h-4 w-4" />Istoric</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!events.length ? (
+            <p className="text-sm text-muted-foreground">Niciun eveniment</p>
+          ) : (
+            <ul className="space-y-3">
+              {events.map((ev) => (
+                <li key={ev.id} className="flex gap-3 text-sm">
+                  <div className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                  <div>
+                    <p className="font-medium">{eventLabel(ev)}</p>
+                    <p className="text-xs text-muted-foreground">{fmtDateTime(ev.created_at)}</p>
+                    {eventDetail(ev) && <p className="text-xs text-muted-foreground">{eventDetail(ev)}</p>}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

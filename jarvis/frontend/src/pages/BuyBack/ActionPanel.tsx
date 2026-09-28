@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { buybackApi } from '@/api/buyback'
-import { useAuth } from '@/hooks/useAuth'
+import { usePermissions } from './usePermissions'
+import { pickLatestOffer } from './offerUtils'
 import type { BuybackRecord, BuybackOffer } from '@/types/buyback'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -27,26 +28,12 @@ function errMsg(e: unknown, fallback: string): string {
   return fallback
 }
 
-function latestPendingOffer(offers: BuybackOffer[]): BuybackOffer | undefined {
-  const pending = offers.filter((o) => o.client_decision === 'pending')
-  if (!pending.length) return undefined
-  return pending.reduce((latest, o) => {
-    const oTime = new Date(o.created_at).getTime()
-    const latestTime = new Date(latest.created_at).getTime()
-    if (oTime !== latestTime) return oTime > latestTime ? o : latest
-    return o.id > latest.id ? o : latest
-  })
-}
-
 export default function ActionPanel({ record, offers }: { record: BuybackRecord; offers: BuybackOffer[] }) {
-  const { user } = useAuth()
   const queryClient = useQueryClient()
-  const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
   // Reopen mirrors the backend's role-only _is_admin() gate (admin/superadmin/Manager);
   // there is NO buyback.record.reopen permission, so an Acquisition user holding
   // buyback.record.finalize must NOT see it (would 403 on click).
-  const isAdminOrManager = ['admin', 'superadmin', 'manager'].includes((user?.role_name ?? '').toLowerCase())
-  const can = (k: string) => isAdmin || !!user?.permissions?.[k]
+  const { isAdminOrManager, can } = usePermissions()
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['buyback-record', record.id] })
@@ -115,7 +102,7 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   // ── client decision (accept / decline) ──
   const [declineDialogOpen, setDeclineDialogOpen] = useState(false)
   const [declineReason, setDeclineReason] = useState('')
-  const pendingOffer = latestPendingOffer(offers)
+  const pendingOffer = pickLatestOffer(offers, (o) => o.client_decision === 'pending')
 
   const decisionMutation = useMutation({
     mutationFn: (data: { decision: 'accepted' | 'declined'; decline_reason?: string }) => {
@@ -137,6 +124,16 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     record.reconditioning_cost_eur != null ? String(record.reconditioning_cost_eur) : ''
   )
   const [inspectionNotes, setInspectionNotes] = useState(record.inspection_notes ?? '')
+
+  // The above initializers only run once; when the record refetches (e.g. after
+  // saving the inspection) resync the inputs to the fresh server values so they
+  // don't keep stale text. Keyed on id/updated_at, not on every render.
+  useEffect(() => {
+    setRating(record.inspection_rating != null ? String(record.inspection_rating) : '')
+    setReconditioningCost(record.reconditioning_cost_eur != null ? String(record.reconditioning_cost_eur) : '')
+    setInspectionNotes(record.inspection_notes ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [record.id, record.updated_at])
 
   const saveInspectionMutation = useMutation({
     mutationFn: () =>

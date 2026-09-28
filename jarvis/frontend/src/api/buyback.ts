@@ -72,6 +72,10 @@ export const buybackApi = {
   getLookupOptions: () =>
     api.get<Record<string, { value: string; label: string }[]>>(`${BASE}/lookups/options`),
 
+  // Companies for the tenant switcher (own + org-responsable; admin = all).
+  getCompanies: () =>
+    api.get<{ companies: { id: number; name: string }[] }>(`${BASE}/lookups/companies`),
+
   searchCrmClients: (q: string) =>
     api.get<{ clients: any[] }>(`${BASE}/lookups/crm-clients/search${qs({ q })}`),
 

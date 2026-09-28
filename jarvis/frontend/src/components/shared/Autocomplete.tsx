@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 
 /** Diacritic- and case-insensitive normalizer for fuzzy matching (ș→s, ț→t, …). */
-function norm(s: string): string {
+export function norm(s: string): string {
   return s
     .replace(/ş/g, 's').replace(/ţ/g, 't').replace(/Ş/g, 'S').replace(/Ţ/g, 'T')
     .normalize('NFKD').replace(/[̀-ͯ]/g, '')

@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, Plus, Car } from 'lucide-react'
 import { buybackApi } from '@/api/buyback'
-import { useAuth } from '@/hooks/useAuth'
 import { recordStatus } from '@/pages/BuyBack/recordStatus'
+import { usePermissions } from '@/pages/BuyBack/usePermissions'
 import BuyBackForm from '@/pages/BuyBack/BuyBackForm'
 import type { BuybackRecord } from '@/types/buyback'
 import { Button } from '@/components/ui/button'
@@ -23,17 +23,25 @@ type Overlay = null | { kind: 'new' }
 export default function HubBuybackPanel({ onBack }: { onBack: () => void }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { user } = useAuth()
   const [overlay, setOverlay] = useState<Overlay>(null)
 
-  const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
-  const canCreate = isAdmin || !!user?.permissions?.['buyback.record.create']
+  const { can } = usePermissions()
+  const canCreate = can('buyback.record.create')
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ['buyback-records', 'hub'],
     queryFn: () => buybackApi.listRecords({ per_page: 200, sort_by: 'created_at', sort_dir: 'DESC' }),
+    staleTime: 30_000,
   })
   const records = data?.records ?? []
+
+  const goToRecord = (id: number) => navigate(`/app/buyback/${id}`)
+  const onRecordKeyDown = (e: React.KeyboardEvent, id: number) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      goToRecord(id)
+    }
+  }
 
   const closeOverlay = () => setOverlay(null)
   const handleDone = (record: BuybackRecord) => {
@@ -58,6 +66,12 @@ export default function HubBuybackPanel({ onBack }: { onBack: () => void }) {
 
       {isLoading ? (
         <TableSkeleton rows={6} columns={4} />
+      ) : isError ? (
+        <EmptyState
+          icon={<Car className="h-10 w-10" />}
+          title="Eroare la încărcarea solicitărilor"
+          description="Nu am putut încărca lista. Verifică conexiunea și încearcă din nou."
+        />
       ) : !records.length ? (
         <EmptyState
           icon={<Car className="h-10 w-10" />}
@@ -79,8 +93,11 @@ export default function HubBuybackPanel({ onBack }: { onBack: () => void }) {
             return (
               <Card
                 key={r.id}
+                role="button"
+                tabIndex={0}
                 className={`cursor-pointer p-3 transition-colors hover:bg-muted/40 ${rs.rowClass}`}
-                onClick={() => navigate(`/app/buyback/${r.id}`)}
+                onClick={() => goToRecord(r.id)}
+                onKeyDown={(e) => onRecordKeyDown(e, r.id)}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">

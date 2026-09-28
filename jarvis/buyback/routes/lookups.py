@@ -23,6 +23,10 @@ from flask_login import login_required, current_user
 from buyback import buyback_bp
 from buyback.routes import _shared
 from core.roles.decorators import v2_permission_required
+from core.organization.manager_utils import get_actable_company_ids
+from core.organization.repositories.company_repository import CompanyRepository
+
+_company_repo = CompanyRepository()
 
 logger = logging.getLogger('jarvis.buyback')
 
@@ -152,6 +156,25 @@ def get_lookup_options():
         'client_types': _CLIENT_TYPES,
         'client_sources': _dropdown_or_static('buyback_client_source', _STATIC_CLIENT_SOURCES),
     })
+
+
+@buyback_bp.route('/lookups/companies', methods=['GET'])
+@login_required
+@v2_permission_required('buyback', 'record', 'view')
+def list_companies():
+    """Companies for the buyback tenant switcher — the caller's own +
+    org-responsable companies; a global admin (can_access_settings) sees all.
+    Mirrors carpark/routes/vehicles.py::list_companies but buyback-gated so a
+    BuyBack user doesn't need CarPark access."""
+    rows = _company_repo.get_all()
+    if not getattr(current_user, 'can_access_settings', False):
+        ids = set(get_actable_company_ids(current_user.id) or [])
+        own = getattr(current_user, 'company_id', None)
+        if own is not None:
+            ids.add(own)
+        rows = [c for c in rows if c['id'] in ids]
+    companies = [{'id': c['id'], 'name': c.get('company')} for c in rows]
+    return jsonify({'companies': companies})
 
 
 # ═══════════════════════════════════════════════

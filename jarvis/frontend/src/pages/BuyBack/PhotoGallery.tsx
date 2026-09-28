@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Camera,
@@ -32,6 +32,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { toast } from 'sonner'
 import { mediaUrl } from '@/lib/media'
+import { fileToCompressedFile } from '@/lib/imageCompress'
 import { useDragScroll } from '@/pages/CarPark/useDragScroll'
 import { Button } from '@/components/ui/button'
 import { buybackApi } from '@/api/buyback'
@@ -69,6 +70,13 @@ export default function PhotoGallery({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const idx = photos.length ? Math.min(active, photos.length - 1) : 0
 
+  // Stable so the overlay's keydown/body-overflow effect (which lists onClose in
+  // its deps) doesn't re-subscribe on every parent render.
+  const closeGrid = useCallback(() => {
+    setGridOpen(false)
+    setInitialPreview(null)
+  }, [])
+
   useEffect(() => {
     const el = strip.ref.current?.querySelector<HTMLElement>(`[data-i="${idx}"]`)
     el?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
@@ -76,7 +84,12 @@ export default function PhotoGallery({
   }, [idx])
 
   const uploadMutation = useMutation({
-    mutationFn: (files: File[]) => buybackApi.uploadPhotos(recordId, files),
+    // Downscale+JPEG-compress client-side before upload (mirrors the intake
+    // form) so full-res phone photos don't hit the wire / Spaces uncompressed.
+    mutationFn: async (files: File[]) => {
+      const compressed = await Promise.all(files.map((f) => fileToCompressedFile(f)))
+      return buybackApi.uploadPhotos(recordId, compressed)
+    },
     onSuccess: () => {
       invalidate()
       toast.success('Poze încărcate')
@@ -226,7 +239,7 @@ export default function PhotoGallery({
           setPhotos={setPhotos}
           canEdit={canEdit}
           initialPreview={initialPreview}
-          onClose={() => { setGridOpen(false); setInitialPreview(null) }}
+          onClose={closeGrid}
         />
       )}
     </div>

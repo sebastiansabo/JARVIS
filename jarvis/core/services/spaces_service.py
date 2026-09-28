@@ -38,13 +38,31 @@ def _get_client():
     return _client
 
 
-def upload(data, key, content_type):
-    """Store bytes under key with PRIVATE acl. Returns the key."""
+def upload(data, key, content_type, acl='private'):
+    """Store bytes under key. Returns the key.
+
+    acl defaults to 'private' (served via the authenticated /api/media proxy or
+    a presigned URL). Pass acl='public-read' to make the object world-readable
+    via the Spaces CDN edge (see cdn_url) — only for non-sensitive assets the
+    caller has explicitly opted to expose publicly.
+    """
+    public = acl == 'public-read'
     _get_client().put_object(
         Bucket=_cfg()['bucket'], Key=key, Body=data,
-        ACL='private', ContentType=content_type,
-        CacheControl='private, max-age=86400')
+        ACL=acl, ContentType=content_type,
+        CacheControl='public, max-age=31536000, immutable' if public else 'private, max-age=86400')
     return key
+
+
+def cdn_url(key):
+    """Public CDN edge URL for a *public-read* object (see upload). Returns the
+    key unchanged when Spaces is not configured, so callers degrade gracefully.
+    NOTE: only resolves to a working URL if the object was uploaded public-read
+    AND the bucket has the DO Spaces CDN enabled."""
+    if not is_enabled() or not key:
+        return key
+    c = _cfg()
+    return f"https://{c['bucket']}.{c['region']}.cdn.digitaloceanspaces.com/{key}"
 
 
 def fetch(key):
