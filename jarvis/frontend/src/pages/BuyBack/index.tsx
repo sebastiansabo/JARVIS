@@ -21,9 +21,24 @@ const ACQUISITION_TYPE_OPTIONS = [
 ]
 
 // Terminal ("resolved") statuses live under the Arhivă tab; everything else
-// (the in-progress workflow) lives under Active.
+// (the in-progress workflow) lives under Active. A freshly-resolved request
+// also lingers on the Active side for 72h so the team sees the outcome before
+// it drops to Arhivă only.
 const RESOLVED_STATUSES = ['BOUGHT', 'LOST', 'CANCELLED']
 const isResolved = (s: string) => RESOLVED_STATUSES.includes(s)
+const RESOLVED_ACTIVE_WINDOW_MS = 72 * 60 * 60 * 1000
+
+// Best-available resolution timestamp: closed_at (LOST/CANCELLED) → bought_at
+// (BOUGHT) → updated_at (always bumped on the terminal transition).
+function resolutionTime(r: { closed_at: string | null; bought_at: string | null; updated_at: string }): number | null {
+  const ts = r.closed_at ?? r.bought_at ?? r.updated_at
+  return ts ? new Date(ts).getTime() : null
+}
+// Resolved but within the 72h window → still shown on Active.
+function lingersOnActive(r: { status: string; closed_at: string | null; bought_at: string | null; updated_at: string }, now: number): boolean {
+  const t = resolutionTime(r)
+  return t != null && now - t <= RESOLVED_ACTIVE_WINDOW_MS
+}
 
 export default function BuyBack() {
   const navigate = useNavigate()
@@ -63,17 +78,20 @@ export default function BuyBack() {
   })
 
   const records = data?.records ?? []
-  // Active vs Arhivă split: resolved (terminal) records only under Arhivă.
-  const activeCount = useMemo(() => records.filter((r) => !isResolved(r.status)).length, [records])
-  const archiveCount = records.length - activeCount
-  const visibleRecords = useMemo(
-    () => records.filter((r) => (tab === 'archive' ? isResolved(r.status) : !isResolved(r.status))),
-    [records, tab],
-  )
-  // Status columns/options relevant to the current tab.
-  const tabStatusOptions = STATUS_FILTER_OPTIONS.filter((o) =>
-    tab === 'archive' ? isResolved(o.value) : !isResolved(o.value),
-  )
+  // Active vs Arhivă split. Active = in-progress + resolved-within-72h; Arhivă =
+  // all resolved (the permanent history).
+  const activeCount = useMemo(() => {
+    const now = Date.now()
+    return records.filter((r) => !isResolved(r.status) || lingersOnActive(r, now)).length
+  }, [records])
+  const archiveCount = useMemo(() => records.filter((r) => isResolved(r.status)).length, [records])
+  const visibleRecords = useMemo(() => {
+    const now = Date.now()
+    return records.filter((r) => {
+      if (tab === 'archive') return isResolved(r.status)
+      return !isResolved(r.status) || lingersOnActive(r, now)
+    })
+  }, [records, tab])
   // Group once by status; both the count chips and the Kanban columns read
   // from these buckets (avoids a filter pass per status + per column).
   const recordsByStatus = useMemo(() => {
@@ -85,6 +103,14 @@ export default function BuyBack() {
     }
     return buckets
   }, [visibleRecords])
+
+  // Status columns/options relevant to the current tab. On Active, a resolved
+  // status appears only while it still has lingering (≤72h) records.
+  const tabStatusOptions = STATUS_FILTER_OPTIONS.filter((o) =>
+    tab === 'archive'
+      ? isResolved(o.value)
+      : !isResolved(o.value) || (recordsByStatus[o.value]?.length ?? 0) > 0,
+  )
 
   const goToRecord = (id: number) => navigate(`/app/buyback/${id}`)
   const onRecordKeyDown = (e: React.KeyboardEvent, id: number) => {
