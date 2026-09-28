@@ -90,6 +90,16 @@ class UserRepository(BaseRepository):
         self.execute('UPDATE users SET is_ghost = %s WHERE id = %s', (bool(is_ghost), user_id))
         return True
 
+    def set_otp_exempt(self, user_id: int, otp_exempt: bool) -> bool:
+        """Exempt (or re-enable) a specific user from OTP/2FA at login.
+
+        When True the user signs in single-factor regardless of role (viewers
+        are already single-factor). Security-sensitive — admin-gated at the
+        route layer and audit-logged by the caller.
+        """
+        self.execute('UPDATE users SET otp_exempt = %s WHERE id = %s', (bool(otp_exempt), user_id))
+        return True
+
     def get_online_users(self, minutes: int = 5) -> List[Dict[str, Any]]:
         """Get users who have been active in the last N minutes.
 

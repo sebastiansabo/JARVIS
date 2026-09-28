@@ -26,6 +26,9 @@ class User(UserMixin):
         self.org_unit_id = user_data.get('org_unit_id')
         self.notify_on_allocation = user_data.get('notify_on_allocation', True)
         self.is_ghost = user_data.get('is_ghost', False)
+        # Per-user OTP/2FA exemption: when True the user signs in single-factor
+        # regardless of role (viewers are already single-factor). Admin-managed.
+        self.otp_exempt = user_data.get('otp_exempt', False)
 
         # Personal details
         self.cnp = user_data.get('cnp')

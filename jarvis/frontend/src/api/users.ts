@@ -13,6 +13,8 @@ export const usersApi = {
     api.post<{ success: boolean; updated: number }>('/api/users/bulk-update-role', { ids, role_id }),
   setGhost: (id: number, is_ghost: boolean) =>
     api.put<{ success: boolean; is_ghost: boolean }>(`/api/users/${id}/ghost`, { is_ghost }),
+  setOtpExempt: (id: number, otp_exempt: boolean) =>
+    api.put<{ success: boolean; otp_exempt: boolean }>(`/api/users/${id}/otp-exempt`, { otp_exempt }),
   canManageGhosts: () =>
     api.get<{ can_manage_ghosts: boolean }>('/api/users/can-manage-ghosts'),
 

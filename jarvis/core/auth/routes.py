@@ -112,11 +112,13 @@ def login():
             if next_page and (not next_page.startswith('/') or next_page.startswith('//')):
                 next_page = None
 
-            # Viewers are single-factor — skip OTP entirely.
-            if is_viewer:
+            # Single-factor sign-in: viewers by role, OR any user an admin has
+            # explicitly exempted from OTP (otp_exempt). Everyone else gets 2FA.
+            if is_viewer or user.otp_exempt:
                 login_user(user, remember=remember)
                 _user_repo.update_last_login(user.id)
-                _log_event('login', f'Viewer {user.email} logged in (single-factor)')
+                _factor = 'viewer' if is_viewer else 'otp-exempt'
+                _log_event('login', f'{user.email} logged in (single-factor, {_factor})')
                 return redirect(next_page or url_for('index'))
 
             # Non-viewers: existing trusted-device + OTP 2FA flow.
@@ -647,6 +649,22 @@ def api_set_user_ghost(user_id):
     _user_repo.set_ghost(user_id, is_ghost)
     invalidate_ghost_cache()
     return jsonify({'success': True, 'is_ghost': is_ghost})
+
+
+@auth_bp.route('/api/users/<int:user_id>/otp-exempt', methods=['PUT'])
+@admin_required
+def api_set_user_otp_exempt(user_id):
+    """Exempt (or re-enable) a user from OTP/2FA at login. Admin only.
+
+    Security-sensitive: audit-logged with actor + target + new state. When
+    exempt, the user signs in single-factor regardless of role.
+    """
+    data = request.get_json(silent=True) or {}
+    otp_exempt = bool(data.get('otp_exempt'))
+    _user_repo.set_otp_exempt(user_id, otp_exempt)
+    _log_event('user_otp_exempt_changed',
+               f'{current_user.email} set otp_exempt={otp_exempt} for user_id={user_id}')
+    return jsonify({'success': True, 'otp_exempt': otp_exempt})
 
 
 @auth_bp.route('/api/users/bulk-delete', methods=['POST'])
