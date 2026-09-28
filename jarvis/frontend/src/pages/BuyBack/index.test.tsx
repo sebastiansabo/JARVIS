@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -47,6 +47,8 @@ function wrap(ui: React.ReactNode) {
 describe('BuyBack list page', () => {
   it('renders a record row with its status badge', async () => {
     wrap(<BuyBack />)
+    // The record is BOUGHT (a resolved status), which lives under the Arhivă tab.
+    fireEvent.click(await screen.findByRole('button', { name: /arhivă/i }))
     expect(await screen.findByText('BMW 320d')).toBeInTheDocument()
     expect(screen.getByText('Achiziționat')).toBeInTheDocument()
     // purchase_price_eur (9500) renders in the "Preț achiziție €" column, ro-RO formatted
