@@ -6,6 +6,7 @@ and pricing history.
 import logging
 from typing import Optional, Dict, Any, List
 
+from carpark.audit_diff import value_changed
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.photo_repository import PhotoRepository
 from carpark.repositories.cost_repository import CostRepository
@@ -173,8 +174,11 @@ class VehicleService:
                 continue
             old_val = old_vehicle.get(field)
 
-            # Compare with type coercion for decimals
-            if str(old_val) != str(new_val) and not (old_val is None and new_val is None):
+            # Only log a genuine change — value_changed() normalizes the type/format
+            # noise a full-form re-save introduces (Decimal vs int/float, DATE object
+            # vs ISO string) so we don't spam the audit trail (and its per-field
+            # INSERT/commit) with ~90 no-op rows on every save.
+            if value_changed(old_val, new_val):
                 self._repo.log_modification(
                     vehicle_id, field,
                     old_val, new_val,
