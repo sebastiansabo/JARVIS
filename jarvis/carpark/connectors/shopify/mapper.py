@@ -262,7 +262,11 @@ def vehicle_to_product(vehicle: Dict[str, Any], photos: List[dict],
 
     dotari_items = _dotari_items(vehicle, value_map)
 
-    ordered_photos = sorted(photos, key=lambda p: (not p.get('is_primary'), p.get('sort_order', 0)))
+    # Cover/first image follows the gallery's own ORDER BY sort_order, id (same as
+    # the catalog thumbnail in vehicle_repository.CATALOG_SELECT and the Autovit
+    # push) — NOT is_primary, which drag-reorder never updates, so keying off the
+    # flag published a stale cover to the storefront.
+    ordered_photos = sorted(photos, key=lambda p: (p.get('sort_order', 0), p.get('id', 0)))
     files = [{'originalSource': p['url'], 'contentType': 'IMAGE'} for p in ordered_photos if p.get('url')]
 
     price = _price(vehicle)

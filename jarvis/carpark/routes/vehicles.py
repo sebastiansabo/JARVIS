@@ -394,7 +394,9 @@ def update_vehicle(vehicle_id):
             from tasks.listing_autosync import maybe_instant_resync
             maybe_instant_resync(vehicle_id)
         except Exception:
-            pass  # never let auto-sync break the save
+            # Never let auto-sync break the save — but log it, so a silently
+            # failing instant re-push to the marketplace is at least diagnosable.
+            logger.exception('instant listing resync failed for vehicle %s (save unaffected)', vehicle_id)
         return jsonify({'vehicle': _serialize(vehicle)})
     except ValueError as e:
         return jsonify({'success': False, 'error': str(e)}), 400
