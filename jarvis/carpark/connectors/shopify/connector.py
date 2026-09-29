@@ -54,6 +54,19 @@ class ShopifyConnector(BaseConnector):
         num = product_gid.rsplit('/', 1)[-1]
         return f'https://{self.client.store_domain}/admin/products/{num}'
 
+    def _audit(self, vehicle_id: int, action: str, success: bool,
+               error_message: str = None, response_payload: dict = None) -> None:
+        """Record one publish attempt in carpark_publishing_sync_log. Best-effort:
+        an audit-log write must never break the publish itself."""
+        try:
+            self.pub.log_sync(
+                vehicle_id=vehicle_id, platform_id=self.platform_id,
+                action=action, success=success,
+                response_payload=response_payload, error_message=error_message,
+            )
+        except Exception:
+            logger.warning('shopify audit log_sync failed for vehicle %s', vehicle_id, exc_info=True)
+
     def publish(self, vehicle: Dict[str, Any], photos: List[dict],
                 field_map: List[dict], value_map: Dict[str, Dict[str, str]],
                 config: Dict[str, Any]) -> Dict[str, Any]:
@@ -80,6 +93,8 @@ class ShopifyConnector(BaseConnector):
                     'vehicle_id': vehicle['id'], 'platform_id': self.platform_id,
                     'status': 'error', 'error_message': msg,
                 })
+            self._audit(vehicle['id'], 'publish', False, error_message=msg,
+                        response_payload={'userErrors': result['userErrors']})
             return {'success': False, 'error': msg, 'warnings': warnings}
 
         gid = result['id']
@@ -96,6 +111,7 @@ class ShopifyConnector(BaseConnector):
         else:
             listing_data['published_at'] = datetime.now(timezone.utc)
             self.pub.create_listing(listing_data)
+        self._audit(vehicle['id'], 'publish', True, response_payload={'id': gid})
         return {'success': True, 'external_id': gid, 'external_url': url, 'warnings': warnings}
 
     def update(self, external_id: str, vehicle_data: Dict[str, Any]) -> Dict[str, Any]:
