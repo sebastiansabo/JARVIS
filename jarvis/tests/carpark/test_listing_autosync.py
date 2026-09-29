@@ -96,9 +96,11 @@ def test_config_autosync_enabled_flag_absent_defaults_true():
         assert A._config_autosync_enabled() is True
 
 
-def test_config_autosync_enabled_fails_open_on_error():
+def test_config_autosync_enabled_fails_closed_on_error():
+    # A DB/config read failure must NOT let autosync push to the live store — fail
+    # closed so a partial outage can't fire an unintended marketplace sync.
     with patch.object(A, '_get_single_account', side_effect=RuntimeError('db down')):
-        assert A._config_autosync_enabled() is True
+        assert A._config_autosync_enabled() is False
 
 
 def test_autosync_enabled_truth_table(monkeypatch):
