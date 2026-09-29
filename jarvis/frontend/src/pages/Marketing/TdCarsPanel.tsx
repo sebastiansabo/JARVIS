@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Ban, CheckCircle2, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -80,6 +80,21 @@ export default function TdCarsPanel({ pageId, companyId, users }: {
   const [advisorId, setAdvisorId] = useState(NONE)
 
   const selectedVehicle = availableVehicles.find((v) => String(v.id) === vehicleId) ?? null
+  const selectedVin = selectedVehicle?.vin ?? null
+
+  // On-select preview: is the picked car hard-blocked (Driving-Park lockout) or
+  // just busy with an overlapping drive during the event? Fetched live per VIN.
+  const { data: availability, isFetching: availabilityLoading } = useQuery({
+    queryKey: ['td-car-availability', pageId, selectedVin],
+    queryFn: () => tdAdminApi.carAvailability(pageId, selectedVin as string),
+    enabled: !!selectedVin,
+    staleTime: 10_000,
+  })
+  // Blocked gates the add. Prefer the authoritative endpoint (covers scheduled
+  // blocks too); fall back to the vehicle row's own lockout for instant feedback
+  // before the query resolves.
+  const isBlocked = availability?.blocked ?? (selectedVehicle?.locked_out ?? false)
+  const carConflicts = availability?.conflicts ?? []
 
   const addMut = useMutation({
     mutationFn: () => {
@@ -151,12 +166,35 @@ export default function TdCarsPanel({ pageId, companyId, users }: {
         </div>
         <Button
           size="sm" className="h-8"
-          disabled={!companyId || !selectedVehicle || addMut.isPending || vehiclesLoading}
+          disabled={!companyId || !selectedVehicle || addMut.isPending || vehiclesLoading || isBlocked}
           onClick={() => addMut.mutate()}
         >
           <Plus className="mr-1.5 h-4 w-4" />{addMut.isPending ? 'Se adaugă…' : 'Adaugă'}
         </Button>
       </div>
+
+      {selectedVehicle && (
+        <div className="text-xs" role="status" aria-live="polite">
+          {isBlocked ? (
+            <p className="flex items-center gap-1 text-red-600 dark:text-red-400">
+              <Ban className="h-3.5 w-3.5 shrink-0" />
+              Mașină blocată în Parcul Auto{availability?.lockout_note ? `: ${availability.lockout_note}` : ''}. Nu poate fi adăugată la eveniment.
+            </p>
+          ) : availabilityLoading ? (
+            <p className="text-muted-foreground">Se verifică disponibilitatea…</p>
+          ) : carConflicts.length ? (
+            <p className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              Ocupată în perioada evenimentului: {carConflicts.map(conflictLabel).join('; ')}. Se poate adăuga, dar nu apare liberă în formular cât timp e ocupată.
+            </p>
+          ) : (
+            <p className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+              Disponibilă în perioada evenimentului.
+            </p>
+          )}
+        </div>
+      )}
 
       {!cars.length ? (
         <p className="text-sm text-muted-foreground">Nicio mașină adăugată.</p>

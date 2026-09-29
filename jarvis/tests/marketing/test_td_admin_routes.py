@@ -47,6 +47,8 @@ _SECRET = 'test-secret'
 _SLUG = 'adm-td-1'
 _VIN = 'ADMTD0001'
 _VIN2 = 'ADMTD0002'
+_VIN_BLOCKED = 'ADMTDBLK1'
+_VIN_BUSY = 'ADMTDBSY1'
 _USER1_ID = 1
 _LOGO_DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
@@ -75,6 +77,18 @@ def _resolve_company_id():
     return row['id']
 
 
+def _resolve_other_company_id(exclude):
+    """A second active company id (!= exclude), for cross-tenant denial tests."""
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        cur.execute('SELECT id FROM companies WHERE is_active AND id <> %s ORDER BY id LIMIT 1', (exclude,))
+        row = cur.fetchone()
+    finally:
+        release_db(conn)
+    return row['id'] if row else None
+
+
 def _resolve_second_user_id():
     """A users.id != 1, present in the seed DB, to reassign a booking's
     advisor to (so the reassignment is a real change, not a no-op)."""
@@ -101,10 +115,34 @@ def _user_name(user_id):
 
 
 def _cleanup():
-    repo.execute('DELETE FROM foi_de_parcurs WHERE vin IN (%s,%s)', (_VIN, _VIN2))
+    repo.execute('DELETE FROM foi_de_parcurs WHERE vin IN (%s,%s,%s,%s)',
+                 (_VIN, _VIN2, _VIN_BLOCKED, _VIN_BUSY))
+    repo.execute('DELETE FROM fp_vehicles WHERE vin IN (%s,%s)', (_VIN_BLOCKED, _VIN_BUSY))
     for pg in repo.query_all('SELECT id FROM mkt_td_booking_pages WHERE slug=%s', (_SLUG,)):
         repo.execute('DELETE FROM mkt_td_bookings WHERE page_id=%s', (pg['id'],))
         repo.execute('DELETE FROM mkt_td_booking_pages WHERE id=%s', (pg['id'],))
+
+
+def _seed_vehicle(vin, company_id, locked_out=False):
+    """Seed a minimal fp_vehicles row so the blocked-gate / availability checks
+    have a real Driving-Park vehicle to read a lockout off of. Cleaned by
+    _cleanup for the blocked/busy test VINs."""
+    return repo.execute(
+        "INSERT INTO fp_vehicles (vin, mark, model, company_id, locked_out) "
+        "VALUES (%s,'MG','Test Model',%s,%s) RETURNING *",
+        (vin, company_id, locked_out), returning=True)
+
+
+def _seed_planned_fp(vin, company_id, departure, ret):
+    """A minimal PLANNED TD foi_de_parcurs row over [departure, ret], so the
+    car reads as 'busy' during an overlapping event window."""
+    return repo.execute(
+        "INSERT INTO foi_de_parcurs (contract_id, vin, company_id, route_type, "
+        "km_start, km_end, distance_km, fuel_tank_capacity_liters, "
+        "fuel_gauge_start_level, fuel_gauge_end_level, fuel_start_liters, "
+        "fuel_end_liters, fuel_consumed_liters, status, departure_datetime, return_datetime) "
+        "VALUES (%s,%s,%s,'TD',0,0,0,0,'1/1','1/1',0,0,0,'PLANNED',%s,%s) RETURNING *",
+        (f'BUSY-{vin}', vin, company_id, departure, ret), returning=True)
 
 
 @pytest.fixture
@@ -503,3 +541,108 @@ def test_delete_page_archives_and_denies_cross_company(client, company_id, monke
     assert client.delete(f'/marketing/api/td/pages/{page["id"]}').status_code == 200
     assert repo.get_page(page['id'])['deleted_at'] is not None
     assert all(p['id'] != page['id'] for p in repo.list_pages(company_id))
+
+
+# ---- add-car idempotency: re-adding a removed car must not 500 ----
+
+def test_add_car_reactivates_after_remove_no_duplicate(client, company_id):
+    pid = client.post('/marketing/api/td/pages',
+                      json={'company_id': company_id, 'slug': _SLUG, 'title': 'Idem'}).get_json()['id']
+    first = client.post(f'/marketing/api/td/pages/{pid}/cars',
+                        json={'vin': _VIN, 'default_advisor_user_id': _USER1_ID})
+    assert first.status_code == 201
+    car_id = first.get_json()['id']
+
+    assert client.delete(f'/marketing/api/td/cars/{car_id}').status_code == 200
+    after_remove = client.get(f'/marketing/api/td/pages/{pid}/cars').get_json()['cars']
+    assert _VIN not in [c['vin'] for c in after_remove]
+
+    # Re-adding the same VIN must resurrect the soft-removed row rather than 500
+    # on the (page_id, vin) unique constraint (the production bug this fixes).
+    again = client.post(f'/marketing/api/td/pages/{pid}/cars',
+                        json={'vin': _VIN, 'default_advisor_user_id': _USER1_ID})
+    assert again.status_code == 201, again.get_data(as_text=True)
+    assert again.get_json()['id'] == car_id
+
+    final = client.get(f'/marketing/api/td/pages/{pid}/cars').get_json()['cars']
+    assert [c['vin'] for c in final].count(_VIN) == 1
+
+
+# ---- blocked gate: only a locked-out car is hard-blocked ----
+
+def test_add_blocked_car_returns_409_and_is_not_added(client, company_id):
+    _seed_vehicle(_VIN_BLOCKED, company_id, locked_out=True)
+    pid = client.post('/marketing/api/td/pages',
+                      json={'company_id': company_id, 'slug': _SLUG, 'title': 'Gate'}).get_json()['id']
+    r = client.post(f'/marketing/api/td/pages/{pid}/cars', json={'vin': _VIN_BLOCKED})
+    assert r.status_code == 409, r.get_data(as_text=True)
+    assert r.get_json().get('blocked') is True
+    cars = client.get(f'/marketing/api/td/pages/{pid}/cars').get_json()['cars']
+    assert _VIN_BLOCKED not in [c['vin'] for c in cars]
+
+
+# ---- car-availability preview endpoint ----
+
+def test_car_availability_free_vehicle(client, company_id):
+    # No lockout, no sessions, no windows -> free and no conflicts.
+    pid = client.post('/marketing/api/td/pages',
+                      json={'company_id': company_id, 'slug': _SLUG, 'title': 'Avail'}).get_json()['id']
+    r = client.get(f'/marketing/api/td/pages/{pid}/car-availability?vin={_VIN}')
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['blocked'] is False
+    assert body['conflicts'] == []
+
+
+def test_car_availability_blocked_vehicle(client, company_id):
+    _seed_vehicle(_VIN_BLOCKED, company_id, locked_out=True)
+    pid = client.post('/marketing/api/td/pages',
+                      json={'company_id': company_id, 'slug': _SLUG, 'title': 'Avail'}).get_json()['id']
+    r = client.get(f'/marketing/api/td/pages/{pid}/car-availability?vin={_VIN_BLOCKED}')
+    assert r.status_code == 200
+    assert r.get_json()['blocked'] is True
+
+
+def test_car_availability_reports_overlapping_session(client, company_id):
+    _seed_vehicle(_VIN_BUSY, company_id, locked_out=False)
+    pid = client.post('/marketing/api/td/pages',
+                      json={'company_id': company_id, 'slug': _SLUG, 'title': 'Avail'}).get_json()['id']
+    client.post(f'/marketing/api/td/pages/{pid}/windows',
+                json={'window_date': '2099-10-01', 'start_time': '10:00', 'end_time': '11:00'})
+    _seed_planned_fp(_VIN_BUSY, company_id,
+                     '2099-10-01 06:00:00+00', '2099-10-01 12:00:00+00')
+    r = client.get(f'/marketing/api/td/pages/{pid}/car-availability?vin={_VIN_BUSY}')
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['blocked'] is False
+    assert len(body['conflicts']) >= 1
+
+
+def test_car_availability_missing_vin_400(client, company_id):
+    pid = client.post('/marketing/api/td/pages',
+                      json={'company_id': company_id, 'slug': _SLUG, 'title': 'Avail'}).get_json()['id']
+    assert client.get(f'/marketing/api/td/pages/{pid}/car-availability').status_code == 400
+
+
+def test_car_availability_denies_cross_company_vin_404(client, company_id):
+    # A vehicle owned by ANOTHER company must not be readable via a page in this
+    # company (no cross-tenant lockout-note / client-name leak).
+    other = _resolve_other_company_id(company_id)
+    assert other, 'need a second active company to test cross-tenant denial'
+    _seed_vehicle(_VIN_BLOCKED, other, locked_out=True)
+    pid = client.post('/marketing/api/td/pages',
+                      json={'company_id': company_id, 'slug': _SLUG, 'title': 'Cross'}).get_json()['id']
+    r = client.get(f'/marketing/api/td/pages/{pid}/car-availability?vin={_VIN_BLOCKED}')
+    assert r.status_code == 404
+
+
+def test_add_cross_company_vin_denied_404(client, company_id):
+    other = _resolve_other_company_id(company_id)
+    assert other, 'need a second active company to test cross-tenant denial'
+    _seed_vehicle(_VIN_BUSY, other, locked_out=False)
+    pid = client.post('/marketing/api/td/pages',
+                      json={'company_id': company_id, 'slug': _SLUG, 'title': 'Cross'}).get_json()['id']
+    r = client.post(f'/marketing/api/td/pages/{pid}/cars', json={'vin': _VIN_BUSY})
+    assert r.status_code == 404
+    cars = client.get(f'/marketing/api/td/pages/{pid}/cars').get_json()['cars']
+    assert _VIN_BUSY not in [c['vin'] for c in cars]

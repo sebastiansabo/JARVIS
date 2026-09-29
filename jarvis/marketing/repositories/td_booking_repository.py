@@ -94,9 +94,20 @@ class TdBookingRepository(BaseRepository):
 
     # ---- cars ----
     def add_car(self, page_id, vin, vehicle_id=None, default_advisor_user_id=None, sort_order=0):
+        # Idempotent on (page_id, vin): a car that was soft-removed
+        # (remove_car sets is_active=FALSE but keeps the row) is RESURRECTED
+        # here rather than colliding with uq_mkt_td_car_per_page -- so re-adding
+        # a previously-removed car works instead of raising UniqueViolation.
         return self.execute(
             'INSERT INTO mkt_td_booking_cars (page_id, vin, vehicle_id, default_advisor_user_id, sort_order) '
-            'VALUES (%s,%s,%s,%s,%s) RETURNING *',
+            'VALUES (%s,%s,%s,%s,%s) '
+            'ON CONFLICT (page_id, vin) DO UPDATE SET '
+            '    is_active = TRUE, '
+            '    vehicle_id = EXCLUDED.vehicle_id, '
+            '    default_advisor_user_id = EXCLUDED.default_advisor_user_id, '
+            '    sort_order = EXCLUDED.sort_order, '
+            '    updated_at = NOW() '
+            'RETURNING *',
             (page_id, vin, vehicle_id, default_advisor_user_id, sort_order), returning=True)
 
     def list_cars(self, page_id):
