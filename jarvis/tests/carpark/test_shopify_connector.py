@@ -12,10 +12,11 @@ class FakeClient:
         self.status_calls.append((gid, status)); return {'product': {'id': gid, 'status': status}, 'userErrors': []}
 
 class FakePub:
-    def __init__(self): self.created=[]; self.updated=[]; self._listing=None
+    def __init__(self): self.created=[]; self.updated=[]; self._listing=None; self.logs=[]
     def get_listing_by_vehicle_platform(self, vid, pid): return self._listing
     def create_listing(self, data): self.created.append(data); return {'id': 1, **data}
     def update_listing(self, listing_id, data): self.updated.append((listing_id, data)); return {'id': listing_id, **data}
+    def log_sync(self, **kw): self.logs.append(kw); return {'id': len(self.logs), **kw}
 
 VEH = {'id': 7, 'vin': 'WBA1234567890XYZ1', 'brand': 'BMW', 'model': 'X5',
        'status': 'LISTED', 'current_price': 45000, 'vehicle_type': 'Autoturism'}
@@ -34,6 +35,26 @@ def test_publish_creates_listing_when_none_exists():
     assert pub.created and pub.created[0]['vehicle_id'] == 7
     assert pub.created[0]['platform_id'] == 3
     assert pub.created[0]['external_listing_id'] == 'gid://shopify/Product/55'
+
+def test_publish_success_writes_audit_log_row():
+    pub = FakePub()
+    conn = ShopifyConnector(FakeClient(), pub, platform_id=3)
+    conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
+    assert pub.logs, 'a successful publish should record an audit-log row'
+    log = pub.logs[-1]
+    assert log['vehicle_id'] == 7 and log['platform_id'] == 3
+    assert log['action'] == 'publish' and log['success'] is True
+
+
+def test_publish_failure_writes_audit_log_row():
+    pub = FakePub()
+    conn = ShopifyConnector(FailingClient(), pub, platform_id=3)
+    conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
+    assert pub.logs, 'a failed publish should record an audit-log row'
+    log = pub.logs[-1]
+    assert log['success'] is False
+    assert 'choices' in (log['error_message'] or '')
+
 
 class FailingClient(FakeClient):
     def product_set(self, product_input):
