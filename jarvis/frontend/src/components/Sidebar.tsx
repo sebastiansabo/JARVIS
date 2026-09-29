@@ -94,10 +94,8 @@ const navItemsDef: NavItem[] = [
     children: [
       { path: '/app/sales/crm', label: 'CRM Database', icon: Contact, moduleKey: 'crm_database' },
       { path: '/app/sales/field-sales', label: 'Field Sales', icon: MapPin, moduleKey: 'field_sales' },
+      { path: '/app/buyback', label: 'BuyBack', icon: ArrowLeftRight, moduleKey: 'buyback', permission: 'can_access_buyback', v2Permission: 'buyback.record.view' },
     ],
-  },
-  {
-    path: '/app/buyback', label: 'BuyBack', icon: ArrowLeftRight, moduleKey: 'buyback', permission: 'can_access_buyback', v2Permission: 'buyback.record.view',
   },
   {
     // Driving Hub — top-level (moved out of Sales), positioned above CarPark.
