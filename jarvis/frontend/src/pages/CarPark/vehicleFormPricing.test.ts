@@ -1,7 +1,7 @@
 import { describe, test, expect } from 'vitest'
 import {
   validateListPriceOnCreate,
-  seedCurrentPriceOnCreate,
+  syncCurrentPrice,
   activeSellingPrice,
 } from './vehicleFormPricing'
 
@@ -51,14 +51,14 @@ describe('validateListPriceOnCreate', () => {
   })
 })
 
-describe('seedCurrentPriceOnCreate', () => {
+describe('syncCurrentPrice', () => {
   test('seeds current_price from list_price on create when current is unset', () => {
-    const out = seedCurrentPriceOnCreate({ list_price: 45000, current_price: null }, false)
+    const out = syncCurrentPrice({ list_price: 45000, current_price: null }, false)
     expect(out.current_price).toBe(45000)
   })
 
   test('seeds current_price from the promo price when a promo is set on create', () => {
-    const out = seedCurrentPriceOnCreate(
+    const out = syncCurrentPrice(
       { list_price: 45000, promotional_price: 42000, current_price: null },
       false,
     )
@@ -66,12 +66,26 @@ describe('seedCurrentPriceOnCreate', () => {
   })
 
   test('does not overwrite an already-set current_price on create', () => {
-    const out = seedCurrentPriceOnCreate({ list_price: 45000, current_price: 40000 }, false)
+    const out = syncCurrentPrice({ list_price: 45000, current_price: 40000 }, false)
     expect(out.current_price).toBe(40000)
   })
 
-  test('does not seed current_price on edit', () => {
-    const out = seedCurrentPriceOnCreate({ list_price: 45000, current_price: null }, true)
-    expect(out.current_price).toBeNull()
+  test('re-syncs current_price to the new list price on edit (fixes catalog drift)', () => {
+    // Catalog list/sort/filter read current_price; it must follow a list-price edit.
+    const out = syncCurrentPrice({ list_price: 50000, current_price: 45000 }, true)
+    expect(out.current_price).toBe(50000)
+  })
+
+  test('prefers the promo price when re-syncing on edit', () => {
+    const out = syncCurrentPrice(
+      { list_price: 50000, promotional_price: 47000, current_price: 45000 },
+      true,
+    )
+    expect(out.current_price).toBe(47000)
+  })
+
+  test('never wipes current_price on edit when the form has no positive price', () => {
+    const out = syncCurrentPrice({ list_price: null, promotional_price: null, current_price: 45000 }, true)
+    expect(out.current_price).toBe(45000)
   })
 })

@@ -5,7 +5,7 @@ import { Save, Loader2, Search, RefreshCw, Sparkles, ArrowLeft, Upload } from 'l
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchSelect } from '@/components/shared/SearchSelect'
 import { DecodePreviewDialog } from './DecodePreviewDialog'
-import { seedCurrentPriceOnCreate } from './vehicleFormPricing'
+import { syncCurrentPrice } from './vehicleFormPricing'
 import { findMissingRequiredFields } from './vehicleFormValidation'
 import { toCanonical, netLeiFromCanonical, netLeiFromGrossEur, canonicalFromGrossEur } from './acquisitionCanonical'
 import { specFieldsToClear, usesFuelTank, usesBattery } from './vehicleSpecScope'
@@ -980,9 +980,11 @@ export default function VehicleForm() {
     payload.other_costs = null
 
     // On create, seed the active price (current_price) from the selling price so
-    // the new car shows a price in the catalog list immediately (the profile and
-    // pricing engine already fall back to list_price on their own).
-    const finalPayload = seedCurrentPriceOnCreate(payload, !!isEdit)
+    // the new car shows a price in the catalog list immediately, and re-sync it on
+    // edit so the catalog (which reads current_price) doesn't drift after a
+    // list/promo price change (the profile and pricing engine already fall back to
+    // list_price on their own).
+    const finalPayload = syncCurrentPrice(payload, !!isEdit)
 
     if (isEdit) {
       updateMutation.mutate(finalPayload as Partial<Vehicle>)

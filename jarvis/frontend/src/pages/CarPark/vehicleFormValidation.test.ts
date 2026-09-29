@@ -17,7 +17,7 @@ describe('findMissingRequiredFields', () => {
   test('flags every empty required field on create', () => {
     const labels = findMissingRequiredFields({}, false).map((m) => m.label)
     expect(labels).toEqual(
-      expect.arrayContaining(['VIN (minim 5 caractere)', 'Marcă', 'Model', 'Tip stoc (categorie)', 'Preț listă']),
+      expect.arrayContaining(['VIN (17 caractere, ISO 3779)', 'Marcă', 'Model', 'Tip stoc (categorie)', 'Preț listă']),
     )
   })
 
@@ -36,9 +36,26 @@ describe('findMissingRequiredFields', () => {
     expect(labels).not.toContain('Preț listă')
   })
 
-  test('flags a too-short VIN', () => {
-    const labels = findMissingRequiredFields({ ...complete, vin: 'AB' }, false).map((m) => m.label)
-    expect(labels).toContain('VIN (minim 5 caractere)')
+  test('flags a 16-char VIN on create (backend requires exactly 17 → would 500)', () => {
+    const labels = findMissingRequiredFields({ ...complete, vin: 'WAUZZZ4M1PD00077' }, false).map((m) => m.label)
+    expect(labels).toContain('VIN (17 caractere, ISO 3779)')
+  })
+
+  test('flags a VIN containing I/O/Q on create (not ISO-3779)', () => {
+    const labels = findMissingRequiredFields({ ...complete, vin: 'WAUZZZ4M1PD0007IO' }, false).map((m) => m.label)
+    expect(labels).toContain('VIN (17 caractere, ISO 3779)')
+  })
+
+  test('accepts a valid lower-case 17-char VIN on create', () => {
+    const labels = findMissingRequiredFields({ ...complete, vin: 'wauzzz4m1pd000777' }, false).map((m) => m.label)
+    expect(labels).not.toContain('VIN (17 caractere, ISO 3779)')
+  })
+
+  test('does not block editing an existing car whose VIN is not 17 chars', () => {
+    // The backend validates VIN format only on create, and legacy/imported cars
+    // may have imperfect VINs — editing them must not be blocked.
+    const labels = findMissingRequiredFields({ ...complete, vin: 'LEGACY123' }, true).map((m) => m.label)
+    expect(labels).not.toContain('VIN (17 caractere, ISO 3779)')
   })
 
   test('points each missing field at the tab that contains it', () => {
