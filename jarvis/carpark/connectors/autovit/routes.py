@@ -17,7 +17,9 @@ from core.utils.api_helpers import api_login_required
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.vehicle_photo_repository import VehiclePhotoRepository
 from carpark.repositories.autovit_listing_repository import AutovitListingRepository
-from carpark.routes.vehicles import carpark_edit_required, _serialize
+from carpark.routes.vehicles import (
+    carpark_edit_required, carpark_required, _verify_vehicle_ownership, _serialize,
+)
 
 logger = logging.getLogger('jarvis.autovit.routes')
 
@@ -213,6 +215,7 @@ def get_status():
 
 @autovit_bp.route('/api/vehicles/<int:vehicle_id>/status', methods=['GET'])
 @api_login_required
+@carpark_required
 def vehicle_autovit_status(vehicle_id):
     """Per-vehicle Autovit listing state (across accounts) for the Detail page.
 
@@ -220,7 +223,14 @@ def vehicle_autovit_status(vehicle_id):
     published Autovit fire-and-forget with no visible status. This surfaces the
     stored external advert id/url, status (draft/unpaid/active/inactive/error) and
     last_error so the UI can show a chip mirroring the Shopify freshness one.
+
+    SECURITY: gated by carpark_required (this exposes external advert URLs and
+    error messages, so it must not be readable by non-CarPark users) plus the
+    standard exists-only ownership check — mirrors GET /vehicles/<id>.
     """
+    _, err = _verify_vehicle_ownership(vehicle_id)
+    if err:
+        return err
     listings = _listing_repo.list_by_vehicle(vehicle_id)
     return jsonify({'success': True, 'listings': [_serialize(dict(l)) for l in listings]})
 
