@@ -277,6 +277,7 @@ export default function App() {
         {/* BuyBack — requires can_access_buyback */}
         <Route path="buyback" element={<Guard flag="can_access_buyback"><SuspensePage><BuyBack /></SuspensePage></Guard>} />
         <Route path="buyback/new" element={<Guard flag="can_access_buyback"><SuspensePage><BuyBackForm /></SuspensePage></Guard>} />
+        <Route path="buyback/:id/edit" element={<Guard flag="can_access_buyback"><SuspensePage><BuyBackForm /></SuspensePage></Guard>} />
         <Route path="buyback/:id" element={<Guard flag="can_access_buyback"><SuspensePage><BuyBackDetail /></SuspensePage></Guard>} />
 
         {/* Service Catalog */}
