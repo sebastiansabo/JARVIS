@@ -72,6 +72,14 @@ class ShopifyConnector(BaseConnector):
             msg = '; '.join(f"{e.get('field')}: {e['message']}" for e in result['userErrors'])
             if existing:
                 self.pub.update_listing(existing['id'], {'status': 'error', 'error_message': msg})
+            else:
+                # Record the failed FIRST publish too, so it surfaces as an 'error'
+                # listing (with the reason) instead of silently reverting to
+                # 'not_published' with no trace of what went wrong.
+                self.pub.create_listing({
+                    'vehicle_id': vehicle['id'], 'platform_id': self.platform_id,
+                    'status': 'error', 'error_message': msg,
+                })
             return {'success': False, 'error': msg, 'warnings': warnings}
 
         gid = result['id']
