@@ -110,18 +110,14 @@ function buildDispoRow(vehicle: Vehicle, activeReservation: DispoReservation | n
 // ── Sale record card ────────────────────────────────────────
 function SaleRecordCard({
   vehicle,
-  canViewFinance,
   canEdit,
   onBuyerUpdated,
 }: {
   vehicle: Vehicle
-  canViewFinance: boolean
   canEdit: boolean
   onBuyerUpdated: () => void
 }) {
   const hasSale = vehicle.sale_price != null || vehicle.sale_date != null
-  const margin =
-    vehicle.sale_price != null && vehicle.total_cost != null ? vehicle.sale_price - vehicle.total_cost : null
 
   const [editingBuyer, setEditingBuyer] = useState(false)
   const buyerMutation = useMutation({
@@ -212,14 +208,10 @@ function SaleRecordCard({
             <dt className="text-xs text-muted-foreground">Nr. dosar GW</dt>
             <dd className="text-sm font-medium">{vehicle.gw_file_number ?? '-'}</dd>
           </div>
-          {canViewFinance && margin != null && (
-            <div>
-              <dt className="text-xs text-muted-foreground">Marjă</dt>
-              <dd className="text-sm font-medium">
-                <CurrencyDisplay value={margin} currency={vehicle.price_currency} showSign />
-              </dd>
-            </div>
-          )}
+          {/* Sale margin intentionally lives only in the Profitabilitate panel
+              below (net_buy + costs vs revenues, EUR) — the old
+              sale_price − total_cost here excluded cost_lines and mixed
+              currencies, so it's removed to avoid a second, conflicting figure. */}
         </dl>
       )}
     </Card>
@@ -425,7 +417,6 @@ export function VanzareTab({ vehicle, onChanged }: { vehicle: Vehicle; onChanged
 
       <SaleRecordCard
         vehicle={vehicle}
-        canViewFinance={canViewFinance}
         canEdit={canEdit}
         onBuyerUpdated={handleActionSuccess}
       />
