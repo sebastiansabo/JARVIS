@@ -109,7 +109,9 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
       const isComplete = sessionStatus(c).key === 'finalizat'
       if (showArchived ? !isComplete : isComplete) return false
       if (q) {
-        const hay = `${c.client_name ?? ''} ${c.vin ?? ''} ${c.advisor_name ?? ''} ${vinVehicle.get(c.vin ?? '')?.model ?? ''}`.toLowerCase()
+        // Include driver_name so a company booking is findable by its DRIVER, not
+        // just the company client_name (e.g. client "ENERGOBIT SA", driver "CSEREI Lorand").
+        const hay = `${c.client_name ?? ''} ${c.driver_name ?? ''} ${c.vin ?? ''} ${c.advisor_name ?? ''} ${vinVehicle.get(c.vin ?? '')?.model ?? ''}`.toLowerCase()
         if (!hay.includes(q)) return false
       }
       return true

@@ -2425,7 +2425,7 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
     if (filterYear !== 'all' && c.year != null && String(c.year) !== filterYear) return false
     if (search) {
       const q = search.toLowerCase()
-      const haystack = `${c.vin} ${c.client_name || ''} ${c.company_name || ''} ${c.itinerary || ''} ${c.advisor_name || ''}`.toLowerCase()
+      const haystack = `${c.vin} ${c.client_name || ''} ${c.driver_name || ''} ${c.company_name || ''} ${c.itinerary || ''} ${c.advisor_name || ''}`.toLowerCase()
       if (!haystack.includes(q)) return false
     }
     return true
