@@ -87,6 +87,12 @@ VALUE_TRANSLATIONS_SEED: Dict[str, Dict[str, str]] = {
         "4x4": "Integral",
         "4WD": "Integral",
         "AWD": "Integral",
+        # Canonical JARVIS AWD slugs (autovitData AUTOVIT_DRIVE_TYPES) — without
+        # these every all-wheel car fell through to identity and Shopify rejected
+        # custom.transmisie ("value does not exist in provided choices").
+        "all-wheel-permanent": "Integral",
+        "all-wheel-auto": "Integral",
+        "all-wheel-lock": "Integral",
         "Integral": "Integral",
         "integral": "Integral",
     },
@@ -115,6 +121,7 @@ VALUE_TRANSLATIONS_SEED: Dict[str, Dict[str, str]] = {
         "orange": "Portocaliu",
         "Purple": "Mov",
         "purple": "Mov",
+        "violet": "Mov",  # canonical JARVIS color slug (autovitData uses 'violet', not 'purple')
         "Beige": "Bej",
         "beige": "Bej",
         "Gold": "Auriu",

@@ -152,9 +152,22 @@ class TestValueTranslationsSeed:
         keys_lower = {k.lower(): k for k in drive_type.keys()}
         assert "front" in keys_lower or "fata" in keys_lower.get("front", "").lower()
 
+    def test_drive_type_covers_canonical_all_wheel_slugs(self):
+        """Canonical Autovit AWD slugs must resolve to the store's existing 'Integral'
+        choice — they previously fell through to identity and were dropped on publish,
+        so every AWD car lost its custom.transmisie value."""
+        d = VALUE_TRANSLATIONS_SEED["drive_type"]
+        for slug in ("all-wheel-permanent", "all-wheel-auto", "all-wheel-lock"):
+            assert d.get(slug) == "Integral", f"AWD slug {slug!r} not mapped to Integral"
+
     def test_value_translations_has_color_dimension(self):
         """VALUE_TRANSLATIONS_SEED has 'color_exterior' key."""
         assert "color_exterior" in VALUE_TRANSLATIONS_SEED
+
+    def test_color_covers_violet_slug(self):
+        """JARVIS stores 'violet' (not 'purple'); it must map to the store's existing
+        'Mov' choice (the map already has purple→Mov)."""
+        assert VALUE_TRANSLATIONS_SEED["color_exterior"].get("violet") == "Mov"
 
     def test_color_includes_basic_colors(self):
         """color_exterior includes gray/grey, White, Black, etc."""
