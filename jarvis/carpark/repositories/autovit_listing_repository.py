@@ -5,7 +5,7 @@ One row per vehicle/account pair tracks the remote advert id/url, the last
 known publish status, and the last sync/error, so the push job can upsert
 idempotently instead of re-creating adverts on every run.
 """
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from core.base_repository import BaseRepository
 
@@ -22,6 +22,14 @@ class AutovitListingRepository(BaseRepository):
         return self.query_one(
             "SELECT * FROM carpark_autovit_listings WHERE vehicle_id=%s AND account_id=%s",
             (vehicle_id, account_id))
+
+    def list_by_vehicle(self, vehicle_id: int) -> List[Dict[str, Any]]:
+        """All Autovit listing rows for a vehicle (across accounts), newest first —
+        so the Detail page can surface the current publish status/last error that
+        was previously only visible directly in the DB."""
+        return self.query_all(
+            "SELECT * FROM carpark_autovit_listings WHERE vehicle_id=%s ORDER BY updated_at DESC",
+            (vehicle_id,))
 
     def upsert(self, vehicle_id: int, account_id: int, **fields) -> Dict[str, Any]:
         """Insert or update the listing row for (vehicle_id, account_id).
