@@ -1,11 +1,12 @@
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Car, User, Euro, Wrench, Clock, FileText, Camera } from 'lucide-react'
+import { ArrowLeft, Car, User, Euro, Wrench, Clock, FileText, Camera, Pencil } from 'lucide-react'
 import { buybackApi } from '@/api/buyback'
 import { mediaUrl } from '@/lib/media'
 import { recordStatus } from './recordStatus'
 import { usePermissions } from './usePermissions'
 import { pickLatestOffer } from './offerUtils'
+import { makeLabelers } from './lookupLabels'
 import PhotoGallery from './PhotoGallery'
 import ActionPanel from './ActionPanel'
 import type { BuybackEvent } from '@/types/buyback'
@@ -108,6 +109,14 @@ export default function BuyBackDetail() {
     enabled: !!recordId,
   })
 
+  // Lookup options → translate stored codes to RO labels in the summary.
+  const { data: optsData } = useQuery({
+    queryKey: ['buyback-options'],
+    queryFn: () => buybackApi.getLookupOptions(),
+    staleTime: 5 * 60_000,
+  })
+  const L = makeLabelers(optsData)
+
   if (isLoading) return <DetailSkeleton />
 
   if (isError || !data) {
@@ -139,6 +148,16 @@ export default function BuyBackDetail() {
         <h1 className="text-lg font-semibold">{`${record.brand} ${record.model}`}</h1>
         <Badge className={rs.badgeClass}>{rs.label}</Badge>
         <span className="font-mono text-xs text-muted-foreground">{record.record_code}</span>
+        {record.status === 'PENDING_EVALUATION' && can('buyback.record.edit') && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto"
+            onClick={() => navigate(`/app/buyback/${record.id}/edit`)}
+          >
+            <Pencil className="h-4 w-4 mr-1" />Corectează
+          </Button>
+        )}
       </div>
 
       {/* Primary workflow actions — kept at the top as the main action. */}
@@ -153,13 +172,13 @@ export default function BuyBackDetail() {
             <Field label="Marca" value={record.brand} />
             <Field label="Model" value={record.model} />
             <Field label="Varianta" value={record.variant} />
-            <Field label="Echipare" value={record.equipment} />
+            <Field label="Echipare" value={L.equipment(record.equipment)} />
             <Field label="VIN" value={<span className="font-mono">{record.vin}</span>} />
             <Field label="Rulaj (km)" value={record.mileage_km != null ? record.mileage_km.toLocaleString('ro-RO') : null} />
             <Field label="Capacitate cilindrică (cm³)" value={record.engine_capacity_cm3} />
-            <Field label="Combustibil" value={record.fuel_type} />
-            <Field label="Transmisie" value={record.transmission} />
-            <Field label="Cutie de viteze" value={record.gearbox} />
+            <Field label="Combustibil" value={L.fuel(record.fuel_type)} />
+            <Field label="Transmisie" value={L.transmission(record.transmission)} />
+            <Field label="Cutie de viteze" value={L.gearbox(record.gearbox)} />
             <Field label="Data fabricație" value={fmtDate(record.manufacture_date)} />
             <Field label="Data prima înmatriculare" value={fmtDate(record.first_registration_date)} />
             <Field label="Istoric service la zi" value={yesNo(record.service_history_uptodate)} />
@@ -180,8 +199,8 @@ export default function BuyBackDetail() {
             <CardTitle className="text-base flex items-center gap-2"><User className="h-4 w-4" />Vânzător &amp; Trade-in</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-3">
-            <Field label="Tip client" value={record.client_type} />
-            <Field label="Status TVA" value={record.vat_status} />
+            <Field label="Tip client" value={L.clientType(record.client_type)} />
+            <Field label="Status TVA" value={L.vat(record.vat_status)} />
             <Field label="Nume vânzător" value={record.seller_name} />
             <Field label="Email" value={record.seller_email} />
             <Field label="Telefon" value={record.seller_phone} />

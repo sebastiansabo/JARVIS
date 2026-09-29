@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Plus, Car, List as ListIcon, LayoutGrid } from 'lucide-react'
@@ -24,6 +24,7 @@ const ACQUISITION_TYPE_OPTIONS = [
 // (the in-progress workflow) lives under Active. A freshly-resolved request
 // also lingers on the Active side for 72h so the team sees the outcome before
 // it drops to Arhivă only.
+const PAGE_SIZE = 25 // list-view rows per page (Kanban shows all)
 const RESOLVED_STATUSES = ['BOUGHT', 'LOST', 'CANCELLED']
 const isResolved = (s: string) => RESOLVED_STATUSES.includes(s)
 const RESOLVED_ACTIVE_WINDOW_MS = 72 * 60 * 60 * 1000
@@ -49,6 +50,7 @@ export default function BuyBack() {
   const [companyId, setCompanyId] = useState<number | null>(null)
   const [view, setView] = useState<'list' | 'kanban'>('list')
   const [tab, setTab] = useState<'active' | 'archive'>('active')
+  const [page, setPage] = useState(1)
 
   const { can } = usePermissions()
   const canCreate = can('buyback.record.create')
@@ -111,6 +113,15 @@ export default function BuyBack() {
       ? isResolved(o.value)
       : !isResolved(o.value) || (recordsByStatus[o.value]?.length ?? 0) > 0,
   )
+
+  // Client-side pagination of the list view (Kanban renders all columns).
+  const pageCount = Math.max(1, Math.ceil(visibleRecords.length / PAGE_SIZE))
+  const safePage = Math.min(page, pageCount)
+  const pagedRecords = view === 'list'
+    ? visibleRecords.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+    : visibleRecords
+  // Reset to page 1 whenever the filtered set changes.
+  useEffect(() => { setPage(1) }, [status, acquisitionType, q, effectiveCompanyId, tab, view])
 
   const goToRecord = (id: number) => navigate(`/app/buyback/${id}`)
   const onRecordKeyDown = (e: React.KeyboardEvent, id: number) => {
@@ -307,7 +318,7 @@ export default function BuyBack() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visibleRecords.map((r) => {
+              {pagedRecords.map((r) => {
                 const rs = recordStatus(r.status)
                 return (
                   <TableRow
@@ -341,6 +352,24 @@ export default function BuyBack() {
             </TableBody>
           </Table>
         </Card>
+      )}
+
+      {/* Pagination — list view only (Kanban shows all). */}
+      {view === 'list' && !isLoading && !isError && visibleRecords.length > PAGE_SIZE && (
+        <div className="flex items-center justify-between gap-2 text-sm">
+          <span className="text-muted-foreground">
+            {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, visibleRecords.length)} din {visibleRecords.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={safePage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+              Înapoi
+            </Button>
+            <span className="text-muted-foreground">{safePage} / {pageCount}</span>
+            <Button variant="outline" size="sm" disabled={safePage >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>
+              Înainte
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   )
