@@ -175,6 +175,31 @@ def _apply_transform(row: Dict[str, Any], vehicle: Dict[str, Any],
     return str(raw_value)
 
 
+def unmapped_choice_metafield_keys(
+    vehicle: Dict[str, Any], field_map: List[dict],
+    value_map: Dict[str, Dict[str, str]],
+) -> List[Tuple[str, str]]:
+    """(namespace, key) of ro_value/ro_list metafields whose value has NO
+    translation (ro() identity fallback) — i.e. a raw slug that a Shopify
+    choice-list metafield will reject. Used by the connector to drop-and-retry a
+    publish that fails with 'value does not exist in provided choices', so one
+    unmappable value (e.g. fuel_type 'ethanol') doesn't sink the whole listing.
+    """
+    out: List[Tuple[str, str]] = []
+    for row in field_map:
+        if not row.get('is_active', True) or not row.get('last_seen_in_store', True):
+            continue
+        if (row.get('transform') or 'raw') not in ('ro_value', 'ro_list'):
+            continue
+        source_expr = (row.get('source_expr') or '').strip()
+        raw = vehicle.get(source_expr)
+        if raw is None or raw == '':
+            continue
+        if ro(value_map, source_expr, raw) == str(raw):  # identity fallback = unmapped
+            out.append((row.get('target_namespace'), row.get('target_key')))
+    return out
+
+
 def _description_html(vehicle: Dict[str, Any], spec_pairs: List[Tuple[str, str]],
                        dotari_items: List[str]) -> str:
     title = _title(vehicle)

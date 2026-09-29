@@ -30,6 +30,12 @@ def _photo_source(url: str) -> str:
     return spaces_service.presigned_url(url, expires=PHOTO_PRESIGN_TTL)
 
 
+def _is_choice_error(user_errors: List[dict]) -> bool:
+    """True if any userError is a choice-list rejection ('value does not exist in
+    provided choices') — the signal to drop unmapped choice fields and retry."""
+    return any('provided choices' in (e.get('message') or '').lower() for e in user_errors)
+
+
 def ensure_platform(publishing_repo, store_domain: str) -> int:
     """Return the carpark_publishing_platforms.id for Shopify, creating it once."""
     for p in publishing_repo.list_platforms():
@@ -81,6 +87,19 @@ class ShopifyConnector(BaseConnector):
             product_input['id'] = existing['external_listing_id']
 
         result = self.client.product_set(product_input)
+        # A single unmappable choice value (e.g. fuel_type with no store choice)
+        # otherwise sinks the whole listing. If Shopify rejects on 'provided
+        # choices', drop the unmapped choice-list metafields and retry once so the
+        # product still publishes (minus those fields) rather than not at all.
+        if result['userErrors'] and _is_choice_error(result['userErrors']):
+            drop = set(mapper.unmapped_choice_metafield_keys(vehicle, field_map, value_map))
+            kept = [m for m in product_input.get('metafields', [])
+                    if (m['namespace'], m['key']) not in drop]
+            if drop and len(kept) != len(product_input.get('metafields', [])):
+                warnings.append('dropped unmapped choice fields and retried: '
+                                + ', '.join(f'{n}.{k}' for n, k in sorted(drop)))
+                product_input['metafields'] = kept
+                result = self.client.product_set(product_input)
         if result['userErrors']:
             msg = '; '.join(f"{e.get('field')}: {e['message']}" for e in result['userErrors'])
             if existing:

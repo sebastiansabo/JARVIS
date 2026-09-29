@@ -36,6 +36,46 @@ def test_publish_creates_listing_when_none_exists():
     assert pub.created[0]['platform_id'] == 3
     assert pub.created[0]['external_listing_id'] == 'gid://shopify/Product/55'
 
+FIELD_MAP_FUEL = [
+    {'source_expr': 'brand', 'target_namespace': 'custom', 'target_key': 'marca',
+     'target_type': 'single_line_text_field', 'transform': 'raw'},
+    {'source_expr': 'fuel_type', 'target_namespace': 'custom', 'target_key': 'fuel',
+     'target_type': 'single_line_text_field', 'transform': 'ro_value'},
+]
+
+
+class ChoiceErrorThenOkClient(FakeClient):
+    """First product_set fails with a choice-list rejection; the second succeeds.
+    Records the metafield keys sent on each call."""
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+    def product_set(self, product_input):
+        self.last_input = product_input
+        self.calls.append([(m['namespace'], m['key']) for m in product_input.get('metafields', [])])
+        if len(self.calls) == 1:
+            return {'id': None, 'userErrors': [
+                {'field': ['input', 'metafields', '1', 'value'],
+                 'message': 'Value does not exist in provided choices'}]}
+        return {'id': 'gid://shopify/Product/55', 'handle': 'x', 'status': 'ACTIVE',
+                'preview_url': 'https://x/p', 'userErrors': []}
+
+
+def test_publish_retries_dropping_unmapped_choice_field():
+    # fuel_type 'ethanol' has no VALUE_MAP translation -> unmapped choice value.
+    # The whole publish must not fail; it retries without custom.fuel and succeeds.
+    veh = {**VEH, 'fuel_type': 'ethanol'}
+    client = ChoiceErrorThenOkClient()
+    pub = FakePub()
+    conn = ShopifyConnector(client, pub, platform_id=3)
+    out = conn.publish(veh, PHOTOS, field_map=FIELD_MAP_FUEL, value_map={}, config=CONFIG)
+    assert out['success'] is True
+    assert len(client.calls) == 2, 'should retry once'
+    assert ('custom', 'fuel') in client.calls[0], 'first attempt includes the unmapped fuel field'
+    assert ('custom', 'fuel') not in client.calls[1], 'retry drops the unmapped fuel field'
+    assert ('custom', 'marca') in client.calls[1], 'retry keeps mapped fields'
+
+
 def test_publish_success_writes_audit_log_row():
     pub = FakePub()
     conn = ShopifyConnector(FakeClient(), pub, platform_id=3)
