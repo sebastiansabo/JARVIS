@@ -2202,12 +2202,21 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
   const [missing, setMissing] = useState<string[]>([])
   const [externalUrl, setExternalUrl] = useState<string | null>(null)
 
+  const queryClient = useQueryClient()
   const { data: accounts = [], isLoading: accountsLoading } = useQuery({
     queryKey: ['autovit', 'accounts'],
     queryFn: autovitApi.getAccounts,
     enabled: open,
   })
   const connectedAccounts = accounts.filter((a) => a.status === 'connected')
+
+  // Current Autovit publish state (across accounts) — surfaces the status/last
+  // error that used to be visible only in the DB.
+  const { data: autovitListings = [] } = useQuery({
+    queryKey: ['autovit', 'vehicle-status', vehicleId],
+    queryFn: () => autovitApi.getVehicleStatus(vehicleId),
+  })
+  const autovitListing = autovitListings[0] ?? null
 
   const reset = () => {
     setStep('select')
@@ -2240,6 +2249,7 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
       if (res.success) {
         setExternalUrl(res.external_url || null)
         setStep('success')
+        queryClient.invalidateQueries({ queryKey: ['autovit', 'vehicle-status', vehicleId] })
         toast.success('Anunț publicat pe Autovit (draft)')
       } else {
         toast.error(res.error || 'Publicarea a eșuat')
@@ -2254,12 +2264,33 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
   const params = (advert?.params as Record<string, unknown>) || {}
   const price = params.price as { '1'?: number; currency?: string } | undefined
 
+  const autovitStatusUi: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
+    active: { label: 'Publicat', variant: 'default' },
+    unpaid: { label: 'Draft (neplătit)', variant: 'secondary' },
+    inactive: { label: 'Inactiv', variant: 'outline' },
+    error: { label: 'Eroare', variant: 'destructive' },
+  }
+  const autovitUi = autovitListing
+    ? autovitStatusUi[autovitListing.status] ?? { label: autovitListing.status, variant: 'outline' as const }
+    : null
+
   return (
     <>
-      <Button size="sm" variant="outline" className="w-44" onClick={() => setOpen(true)}>
-        <Send className="mr-1.5 h-3.5 w-3.5" />
-        Publică pe Autovit
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="outline" className="w-44" onClick={() => setOpen(true)}>
+          <Send className="mr-1.5 h-3.5 w-3.5" />
+          Publică pe Autovit
+        </Button>
+        {autovitListing && autovitUi && (
+          <Badge
+            variant={autovitUi.variant}
+            className="text-[10px] font-normal"
+            title={autovitListing.last_error || autovitListing.external_url || undefined}
+          >
+            Autovit: {autovitUi.label}
+          </Badge>
+        )}
+      </div>
       <Dialog
         open={open}
         onOpenChange={(v) => {
