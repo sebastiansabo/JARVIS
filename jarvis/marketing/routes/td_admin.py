@@ -21,12 +21,39 @@ from marketing.repositories.td_booking_repository import TdBookingRepository, Td
 from marketing.services.td_slot_service import TdSlotService
 from marketing.services.td_booking_service import TdBookingService
 from foi_parcurs.repositories.foi_parcurs_repository import FoiParcursRepository
+from foi_parcurs.repositories.vehicle_repository import FPVehicleRepository
 from core.organization.manager_utils import get_actable_company_ids
 
 _repo = TdBookingRepository()
 _slots = TdSlotService()
 _svc = TdBookingService()
 _fp = FoiParcursRepository()
+_veh = FPVehicleRepository()
+
+
+def _vin_company_ok(vin, page):
+    """A VIN that resolves to a real fleet vehicle must belong to the page's
+    company -- so the availability/gate endpoints can't read or bind another
+    tenant's vehicle (lockout note, overlapping-session client names). An unknown
+    VIN (no fleet row) carries no such data and is left to the caller."""
+    veh = _veh.get_by_vin(vin)
+    return not veh or veh.get('company_id') == page['company_id']
+
+
+def _car_availability(vin, page_id):
+    """Shared read-only availability of `vin` for an event page: whether it's
+    hard-blocked (Driving-Park lockout, manual or scheduled) and any overlapping
+    driving sessions during the event's windows. Used by the on-select preview
+    endpoint AND the add-car gate so both agree on what 'blocked' means."""
+    lock = _veh.get_lock_by_vin(vin) or {}
+    return {
+        'vin': vin,
+        'blocked': bool(lock.get('locked_out')),
+        'lockout_category': lock.get('lockout_category'),
+        'lockout_note': lock.get('lockout_note'),
+        'lockout_until': lock.get('lockout_until'),
+        'conflicts': _fp.find_sessions_overlapping_event(vin, page_id),
+    }
 
 
 def _allowed_companies():
@@ -151,16 +178,46 @@ def td_add_car(pid):
     d = request.get_json(silent=True) or {}
     if not d.get('vin'):
         return jsonify({'error': 'vin required'}), 400
-    _, err = _scoped_page(pid)
+    page, err = _scoped_page(pid)
     if err:
         return err
+    if not _vin_company_ok(d['vin'], page):
+        return jsonify({'error': 'not found'}), 404
+    # Hard-gate ONLY a blocked (locked-out) car: it can't be driven at all, so it
+    # must not join the event. A car merely busy with another drive is allowed
+    # (returned with `conflicts` so the UI can warn) -- being busy doesn't block.
+    availability = _car_availability(d['vin'], pid)
+    if availability['blocked']:
+        return jsonify({
+            'error': 'Mașina este blocată în Parcul Auto și nu poate fi adăugată la eveniment.',
+            'blocked': True,
+            'lockout_note': availability['lockout_note'],
+            'lockout_until': availability['lockout_until'],
+        }), 409
     car = _repo.add_car(pid, d['vin'], d.get('vehicle_id'),
                          d.get('default_advisor_user_id'), d.get('sort_order', 0))
-    # Keep slots in sync for the new car, and warn (non-blocking) if the car is
-    # already committed to another driving session during the event's windows.
+    # Keep slots in sync for the new car. Adding the car doesn't change its
+    # overlapping sessions, so reuse the conflicts already computed above (a
+    # non-blocking warning: the car shows no slots on the public form while busy).
     _slots.materialize_slots(pid)
-    conflicts = _fp.find_sessions_overlapping_event(d['vin'], pid)
-    return jsonify({**car, 'conflicts': conflicts}), 201
+    return jsonify({**car, 'conflicts': availability['conflicts']}), 201
+
+
+@marketing_bp.route('/api/td/pages/<int:pid>/car-availability', methods=['GET'])
+@login_required
+def td_car_availability(pid):
+    """On-select preview for the admin car picker: is this VIN blocked (hard
+    gate) and/or busy with an overlapping drive during the event (warn only)?
+    Company-scoped via the page (404, never enumerable) like the sibling routes."""
+    vin = (request.args.get('vin') or '').strip()
+    if not vin:
+        return jsonify({'error': 'vin required'}), 400
+    page, err = _scoped_page(pid)
+    if err:
+        return err
+    if not _vin_company_ok(vin, page):
+        return jsonify({'error': 'not found'}), 404
+    return jsonify(_car_availability(vin, pid))
 
 
 @marketing_bp.route('/api/td/cars/<int:cid>', methods=['DELETE'])
