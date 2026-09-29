@@ -142,3 +142,29 @@ describe('DrivingSessionsList brand matching', () => {
     expect(await screen.findByText(/nicio sesiune activ/i)).toBeInTheDocument()
   })
 })
+
+describe('DrivingSessionsList driver-name search', () => {
+  // Company client: client_name is the firm; the person driving is in driver_name.
+  // Searching the driver's name must still find the session (e.g. client
+  // "ENERGOBIT SA", driver "CSEREI Lorand").
+  beforeEach(() => {
+    getContracts.mockResolvedValue({
+      contracts: [
+        { id: 40, status: 'FILLED', td_status: 'driving', vin: 'VF7', client_name: 'ENERGOBIT SA',
+          driver_name: 'CSEREI Lorand', advisor_name: 'Popa', departure_datetime: '2026-09-15T12:42', km_start: 10 },
+        { id: 41, status: 'PLANNED', vin: 'VF8', client_name: 'Other Co',
+          driver_name: 'Someone Else', advisor_name: 'X', departure_datetime: '2026-09-16T10:00', km_start: 20 },
+      ], total: 2, page: 1, per_page: 1000,
+    })
+    getVehicles.mockResolvedValue({ vehicles: [] })
+  })
+
+  it('finds a company booking by its DRIVER name, not just the company client_name', async () => {
+    wrap(<DrivingSessionsList companyId={10} brand="" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    // The card leads with the driver (clientCell.primary), so the title is the person.
+    await screen.findByText('CSEREI Lorand')
+    fireEvent.change(screen.getByPlaceholderText(/caută/i), { target: { value: 'cserei' } })
+    expect(screen.getByText('CSEREI Lorand')).toBeInTheDocument()   // matched via driver_name
+    expect(screen.queryByText('Someone Else')).not.toBeInTheDocument()
+  })
+})
