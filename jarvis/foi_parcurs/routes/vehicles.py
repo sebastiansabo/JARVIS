@@ -389,19 +389,22 @@ def api_create_vehicle():
         return jsonify({'success': False, 'error': f'Vehicle with VIN {vin} already exists'}), 409
 
     fuel_type = (data.get('fuel_type') or 'Diesel').strip()
-    if fuel_type not in ('Benzina', 'Diesel', 'Electric', 'Hybrid'):
-        return jsonify({'success': False, 'error': 'fuel_type must be Benzina, Diesel, Electric, or Hybrid'}), 400
+    if fuel_type not in ('Benzina', 'Diesel', 'Electric', 'Hybrid', 'Plug-in Hybrid'):
+        return jsonify({'success': False, 'error': 'fuel_type must be Benzina, Diesel, Electric, Hybrid, or Plug-in Hybrid'}), 400
 
-    # Capacity depends on fuel type: combustion → liters, Electric → kWh, Hybrid → both
+    # Capacity by fuel type — mirrors route_sheet_service: a plain Hybrid (HEV) has
+    # a tank only; only Electric and Plug-in Hybrid (PHEV) charge a traction battery.
+    uses_tank = fuel_type in ('Benzina', 'Diesel', 'Hybrid', 'Plug-in Hybrid')
+    uses_batt = fuel_type in ('Electric', 'Plug-in Hybrid')
     fuel_liters = _to_num_or_none(data.get('fuel_tank_capacity_liters'))
     battery_kwh = _to_num_or_none(data.get('battery_capacity_kwh'))
-    if fuel_type in ('Benzina', 'Diesel', 'Hybrid') and not fuel_liters:
+    if uses_tank and not fuel_liters:
         return jsonify({'success': False, 'error': 'Fuel capacity (L) is required for this fuel type'}), 400
-    if fuel_type in ('Electric', 'Hybrid') and not battery_kwh:
+    if uses_batt and not battery_kwh:
         return jsonify({'success': False, 'error': 'Battery capacity (kWh) is required for this fuel type'}), 400
-    if fuel_type == 'Electric':
+    if not uses_tank:
         fuel_liters = None
-    if fuel_type in ('Benzina', 'Diesel'):
+    if not uses_batt:
         battery_kwh = None
 
     company_id = data.get('company_id')
