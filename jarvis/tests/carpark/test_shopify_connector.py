@@ -35,6 +35,36 @@ def test_publish_creates_listing_when_none_exists():
     assert pub.created[0]['platform_id'] == 3
     assert pub.created[0]['external_listing_id'] == 'gid://shopify/Product/55'
 
+class FailingClient(FakeClient):
+    def product_set(self, product_input):
+        self.last_input = product_input
+        return {'id': None, 'userErrors': [
+            {'field': 'fuel', 'message': 'Value does not exist in provided choices'}]}
+
+
+def test_publish_records_error_row_on_first_publish_failure():
+    # A first-ever publish that fails must leave a trace (status='error'), not
+    # vanish so the vehicle reverts to 'not_published' with no recorded reason.
+    pub = FakePub()  # no existing listing
+    conn = ShopifyConnector(FailingClient(), pub, platform_id=3)
+    out = conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
+    assert out['success'] is False
+    assert pub.created, 'a failed first publish should still record a listing row'
+    row = pub.created[0]
+    assert row['status'] == 'error'
+    assert row['vehicle_id'] == 7 and row['platform_id'] == 3
+    assert 'choices' in row['error_message']
+
+
+def test_publish_marks_existing_listing_error_on_failure():
+    pub = FakePub(); pub._listing = {'id': 9, 'external_listing_id': 'gid://shopify/Product/55'}
+    conn = ShopifyConnector(FailingClient(), pub, platform_id=3)
+    out = conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
+    assert out['success'] is False
+    assert pub.updated and pub.updated[0][1]['status'] == 'error'
+    assert not pub.created  # existing row updated, not a new one
+
+
 def test_publish_updates_listing_when_exists():
     pub = FakePub(); pub._listing = {'id': 9, 'external_listing_id': 'gid://shopify/Product/55'}
     fc = FakeClient()
