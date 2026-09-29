@@ -127,6 +127,31 @@ def test_vehicle_to_advert_builds_slugs_and_price():
     assert p["is_imported_car"] == "0"
 
 
+def test_vehicle_to_advert_pushes_equipment_options():
+    # Form-entered equipment lives in equipment_options (TEXT[] of Autovit slugs);
+    # each must become an Autovit "<slug>"="1" param. Previously only the JSONB
+    # `equipment` dict was pushed, so form-entered dotări never reached Autovit.
+    ad = tx.vehicle_to_advert(
+        {"brand": "Audi", "model": "A4", "equipment_options": ["apple_carplay", "led_lights"]},
+        {},
+    )
+    assert ad["params"].get("apple_carplay") == "1"
+    assert ad["params"].get("led_lights") == "1"
+
+
+def test_vehicle_to_advert_merges_equipment_dict_and_options():
+    ad = tx.vehicle_to_advert(
+        {"brand": "Audi", "model": "A4",
+         "equipment": {"esp": True, "abs": False},
+         "equipment_options": ["apple_carplay"]},
+        {},
+    )
+    p = ad["params"]
+    assert p.get("esp") == "1"            # JSONB True flag still pushed
+    assert "abs" not in p                 # JSONB False flag not pushed
+    assert p.get("apple_carplay") == "1"  # options slug pushed
+
+
 def test_vehicle_to_advert_color_reverse_map():
     # PUSH: carpark canonical color -> live Autovit api slug. Only grey/beige
     # differ from identity (grey->gray, beige->bej); everything else is 1:1.
@@ -143,6 +168,19 @@ def test_advert_to_vehicle_color_pull_map():
     assert tx.advert_to_vehicle(_advert(color="gray"))["color_exterior"] == "grey"
     assert tx.advert_to_vehicle(_advert(color="bej"))["color_exterior"] == "beige"
     assert tx.advert_to_vehicle(_advert(color="black"))["color_exterior"] == "black"
+
+
+def test_advert_to_vehicle_pulls_euro_country_vintage():
+    # These Autovit params have JARVIS columns but were previously discarded on
+    # import (advert_to_vehicle never read them).
+    v = tx.advert_to_vehicle({"params": {
+        "make": "bmw", "model": "x3",
+        "pollution_standard": "Euro 6", "country_origin": "Germania",
+        "historical_vehicle": "1",
+    }})
+    assert v["euro_standard"] == "Euro 6"
+    assert v["country_of_origin"] == "Germania"
+    assert v["is_vintage"] is True
 
 
 def test_validate_flags_missing_required():
