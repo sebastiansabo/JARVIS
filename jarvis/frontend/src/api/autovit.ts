@@ -32,6 +32,17 @@ export interface AutovitAdvert {
   description: string
 }
 
+export interface AutovitListing {
+  id: number
+  vehicle_id: number
+  account_id: number
+  external_advert_id: string | null
+  external_url: string | null
+  status: string // draft | unpaid | active | inactive | error
+  last_sync: string | null
+  last_error: string | null
+}
+
 export interface AutovitAdvertsResponse {
   results: AutovitAdvert[]
   total_elements: number
@@ -120,5 +131,12 @@ export const autovitApi = {
   getStatus: async () => {
     const res = await api.get<{ success: boolean; data: AutovitStatus }>(`${BASE}/status`)
     return res.data
+  },
+
+  getVehicleStatus: async (vehicleId: number) => {
+    const res = await api.get<{ success: boolean; listings: AutovitListing[] }>(
+      `${BASE}/vehicles/${vehicleId}/status`,
+    )
+    return res.listings
   },
 }
