@@ -28,12 +28,22 @@ export function activeSellingPrice(fields: {
   return positivePrice(fields.promotional_price) ?? positivePrice(fields.list_price)
 }
 
-/** On create, default current_price to the active selling price when it is unset. */
-export function seedCurrentPriceOnCreate<T extends Record<string, unknown>>(
+/**
+ * Keep current_price — the active price the catalog list/sort/filter reads — in
+ * step with the selling price. On create, seed it from the active selling price
+ * when unset. On edit, re-sync it to the active selling price so the catalog
+ * doesn't show a stale price after a list/promo edit; but never wipe it when the
+ * form currently has no positive selling price.
+ */
+export function syncCurrentPrice<T extends Record<string, unknown>>(
   payload: T,
   isEdit: boolean,
 ): T {
-  if (isEdit) return payload
-  if (positivePrice(payload.current_price) != null) return payload
-  return { ...payload, current_price: activeSellingPrice(payload) }
+  const active = activeSellingPrice(payload)
+  if (!isEdit) {
+    if (positivePrice(payload.current_price) != null) return payload
+    return { ...payload, current_price: active }
+  }
+  if (active == null) return payload
+  return { ...payload, current_price: active }
 }
