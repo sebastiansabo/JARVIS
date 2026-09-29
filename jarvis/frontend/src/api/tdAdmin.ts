@@ -46,6 +46,18 @@ export interface TdSessionConflict {
   advisor_name: string | null
 }
 
+/** On-select availability preview for the admin car picker: whether the VIN is
+ *  hard-blocked (Driving-Park lockout) and/or busy with drives overlapping the
+ *  event windows. */
+export interface TdCarAvailability {
+  vin: string
+  blocked: boolean
+  lockout_category: string | null
+  lockout_note: string | null
+  lockout_until: string | null
+  conflicts: TdSessionConflict[]
+}
+
 export interface TdAdminCar {
   id: number
   page_id: number
@@ -152,6 +164,9 @@ export const tdAdminApi = {
   removeCar: (cid: number) => api.delete<{ ok: boolean }>(`${B}/cars/${cid}`),
 
   listCars: (id: number) => api.get<{ cars: TdAdminCar[] }>(`${B}/pages/${id}/cars`),
+
+  carAvailability: (id: number, vin: string) =>
+    api.get<TdCarAvailability>(`${B}/pages/${id}/car-availability?vin=${encodeURIComponent(vin)}`),
 
   addWindow: (id: number, body: Record<string, unknown>) => api.post<TdAdminWindow>(`${B}/pages/${id}/windows`, body),
 
