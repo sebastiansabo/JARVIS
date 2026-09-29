@@ -183,6 +183,16 @@ def advert_to_vehicle(advert: Dict[str, Any]) -> Dict[str, Any]:
     if "tuning" in p:
         v["has_tuning"] = _flag(p, "tuning")
 
+    # Params Autovit sends that map to existing JARVIS columns but were previously
+    # discarded on import (date_registration is intentionally omitted — its format
+    # is unconfirmed and first_registration_date is a strict DATE column).
+    if p.get("pollution_standard"):
+        v["euro_standard"] = str(p["pollution_standard"]).strip()
+    if p.get("country_origin"):
+        v["country_of_origin"] = str(p["country_origin"]).strip()
+    if "historical_vehicle" in p:
+        v["is_vintage"] = _flag(p, "historical_vehicle")
+
     # equipment: every non-core 0/1 flag
     equip = {k: True for k, val in p.items()
              if k not in _CORE_PARAMS and str(val).strip() in ("1", "true", "yes")}
@@ -247,9 +257,16 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[
     if vehicle.get("current_price") is not None:
         params["price"] = {"1": vehicle["current_price"],
                            "currency": vehicle.get("price_currency", "EUR")}
+    # Equipment → Autovit "<slug>"="1" params, from BOTH sources: the legacy JSONB
+    # `equipment` dict (Autovit-imported cars) AND the form's `equipment_options`
+    # TEXT[] slug array (the editor's Dotări) — previously only the dict was pushed,
+    # so form-entered equipment never reached Autovit.
     for k, val in (vehicle.get("equipment") or {}).items():
         if val is True:
             params[k] = "1"
+    for slug in (vehicle.get("equipment_options") or []):
+        if slug:
+            params[str(slug)] = "1"
     # Create-only conditional param Autovit requires for cars: not in the
     # category "required" list, but POST /account/adverts rejects its absence
     # ("params.is_imported_car ... obligatoriu"). Verified live 2026-09-09.
