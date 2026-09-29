@@ -143,12 +143,22 @@ def test_description_html_escapes_special_characters():
     assert 'A&amp;B &quot;Sport&quot; &lt;pkg&gt;' in desc
 
 
-def test_files_ordered_primary_then_sort_order():
+def test_files_ordered_by_sort_order_not_is_primary():
+    # The cover/first image follows the gallery's own ORDER BY sort_order, id
+    # (same as the catalog thumbnail and Autovit) — NOT the is_primary flag, which
+    # drag-reorder never updates, so keying off it published a stale cover.
     photos = [{'url': 'a', 'is_primary': False, 'sort_order': 2},
               {'url': 'b', 'is_primary': True, 'sort_order': 5},
               {'url': 'c', 'is_primary': False, 'sort_order': 1}]
     prod, _warnings = mapper.vehicle_to_product(BASE, photos, FIELD_MAP, VALUE_MAP, CONFIG)
-    assert [f['originalSource'] for f in prod['files']] == ['b', 'c', 'a']
+    assert [f['originalSource'] for f in prod['files']] == ['c', 'a', 'b']
+
+
+def test_files_tiebreak_by_id_when_sort_order_equal():
+    photos = [{'url': 'a', 'sort_order': 0, 'id': 20},
+              {'url': 'b', 'sort_order': 0, 'id': 10}]
+    prod, _warnings = mapper.vehicle_to_product(BASE, photos, FIELD_MAP, VALUE_MAP, CONFIG)
+    assert [f['originalSource'] for f in prod['files']] == ['b', 'a']
 
 
 def test_ro_list_unmapped_value_falls_back_identity():
