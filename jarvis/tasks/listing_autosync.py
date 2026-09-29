@@ -40,10 +40,10 @@ def _env_gate() -> bool:
 
 def _config_autosync_enabled() -> bool:
     """Runtime kill switch: the Shopify connector's config flag, DB-backed so it can
-    be flipped without a redeploy. Fails open (True) on any error — the env gate above
-    is what keeps autosync off by default; this must never be the thing that silently
-    re-enables a platform-disabled sync, but a transient DB hiccup here shouldn't be
-    what blocks an otherwise-enabled sync either."""
+    be flipped without a redeploy. Fails CLOSED (False) on any error — this drives a
+    push to the live storefront, so a config/DB read failure must skip the tick
+    rather than risk an unintended marketplace sync; a missing flag on a healthy read
+    still defaults on (True), and the skipped tick simply retries on the next run."""
     try:
         account = _get_single_account()
         if not account:
@@ -51,8 +51,8 @@ def _config_autosync_enabled() -> bool:
         cfg = _parse_json(account, 'config')
         return cfg.get('autosync_enabled', True)
     except Exception:
-        logger.exception('_config_autosync_enabled: failed to read connector config; failing open')
-        return True
+        logger.exception('_config_autosync_enabled: failed to read connector config; failing closed')
+        return False
 
 
 def autosync_enabled() -> bool:

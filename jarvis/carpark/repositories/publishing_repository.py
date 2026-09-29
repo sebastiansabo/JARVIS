@@ -1,4 +1,5 @@
 """Publishing Repository — Data access for platforms, listings, and sync log."""
+import json
 from typing import Optional, Dict, Any, List
 from core.base_repository import BaseRepository
 
@@ -202,8 +203,8 @@ class PublishingRepository(BaseRepository):
                  response_payload, http_status, success, error_message)
             VALUES (%s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s) RETURNING *
         ''', (vehicle_id, platform_id, action,
-              str(request_payload) if request_payload else None,
-              str(response_payload) if response_payload else None,
+              json.dumps(request_payload, default=str) if request_payload else None,
+              json.dumps(response_payload, default=str) if response_payload else None,
               http_status, success, error_message),
             returning=True)
 
