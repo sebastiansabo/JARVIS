@@ -1,41 +1,52 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronLeft, Plus, Car } from 'lucide-react'
+import { ChevronLeft, Plus, Car, X } from 'lucide-react'
 import { buybackApi } from '@/api/buyback'
-import { recordStatus } from '@/pages/BuyBack/recordStatus'
+import { recordStatus, STATUS_FILTER_OPTIONS } from '@/pages/BuyBack/recordStatus'
 import { usePermissions } from '@/pages/BuyBack/usePermissions'
 import BuyBackForm from '@/pages/BuyBack/BuyBackForm'
+import BuybackPanelDetail from '@/pages/Hub/BuybackPanel/BuybackPanelDetail'
 import type { BuybackRecord } from '@/types/buyback'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
+import { SearchInput } from '@/components/shared/SearchInput'
+import { cn } from '@/lib/utils'
 
-// Compact list of buyback records for the Hub launcher — a lean subset of
-// `pages/BuyBack/index.tsx` (no filters) plus a "Solicitare nouă" overlay
-// that embeds `BuyBackForm` (mirrors `HubDrivingPanel`'s Overlay pattern,
-// just with a single overlay kind since there's only one form here).
+// BuyBack for the Hub launcher — functionally identical to the mobile app:
+// a filterable list → an in-panel read-only detail with offer/decision
+// actions → a "Solicitare nouă" intake overlay (reuses `BuyBackForm`). The
+// full back-office console (inspection / finalize / reopen / edit) stays at
+// /app/buyback. Mirrors `HubDrivingPanel`'s list↔detail↔overlay structure.
 type Overlay = null | { kind: 'new' }
 
 export default function HubBuybackPanel({ onBack }: { onBack: () => void }) {
-  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [overlay, setOverlay] = useState<Overlay>(null)
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [status, setStatus] = useState<string | undefined>(undefined)
+  const [q, setQ] = useState('')
 
   const { can } = usePermissions()
   const canCreate = can('buyback.record.create')
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['buyback-records', 'hub'],
-    queryFn: () => buybackApi.listRecords({ per_page: 200, sort_by: 'created_at', sort_dir: 'DESC' }),
+    queryKey: ['buyback-records', 'hub', { status, q }],
+    queryFn: () =>
+      buybackApi.listRecords({
+        status,
+        q: q.trim() || undefined,
+        per_page: 200,
+        sort_by: 'created_at',
+        sort_dir: 'DESC',
+      }),
     staleTime: 30_000,
   })
   const records = data?.records ?? []
 
-  const goToRecord = (id: number) => navigate(`/app/buyback/${id}`)
+  const goToRecord = (id: number) => setSelectedId(id)
   const onRecordKeyDown = (e: React.KeyboardEvent, id: number) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
@@ -47,7 +58,13 @@ export default function HubBuybackPanel({ onBack }: { onBack: () => void }) {
   const handleDone = (record: BuybackRecord) => {
     queryClient.invalidateQueries({ queryKey: ['buyback-records'] })
     setOverlay(null)
-    navigate(`/app/buyback/${record.id}`)
+    setSelectedId(record.id)
+  }
+
+  // In-panel detail (mobile parity): tapping a record opens it here rather
+  // than navigating to the full /app/buyback console.
+  if (selectedId != null) {
+    return <BuybackPanelDetail id={selectedId} onBack={() => setSelectedId(null)} />
   }
 
   return (
@@ -62,6 +79,36 @@ export default function HubBuybackPanel({ onBack }: { onBack: () => void }) {
             Solicitare nouă
           </Button>
         )}
+      </div>
+
+      {/* Status filter pills + debounced search — mobile parity. */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setStatus(undefined)}
+            className={cn(
+              'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+              status === undefined ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'
+            )}
+          >
+            Toate
+          </button>
+          {STATUS_FILTER_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setStatus(opt.value)}
+              className={cn(
+                'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                status === opt.value ? recordStatus(opt.value).badgeClass : 'bg-secondary text-muted-foreground'
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <SearchInput value={q} onChange={setQ} placeholder="Caută cod, VIN, vânzător..." className="max-w-xs" />
       </div>
 
       {isLoading ? (
@@ -124,12 +171,23 @@ export default function HubBuybackPanel({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      <Dialog open={overlay?.kind === 'new'} onOpenChange={(o) => { if (!o) closeOverlay() }}>
-        <DialogContent className="max-w-3xl">
-          <DialogTitle className="sr-only">Solicitare nouă BuyBack / TradeIn</DialogTitle>
-          <BuyBackForm embedded onDone={handleDone} onCancel={closeOverlay} />
-        </DialogContent>
-      </Dialog>
+      {/* iOS-style modal sheet — full-screen on phones, a centered floating
+          card on desktop. Mirrors HubDrivingPanel's intake overlay. */}
+      {overlay?.kind === 'new' && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-sm" onClick={closeOverlay}>
+          <div
+            className="mx-auto min-h-full w-full max-w-2xl bg-background shadow-2xl sm:my-8 sm:min-h-0 sm:rounded-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="sticky top-0 z-10 flex items-center justify-end border-b bg-background/95 p-2 backdrop-blur sm:rounded-t-2xl">
+              <Button variant="ghost" size="icon" aria-label="Închide" onClick={closeOverlay}>
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <BuyBackForm embedded onDone={handleDone} onCancel={closeOverlay} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

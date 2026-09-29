@@ -588,7 +588,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
   const err = (bad: boolean) => attempted && bad
 
   return (
-    <div className={cn('space-y-4', !embedded && 'max-w-3xl mx-auto p-4 md:p-6')}>
+    <div className={cn('space-y-6', !embedded && 'max-w-2xl mx-auto p-4 md:p-6')}>
       <div className="flex items-center justify-between gap-2">
         <Button variant="ghost" size="sm" onClick={handleBack}>
           <ArrowLeft className="h-4 w-4 mr-1" />Înapoi
@@ -1012,18 +1012,24 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
 
           <div className="space-y-1.5">
             <Label className="text-xs">Condiție Generală (1-5)</Label>
-            <div className="flex gap-1.5">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <Button
-                  key={n}
-                  type="button"
-                  size="sm"
-                  variant={String(form.general_condition) === String(n) ? 'default' : 'outline'}
-                  onClick={() => set('general_condition', n)}
-                >
-                  {n}
-                </Button>
-              ))}
+            {/* 44px segmented control (matches TestDriveForm's fuel selector) */}
+            <div className="grid h-11 grid-cols-5 gap-1 rounded-lg bg-secondary p-1">
+              {[1, 2, 3, 4, 5].map((n) => {
+                const active = String(form.general_condition) === String(n)
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => set('general_condition', n)}
+                    className={cn(
+                      'rounded-md text-sm font-medium transition-colors',
+                      active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
+                    )}
+                  >
+                    {n}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -1037,9 +1043,9 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
                     type="button"
                     aria-label="Șterge poza"
                     onClick={() => removeImage(idx)}
-                    className="absolute -top-1.5 -right-1.5 rounded-full bg-destructive text-white p-0.5"
+                    className="absolute -top-2 -right-2 rounded-full bg-destructive text-white p-1"
                   >
-                    <X className="h-3 w-3" />
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
               ))}
@@ -1152,9 +1158,16 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-2 pb-8">
-        <Button variant="outline" onClick={handleBack}>Anulează</Button>
-        <Button onClick={handleSubmit} disabled={mutation.isPending || !canSubmit}>
+      <div className="flex gap-2 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+        <Button variant="outline" size="lg" className="flex-1" onClick={handleBack}>
+          Anulează
+        </Button>
+        <Button
+          size="lg"
+          className={cn('flex-1', attempted && !canSubmit && 'bg-destructive hover:bg-destructive/90')}
+          onClick={handleSubmit}
+          disabled={mutation.isPending}
+        >
           {mutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
           {isEdit ? 'Salvează modificările' : 'Trimite Solicitarea'}
         </Button>
