@@ -8,6 +8,8 @@ import { DecodePreviewDialog } from './DecodePreviewDialog'
 import { seedCurrentPriceOnCreate } from './vehicleFormPricing'
 import { findMissingRequiredFields } from './vehicleFormValidation'
 import { toCanonical, netLeiFromCanonical, netLeiFromGrossEur, canonicalFromGrossEur } from './acquisitionCanonical'
+import { specFieldsToClear, usesFuelTank, usesBattery } from './vehicleSpecScope'
+import { deriveFabParts, fabToManufactureDate } from './vehicleFabricationDate'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -223,14 +225,6 @@ const _fabCurrentYear = new Date().getFullYear()
 const YEAR_OPTIONS = Array.from({ length: 41 }, (_, i) =>
   String(_fabCurrentYear + 1 - i),
 ).map((y) => ({ value: y, label: y }))
-
-// Fuel-type → which capacity/norm fields apply (mirrors Drive Park's
-// usesFuelTank / usesBattery, mapped to CarPark's AUTOVIT_FUEL_TYPES values).
-const FUEL_USES_TANK = new Set(['petrol', 'diesel', 'hybrid', 'plugin-hybrid', 'mild-hybrid-petrol', 'mild-hybrid-diesel', 'petrol-lpg', 'petrol-cng', 'hydrogen'])
-// Mild hybrids deliberately excluded — no battery capacity / kWh norm.
-const FUEL_USES_BATTERY = new Set(['electric', 'hybrid', 'plugin-hybrid'])
-const usesFuelTank = (ft?: string | null) => FUEL_USES_TANK.has(ft ?? '')
-const usesBattery = (ft?: string | null) => FUEL_USES_BATTERY.has(ft ?? '')
 
 // Compose the "Titlu anunț" from the vehicle's spec fields, e.g.
 // "Dacia Duster 1.5 Blue dCi Prestige III 1.5l Diesel Manuala Fata (FWD)".
@@ -724,23 +718,18 @@ export default function VehicleForm() {
   // (DATE column, stored as the 1st of the chosen month) and keep
   // year_of_manufacture in sync for the fleet year-range filters. Picking one
   // half defaults the other (current year / January) so a full date always forms.
-  const fabMonth = (form.manufacture_date as string | null)?.slice(5, 7) ?? ''
-  const fabYear = (form.manufacture_date as string | null)?.slice(0, 4) ?? ''
+  // Fall back to year_of_manufacture when manufacture_date is null (imported /
+  // VIN-decoded cars set only the year) so the year shows and a month pick can't
+  // silently reset it to the current year.
+  const { month: fabMonth, year: fabYear } = deriveFabParts(
+    form.manufacture_date as string | null,
+    form.year_of_manufacture as number | null,
+  )
   const handleFabMonth = (month: string) => {
-    const year = fabYear || String(_fabCurrentYear)
-    setForm((prev) => ({
-      ...prev,
-      manufacture_date: `${year}-${month}-01`,
-      year_of_manufacture: Number(year),
-    }))
+    setForm((prev) => ({ ...prev, ...fabToManufactureDate(month, fabYear || String(_fabCurrentYear)) }))
   }
   const handleFabYear = (year: string) => {
-    const month = fabMonth || '01'
-    setForm((prev) => ({
-      ...prev,
-      manufacture_date: `${year}-${month}-01`,
-      year_of_manufacture: Number(year),
-    }))
+    setForm((prev) => ({ ...prev, ...fabToManufactureDate(fabMonth, year) }))
   }
 
   // Dotări equipment: toggle a value in the equipment_options string[].
@@ -972,30 +961,13 @@ export default function VehicleForm() {
       }
     }
 
-    // Mirror Drive Park: persist only the capacity/norm fields relevant to the
-    // selected fuel type (null the rest so an EV keeps no stale fuel-tank value).
-    const ft = form.fuel_type as string
-    if (!usesFuelTank(ft)) {
-      payload.fuel_tank_capacity_liters = null
-      payload.norma_combustibil = null
-      payload.consum_urban = null
-      payload.consum_extraurban = null
-      payload.consum_mixt = null
-    }
-    if (!usesBattery(ft)) {
-      payload.battery_capacity_kwh = null
-      payload.norma_energie = null
-      payload.electric_range_km = null
-    }
-    // Cargo details only apply to vans — null them for other body types so a
-    // car switched away from Van / Utilitara keeps no stale cargo values.
-    if (form.body_type !== 'van') {
-      payload.payload_kg = null
-      payload.cargo_volume_m3 = null
-      payload.cargo_length_mm = null
-      payload.cargo_width_mm = null
-      payload.cargo_height_mm = null
-      payload.euro_pallets = null
+    // Null the spec groups that don't apply to the selected fuel/body — but ONLY
+    // when the value is a recognized taxonomy value that legitimately excludes
+    // them. A blank/unmapped fuel_type or body_type clears nothing, so an
+    // imported car never has its consumption/tank/battery/cargo specs wiped on a
+    // re-save (see vehicleSpecScope + its tests).
+    for (const field of specFieldsToClear(form.fuel_type as string, form.body_type as string)) {
+      payload[field] = null
     }
     // Empty equipment array → null (avoids empty-array SQL adaptation).
     if (Array.isArray(payload.equipment_options) && (payload.equipment_options as string[]).length === 0) {
