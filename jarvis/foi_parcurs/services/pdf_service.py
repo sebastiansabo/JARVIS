@@ -424,6 +424,22 @@ def _sig_image(data_url: str, width: float = 55 * mm, height: float = 22 * mm):
     return Image(path, width=width, height=height)
 
 
+def _contract_registration(contract: dict) -> str:
+    """Resolve the vehicle plate for a contract's vehicle block.
+
+    The foaie's own `registration_number` is captured from the TD form, which
+    rarely includes a plate for a showroom car, so prefer it but fall back to
+    the vehicle's real plate: `vehicle_registration_number` (denormalized onto
+    the row by `get_contract_by_id`'s fp_vehicles join), then a live VIN lookup
+    for lean export rows (`get_contracts`) that skip the join. Mirrors the
+    brand/fuel fallback so the contract PDF shows the real plate, not '—'."""
+    reg = contract.get('registration_number') or contract.get('vehicle_registration_number')
+    if not reg and contract.get('vin'):
+        from ..repositories.vehicle_repository import FPVehicleRepository
+        reg = (FPVehicleRepository().get_by_vin(contract['vin']) or {}).get('registration_number')
+    return reg or ''
+
+
 # ---------------------------------------------------------------------------
 # Legal PDF — standard Foaie de Parcurs format
 # ---------------------------------------------------------------------------
@@ -521,7 +537,7 @@ def generate_legal_pdf(contract: dict) -> str:
     cv_data = [
         [Paragraph('Companie', label_style), Paragraph(str(contract.get('company_name') or '—'), value_style)],
         [Paragraph('VIN', label_style), Paragraph(str(contract.get('vin') or '—'), value_style)],
-        [Paragraph('Nr. înmatriculare', label_style), Paragraph(str(contract.get('registration_number') or '—'), value_style)],
+        [Paragraph('Nr. înmatriculare', label_style), Paragraph(str(_contract_registration(contract) or '—'), value_style)],
         [Paragraph('Brand / Departament', label_style), Paragraph(str(_brand or '—'), value_style)],
         [Paragraph('Combustibil', label_style), Paragraph(str(_fuel or '—'), value_style)],
     ]
@@ -793,7 +809,7 @@ def generate_service_contract_pdf(contract: dict) -> str:
         'brand': brand,
         'vehicle_model': contract.get('vehicle_model'),
         'vin': contract.get('vin'),
-        'registration_number': contract.get('registration_number'),
+        'registration_number': _contract_registration(contract),
         'km_start': str(contract['km_start']) if contract.get('km_start') is not None else None,
         'km_end': str(contract['km_end']) if contract.get('km_end') is not None else None,
         'distance_km': _odometer_distance_km(contract),
@@ -893,7 +909,7 @@ def generate_service_contract_pdf(contract: dict) -> str:
     story.append(_kv_table([
         ('Companie', contract.get('company_name') or '—'),
         ('VIN', contract.get('vin') or '—'),
-        ('Nr. înmatriculare', contract.get('registration_number') or '—'),
+        ('Nr. înmatriculare', _contract_registration(contract) or '—'),
     ]))
     story.append(Spacer(1, 6))
 
@@ -1123,7 +1139,7 @@ def generate_custom_pdf(contract: dict) -> str:
     story.append(section_header('Vehicul'))
     story.append(section_table([
         row('VIN', contract.get('vin')),
-        row('Nr. înmatriculare', contract.get('registration_number')),
+        row('Nr. înmatriculare', _contract_registration(contract)),
     ]))
     story.append(Spacer(1, 4))
 
