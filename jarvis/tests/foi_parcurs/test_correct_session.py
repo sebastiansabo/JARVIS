@@ -164,6 +164,9 @@ def test_correct_km_happy_path(client, monkeypatch):
         return _contract(km_start=1258, km_end=1300)
 
     monkeypatch.setattr(contracts_mod._fp_repo, 'correct_session', fake_correct)
+    # After the correction the car's real top reading is 1300 (> stored 1000) → floor advances.
+    monkeypatch.setattr(contracts_mod._fp_repo, 'get_odometer_readings',
+                        lambda vin: [{'id': 1, 'status': 'COMPLETED', 'km_start': 1258, 'km_end': 1300}])
     monkeypatch.setattr(contracts_mod._vehicle_repo, 'get_by_vin', lambda vin: {'id': 7, 'odometer_km': 1000})
     updated_veh = {}
     monkeypatch.setattr(contracts_mod._vehicle_repo, 'update', lambda vid, data: updated_veh.update({vid: data}))
@@ -176,6 +179,26 @@ def test_correct_km_happy_path(client, monkeypatch):
     assert captured['fields'] == {'km_start': 1258, 'km_end': 1300}
     # km_end (1300) raised above the vehicle odometer (1000) → floor advanced.
     assert updated_veh == {7: {'odometer_km': 1300}}
+
+
+def test_correct_km_down_lowers_odometer(client, monkeypatch):
+    """REGRESSION: a bad-high reading left the stored odometer stuck because the
+    floor only ever ratcheted UP. Correcting the top reading DOWN must re-point
+    the vehicle odometer at the car's true top reading (MAX km_end) so the next
+    test drive isn't gated at the stale high value."""
+    monkeypatch.setattr(contracts_mod._fp_repo, 'get_contract_by_id',
+                        lambda id: _contract(km_start=1407, km_end=7074))
+    monkeypatch.setattr(contracts_mod._fp_repo, 'correct_session',
+                        lambda cid, fields, modified_by=None: _contract(km_start=1407, km_end=1759))
+    # After the correction the car's real top reading is 1759; odometer is stale at 7074.
+    monkeypatch.setattr(contracts_mod._fp_repo, 'get_odometer_readings',
+                        lambda vin: [{'id': 1, 'status': 'COMPLETED', 'km_start': 1407, 'km_end': 1759}])
+    monkeypatch.setattr(contracts_mod._vehicle_repo, 'get_by_vin', lambda vin: {'id': 7, 'odometer_km': 7074})
+    updated_veh = {}
+    monkeypatch.setattr(contracts_mod._vehicle_repo, 'update', lambda vid, data: updated_veh.update({vid: data}))
+    resp = client.put('/api/foi-parcurs/contracts/1/correct', json={'km_end': 1759}, headers=_hdr('admin'))
+    assert resp.status_code == 200, resp.get_json()
+    assert updated_veh == {7: {'odometer_km': 1759}}
 
 
 def test_correct_dates_happy_path(client, monkeypatch):
