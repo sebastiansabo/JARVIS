@@ -307,6 +307,14 @@ def _recompute_bilant_formula_values(cursor):
         logger.info(f'Recomputed {updated} stale formula_rd values across {len(gen_ids)} generation(s)')
 
 
+# Advisory-lock key serializing init_db() across concurrently-booting gunicorn
+# workers (database.py runs init_db() on import, so every worker races here on
+# boot). Without it, parallel workers run the non-idempotent migrations at once
+# (role grants, DROP+ADD CONSTRAINT, ...) and hit "tuple concurrently updated" /
+# DuplicateObject, crash-looping workers on boot (prod outage 2026-10-02).
+_INIT_DB_LOCK_KEY = 4729010201
+
+
 def init_db():
     """Initialize database tables, indexes, and seed data.
 
@@ -319,6 +327,11 @@ def init_db():
     conn = get_db()
     cursor = get_cursor(conn)
     try:
+        # Serialize concurrent boots: only one worker runs the migrations at a
+        # time; the others block here, then run against the already-migrated
+        # schema (idempotent). Session-level lock, explicitly released in the
+        # finally before the connection returns to the pool.
+        cursor.execute("SELECT pg_advisory_lock(%s)", (_INIT_DB_LOCK_KEY,))
         # Quick check: if newest table exists, full schema is already initialized
         cursor.execute("""
             SELECT EXISTS (
@@ -503,6 +516,18 @@ def init_db():
         conn.commit()
         logger.info('Database schema initialized successfully')
     finally:
+        # Release the advisory lock BEFORE returning the connection to the pool —
+        # a session lock left on a pooled connection would never free and would
+        # block every subsequent worker's init_db. Roll back first so the unlock
+        # can still run if the body left the transaction in an aborted state.
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        try:
+            cursor.execute("SELECT pg_advisory_unlock(%s)", (_INIT_DB_LOCK_KEY,))
+        except Exception:
+            pass
         release_db(conn)
 
 
