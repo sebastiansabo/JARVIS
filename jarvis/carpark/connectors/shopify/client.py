@@ -1,4 +1,5 @@
 """Low-level Shopify Admin API client (client-credentials grant + GraphQL)."""
+import json
 import time
 import logging
 from typing import Any, Dict, List, Optional
@@ -197,6 +198,50 @@ class ShopifyClient:
                 ns, key, typ = n.get('namespace'), n.get('key'), (n.get('type') or {}).get('name')
                 if ns and key and typ:
                     out[f'{ns}.{key}'] = typ
+            pi = conn.get('pageInfo') or {}
+            if not pi.get('hasNextPage'):
+                break
+            after = pi.get('endCursor')
+        return out
+
+    _METAFIELD_DEFS_DETAILED = '''
+    query defs($after: String) {
+      metafieldDefinitions(first: 250, ownerType: PRODUCT, after: $after) {
+        edges { node { namespace key type { name } validations { name value } } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }'''
+
+    def fetch_metafield_choice_lists(self) -> Dict[str, Dict[str, Any]]:
+        """Read-only diagnostic: per product metafield,
+        {'custom.key': {'type': str, 'choices': [..] | None}}.
+
+        `choices` is the value list from the definition's 'choices' validation
+        (what a choice-list metafield actually accepts), or None for free-text
+        fields. Used to see which values the store's custom.fuel/culoare/body_type
+        accept (so we know exactly which choices to add) and to confirm whether the
+        store defines custom.body_type vs the misspelled custom.bodu_type.
+        """
+        out: Dict[str, Dict[str, Any]] = {}
+        after = None
+        while True:
+            data = self.graphql(self._METAFIELD_DEFS_DETAILED, {'after': after})
+            conn = (data or {}).get('metafieldDefinitions') or {}
+            for e in conn.get('edges', []) or []:
+                n = e.get('node') or {}
+                ns, key = n.get('namespace'), n.get('key')
+                if not ns or not key:
+                    continue
+                choices = None
+                for val in (n.get('validations') or []):
+                    if val.get('name') == 'choices':
+                        try:
+                            parsed = json.loads(val.get('value') or '[]')
+                            choices = [str(x) for x in parsed] if isinstance(parsed, list) else None
+                        except (ValueError, TypeError):
+                            choices = None
+                        break
+                out[f'{ns}.{key}'] = {'type': (n.get('type') or {}).get('name'), 'choices': choices}
             pi = conn.get('pageInfo') or {}
             if not pi.get('hasNextPage'):
                 break
