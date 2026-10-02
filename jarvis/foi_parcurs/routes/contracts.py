@@ -295,6 +295,37 @@ def _invalidate_cached_pdfs(contract_id, contract=None):
         logger.warning('PDF-cache invalidation failed for contract %s', contract_id, exc_info=True)
 
 
+def _resync_vehicle_odometer(vin):
+    """Re-point a car's stored odometer at its TRUE top reading — the MAX km_end
+    across its real (non-PLANNED) sessions — after a boundary correction.
+
+    This moves the TD-form floor in BOTH directions. The floor the new-drive form
+    gates on is GREATEST(fp_vehicles.odometer_km, MAX km_end) (vehicle_repository
+    _LIST_SELECT). The per-return/correct code only ever ratcheted odometer_km UP,
+    so once it was set high — a mis-typed reading, or a wrong value at vehicle
+    creation — correcting the readings DOWN could never bring the gate back down;
+    the next test drive stayed pinned at the stale high km. Re-syncing to the real
+    top reading fixes that while still raising the floor when a reading grows.
+
+    No-op when the car has no real reading yet, leaving the odometer entered at
+    vehicle creation untouched. Best-effort: never fails the correction."""
+    try:
+        veh = _vehicle_repo.get_by_vin(vin)
+        if not veh:
+            return
+        # Match the floor SQL exactly: real drives only (status <> 'PLANNED'),
+        # every route_type, with a recorded end reading.
+        tops = [int(r['km_end']) for r in (_fp_repo.get_odometer_readings(vin) or [])
+                if r.get('status') != 'PLANNED' and r.get('km_end') is not None]
+        if not tops:
+            return
+        new_top = max(tops)
+        if veh.get('odometer_km') != new_top:
+            _vehicle_repo.update(veh['id'], {'odometer_km': new_top})
+    except Exception:
+        logger.warning('Could not resync vehicle odometer for vin %s', vin, exc_info=True)
+
+
 @foi_parcurs_bp.route('/api/foi-parcurs/contracts/<int:id>/correct', methods=['PUT'])
 @login_required
 @v2_permission_required('test_drive', 'contracts', 'correct')
@@ -387,14 +418,13 @@ def api_correct_contract(id):
     logger.info('foi-parcurs contract %s corrected by admin %s: %s',
                 id, getattr(current_user, 'email', '?'), logged)
 
-    # Keep the vehicle's odometer floor honest if km_end was raised (mirrors return).
-    try:
-        if 'km_end' in fields and contract.get('vin'):
-            veh = _vehicle_repo.get_by_vin(contract['vin'])
-            if veh and (veh.get('odometer_km') is None or fields['km_end'] > veh['odometer_km']):
-                _vehicle_repo.update(veh['id'], {'odometer_km': fields['km_end']})
-    except Exception:
-        logger.warning('Could not advance vehicle odometer after correcting contract %s', id, exc_info=True)
+    # Keep the vehicle's odometer floor in sync with its true top reading after a
+    # km correction — in BOTH directions. A reading corrected DOWN must lower the
+    # floor so the next test drive isn't gated at a stale high value; an edited-UP
+    # reading still raises it. (The old code only ratcheted UP, which is why a
+    # downward correction left the gate stuck — see _resync_vehicle_odometer.)
+    if 'km_end' in fields and contract.get('vin'):
+        _resync_vehicle_odometer(contract['vin'])
 
     return jsonify({'success': True, 'contract': updated})
 
@@ -494,15 +524,12 @@ def api_adjust_reading(id):
     logger.info('foi-parcurs reading adjusted by %s: %s',
                 getattr(current_user, 'email', '?'), updates)
 
-    # Keep the vehicle's odometer floor honest if the top reading rose (mirrors
-    # /correct and the return flow).
-    try:
-        if 'km_end' in new and nxt is None:
-            veh = _vehicle_repo.get_by_vin(vin)
-            if veh and (veh.get('odometer_km') is None or ne > veh['odometer_km']):
-                _vehicle_repo.update(veh['id'], {'odometer_km': ne})
-    except Exception:
-        logger.warning('Could not advance vehicle odometer after adjusting reading on %s', id, exc_info=True)
+    # Keep the vehicle's odometer floor in sync with its true top reading (up OR
+    # down) after an inline KM edit — mirrors /correct. The old code advanced it
+    # only when the LAST reading rose, so correcting the top reading down left the
+    # gate stuck high (see _resync_vehicle_odometer).
+    if 'km_end' in new:
+        _resync_vehicle_odometer(vin)
 
     main = _fp_repo.get_contract_by_id(id)
     return jsonify({'success': True, 'contract': main, 'updated_ids': written_ids})
