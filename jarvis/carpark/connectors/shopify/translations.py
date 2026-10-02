@@ -146,12 +146,14 @@ VALUE_TRANSLATIONS_SEED: Dict[str, Dict[str, str]] = {
         "van": "Monovolum",
         "Minibus": "Monovolum",
         "minibus": "Monovolum",
+        "minivan": "Monovolum",  # canonical autovitData slug → existing store choice
         "Autoutilitară": "Monovolum",
         "autoutilitara": "Monovolum",
         "Hatchback": "Compactă",
         "hatchback": "Compactă",
         "Compacta": "Compactă",
         "compacta": "Compactă",
+        "compact": "Compactă",  # canonical autovitData slug → existing store choice
         "Coupe": "Coupé",
         "coupe": "Coupé",
         "Cabrio": "Cabrio",

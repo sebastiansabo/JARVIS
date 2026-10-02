@@ -169,6 +169,14 @@ class TestValueTranslationsSeed:
         'Mov' choice (the map already has purple→Mov)."""
         assert VALUE_TRANSLATIONS_SEED["color_exterior"].get("violet") == "Mov"
 
+    def test_body_covers_compact_and_minivan_slugs(self):
+        """Canonical 'compact' / 'minivan' (autovitData) map to the store's existing
+        'Compactă' / 'Monovolum' choices (seed already maps compacta/van to them),
+        so AWD/violet-style they were dropping on publish before."""
+        b = VALUE_TRANSLATIONS_SEED["body_type"]
+        assert b.get("compact") == "Compactă"
+        assert b.get("minivan") == "Monovolum"
+
     def test_color_includes_basic_colors(self):
         """color_exterior includes gray/grey, White, Black, etc."""
         color = VALUE_TRANSLATIONS_SEED.get("color_exterior", {})
