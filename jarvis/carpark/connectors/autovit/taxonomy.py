@@ -257,6 +257,30 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[
     if vehicle.get("current_price") is not None:
         params["price"] = {"1": vehicle["current_price"],
                            "currency": vehicle.get("price_currency", "EUR")}
+    # Optional attributes Autovit also supports (it SENDS them on pull) that push
+    # previously dropped — emitted so the advert is fuller. SMOKE-TEST the create
+    # contract (publish dry_run, then draft=True to upload a disabled advert)
+    # before enabling in prod: an unexpected param could 400 the create.
+    if vehicle.get("seats"):
+        params["nr_seats"] = vehicle["seats"]
+    if vehicle.get("co2_emissions") is not None:
+        params["co2_emissions"] = vehicle["co2_emissions"]
+    if vehicle.get("generation"):
+        params["generation"] = str(vehicle["generation"])
+    if vehicle.get("variant"):
+        params["version"] = str(vehicle["variant"])
+    # Condition flags as Autovit "1"/"0" (mirrors advert_to_vehicle's _flag read).
+    for autovit_param, vehicle_key in (
+        ("registered", "is_registered"),
+        ("original_owner", "is_first_owner"),
+        ("service_record", "has_service_book"),
+        ("tuning", "has_tuning"),
+        ("historical_vehicle", "is_vintage"),
+    ):
+        if vehicle.get(vehicle_key) is not None:
+            params[autovit_param] = "1" if vehicle[vehicle_key] else "0"
+    if vehicle.get("has_accident_history") is not None:
+        params["no_accident"] = "0" if vehicle["has_accident_history"] else "1"
     # Equipment → Autovit "<slug>"="1" params, from BOTH sources: the legacy JSONB
     # `equipment` dict (Autovit-imported cars) AND the form's `equipment_options`
     # TEXT[] slug array (the editor's Dotări) — previously only the dict was pushed,
