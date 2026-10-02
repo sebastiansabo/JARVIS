@@ -69,3 +69,24 @@ def test_fetch_car_attribute_values_empty_edges(monkeypatch):
     c = ShopifyClient('d.myshopify.com', 'cid', 'sec')
     monkeypatch.setattr(c, 'graphql', lambda q, v=None: {'taxonomy': {'categories': {'edges': []}}})
     assert c.fetch_car_attribute_values() == {}
+
+
+def test_fetch_metafield_choice_lists_parses_choices(monkeypatch):
+    c = ShopifyClient('d.myshopify.com', 'cid', 'sec')
+    payload = {'metafieldDefinitions': {
+        'edges': [
+            {'node': {'namespace': 'custom', 'key': 'fuel', 'type': {'name': 'single_line_text_field'},
+                      'validations': [{'name': 'choices', 'value': '["Benzina", "Diesel", "Electric"]'}]}},
+            {'node': {'namespace': 'custom', 'key': 'marca', 'type': {'name': 'single_line_text_field'},
+                      'validations': []}},
+            {'node': {'namespace': 'custom', 'key': 'body_type', 'type': {'name': 'single_line_text_field'},
+                      'validations': [{'name': 'choices', 'value': '["Sedan", "SUV"]'}]}},
+        ],
+        'pageInfo': {'hasNextPage': False, 'endCursor': None},
+    }}
+    monkeypatch.setattr(c, 'graphql', lambda q, v=None: payload)
+    out = c.fetch_metafield_choice_lists()
+    assert out['custom.fuel']['choices'] == ['Benzina', 'Diesel', 'Electric']
+    assert out['custom.body_type']['choices'] == ['Sedan', 'SUV']
+    assert out['custom.marca']['choices'] is None   # free-text: no choices validation
+    assert out['custom.marca']['type'] == 'single_line_text_field'
