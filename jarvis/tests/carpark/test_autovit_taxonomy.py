@@ -152,6 +152,36 @@ def test_vehicle_to_advert_merges_equipment_dict_and_options():
     assert p.get("apple_carplay") == "1"  # options slug pushed
 
 
+def test_vehicle_to_advert_enriches_optional_params():
+    # Params Autovit also supports (it SENDS them on pull) that push previously
+    # dropped — now emitted so published adverts are fuller. Needs a live
+    # create-advert smoke test (dry_run/draft) before prod; staging-only until then.
+    v = {"brand": "Audi", "model": "A4",
+         "seats": 5, "co2_emissions": 120, "generation": "B9", "variant": "2.0 TDI",
+         "is_registered": True, "is_first_owner": True, "has_service_book": True,
+         "has_tuning": False, "is_vintage": False, "has_accident_history": False}
+    p = tx.vehicle_to_advert(v, {})["params"]
+    assert p["nr_seats"] == 5
+    assert p["co2_emissions"] == 120
+    assert p["generation"] == "B9"
+    assert p["version"] == "2.0 TDI"
+    assert p["registered"] == "1"
+    assert p["original_owner"] == "1"
+    assert p["service_record"] == "1"
+    assert p["tuning"] == "0"
+    assert p["historical_vehicle"] == "0"
+    assert p["no_accident"] == "1"  # not has_accident_history -> no_accident=1
+
+
+def test_vehicle_to_advert_omits_absent_optional_params():
+    # A sparse vehicle must not force empty/None optional params onto the advert.
+    p = tx.vehicle_to_advert({"brand": "Audi", "model": "A4"}, {})["params"]
+    for k in ("nr_seats", "co2_emissions", "generation", "version",
+              "registered", "original_owner", "service_record", "tuning",
+              "historical_vehicle", "no_accident"):
+        assert k not in p
+
+
 def test_vehicle_to_advert_color_reverse_map():
     # PUSH: carpark canonical color -> live Autovit api slug. Only grey/beige
     # differ from identity (grey->gray, beige->bej); everything else is 1:1.
