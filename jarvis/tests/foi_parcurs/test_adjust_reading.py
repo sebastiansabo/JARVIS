@@ -244,7 +244,8 @@ def test_reading_invalidates_cached_pdfs_for_each_written_row(client, monkeypatc
 
 def test_reading_advances_vehicle_odometer_when_top_rises(client, monkeypatch):
     # C is the last session; raising its end above the vehicle odometer advances it.
-    solo = [{'id': 1, 'status': 'COMPLETED', 'km_start': 120, 'km_end': 150}]
+    # Post-edit chain: the car's real top reading is now 200 (> stored 150).
+    solo = [{'id': 1, 'status': 'COMPLETED', 'km_start': 120, 'km_end': 200}]
     monkeypatch.setattr(contracts_mod._fp_repo, 'get_odometer_readings', lambda vin: solo)
     _stub_read(monkeypatch, _contract())
     _capture_writes(monkeypatch)
@@ -254,3 +255,21 @@ def test_reading_advances_vehicle_odometer_when_top_rises(client, monkeypatch):
     resp = client.put('/api/foi-parcurs/contracts/1/reading', json={'km_end': 200}, headers=_hdr('admin'))
     assert resp.status_code == 200, resp.get_json()
     assert updated == {7: {'odometer_km': 200}}
+
+
+def test_reading_down_lowers_vehicle_odometer(client, monkeypatch):
+    """REGRESSION: the edited session is the last one; lowering its end must
+    re-point the vehicle odometer DOWN to the true top reading. The old code only
+    advanced the odometer when the top rose, so a corrected-down reading left the
+    next test drive gated at the stale high value (prod: VIN …585468, 7074→1759)."""
+    # Post-edit chain: the car's real top reading is now 1759 (was stuck at 7074).
+    solo = [{'id': 1, 'status': 'COMPLETED', 'km_start': 1407, 'km_end': 1759}]
+    monkeypatch.setattr(contracts_mod._fp_repo, 'get_odometer_readings', lambda vin: solo)
+    _stub_read(monkeypatch, _contract(km_start=1407, km_end=7074))
+    _capture_writes(monkeypatch)
+    monkeypatch.setattr(contracts_mod._vehicle_repo, 'get_by_vin', lambda vin: {'id': 7, 'odometer_km': 7074})
+    updated = {}
+    monkeypatch.setattr(contracts_mod._vehicle_repo, 'update', lambda vid, data: updated.update({vid: data}))
+    resp = client.put('/api/foi-parcurs/contracts/1/reading', json={'km_end': 1759}, headers=_hdr('admin'))
+    assert resp.status_code == 200, resp.get_json()
+    assert updated == {7: {'odometer_km': 1759}}
