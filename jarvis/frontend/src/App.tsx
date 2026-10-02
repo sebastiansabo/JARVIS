@@ -140,22 +140,25 @@ function V2Guard({ permKey, children }: { permKey: string; children: React.React
 }
 
 /** Redirect /app to hub for Viewers, dashboard for everyone else.
- *  Mobile-browser logins land on the Hub (the mobile-first view) for every role. */
-function DefaultRedirect() {
+ *  Mobile-browser logins land on the Hub (the mobile-first view) for every role.
+ *  Targets are ABSOLUTE: this also backs the `/app/*` catch-all, where a relative
+ *  target would resolve against the (unmatched, possibly deep) splat pathname and
+ *  append endlessly — an infinite history.replaceState() loop. */
+export function DefaultRedirect() {
   const user = useAuthStore((s) => s.user)
   const isLoading = useAuthStore((s) => s.isLoading)
   const isMobile = useIsMobile()
   if (isLoading) return <PageLoader />
   if (isMobile) {
-    return <Navigate to="hub" replace />
+    return <Navigate to="/app/hub" replace />
   }
   if (user?.role_name === 'Viewer') {
-    return <Navigate to="hub" replace />
+    return <Navigate to="/app/hub" replace />
   }
   if (user && !user.can_access_dashboard) {
-    return <Navigate to="profile" replace />
+    return <Navigate to="/app/profile" replace />
   }
-  return <Navigate to="dashboard" replace />
+  return <Navigate to="/app/dashboard" replace />
 }
 
 /** Show Dashboard if user has access, otherwise redirect to hub/profile (not Access Denied). */
