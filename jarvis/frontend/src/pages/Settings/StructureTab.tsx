@@ -493,6 +493,7 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
   const [city, setCity] = useState('')
   const [county, setCounty] = useState('')
   const [postalCode, setPostalCode] = useState('')
+  const [showroomAddress, setShowroomAddress] = useState('')
   const [administrator, setAdministrator] = useState('')
   const [gdprText, setGdprText] = useState('')
   const [alertEmail, setAlertEmail] = useState('')
@@ -505,12 +506,13 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
       setBank((company as any).bank || ''); setSwift((company as any).swift || '')
       setStreet((company as any).street || ''); setCity((company as any).city || '')
       setCounty((company as any).county || ''); setPostalCode((company as any).postal_code || '')
+      setShowroomAddress((company as any).showroom_address || '')
       setAdministrator((company as any).administrator || '')
       setGdprText((company as any).gdpr_text || '')
       setAlertEmail((company as any).alert_email || '')
     } else {
       setName(''); setVat(''); setParentId('none'); setLogoPreview(null)
-      setRegNo(''); setIban(''); setBank(''); setSwift(''); setStreet(''); setCity(''); setCounty(''); setPostalCode(''); setAdministrator(''); setGdprText(''); setAlertEmail('')
+      setRegNo(''); setIban(''); setBank(''); setSwift(''); setStreet(''); setCity(''); setCounty(''); setPostalCode(''); setShowroomAddress(''); setAdministrator(''); setGdprText(''); setAlertEmail('')
     }
   }
 
@@ -595,6 +597,15 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
             <Label>Postal Code</Label>
             <Input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="e.g. 400000" />
           </div>
+          <div className="space-y-1.5">
+            <Label>Puncte de lucru (showroom)</Label>
+            <textarea
+              className="w-full min-h-[72px] rounded-md border bg-background p-2 text-sm"
+              placeholder="Un punct de lucru pe rând — ex. Calea Clujului 4B-4C, Sânnicoară, Apahida. Se afișează în antetul contractului PDF."
+              value={showroomAddress}
+              onChange={(e) => setShowroomAddress(e.target.value)}
+            />
+          </div>
           <div className="grid gap-2">
             <Label>Administrator</Label>
             <Input value={administrator} onChange={(e) => setAdministrator(e.target.value)} placeholder="e.g. Ioan Mezei" />
@@ -658,7 +669,7 @@ function CompanyFormDialog({ open, company, companies, onClose, onSave, isPendin
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button
             disabled={!name || isPending}
-            onClick={() => onSave({ company: name, vat: vat || undefined, parent_company_id: parentId === 'none' ? null : Number(parentId), reg_no: regNo || undefined, iban: iban || undefined, bank: bank || undefined, swift: swift || undefined, street: street || undefined, city: city || undefined, county: county || undefined, postal_code: postalCode || undefined, administrator: administrator || undefined, gdpr_text: gdprText || undefined, alert_email: alertEmail || undefined } as any)}
+            onClick={() => onSave({ company: name, vat: vat || undefined, parent_company_id: parentId === 'none' ? null : Number(parentId), reg_no: regNo || undefined, iban: iban || undefined, bank: bank || undefined, swift: swift || undefined, street: street || undefined, city: city || undefined, county: county || undefined, postal_code: postalCode || undefined, showroom_address: showroomAddress || undefined, administrator: administrator || undefined, gdpr_text: gdprText || undefined, alert_email: alertEmail || undefined } as any)}
           >
             {isPending ? 'Saving...' : 'Save'}
           </Button>
