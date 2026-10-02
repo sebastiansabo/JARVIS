@@ -341,3 +341,28 @@ def test_update_persists_administrator():
     assert ok is True
     assert 'administrator = %s' in captured['sql']
     assert 'Ioan Mezei' in captured['params']
+
+
+def test_update_persists_showroom_address():
+    """showroom_address (the 'puncte de lucru' shown on contract PDFs) is an
+    editable company field — the update must write it when provided."""
+    from core.organization.repositories.company_repository import CompanyRepository
+    repo = CompanyRepository()
+    captured = {}
+
+    def fake_execute_many(work):
+        class Cur:
+            rowcount = 1
+            def execute(self, sql, params):
+                captured['sql'] = sql
+                captured['params'] = params
+        return work(Cur())
+
+    with patch.object(repo, 'execute_many', side_effect=fake_execute_many), \
+         patch('core.organization.repositories.company_repository.clear_companies_vat_cache'):
+        ok = repo.update(company_id=10,
+                         showroom_address='Calea Clujului 4B-4C, Sannicoara, Apahida')
+
+    assert ok is True
+    assert 'showroom_address = %s' in captured['sql']
+    assert 'Calea Clujului 4B-4C, Sannicoara, Apahida' in captured['params']

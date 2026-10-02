@@ -287,6 +287,7 @@ def api_update_company_config(company_id):
             city=data.get('city', 'UNSET'),
             county=data.get('county', 'UNSET'),
             postal_code=data.get('postal_code', 'UNSET'),
+            showroom_address=data.get('showroom_address', 'UNSET'),
             administrator=data.get('administrator', 'UNSET'),
             gdpr_text=data.get('gdpr_text', 'UNSET'),
             alert_email=data.get('alert_email', 'UNSET'),
