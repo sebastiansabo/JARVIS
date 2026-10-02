@@ -240,6 +240,30 @@ def get_taxonomy():
                     'sources': distinct, 'allowed_values': allowed, 'mapping': current})
 
 
+@shopify_bp.route('/api/metafield-choices', methods=['GET'])
+@api_login_required
+def get_metafield_choices():
+    """Read-only diagnostic: the store's product metafield keys + each one's choice
+    list, so we can see exactly which values custom.fuel/culoare/body_type accept
+    (which store-side choices still need adding) and confirm the store defines
+    custom.body_type vs the misspelled custom.bodu_type. No writes."""
+    connector = _get_single_account()
+    if not connector:
+        return jsonify({'success': False, 'error': 'No Shopify account configured'}), 404
+    try:
+        client = _build_client(connector)
+        defs = client.fetch_metafield_choice_lists()
+    except Exception as e:
+        logger.exception('metafield choice fetch failed')
+        return jsonify({'success': False, 'error': str(e)}), 502
+    return jsonify({
+        'success': True,
+        'definitions': defs,
+        'has_body_type': 'custom.body_type' in defs,
+        'has_bodu_type': 'custom.bodu_type' in defs,
+    })
+
+
 @shopify_bp.route('/api/taxonomy', methods=['POST'])
 @admin_required
 def save_taxonomy():
