@@ -177,6 +177,13 @@ class TestValueTranslationsSeed:
         assert b.get("compact") == "Compactă"
         assert b.get("minivan") == "Monovolum"
 
+    def test_body_covers_city_and_small_car_slugs(self):
+        """city-car / small-car map to the store's 'Mașină de oraș' / 'Mașină mică'
+        choices (added store-side) — the last two uncovered JARVIS body types."""
+        b = VALUE_TRANSLATIONS_SEED["body_type"]
+        assert b.get("city-car") == "Mașină de oraș"
+        assert b.get("small-car") == "Mașină mică"
+
     def test_color_includes_basic_colors(self):
         """color_exterior includes gray/grey, White, Black, etc."""
         color = VALUE_TRANSLATIONS_SEED.get("color_exterior", {})
