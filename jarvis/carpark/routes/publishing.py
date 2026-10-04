@@ -20,6 +20,18 @@ _pub_service = PublishingService()
 _schedule_repo = ListingScheduleRepository()
 
 
+def _mask_platform(platform):
+    """Strip the stored API key from a platform row before returning it to the
+    client. api_key_encrypted is write-only (set via create/update); no client
+    reads it back, so it must never be serialized into a response. Keeps a
+    boolean `has_api_key` so the UI can still show whether a key is configured."""
+    if not isinstance(platform, dict):
+        return platform
+    masked = dict(platform)
+    masked['has_api_key'] = bool(masked.pop('api_key_encrypted', None))
+    return masked
+
+
 # ═══════════════════════════════════════════════
 # PLATFORMS — LIST / CREATE
 # ═══════════════════════════════════════════════
@@ -32,7 +44,7 @@ def list_platforms():
     active_only = request.args.get('active_only', '').lower() == 'true'
     company_id = _acting_company_id()
     platforms = _pub_service.list_platforms(company_id, active_only)
-    return jsonify({'platforms': _serialize(platforms)})
+    return jsonify({'platforms': _serialize([_mask_platform(p) for p in platforms])})
 
 
 @carpark_bp.route('/platforms', methods=['POST'])
@@ -53,7 +65,7 @@ def create_platform():
 
     try:
         platform = _pub_service.create_platform(data)
-        return jsonify({'platform': _serialize(platform)}), 201
+        return jsonify({'platform': _serialize(_mask_platform(platform))}), 201
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
@@ -72,7 +84,7 @@ def get_platform(platform_id):
     platform = _pub_service.get_platform(platform_id)
     if not platform:
         return jsonify({'error': 'Platform not found'}), 404
-    return jsonify({'platform': _serialize(platform)})
+    return jsonify({'platform': _serialize(_mask_platform(platform))})
 
 
 @carpark_bp.route('/platforms/<int:platform_id>', methods=['PUT'])
@@ -90,7 +102,7 @@ def update_platform(platform_id):
     platform = _pub_service.update_platform(platform_id, data)
     if not platform:
         return jsonify({'error': 'No fields to update'}), 400
-    return jsonify({'platform': _serialize(platform)})
+    return jsonify({'platform': _serialize(_mask_platform(platform))})
 
 
 @carpark_bp.route('/platforms/<int:platform_id>', methods=['DELETE'])

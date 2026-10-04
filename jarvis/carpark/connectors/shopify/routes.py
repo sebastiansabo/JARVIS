@@ -42,6 +42,24 @@ BULK_CAP = 250  # max vehicles auto-published when no explicit vehicle_ids are g
 _client_cache: dict = {}
 
 
+def carpark_required(f):
+    """Require can_access_carpark for Shopify read operations.
+
+    Mirrors carpark.routes.vehicles.carpark_required — a per-vehicle listing
+    status read exposes publishing state and must not be reachable by a
+    non-CarPark user. Defined locally (like carpark_edit_required below) to
+    avoid importing carpark.routes.vehicles into this connector module.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        if not getattr(current_user, 'can_access_carpark', False):
+            return jsonify({'success': False, 'error': 'CarPark access denied'}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
 def carpark_edit_required(f):
     """Require can_edit_carpark for Shopify write operations (publish/unpublish/bulk).
 
@@ -424,11 +442,16 @@ def unpublish_vehicle(vid):
 
 
 @shopify_bp.route('/api/vehicles/<int:vid>/status', methods=['GET'])
-@api_login_required
+@carpark_required
 def vehicle_status(vid):
-    connector = _get_single_account()
+    # SECURITY: gated by carpark_required (listing state must not be readable by
+    # non-CarPark users) plus an exists-only ownership check — mirrors
+    # GET /vehicles/<id> and the Autovit per-vehicle status route.
     vehicle = _vehicle_repo.get_by_id(vid)
-    v_updated = vehicle.get('updated_at') if vehicle else None
+    if not vehicle:
+        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+    connector = _get_single_account()
+    v_updated = vehicle.get('updated_at')
     if not connector:
         return jsonify({'success': True, 'listing': None,
                         'freshness': 'not_published', 'vehicle_updated_at': v_updated})
