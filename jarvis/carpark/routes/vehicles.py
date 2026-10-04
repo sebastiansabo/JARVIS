@@ -201,6 +201,12 @@ def list_vehicles():
 
     try:
         result = _vehicle_service.get_catalog(filters, page, per_page, sort_by, sort_dir)
+        # SECURITY: CATALOG_SELECT emits total_cost per row; strip it (and any
+        # other carpark_vehicles finance column) for non-finance users, mirroring
+        # GET /vehicles/<id>. Selling-side prices stay — see finance_guard.py.
+        if not getattr(current_user, 'can_view_carpark_finance', False):
+            for item in result.get('items', []):
+                strip_finance_fields(item, FINANCE_VEHICLE_TABLE_FIELDS)
         return jsonify(_serialize(result))
     except (ValueError, TypeError):
         return jsonify({'success': False, 'error': 'Invalid filter parameters'}), 400
@@ -356,7 +362,7 @@ def update_vehicle(vehicle_id):
 
     # Verify vehicle exists (exists-only check — permissive tenant switcher,
     # no company restriction; see _verify_vehicle_ownership docstring)
-    _, err = _verify_vehicle_ownership(vehicle_id)
+    vehicle, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err
 
@@ -372,6 +378,15 @@ def update_vehicle(vehicle_id):
     data.pop('company_id', None)
     data.pop('transferred_from_company_id', None)
 
+    # SECURITY: `status` is in VEHICLE_UPDATABLE_FIELDS, so a raw field PUT could
+    # otherwise flip a vehicle's status straight into the DB — bypassing
+    # change_status()'s TRANSITIONS validation, the RESERVED/SOLD/DELIVERED
+    # Dispo-action guards (which close reservations, run sell/deliver side
+    # effects, require a PV de livrare), and status-history logging. Pull it out
+    # and, only when it actually changes, apply it via the guarded change_status
+    # path below (an illegal transition then 400s before any field is written).
+    new_status = data.pop('status', None)
+
     # SECURITY: a non-finance editor can't use this generic PUT to set/
     # overwrite acquisition/purchase cost, cost components, total_cost, the
     # floor minimum_price, or the cost/margin JSON blobs (mirrors the
@@ -383,6 +398,14 @@ def update_vehicle(vehicle_id):
         strip_finance_fields(data, FINANCE_VEHICLE_TABLE_FIELDS)
 
     try:
+        # Apply a status change through the guarded path FIRST, so an illegal
+        # transition raises (→ 400) before any field write happens.
+        if new_status is not None and new_status != vehicle.get('status'):
+            _vehicle_service.change_status(
+                vehicle_id, new_status,
+                changed_by=current_user.id,
+                notes=None,
+            )
         vehicle = _vehicle_service.update_vehicle(
             vehicle_id, data,
             updated_by=current_user.id,

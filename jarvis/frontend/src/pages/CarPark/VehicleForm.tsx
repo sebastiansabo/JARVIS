@@ -983,9 +983,16 @@ export default function VehicleForm() {
     // On create, seed the active price (current_price) from the selling price so
     // the new car shows a price in the catalog list immediately, and re-sync it on
     // edit so the catalog (which reads current_price) doesn't drift after a
-    // list/promo price change (the profile and pricing engine already fall back to
-    // list_price on their own).
-    const finalPayload = syncCurrentPrice(payload, !!isEdit)
+    // list/promo price change — but only when list/promo actually changed vs the
+    // hydrated original, so a generic field edit doesn't clobber a backend
+    // pricing-rule discount that lowered current_price on its own.
+    const previousPrices = existingData?.vehicle
+      ? {
+          list_price: existingData.vehicle.list_price,
+          promotional_price: existingData.vehicle.promotional_price,
+        }
+      : null
+    const finalPayload = syncCurrentPrice(payload, !!isEdit, previousPrices)
 
     if (isEdit) {
       updateMutation.mutate(finalPayload as Partial<Vehicle>)
