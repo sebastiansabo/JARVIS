@@ -164,6 +164,9 @@ VALUE_TRANSLATIONS_SEED: Dict[str, Dict[str, str]] = {
         "roadster": "Cabrio",
         "Pickup": "Pickup",
         "pickup": "Pickup",
+        # canonical autovitData slugs → store choices added for these body types
+        "city-car": "Mașină de oraș",
+        "small-car": "Mașină mică",
     },
     "state": {
         "New": "Nou",
