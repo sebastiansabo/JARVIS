@@ -36,6 +36,18 @@ def _is_choice_error(user_errors: List[dict]) -> bool:
     return any('provided choices' in (e.get('message') or '').lower() for e in user_errors)
 
 
+def _is_missing_product_error(user_errors: List[dict]) -> bool:
+    """True if productSet failed because the input id points at a product that no
+    longer exists ('Product does not exist') — the signal to drop the stale id and
+    retry as a create. Excludes the 'value does not exist in provided choices'
+    choice-list error."""
+    for e in user_errors:
+        msg = (e.get('message') or '').lower()
+        if 'does not exist' in msg and 'provided choices' not in msg:
+            return True
+    return False
+
+
 def ensure_platform(publishing_repo, store_domain: str) -> int:
     """Return the carpark_publishing_platforms.id for Shopify, creating it once."""
     for p in publishing_repo.list_platforms():
@@ -87,6 +99,14 @@ class ShopifyConnector(BaseConnector):
             product_input['id'] = existing['external_listing_id']
 
         result = self.client.product_set(product_input)
+        # Stored product was deleted on Shopify → the id-based update fails
+        # ("Product does not exist"). Drop the stale id and retry as a create; the
+        # success path below heals the listing row with the new product GID.
+        if (result['userErrors'] and product_input.get('id')
+                and _is_missing_product_error(result['userErrors'])):
+            warnings.append('stored Shopify product no longer existed — recreated it')
+            product_input.pop('id', None)
+            result = self.client.product_set(product_input)
         # A single unmappable choice value (e.g. fuel_type with no store choice)
         # otherwise sinks the whole listing. If Shopify rejects on 'provided
         # choices', drop the unmapped choice-list metafields and retry once so the

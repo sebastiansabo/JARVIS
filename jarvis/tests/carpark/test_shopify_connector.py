@@ -76,6 +76,37 @@ def test_publish_retries_dropping_unmapped_choice_field():
     assert ('custom', 'marca') in client.calls[1], 'retry keeps mapped fields'
 
 
+class MissingProductThenOkClient(FakeClient):
+    """First productSet fails because the stored product id no longer exists; the
+    second (a create, no id) succeeds. Records each call's input."""
+    def __init__(self):
+        super().__init__(); self.calls = []
+    def product_set(self, product_input):
+        self.last_input = product_input
+        self.calls.append(dict(product_input))
+        if len(self.calls) == 1:
+            return {'id': None, 'userErrors': [
+                {'field': ['input', 'id'], 'message': 'Product does not exist'}]}
+        return {'id': 'gid://shopify/Product/999', 'handle': 'x', 'status': 'ACTIVE',
+                'preview_url': 'https://x/p', 'userErrors': []}
+
+
+def test_publish_recreates_when_stored_product_deleted():
+    # The listing points at a Shopify product deleted store-side → the id-based
+    # update fails "Product does not exist"; the connector must retry as a create
+    # (drop the stale id) and heal the listing row with the new GID.
+    pub = FakePub(); pub._listing = {'id': 9, 'external_listing_id': 'gid://shopify/Product/STALE'}
+    client = MissingProductThenOkClient()
+    conn = ShopifyConnector(client, pub, platform_id=3)
+    out = conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
+    assert out['success'] is True
+    assert len(client.calls) == 2, 'should retry as a create'
+    assert client.calls[0].get('id') == 'gid://shopify/Product/STALE'  # first attempt = update
+    assert 'id' not in client.calls[1]                                 # retry = create (no id)
+    assert out['external_id'] == 'gid://shopify/Product/999'
+    assert pub.updated and pub.updated[-1][1]['external_listing_id'] == 'gid://shopify/Product/999'
+
+
 def test_publish_success_writes_audit_log_row():
     pub = FakePub()
     conn = ShopifyConnector(FakeClient(), pub, platform_id=3)
