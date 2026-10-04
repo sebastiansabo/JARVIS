@@ -222,7 +222,8 @@ def test_status_returns_freshness_and_vehicle_updated_at(client, monkeypatch):
 
 def test_status_no_account_is_not_published(client, monkeypatch):
     monkeypatch.setattr(routes_mod._repo, 'get_all_by_type', lambda t: [])
-    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id', lambda vid: None)
+    # Vehicle exists (ownership passes) but no Shopify account is configured.
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id', lambda vid: {'id': vid})
 
     r = client.get('/shopify/api/vehicles/7/status')
     assert r.status_code == 200
@@ -230,6 +231,25 @@ def test_status_no_account_is_not_published(client, monkeypatch):
     assert body['success'] is True
     assert body['freshness'] == 'not_published'
     assert body['vehicle_updated_at'] is None
+
+
+def test_status_not_found_returns_404(client, monkeypatch):
+    # Ownership check: a non-existent vehicle must 404, not report not_published.
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id', lambda vid: None)
+    r = client.get('/shopify/api/vehicles/7/status')
+    assert r.status_code == 404
+
+
+def test_status_forbidden_without_carpark(client, monkeypatch):
+    class NoCarparkUser:
+        is_authenticated = True; id = 9; company_id = 10
+        can_access_carpark = False; can_edit_carpark = False
+        can_access_settings = False
+    user = NoCarparkUser()
+    monkeypatch.setattr(api_helpers, 'current_user', user)
+    monkeypatch.setattr(routes_mod, 'current_user', user)
+    r = client.get('/shopify/api/vehicles/7/status')
+    assert r.status_code == 403
 
 
 def test_get_schema_returns_shape(client, monkeypatch):

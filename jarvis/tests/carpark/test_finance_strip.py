@@ -189,6 +189,55 @@ def test_put_vehicle_keeps_finance_columns_with_finance(client, monkeypatch):
 
 
 # ═══════════════════════════════════════════════
+# GET /vehicles (catalog list)
+#
+# CATALOG_SELECT emits v.total_cost per row; the list endpoint must strip it
+# (and any other FINANCE_VEHICLE_TABLE_FIELDS column) for a non-finance user,
+# the same way GET /vehicles/<id> does — while keeping the selling-side prices.
+# ═══════════════════════════════════════════════
+
+def _catalog_item():
+    """A CATALOG_SELECT row: the one finance column it emits (total_cost) plus
+    the selling prices and plain attributes that must survive."""
+    return {
+        'id': 1, 'vin': 'X' * 17, 'brand': 'BMW', 'model': 'X5', 'status': 'LISTED',
+        'total_cost': 12850,                       # STRIP for non-finance
+        'current_price': 18000, 'list_price': 18500,
+        'promotional_price': 17900, 'price_currency': 'EUR',  # KEEP
+    }
+
+
+def _catalog_result():
+    return {'items': [_catalog_item()], 'total': 1, 'page': 1, 'per_page': 25}
+
+
+def test_catalog_strips_total_cost_without_finance(client, monkeypatch):
+    _login(client, monkeypatch, uid=94009, finance=False)
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_catalog',
+                            return_value=_catalog_result()):
+        r = client.get('/api/carpark/vehicles')
+    assert r.status_code == 200
+    items = r.get_json()['items']
+    assert len(items) == 1
+    item = items[0]
+    assert 'total_cost' not in item, 'total_cost leaked to non-finance user in catalog'
+    # Selling-side prices + plain attributes survive.
+    for col in ('current_price', 'list_price', 'promotional_price'):
+        assert col in item, f'non-finance user lost selling-side field {col}'
+    assert item['id'] == 1 and item['status'] == 'LISTED'
+
+
+def test_catalog_keeps_total_cost_with_finance(client, monkeypatch):
+    _login(client, monkeypatch, uid=94010, finance=True)
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_catalog',
+                            return_value=_catalog_result()):
+        r = client.get('/api/carpark/vehicles')
+    assert r.status_code == 200
+    item = r.get_json()['items'][0]
+    assert item['total_cost'] == 12850, 'finance user must still see total_cost'
+
+
+# ═══════════════════════════════════════════════
 # /analytics/dashboard, /analytics/kpis
 #
 # Fixtures mirror the REAL AnalyticsService output shapes (see

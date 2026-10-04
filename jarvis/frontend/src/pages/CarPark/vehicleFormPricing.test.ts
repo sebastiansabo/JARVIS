@@ -89,3 +89,55 @@ describe('syncCurrentPrice', () => {
     expect(out.current_price).toBe(45000)
   })
 })
+
+describe('syncCurrentPrice — preserves backend pricing-rule discounts on edit', () => {
+  // The pricing engine (carpark pricing_service) lowers current_price below the
+  // list price without touching list_price/promotional_price. A generic field
+  // edit must NOT clobber that discount back up to the list price — so on edit
+  // we only re-sync current_price when the selling inputs changed vs the
+  // hydrated original.
+  test('keeps a discounted current_price when list & promo are unchanged', () => {
+    const out = syncCurrentPrice(
+      { list_price: 45000, promotional_price: null, current_price: 43000 },
+      true,
+      { list_price: 45000, promotional_price: null },
+    )
+    expect(out.current_price).toBe(43000)
+  })
+
+  test('re-syncs current_price when list_price changed vs the original', () => {
+    const out = syncCurrentPrice(
+      { list_price: 50000, promotional_price: null, current_price: 43000 },
+      true,
+      { list_price: 45000, promotional_price: null },
+    )
+    expect(out.current_price).toBe(50000)
+  })
+
+  test('re-syncs to the promo when a promo is newly set vs the original', () => {
+    const out = syncCurrentPrice(
+      { list_price: 45000, promotional_price: 42000, current_price: 43000 },
+      true,
+      { list_price: 45000, promotional_price: null },
+    )
+    expect(out.current_price).toBe(42000)
+  })
+
+  test('re-syncs back to list when a promo is cleared vs the original', () => {
+    const out = syncCurrentPrice(
+      { list_price: 45000, promotional_price: null, current_price: 42000 },
+      true,
+      { list_price: 45000, promotional_price: 42000 },
+    )
+    expect(out.current_price).toBe(45000)
+  })
+
+  test('treats numeric-string vs number (and ""/null) as unchanged — no clobber', () => {
+    const out = syncCurrentPrice(
+      { list_price: '45000', promotional_price: '', current_price: 43000 },
+      true,
+      { list_price: 45000, promotional_price: null },
+    )
+    expect(out.current_price).toBe(43000)
+  })
+})

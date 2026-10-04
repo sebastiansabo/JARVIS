@@ -13,7 +13,7 @@ from . import autovit_bp
 from . import taxonomy
 from .client import AutovitClient, AutovitAuthError, PRODUCTION_URL, SANDBOX_URL
 from core.connectors.repositories.connector_repository import ConnectorRepository
-from core.utils.api_helpers import api_login_required
+from core.utils.api_helpers import api_login_required, admin_required
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.vehicle_photo_repository import VehiclePhotoRepository
 from carpark.repositories.autovit_listing_repository import AutovitListingRepository
@@ -91,7 +91,7 @@ def _build_client(connector: dict) -> AutovitClient:
 # ── Account Management ──
 
 @autovit_bp.route('/api/config', methods=['GET'])
-@api_login_required
+@carpark_required
 def get_accounts():
     """List all Autovit dealer accounts (credentials masked)."""
     rows = _repo.get_all_by_type(CONNECTOR_TYPE)
@@ -99,7 +99,7 @@ def get_accounts():
 
 
 @autovit_bp.route('/api/config/<int:account_id>', methods=['GET'])
-@api_login_required
+@carpark_required
 def get_account(account_id):
     """Get a single Autovit dealer account (credentials masked)."""
     connector = _repo.get(account_id)
@@ -109,9 +109,14 @@ def get_account(account_id):
 
 
 @autovit_bp.route('/api/config', methods=['POST'])
-@api_login_required
+@admin_required
 def save_account():
-    """Create or update an Autovit dealer account."""
+    """Create or update an Autovit dealer account.
+
+    SECURITY: @admin_required (can_access_settings) — mirrors the Shopify
+    connector's save_account. Dealer-account config stores API credentials, so
+    creating/updating one must not be reachable by a non-admin user.
+    """
     data = request.get_json(silent=True) or {}
 
     email = data.get('email', '').strip()
@@ -155,9 +160,9 @@ def save_account():
 
 
 @autovit_bp.route('/api/config/<int:account_id>', methods=['DELETE'])
-@api_login_required
+@admin_required
 def delete_account(account_id):
-    """Remove an Autovit dealer account."""
+    """Remove an Autovit dealer account. @admin_required — mirrors Shopify."""
     connector = _repo.get(account_id)
     if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
         return jsonify({'success': False, 'error': 'Account not found'}), 404
@@ -168,9 +173,14 @@ def delete_account(account_id):
 # ── Connection Testing ──
 
 @autovit_bp.route('/api/test-connection', methods=['POST'])
-@api_login_required
+@admin_required
 def test_connection():
-    """Test connection for a specific account."""
+    """Test connection for a specific account.
+
+    @admin_required: uses the account's stored credentials, calls the external
+    Autovit API and writes back the connection status — a connector-management
+    action, gated with the same admin permission as save/delete.
+    """
     data = request.get_json(silent=True) or {}
     account_id = data.get('account_id')
 
@@ -198,7 +208,7 @@ def test_connection():
 # ── Status ──
 
 @autovit_bp.route('/api/status', methods=['GET'])
-@api_login_required
+@carpark_required
 def get_status():
     """Aggregate status across all Autovit accounts."""
     rows = _repo.get_all_by_type(CONNECTOR_TYPE)
@@ -238,7 +248,7 @@ def vehicle_autovit_status(vehicle_id):
 # ── Adverts (future) ──
 
 @autovit_bp.route('/api/accounts/<int:account_id>/adverts', methods=['GET'])
-@api_login_required
+@carpark_required
 def get_adverts(account_id):
     """List adverts for a specific account."""
     connector = _repo.get(account_id)
