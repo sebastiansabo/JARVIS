@@ -292,6 +292,7 @@ export default function VehicleForm() {
   const [form, setForm] = useState<FormData>({
     vin: '',
     nr_stoc: '',
+    registration_number: '',
     brand: '',
     model: '',
     variant: '',
@@ -1188,6 +1189,7 @@ export default function VehicleForm() {
             />
           </div>
           <TextField label="Nr. stoc" name="nr_stoc" value={form.nr_stoc as string} onChange={handleChange} />
+          <TextField label="Număr înmatriculare" name="registration_number" value={(form.registration_number as string) ?? ''} onChange={handleChange} placeholder="e.g. B 123 ABC" />
           <SelectField
             label="Tip stoc"
             name="category"
