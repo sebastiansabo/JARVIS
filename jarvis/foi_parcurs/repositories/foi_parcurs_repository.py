@@ -348,6 +348,28 @@ class FoiParcursRepository(BaseRepository):
             f'{where} ORDER BY COALESCE(fp.departure_datetime, fp.created_at) DESC LIMIT %s',
             tuple(params) + (limit,))
 
+    def sessions_for_reconciliation(self, company_id=None, date_from=None, date_to=None,
+                                    document_type=None, brand=None):
+        """Real (non-PLANNED) sessions in scope, ordered by car then odometer, for
+        the Rapoarte reconciliation report. The route groups these by vin and runs
+        overlap_rows over each car's chain. Same filter builder + company scope as
+        the other report methods; the overlap walk itself is pure Python (tested)."""
+        clauses, params = self._rep_filters(company_id, date_from, date_to, document_type, brand=brand)
+        clauses.append("fp.status <> 'PLANNED'")
+        clauses.append('fp.km_start IS NOT NULL')
+        clauses.append('fp.km_end IS NOT NULL')
+        where = self._rep_where(clauses)
+        return self.query_all(
+            'SELECT fp.id, fp.vin, fp.status, fp.km_start, fp.km_end, '
+            "NULLIF(TRIM(fp.client_name), '') AS client_name, "
+            "NULLIF(TRIM(fp.advisor_name), '') AS advisor_name, "
+            "to_char(COALESCE(fp.departure_datetime, fp.created_at), 'YYYY-MM-DD') AS date, "
+            "COALESCE(NULLIF(TRIM(v.mark || ' ' || v.model), ''), v.model, '—') AS model "
+            'FROM foi_de_parcurs fp '
+            'LEFT JOIN fp_vehicles v ON v.vin = fp.vin'
+            f'{where} ORDER BY fp.vin, fp.km_start, fp.km_end',
+            tuple(params))
+
     def report_rental(self, company_id=None, date_from=None, date_to=None, brand=None):
         """Rental-revenue block (Service pool only) — total €, session count and
         a per-month series. document_type is pinned to 'service' here."""

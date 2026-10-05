@@ -232,6 +232,24 @@ export const foiParcursApi = {
     fuel_type?: string
   }) => api.get<{ success: boolean; sessions: ReportSession[] }>(`${BASE}/reports/sessions${qs(params)}`),
 
+  getReconciliation: (params: {
+    company_id?: number
+    date_from?: string
+    date_to?: string
+    document_type?: string
+    brand?: string
+  }) => api.get<{
+    success: boolean
+    scope: { company_id: number | null; is_group: boolean; document_type: string }
+    cars: {
+      vin: string; model: string; count: number; total_overlap_km: number
+      sessions: {
+        id: number; who: string; km_start: number; km_end: number
+        prior_max_end: number; overlap_km: number; date: string | null
+      }[]
+    }[]
+  }>(`${BASE}/reports/reconciliation${qs(params)}`),
+
   allocateClient: (contractId: number, data: { client_id: number; itinerary: string; advisor_name: string; signature_svg?: string }) =>
     api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${contractId}/allocate`, data),
 
