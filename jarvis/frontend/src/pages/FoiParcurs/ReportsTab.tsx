@@ -677,9 +677,9 @@ function ReconciliationCard({ companyId, from, to, docType, brand }: {
   if (isLoading && !data) return <ChartSkeleton h={84} />
   const cars = data?.cars ?? []
   return (
-    <ChartCard title="Suprapuneri kilometraj" hint="pornire sub kilometrajul deja atins — de corectat">
+    <ChartCard title="Reconciliere kilometraj" hint="suprapuneri + date inversate — de corectat">
       {cars.length === 0 ? (
-        <p className="py-4 text-sm text-muted-foreground">Nicio suprapunere de kilometraj în perioada selectată. 🎉</p>
+        <p className="py-4 text-sm text-muted-foreground">Nicio anomalie de kilometraj sau dată în perioada selectată. 🎉</p>
       ) : (
         <div className="space-y-3">
           {cars.map((car) => (
@@ -688,34 +688,74 @@ function ReconciliationCard({ companyId, from, to, docType, brand }: {
                 <div className="text-sm font-medium">
                   {car.model} <span className="font-mono text-xs text-muted-foreground">{car.vin}</span>
                 </div>
-                <div className="text-xs font-medium text-amber-700 dark:text-amber-500">
-                  {car.count} {car.count === 1 ? 'suprapunere' : 'suprapuneri'} · {nf.format(car.total_overlap_km)} km
+                <div className="flex flex-wrap gap-x-3 text-xs font-medium">
+                  {car.count > 0 && (
+                    <span className="text-amber-700 dark:text-amber-500">
+                      {car.count} {car.count === 1 ? 'suprapunere' : 'suprapuneri'} · {nf.format(car.total_overlap_km)} km
+                    </span>
+                  )}
+                  {car.inversion_count > 0 && (
+                    <span className="text-rose-700 dark:text-rose-400">
+                      {car.inversion_count} {car.inversion_count === 1 ? 'dată inversată' : 'date inversate'}
+                    </span>
+                  )}
                 </div>
               </div>
-              <div className="mt-2 overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <tr className="text-left">
-                      <th className="py-1 pr-3 font-medium">Data</th>
-                      <th className="py-1 pr-3 font-medium">Șofer</th>
-                      <th className="py-1 pr-3 font-medium">KM plecare-sosire</th>
-                      <th className="py-1 font-medium">Suprapunere</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {car.sessions.map((s) => (
-                      <tr key={s.id} className="border-t">
-                        <td className="py-1 pr-3 whitespace-nowrap text-muted-foreground">{s.date ?? '—'}</td>
-                        <td className="py-1 pr-3">{s.who}</td>
-                        <td className="py-1 pr-3 whitespace-nowrap tabular-nums">{s.km_start} → {s.km_end}</td>
-                        <td className="py-1 whitespace-nowrap text-amber-700 dark:text-amber-500">
-                          {nf.format(s.overlap_km)} km sub {nf.format(s.prior_max_end)}
-                        </td>
+
+              {car.sessions.length > 0 && (
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      <tr className="text-left">
+                        <th className="py-1 pr-3 font-medium">Data</th>
+                        <th className="py-1 pr-3 font-medium">Șofer</th>
+                        <th className="py-1 pr-3 font-medium">KM plecare-sosire</th>
+                        <th className="py-1 font-medium">Suprapunere</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {car.sessions.map((s) => (
+                        <tr key={s.id} className="border-t">
+                          <td className="py-1 pr-3 whitespace-nowrap text-muted-foreground">{s.date ?? '—'}</td>
+                          <td className="py-1 pr-3">{s.who}</td>
+                          <td className="py-1 pr-3 whitespace-nowrap tabular-nums">{s.km_start} → {s.km_end}</td>
+                          <td className="py-1 whitespace-nowrap text-amber-700 dark:text-amber-500">
+                            {nf.format(s.overlap_km)} km sub {nf.format(s.prior_max_end)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {car.inversions.length > 0 && (
+                <div className="mt-2 overflow-x-auto">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-400">Date inversate</div>
+                  <table className="w-full text-xs">
+                    <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                      <tr className="text-left">
+                        <th className="py-1 pr-3 font-medium">Data</th>
+                        <th className="py-1 pr-3 font-medium">Șofer</th>
+                        <th className="py-1 pr-3 font-medium">KM plecare-sosire</th>
+                        <th className="py-1 font-medium">Anterioară datei</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {car.inversions.map((s) => (
+                        <tr key={s.id} className="border-t">
+                          <td className="py-1 pr-3 whitespace-nowrap text-muted-foreground">{s.date ?? '—'}</td>
+                          <td className="py-1 pr-3">{s.who}</td>
+                          <td className="py-1 pr-3 whitespace-nowrap tabular-nums">{s.km_start} → {s.km_end}</td>
+                          <td className="py-1 whitespace-nowrap text-rose-700 dark:text-rose-400">
+                            înainte de {s.prior_max_date}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           ))}
         </div>

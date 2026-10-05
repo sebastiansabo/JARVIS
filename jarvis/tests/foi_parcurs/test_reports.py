@@ -385,3 +385,25 @@ def test_reconciliation_non_group_forced_to_own_company(monkeypatch):
     assert r.status_code == 200, r.get_json()
     assert c._fp.recon_args['company_id'] == 11
     assert r.get_json()['scope']['is_group'] is False
+
+
+def test_reconciliation_includes_date_inversions(monkeypatch):
+    """A car with a date inversion (higher-odometer drive dated before a lower one)
+    appears with inversion_count + inversions, even with zero overlaps."""
+    c = make_client(monkeypatch, role='admin', company_id=16)
+    inv = [
+        {'id': 10, 'vin': 'V3', 'model': 'MG S9', 'client_name': 'E', 'advisor_name': None,
+         'km_start': 100, 'km_end': 200, 'status': 'COMPLETED', 'date': '2026-09-10'},
+        {'id': 11, 'vin': 'V3', 'model': 'MG S9', 'client_name': 'F', 'advisor_name': None,
+         'km_start': 200, 'km_end': 300, 'status': 'COMPLETED', 'date': '2026-09-05'},
+    ]
+    monkeypatch.setattr(c._fp, 'sessions_for_reconciliation', lambda **kw: inv)
+    r = c.get('/api/foi-parcurs/reports/reconciliation')
+    assert r.status_code == 200, r.get_json()
+    cars = r.get_json()['cars']
+    assert [car['vin'] for car in cars] == ['V3']
+    car = cars[0]
+    assert car['count'] == 0                 # no overlaps
+    assert car['inversion_count'] == 1
+    assert car['inversions'][0]['id'] == 11
+    assert car['inversions'][0]['prior_max_date'] == '2026-09-10'
