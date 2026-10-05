@@ -33,7 +33,9 @@ import { hrApi } from '@/api/hr'
 import { settingsApi } from '@/api/settings'
 import { organizationApi } from '@/api/organization'
 import { QueryError } from '@/components/QueryError'
-import { useMarketingStore } from '@/stores/marketingStore'
+import { useMarketingStore, defaultColumns as MKT_DEFAULT_COLUMNS, lockedColumns as MKT_LOCKED_COLUMNS } from '@/stores/marketingStore'
+import { ColumnToggle } from '@/components/shared/ColumnToggle'
+import { DateField } from '@/components/ui/date-field'
 import { useShallow } from 'zustand/react/shallow'
 import { useAuthStore } from '@/stores/authStore'
 import { useDashboardWidgetToggle } from '@/hooks/useDashboardWidgetToggle'
@@ -292,8 +294,8 @@ export default function Marketing() {
   const isMobile = useIsMobile()
   const isTablet = useIsTablet()
   const isSmall = isMobile || isTablet
-  const { filters, updateFilter, clearFilters, viewMode, setViewMode } = useMarketingStore(
-    useShallow((s) => ({ filters: s.filters, updateFilter: s.updateFilter, clearFilters: s.clearFilters, viewMode: s.viewMode, setViewMode: s.setViewMode }))
+  const { filters, updateFilter, clearFilters, viewMode, setViewMode, visibleColumns, setVisibleColumns } = useMarketingStore(
+    useShallow((s) => ({ filters: s.filters, updateFilter: s.updateFilter, clearFilters: s.clearFilters, viewMode: s.viewMode, setViewMode: s.setViewMode, visibleColumns: s.visibleColumns, setVisibleColumns: s.setVisibleColumns }))
   )
   const [filtersOpen, setFiltersOpen] = useState(false)
   const effectiveViewMode = isMobile ? 'cards' : viewMode
@@ -440,7 +442,7 @@ export default function Marketing() {
 
           {/* Filter Bar */}
           {(() => {
-            const activeFilterCount = [filters.status, filters.project_type, filters.company_id].filter(Boolean).length
+            const activeFilterCount = [filters.status, filters.project_type, filters.company_id, filters.date_from || filters.date_to].filter(Boolean).length
 
             const filterControls = (
               <>
@@ -488,6 +490,18 @@ export default function Marketing() {
                     ))}
                   </SelectContent>
                 </Select>
+
+                <div className={isMobile ? 'col-span-2' : undefined}>
+                  <DateField
+                    mode="range"
+                    startDate={filters.date_from ?? ''}
+                    endDate={filters.date_to ?? ''}
+                    onRangeChange={(s, e) => {
+                      updateFilter('date_from', s || undefined)
+                      updateFilter('date_to', e || undefined)
+                    }}
+                  />
+                </div>
               </>
             )
 
@@ -533,6 +547,15 @@ export default function Marketing() {
                   <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
                 )}
                 <div className="ml-auto flex gap-1">
+                  {effectiveViewMode === 'table' && (
+                    <ColumnToggle
+                      visibleColumns={visibleColumns}
+                      defaultColumns={MKT_DEFAULT_COLUMNS}
+                      columnDefs={MKT_PROJECT_COLUMNS.map((c) => ({ key: c.key, label: c.label, render: () => null }))}
+                      lockedColumns={MKT_LOCKED_COLUMNS}
+                      onChange={setVisibleColumns}
+                    />
+                  )}
                   <Button
                     variant={compareMode ? 'default' : 'ghost'}
                     size="icon"
@@ -583,6 +606,7 @@ export default function Marketing() {
             <ProjectTable
               projects={projects}
               onSelect={(p) => navigate(`/app/marketing/projects/${p.id}`)}
+              visibleColumns={visibleColumns}
               compareMode={compareMode}
               compareIds={compareIds}
               onToggleCompare={toggleCompare}
@@ -1040,7 +1064,137 @@ function KanbanBoard({ projects, onSelect, onStatusChange: _onStatusChange }: {
 
 // ---- Table View ----
 
-function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, compareIds, onToggleCompare }: {
+/** Per-row values shared by the currency/burn column renderers. */
+interface MktProjectRowCtx {
+  spent: number
+  budget: number
+  burn: number
+}
+
+export interface MktProjectColumn {
+  key: string
+  /** Short label shown in the column-toggle popover. */
+  label: string
+  /** Custom header node; falls back to `label` when omitted. */
+  header?: React.ReactNode
+  headClassName?: string
+  cellClassName?: string
+  render: (p: MktProject, ctx: MktProjectRowCtx) => React.ReactNode
+}
+
+/**
+ * Full catalog of project-table columns. The default-visible subset and order
+ * live in the marketing store (`defaultColumns`); every key here is available
+ * through the column-toggle control. `brand_name` and `end_date` are hidden by
+ * default but can be enabled by the user.
+ */
+export const MKT_PROJECT_COLUMNS: MktProjectColumn[] = [
+  {
+    key: 'name',
+    label: 'Project',
+    cellClassName: 'font-medium max-w-[200px] truncate',
+    render: (p) => p.name,
+  },
+  {
+    key: 'company_name',
+    label: 'Company',
+    cellClassName: 'text-sm',
+    render: (p) => p.company_name,
+  },
+  {
+    key: 'brand_name',
+    label: 'Brand',
+    cellClassName: 'text-sm',
+    render: (p) => p.brand_name ?? '—',
+  },
+  {
+    key: 'project_type',
+    label: 'Type',
+    render: (p) => (
+      <Badge variant="outline" className="text-xs capitalize">
+        {(p.project_type ?? '').replace('_', ' ')}
+      </Badge>
+    ),
+  },
+  {
+    key: 'status',
+    label: 'Status',
+    render: (p) => (
+      <div className="flex items-center gap-1">
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[p.status] ?? ''}`}>
+          {(p.status ?? '').replace('_', ' ')}
+        </span>
+        {p.status === 'completed' && p.updated_at && (() => {
+          const hoursLeft = Math.max(0, Math.ceil((new Date(p.updated_at).getTime() + 24 * 3600000 - Date.now()) / 3600000))
+          return (
+            <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200 whitespace-nowrap">
+              {hoursLeft > 0 ? `Auto-archive in ${hoursLeft}h` : 'Archiving soon'}
+            </span>
+          )
+        })()}
+      </div>
+    ),
+  },
+  {
+    key: 'health',
+    label: 'Health',
+    header: <HealthInfoHeader />,
+    headClassName: 'text-center w-14',
+    cellClassName: 'text-center',
+    render: (p) => <HealthBadge project={p} />,
+  },
+  {
+    key: 'total_budget',
+    label: 'Budget',
+    headClassName: 'text-right',
+    cellClassName: 'text-right text-sm tabular-nums',
+    render: (p, { budget }) => formatCurrency(budget, p.currency),
+  },
+  {
+    key: 'total_spent',
+    label: 'Spent',
+    headClassName: 'text-right',
+    cellClassName: 'text-right text-sm tabular-nums',
+    render: (p, { spent }) => formatCurrency(spent, p.currency),
+  },
+  {
+    key: 'burn',
+    label: 'Burn',
+    render: (_p, { burn }) => (
+      <div className="flex items-center gap-2">
+        <div className="w-16 h-2 rounded-full bg-muted overflow-hidden">
+          <div
+            className={`h-full rounded-full ${burn > 90 ? 'bg-red-500' : burn > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
+            style={{ width: `${Math.min(burn, 100)}%` }}
+          />
+        </div>
+        <span className="text-xs text-muted-foreground">{burn}%</span>
+      </div>
+    ),
+  },
+  {
+    key: 'owner_name',
+    label: 'Owner',
+    cellClassName: 'text-sm',
+    render: (p) => p.owner_name,
+  },
+  {
+    key: 'start_date',
+    label: 'Start',
+    cellClassName: 'text-sm text-muted-foreground',
+    render: (p) => (p.start_date ? new Date(p.start_date).toLocaleDateString('ro-RO') : '—'),
+  },
+  {
+    key: 'end_date',
+    label: 'End',
+    cellClassName: 'text-sm text-muted-foreground',
+    render: (p) => (p.end_date ? new Date(p.end_date).toLocaleDateString('ro-RO') : '—'),
+  },
+]
+
+const MKT_PROJECT_COLUMN_MAP = new Map(MKT_PROJECT_COLUMNS.map((c) => [c.key, c]))
+
+export function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, compareIds, onToggleCompare, visibleColumns }: {
   projects: MktProject[]
   onSelect: (p: MktProject) => void
   onArchive?: (p: MktProject) => void
@@ -1048,6 +1202,7 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, co
   compareMode?: boolean
   compareIds?: Set<number>
   onToggleCompare?: (id: number) => void
+  visibleColumns?: string[]
 }) {
   if (!projects.length) {
     return (
@@ -1058,25 +1213,21 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, co
     )
   }
 
+  const cols = (visibleColumns ?? MKT_DEFAULT_COLUMNS)
+    .map((k) => MKT_PROJECT_COLUMN_MAP.get(k))
+    .filter((c): c is MktProjectColumn => Boolean(c))
+  const hasActions = Boolean(onArchive || onDelete)
+
   return (
     <div className="rounded-md border">
       <Table>
         <TableHeader>
           <TableRow>
             {compareMode && <TableHead className="w-10" />}
-            <TableHead>Project</TableHead>
-            <TableHead>Company</TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="text-center w-14">
-                <HealthInfoHeader />
-              </TableHead>
-            <TableHead className="text-right">Budget</TableHead>
-            <TableHead className="text-right">Spent</TableHead>
-            <TableHead>Burn</TableHead>
-            <TableHead>Owner</TableHead>
-            <TableHead>Dates</TableHead>
-            {(onArchive || onDelete) && <TableHead className="w-[80px]" />}
+            {cols.map((c) => (
+              <TableHead key={c.key} className={c.headClassName}>{c.header ?? c.label}</TableHead>
+            ))}
+            {hasActions && <TableHead className="w-[80px]" />}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1084,6 +1235,7 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, co
             const spent = typeof p.total_spent === 'string' ? parseFloat(p.total_spent) : (p.total_spent ?? 0)
             const budget = typeof p.total_budget === 'string' ? parseFloat(p.total_budget as unknown as string) : (p.total_budget ?? 0)
             const burn = burnRate(spent, budget)
+            const ctx: MktProjectRowCtx = { spent, budget, burn }
             return (
               <TableRow
                 key={p.id}
@@ -1100,57 +1252,10 @@ function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, co
                     </div>
                   </TableCell>
                 )}
-                <TableCell className="font-medium max-w-[200px] truncate">{p.name}</TableCell>
-                <TableCell className="text-sm">{p.company_name}</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className="text-xs capitalize">
-                    {(p.project_type ?? '').replace('_', ' ')}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-1">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[p.status] ?? ''}`}>
-                      {(p.status ?? '').replace('_', ' ')}
-                    </span>
-                    {p.status === 'completed' && p.updated_at && (() => {
-                      const hoursLeft = Math.max(0, Math.ceil((new Date(p.updated_at).getTime() + 24 * 3600000 - Date.now()) / 3600000))
-                      return hoursLeft > 0 ? (
-                        <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200 whitespace-nowrap">
-                          Auto-archive in {hoursLeft}h
-                        </span>
-                      ) : (
-                        <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200 whitespace-nowrap">
-                          Archiving soon
-                        </span>
-                      )
-                    })()}
-                  </div>
-                </TableCell>
-                <TableCell className="text-center">
-                  <HealthBadge project={p} />
-                </TableCell>
-                <TableCell className="text-right text-sm tabular-nums">
-                  {formatCurrency(budget, p.currency)}
-                </TableCell>
-                <TableCell className="text-right text-sm tabular-nums">
-                  {formatCurrency(spent, p.currency)}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <div className="w-16 h-2 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className={`h-full rounded-full ${burn > 90 ? 'bg-red-500' : burn > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
-                        style={{ width: `${Math.min(burn, 100)}%` }}
-                      />
-                    </div>
-                    <span className="text-xs text-muted-foreground">{burn}%</span>
-                  </div>
-                </TableCell>
-                <TableCell className="text-sm">{p.owner_name}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {p.start_date ? new Date(p.start_date).toLocaleDateString('ro-RO') : '—'}
-                </TableCell>
-                {(onArchive || onDelete) && (
+                {cols.map((c) => (
+                  <TableCell key={c.key} className={c.cellClassName}>{c.render(p, ctx)}</TableCell>
+                ))}
+                {hasActions && (
                   <TableCell>
                     <div className="flex items-center gap-1">
                       {onArchive && p.status !== 'archived' && (
