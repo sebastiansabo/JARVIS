@@ -13,23 +13,55 @@ from . import translations
 
 
 class SchemaRepository(BaseRepository):
-    def seed_defaults_if_empty(self) -> None:
-        """Populate the field/value maps with the built-in defaults on first use.
+    # Set once a process has backfilled the defaults, so the ~150-row backfill
+    # runs at most once per worker (not on every publish). Reset on redeploy.
+    _defaults_ensured = False
 
-        A fresh deploy has empty carpark_shopify_field_map / carpark_shopify_value_map
-        tables, so the mapper would emit zero custom.* metafields and untranslated
-        English values. upsert_field/upsert_value are ON CONFLICT DO NOTHING/UPDATE,
-        so re-running this after rows exist (or after a partial prior seed) is a no-op
-        for already-present keys — safe to call unconditionally on every read path.
-        """
-        if not self.get_field_map():
-            for r in translations.DEFAULT_FIELD_MAP:
-                self.upsert_field(r['source_expr'], r['target_namespace'], r['target_key'],
-                                  r['target_type'], r.get('transform', 'raw'))
-        if not self.get_value_map():
-            for dim, m in translations.VALUE_TRANSLATIONS_SEED.items():
-                for src, rov in m.items():
-                    self.upsert_value(dim, src, rov)
+    def ensure_defaults(self) -> None:
+        """Backfill the built-in default field/value maps — adding any MISSING rows
+        without overwriting existing ones (ON CONFLICT DO NOTHING).
+
+        Replaces the old seed-only-when-empty behavior, which never backfilled:
+        once a connector's maps had ANY rows, entries added to the defaults LATER
+        (e.g. the all-wheel-*/mild-hybrid drive+fuel mappings, or new fuel/body/
+        color choices) never reached that install, so the mapper fell back to the
+        raw English slug (storefront showed `all-wheel-auto` instead of Integral).
+        DO NOTHING preserves manual edits made via the schema admin. Idempotent;
+        gated to run once per process."""
+        if SchemaRepository._defaults_ensured:
+            return
+        for r in translations.DEFAULT_FIELD_MAP:
+            self._insert_field_default(r['source_expr'], r['target_namespace'],
+                                       r['target_key'], r.get('target_type'),
+                                       r.get('transform', 'raw'))
+        for dim, m in translations.VALUE_TRANSLATIONS_SEED.items():
+            for src, rov in m.items():
+                self._insert_value_default(dim, src, rov)
+        SchemaRepository._defaults_ensured = True
+
+    # Back-compat alias — callers (publish/preview/bulk/schema GET) keep calling
+    # seed_defaults_if_empty; it now backfills missing defaults, not just seeds.
+    def seed_defaults_if_empty(self) -> None:
+        self.ensure_defaults()
+
+    def _insert_field_default(self, source_expr, target_namespace, target_key,
+                              target_type, transform) -> None:
+        self.execute('''
+            INSERT INTO carpark_shopify_field_map
+                (source_expr, target_namespace, target_key, target_type, transform,
+                 is_active, updated_at)
+            VALUES (%s, %s, %s, %s, %s, TRUE, CURRENT_TIMESTAMP)
+            ON CONFLICT (target_namespace, target_key) DO NOTHING
+        ''', (source_expr if source_expr is not None else '', target_namespace,
+              target_key, target_type, transform))
+
+    def _insert_value_default(self, dimension, source_value, ro_value) -> None:
+        self.execute('''
+            INSERT INTO carpark_shopify_value_map
+                (dimension, source_value, ro_value, updated_at)
+            VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (dimension, source_value) DO NOTHING
+        ''', (dimension, source_value, ro_value))
 
     def get_field_map(self) -> List[dict]:
         return self.query_all(
