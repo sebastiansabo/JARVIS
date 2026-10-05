@@ -533,6 +533,9 @@ export interface TestDriveFormPayload {
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
   allow_open_session?: boolean
+  /** Confirm a km plecare below the car's odometer floor (back-dated drive),
+   *  set after the user accepts the overlap warning. */
+  allow_overlap?: boolean
   /** Service context (Task 13): which flow this session belongs to
    *  ('sales' | 'service'); service_order_ref is Service-only. */
   document_type?: string

@@ -184,6 +184,72 @@ def test_submit_requires_gdpr_when_company_has_text(client, monkeypatch):
     assert 'gdpr' in r.get_json()['error'].lower()
 
 
+def _external_live_mocks(monkeypatch, floor):
+    """Clear the gates a live client submit must pass (brand/conditions/GDPR/
+    person-completeness), and pin the car's mileage floor."""
+    monkeypatch.setattr(td._vehicle_repo, 'get_by_vin', lambda vin: {'brand': 'MG Motor'})
+    monkeypatch.setattr(td._dealer_repo, 'get_general_conditions', lambda cid, b: '')
+    monkeypatch.setattr(td, '_company_gdpr_text', lambda cid: '')
+    monkeypatch.setattr(td._crm_client_repo, 'get_by_id',
+                        lambda cid: {'display_name': 'Ion', 'phone': '0722123456'})
+    monkeypatch.setattr(td._fp_repo, 'get_mileage_floor', lambda vin, exclude_id=None: floor)
+    # Keep the post-create PDF-path UPDATE off the shared localhost DB (hermetic),
+    # matching the other 200-expecting submit tests.
+    monkeypatch.setattr(td._fp_repo, 'execute', lambda *a, **k: None)
+
+
+def test_submit_warns_when_km_start_below_floor(client, monkeypatch):
+    # A client drive whose start odometer is below the car's real floor (the car
+    # was already further along — an overlap) is blocked with a soft 409 the
+    # advisor confirms, not silently stored below reality.
+    _external_live_mocks(monkeypatch, floor=283)
+    called = []
+    monkeypatch.setattr(td._fp_repo, 'create_from_td_form',
+                        lambda d: called.append(d) or {**d, 'id': 1})
+
+    resp = client.post('/api/foi-parcurs/test-drive',
+                       json=_valid_payload(odometer_start=261,
+                                           driver_license_photo='data:image/png;base64,x'))
+
+    assert resp.status_code == 409, resp.get_json()
+    body = resp.get_json()
+    assert body['odometer_overlap'] is True
+    assert body['expected_floor'] == 283
+    assert body['provided'] == 261
+    assert not called  # nothing persisted while the overlap is unconfirmed
+
+
+def test_submit_allows_below_floor_with_override(client, monkeypatch):
+    # A legitimate back-dated drive (lower km than a later-logged one) still goes
+    # through once the advisor confirms via allow_overlap — stored verbatim.
+    _external_live_mocks(monkeypatch, floor=283)
+    called = []
+    monkeypatch.setattr(td._fp_repo, 'create_from_td_form',
+                        lambda d: called.append(d) or {**d, 'id': 1})
+
+    resp = client.post('/api/foi-parcurs/test-drive',
+                       json=_valid_payload(odometer_start=261, allow_overlap=True,
+                                           driver_license_photo='data:image/png;base64,x'))
+
+    assert resp.status_code == 200, resp.get_json()
+    assert called and called[0]['km_start'] == 261  # back-date honored verbatim
+
+
+def test_submit_ok_when_km_start_at_or_above_floor(client, monkeypatch):
+    # The common case: start odometer at/above the floor — no warning.
+    _external_live_mocks(monkeypatch, floor=283)
+    called = []
+    monkeypatch.setattr(td._fp_repo, 'create_from_td_form',
+                        lambda d: called.append(d) or {**d, 'id': 1})
+
+    resp = client.post('/api/foi-parcurs/test-drive',
+                       json=_valid_payload(odometer_start=300,
+                                           driver_license_photo='data:image/png;base64,x'))
+
+    assert resp.status_code == 200, resp.get_json()
+    assert called and called[0]['km_start'] == 300
+
+
 def test_submit_gdpr_enforced_through_real_company_repository(client, monkeypatch):
     """Exercises the REAL _company_gdpr_text helper (not monkeypatched), mocking
     only at the CompanyRepository boundary it calls internally, to prove the
