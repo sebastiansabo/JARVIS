@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { ProjectTable } from './index'
 import type { MktProject } from '@/types/marketing'
 
@@ -93,5 +93,60 @@ describe('ProjectTable column visibility', () => {
     expect(headers).toContain('Brand')
     expect(headers).toContain('End')
     expect(screen.getByText('Volvo')).toBeInTheDocument()
+  })
+})
+
+describe('ProjectTable sorting', () => {
+  it('clicking the Start header calls onSort with its sort key', () => {
+    const onSort = vi.fn()
+    render(
+      <ProjectTable
+        projects={[makeProject()]}
+        onSelect={noop}
+        visibleColumns={['name', 'start_date']}
+        sort="start_date"
+        order="asc"
+        onSort={onSort}
+      />,
+    )
+    fireEvent.click(screen.getByRole('columnheader', { name: /Start/ }))
+    expect(onSort).toHaveBeenCalledWith('start_date')
+  })
+
+  it('does not make non-sortable columns clickable', () => {
+    const onSort = vi.fn()
+    render(
+      <ProjectTable
+        projects={[makeProject()]}
+        onSelect={noop}
+        visibleColumns={['company_name', 'owner_name']}
+        onSort={onSort}
+      />,
+    )
+    fireEvent.click(screen.getByRole('columnheader', { name: /Company/ }))
+    fireEvent.click(screen.getByRole('columnheader', { name: /Owner/ }))
+    expect(onSort).not.toHaveBeenCalled()
+  })
+
+  it('makes the chosen sortable columns clickable (name, budget, spent, end)', () => {
+    const onSort = vi.fn()
+    render(
+      <ProjectTable
+        projects={[makeProject()]}
+        onSelect={noop}
+        visibleColumns={['name', 'total_budget', 'total_spent', 'end_date']}
+        onSort={onSort}
+      />,
+    )
+    for (const [name, key] of [
+      [/Project/, 'name'],
+      [/Budget/, 'total_budget'],
+      [/Spent/, 'total_spent'],
+      [/End/, 'end_date'],
+    ] as const) {
+      onSort.mockClear()
+      fireEvent.click(screen.getByRole('columnheader', { name }))
+      expect(onSort).toHaveBeenCalledWith(key)
+    }
   })
 })

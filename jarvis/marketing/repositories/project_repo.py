@@ -9,6 +9,35 @@ from database import dict_from_row
 logger = logging.getLogger('jarvis.marketing.project_repo')
 
 
+# Whitelist of sortable columns → their SQL expression. Keys are the only
+# values accepted from the client; anything else falls back to the default,
+# so the request value is never interpolated into SQL.
+_SORT_COLUMNS = {
+    'name': 'p.name',
+    'status': 'p.status',
+    'project_type': 'p.project_type',
+    'start_date': 'p.start_date',
+    'end_date': 'p.end_date',
+    'total_budget': 'p.total_budget',
+    'total_spent': 'total_spent',  # computed SELECT alias
+    'created_at': 'p.created_at',
+    'updated_at': 'p.updated_at',
+}
+_DEFAULT_SORT_EXPR = 'p.updated_at'
+
+
+def build_project_order_clause(sort_by, sort_dir):
+    """Build a safe ORDER BY clause for the project list.
+
+    Only whitelisted column keys are honoured; the direction is normalised to
+    ASC/DESC. Both inputs come from untrusted query params, so neither is ever
+    interpolated raw — the returned string contains only vetted literals.
+    """
+    column = _SORT_COLUMNS.get(sort_by, _DEFAULT_SORT_EXPR)
+    direction = 'ASC' if str(sort_dir or '').lower() == 'asc' else 'DESC'
+    return f'ORDER BY {column} {direction} NULLS LAST, p.id DESC'
+
+
 class ProjectRepository(BaseRepository):
 
     def get_by_id(self, project_id):
@@ -81,6 +110,7 @@ class ProjectRepository(BaseRepository):
             params.extend([term, term])
 
         where_clause = ' AND '.join(where)
+        order_clause = build_project_order_clause(filters.get('sort_by'), filters.get('sort_dir'))
         limit = min(int(filters.get('limit', 100)), 500)
         offset = int(filters.get('offset', 0))
 
@@ -98,7 +128,7 @@ class ProjectRepository(BaseRepository):
                 LEFT JOIN brands b ON b.id = p.brand_id
                 JOIN users u ON u.id = p.owner_id
                 WHERE {where_clause}
-                ORDER BY p.updated_at DESC
+                {order_clause}
                 LIMIT %s OFFSET %s
             ''', params + [limit, offset])
             rows = cursor.fetchall()
