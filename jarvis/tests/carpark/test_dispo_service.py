@@ -199,6 +199,37 @@ def test_cancel_reservation_falls_back_to_ready_for_sale_when_no_history():
         1, 'READY_FOR_SALE', changed_by=42, notes='Client backed out', via_dispo_action=True)
 
 
+# ── guarded actions: invalid transition rejected BEFORE side-effects ────────
+
+def test_reserve_blocked_on_invalid_transition_no_row_created(monkeypatch):
+    """Reserving a car in a non-reservable status must 400 BEFORE a reservation
+    row is created — the old order inserted the row then failed the status flip,
+    orphaning an active reservation on a non-RESERVED car."""
+    svc, mocks = _svc(dict(BASE_VEHICLE, status='ACQUIRED'))  # ACQUIRED→RESERVED invalid
+    with pytest.raises(ValueError, match='Tranziție interzisă'):
+        svc.reserve(1, COMPANY_ID, USER,
+                    {'client_name': 'Ion', 'reservation_end': '2026-09-01'})
+    mocks['reservation_repo'].create.assert_not_called()
+    mocks['vehicle_service'].change_status.assert_not_called()
+
+
+def test_sell_blocked_on_invalid_transition_no_sale_fields_written():
+    svc, mocks = _svc(dict(BASE_VEHICLE, status='ACQUIRED'))  # ACQUIRED→SOLD invalid
+    with pytest.raises(ValueError, match='Tranziție interzisă'):
+        svc.sell(1, COMPANY_ID, USER, _sell_data(sale_price=12000))
+    mocks['vehicle_service'].update_vehicle.assert_not_called()
+    mocks['vehicle_service'].change_status.assert_not_called()
+
+
+def test_deliver_blocked_on_invalid_transition_no_date_written():
+    svc, mocks = _svc(dict(BASE_VEHICLE, status='LISTED'))  # LISTED→DELIVERED invalid
+    mocks['document_repo'].has_type.return_value = True
+    with pytest.raises(ValueError, match='Tranziție interzisă'):
+        svc.deliver(1, COMPANY_ID, USER, {'delivery_date': date(2026, 8, 10)})
+    mocks['vehicle_service'].update_vehicle.assert_not_called()
+    mocks['vehicle_service'].change_status.assert_not_called()
+
+
 # ── SELL ──────────────────────────────────────────────────────────────────
 
 def _sell_data(**overrides):
@@ -343,7 +374,7 @@ def test_deliver_requires_delivery_date():
 
 
 def test_deliver_with_pv_livrare_succeeds():
-    svc, mocks = _svc()
+    svc, mocks = _svc(dict(BASE_VEHICLE, status='SOLD'))  # DELIVERED only valid from SOLD
     mocks['document_repo'].has_type.return_value = True
     mocks['vehicle_service'].change_status.return_value = {'id': 1, 'status': 'DELIVERED'}
 

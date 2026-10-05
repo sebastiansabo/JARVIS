@@ -127,6 +127,33 @@ def test_change_status_normal_transition_unaffected():
     assert result == {'id': 1, 'status': 'CHANGED'}
 
 
+def test_change_status_blocks_entering_reserved_by_default():
+    """Entering RESERVED via a plain flip (PUT /vehicles/:id/status or the generic
+    PUT) must be blocked — a reservation carries a carpark_reservations row that
+    only DispoService.reserve() creates. A plain flip would mark the car RESERVED
+    with no reservation row (the inverse of the cancel brick)."""
+    svc = _svc_with_status('LISTED')
+    with pytest.raises(ValueError, match='Rezervarea se face prin'):
+        svc.change_status(1, 'RESERVED')
+    svc._repo.change_status.assert_not_called()
+
+
+def test_change_status_allows_entering_reserved_with_flag():
+    svc = _svc_with_status('LISTED')
+    result = svc.change_status(1, 'RESERVED', via_dispo_action=True)
+    svc._repo.change_status.assert_called_once_with(1, 'RESERVED', changed_by=None, notes=None)
+    assert result == {'id': 1, 'status': 'CHANGED'}
+
+
+def test_change_status_reserved_noop_allowed_plain():
+    """RESERVED → RESERVED is a same-status no-op — the enter-guard must not fire
+    (it only blocks ENTERING from a non-reserved state)."""
+    svc = _svc_with_status('RESERVED')
+    result = svc.change_status(1, 'RESERVED')
+    svc._repo.change_status.assert_called_once_with(1, 'RESERVED', changed_by=None, notes=None)
+    assert result == {'id': 1, 'status': 'CHANGED'}
+
+
 def test_change_status_blocks_sold_by_default():
     """READY_FOR_SALE -> SOLD is transition-legal but must be blocked by
     default — reaching SOLD bypasses DispoService.sell()'s side effects."""
