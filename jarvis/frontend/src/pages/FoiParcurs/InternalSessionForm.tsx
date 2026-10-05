@@ -164,10 +164,14 @@ export default function InternalSessionForm({
   const allVehicles = vehiclesData?.vehicles ?? []
   // Narrow the picker to the selected company; `null` shows every active/known
   // vehicle (Toate companiile), mirroring the mobile QuickSession picker.
-  const vehicles = useMemo(
-    () => (companyId != null ? allVehicles.filter((v) => v.company_id === companyId) : allVehicles),
-    [allVehicles, companyId],
-  )
+  // Archived cars (is_active=false) are removed from the fleet and the backend
+  // still accepts their VINs, so the picker is the only guard — never offer them
+  // for a new session. Blocked (locked_out/blocked_now) cars stay selectable by
+  // design: picking one surfaces the backend 409 inline (see apiErrorMessage).
+  const vehicles = useMemo(() => {
+    const active = allVehicles.filter((v) => v.is_active !== false)
+    return companyId != null ? active.filter((v) => v.company_id === companyId) : active
+  }, [allVehicles, companyId])
   const selectedVehicle = useMemo(() => allVehicles.find((v) => v.vin === vin) ?? null, [allVehicles, vin])
 
   // Drop a chosen car once it no longer belongs to the filtered company (e.g. the
