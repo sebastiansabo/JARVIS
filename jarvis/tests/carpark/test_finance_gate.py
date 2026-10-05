@@ -70,3 +70,46 @@ def test_profitability_allowed_with_finance(client, monkeypatch):
                             return_value={'profit': 0}):
         r = client.get('/api/carpark/vehicles/1/profitability')
     assert r.status_code == 200
+
+
+# ── cost/revenue WRITES must require finance, not just edit ──
+# A non-finance editor could previously create/update/DELETE cost & revenue rows
+# (reads were finance-gated, writes only edit-gated) — silently moving margins and
+# bypassing the sell LOW_MARGIN gate. Writes now require can_view_carpark_finance
+# AND can_edit_carpark.
+
+def test_delete_cost_forbidden_without_finance(client, monkeypatch):
+    _login(client, monkeypatch, uid=95003, finance=False)  # edit=True, finance=False
+    r = client.delete('/api/carpark/costs/1')
+    assert r.status_code == 403
+
+
+def test_create_cost_forbidden_without_finance(client, monkeypatch):
+    _login(client, monkeypatch, uid=95004, finance=False)
+    r = client.post('/api/carpark/vehicles/1/costs',
+                    json={'cost_type': 'repair', 'amount': 100})
+    assert r.status_code == 403
+
+
+def test_create_revenue_forbidden_without_finance(client, monkeypatch):
+    _login(client, monkeypatch, uid=95005, finance=False)
+    r = client.post('/api/carpark/vehicles/1/revenues',
+                    json={'revenue_type': 'bonus_leasing', 'amount': 100})
+    assert r.status_code == 403
+
+
+def test_delete_cost_line_forbidden_without_finance(client, monkeypatch):
+    _login(client, monkeypatch, uid=95006, finance=False)
+    r = client.delete('/api/carpark/cost-lines/1')
+    assert r.status_code == 403
+
+
+def test_create_cost_allowed_with_finance(client, monkeypatch):
+    _login(client, monkeypatch, uid=95007, finance=True)
+    with mock.patch.object(costs_module, '_verify_vehicle_ownership',
+                            return_value=({'id': 1}, None)), \
+         mock.patch.object(costs_module._service, 'create_cost',
+                            return_value={'id': 7, 'cost_type': 'repair', 'amount': 100}):
+        r = client.post('/api/carpark/vehicles/1/costs',
+                        json={'cost_type': 'repair', 'amount': 100})
+    assert r.status_code in (200, 201)

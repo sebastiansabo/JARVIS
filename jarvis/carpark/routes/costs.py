@@ -7,7 +7,7 @@ from flask_login import login_required, current_user
 from carpark import carpark_bp
 from carpark.services.vehicle_service import VehicleService
 from carpark.routes.vehicles import (
-    carpark_edit_required, carpark_finance_required,
+    carpark_finance_edit_required, carpark_finance_required,
     _serialize, _verify_vehicle_ownership,
 )
 
@@ -52,7 +52,7 @@ def list_costs(vehicle_id):
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/costs', methods=['POST'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def create_cost(vehicle_id):
     """Create a cost record.
 
@@ -86,7 +86,7 @@ def create_cost(vehicle_id):
 
 @carpark_bp.route('/costs/<int:cost_id>', methods=['PUT'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def update_cost(cost_id):
     """Update a cost record."""
     data = request.get_json(silent=True)
@@ -116,7 +116,7 @@ def update_cost(cost_id):
 
 @carpark_bp.route('/costs/<int:cost_id>', methods=['DELETE'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def delete_cost(cost_id):
     """Delete a cost record."""
     existing = _service.get_cost(cost_id)
@@ -169,7 +169,7 @@ def list_cost_lines(vehicle_id):
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/cost-lines', methods=['POST'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def create_cost_line(vehicle_id):
     """Create a cost line. Body: {cost_type, description?, planned_amount?, currency?, notes?}"""
     _, err = _verify_vehicle_ownership(vehicle_id)
@@ -202,7 +202,7 @@ def create_cost_line(vehicle_id):
 
 @carpark_bp.route('/cost-lines/<int:line_id>', methods=['PUT'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def update_cost_line(line_id):
     """Update a cost line."""
     line = _service.get_cost_line(line_id)
@@ -229,7 +229,7 @@ def update_cost_line(line_id):
 
 @carpark_bp.route('/cost-lines/<int:line_id>', methods=['DELETE'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def delete_cost_line(line_id):
     """Delete a cost line and all its child costs."""
     line = _service.get_cost_line(line_id)
@@ -264,7 +264,7 @@ def list_line_costs(line_id):
 
 @carpark_bp.route('/cost-lines/<int:line_id>/costs', methods=['POST'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def create_line_cost(line_id):
     """Create a cost entry under a cost line.
 
@@ -296,7 +296,7 @@ def create_line_cost(line_id):
 
 @carpark_bp.route('/line-costs/<int:cost_id>', methods=['PUT'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def update_line_cost(cost_id):
     """Update a cost entry under a cost line."""
     existing = _service.get_cost(cost_id)
@@ -314,7 +314,7 @@ def update_line_cost(cost_id):
 
 @carpark_bp.route('/line-costs/<int:cost_id>', methods=['DELETE'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def delete_line_cost(cost_id):
     """Delete a cost entry under a cost line."""
     existing = _service.get_cost(cost_id)
@@ -330,7 +330,7 @@ def delete_line_cost(cost_id):
 
 @carpark_bp.route('/line-costs/<int:cost_id>/link-invoice', methods=['PUT'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def link_cost_invoice(cost_id):
     """Link or unlink an invoice to a cost entry. Body: {invoice_id: N|null}"""
     existing = _service.get_cost(cost_id)
@@ -374,7 +374,7 @@ def list_revenues(vehicle_id):
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/revenues', methods=['POST'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def create_revenue(vehicle_id):
     """Create a revenue record.
 
@@ -408,7 +408,7 @@ def create_revenue(vehicle_id):
 
 @carpark_bp.route('/revenues/<int:revenue_id>', methods=['PUT'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def update_revenue(revenue_id):
     """Update a revenue record."""
     data = request.get_json(silent=True)
@@ -437,7 +437,7 @@ def update_revenue(revenue_id):
 
 @carpark_bp.route('/revenues/<int:revenue_id>', methods=['DELETE'])
 @login_required
-@carpark_edit_required
+@carpark_finance_edit_required
 def delete_revenue(revenue_id):
     """Delete a revenue record."""
     existing = _service.get_revenue(revenue_id)

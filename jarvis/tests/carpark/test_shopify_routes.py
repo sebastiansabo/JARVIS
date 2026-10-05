@@ -184,6 +184,35 @@ def test_unpublish_forbidden_without_edit_permission(client, monkeypatch):
     assert r.status_code == 403
 
 
+def test_test_connection_forbidden_without_settings(client, monkeypatch):
+    """Parity with Autovit: test-connection uses stored store creds + hits the
+    external API + writes status → admin-only, not any authenticated user."""
+    class NoSettingsUser:
+        is_authenticated = True; id = 31; company_id = 10
+        can_access_carpark = True; can_edit_carpark = True
+        can_access_settings = False
+    user = NoSettingsUser()
+    monkeypatch.setattr(api_helpers, 'current_user', user)
+    monkeypatch.setattr(routes_mod, 'current_user', user)
+    r = client.post('/shopify/api/test-connection')
+    assert r.status_code == 403
+
+
+def test_connector_reads_forbidden_without_carpark(client, monkeypatch):
+    """Parity with Autovit: connector reads expose store config/taxonomy/schema
+    → require CarPark access, not just any authenticated user."""
+    class NoCarparkUser:
+        is_authenticated = True; id = 32; company_id = 10
+        can_access_carpark = False; can_edit_carpark = False
+        can_access_settings = False
+    user = NoCarparkUser()
+    monkeypatch.setattr(api_helpers, 'current_user', user)
+    monkeypatch.setattr(routes_mod, 'current_user', user)
+    for path in ('/shopify/api/config', '/shopify/api/taxonomy',
+                 '/shopify/api/metafield-choices', '/shopify/api/schema'):
+        assert client.get(path).status_code == 403, path
+
+
 def test_save_config_forbidden_without_settings(client, monkeypatch):
     class NoSettingsUser:
         is_authenticated = True; id = 3; company_id = 10

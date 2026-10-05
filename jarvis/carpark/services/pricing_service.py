@@ -19,6 +19,11 @@ MIN_MARGIN_PERCENT = float(os.environ.get('CARPARK_MIN_MARGIN_PERCENT', '2'))
 PRICING_APPROVAL_THRESHOLD = float(os.environ.get('CARPARK_PRICING_APPROVAL_THRESHOLD', '500'))
 AGING_ALERT_DAYS = int(os.environ.get('CARPARK_AGING_ALERT_DAYS', '60'))
 
+# Statuses a vehicle is no longer FOR SALE in — pricing rules must never adjust
+# their price, and they aren't "aging stock". Mirrors DispoRepository.aged_unsold's
+# exclusion set.
+PRICING_EXCLUDED_STATUSES = {'SOLD', 'DELIVERED', 'SCRAPPED', 'TRANSFERRED', 'RETURNED'}
+
 VALID_ACTION_TYPES = {'reduce_percent', 'reduce_amount', 'set_price', 'alert_only'}
 VALID_FLOOR_TYPES = {'minimum_price', 'cost_plus_margin', 'purchase_recovery'}
 VALID_TARGET_TYPES = {'all', 'category', 'brand', 'specific'}
@@ -381,7 +386,11 @@ class PricingService:
 
             result = self._vehicle_repo.get_catalog(filters, page=1, per_page=limit)
             all_vehicles = result.get('items', [])
-            criteria_vehicles = [v for v in all_vehicles if self._vehicle_matches_rule(v, rule)]
+            criteria_vehicles = [
+                v for v in all_vehicles
+                if self._vehicle_matches_rule(v, rule)
+                and v.get('status') not in PRICING_EXCLUDED_STATUSES
+            ]
 
         manual_vehicles = []
         if target_mode in ('manual', 'both'):
@@ -389,7 +398,8 @@ class PricingService:
             if manual_ids:
                 for vid in manual_ids:
                     v = self._vehicle_repo.get_by_id(vid)
-                    if v and not v.get('deleted_at'):
+                    if (v and not v.get('deleted_at')
+                            and v.get('status') not in PRICING_EXCLUDED_STATUSES):
                         manual_vehicles.append(v)
 
         if target_mode == 'criteria':
@@ -574,6 +584,8 @@ class PricingService:
 
         aging = []
         for v in vehicles:
+            if v.get('status') in PRICING_EXCLUDED_STATUSES:
+                continue  # sold/delivered/etc. cars aren't aging stock
             days = v.get('days_listed') or v.get('stationary_days') or 0
             if days >= threshold:
                 aging.append({

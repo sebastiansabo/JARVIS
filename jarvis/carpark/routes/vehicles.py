@@ -104,6 +104,27 @@ def carpark_finance_required(f):
     return decorated
 
 
+def carpark_finance_edit_required(f):
+    """Require BOTH can_edit_carpark AND can_view_carpark_finance for writes to
+    financial data (costs / revenues / cost-lines). A cost write is both an edit
+    and a finance operation: a non-finance editor must not be able to add/alter/
+    DELETE cost rows — doing so silently moves gross margins and can bypass the
+    sell LOW_MARGIN gate — and a finance viewer who can't edit CarPark must not
+    write either. Reads of the same data stay on carpark_finance_required."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return jsonify({'success': False, 'error': 'Authentication required'}), 401
+        if not getattr(current_user, 'can_access_carpark', False):
+            return jsonify({'success': False, 'error': 'CarPark access denied'}), 403
+        if not getattr(current_user, 'can_edit_carpark', False):
+            return jsonify({'success': False, 'error': 'CarPark edit permission denied'}), 403
+        if not getattr(current_user, 'can_view_carpark_finance', False):
+            return jsonify({'success': False, 'error': 'CarPark finance permission denied'}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
 # ── Tenant isolation helper ──
 
 def _user_company_id():
