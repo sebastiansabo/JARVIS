@@ -238,6 +238,8 @@ export interface MktProjectFilters {
   date_from?: string
   date_to?: string
   search?: string
+  sort_by?: string
+  sort_dir?: 'asc' | 'desc'
   limit?: number
   offset?: number
 }

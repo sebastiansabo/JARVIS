@@ -322,3 +322,44 @@ class TestFormulaEngineMarketing:
         from marketing.services.formula_engine import validate
         is_valid, error, variables = validate('import os')
         assert is_valid is False
+
+
+# ═══════════════════════════════════════════════
+# Project list ordering (sortable columns)
+# ═══════════════════════════════════════════════
+
+class TestProjectOrderClause:
+    def test_default_when_no_sort(self):
+        from marketing.repositories.project_repo import build_project_order_clause
+        assert build_project_order_clause(None, None) == \
+            'ORDER BY p.updated_at DESC NULLS LAST, p.id DESC'
+
+    def test_start_date_ascending(self):
+        from marketing.repositories.project_repo import build_project_order_clause
+        assert build_project_order_clause('start_date', 'asc') == \
+            'ORDER BY p.start_date ASC NULLS LAST, p.id DESC'
+
+    def test_end_date_descending(self):
+        from marketing.repositories.project_repo import build_project_order_clause
+        assert build_project_order_clause('end_date', 'desc') == \
+            'ORDER BY p.end_date DESC NULLS LAST, p.id DESC'
+
+    def test_total_spent_uses_select_alias(self):
+        from marketing.repositories.project_repo import build_project_order_clause
+        # total_spent is a computed SELECT alias, not a p.* column
+        assert build_project_order_clause('total_spent', 'desc') == \
+            'ORDER BY total_spent DESC NULLS LAST, p.id DESC'
+
+    def test_unknown_or_malicious_column_falls_back_to_default(self):
+        from marketing.repositories.project_repo import build_project_order_clause
+        # Non-whitelisted input must never reach the SQL string
+        assert build_project_order_clause('name; DROP TABLE mkt_projects', 'asc') == \
+            'ORDER BY p.updated_at ASC NULLS LAST, p.id DESC'
+
+    def test_direction_is_normalised(self):
+        from marketing.repositories.project_repo import build_project_order_clause
+        assert build_project_order_clause('name', 'DESC') == \
+            'ORDER BY p.name DESC NULLS LAST, p.id DESC'
+        # Anything that isn't 'asc' (case-insensitive) means descending
+        assert build_project_order_clause('name', 'sideways') == \
+            'ORDER BY p.name DESC NULLS LAST, p.id DESC'

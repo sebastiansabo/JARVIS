@@ -39,6 +39,8 @@ def api_list_projects():
         'date_from': request.args.get('date_from'),
         'date_to': request.args.get('date_to'),
         'search': request.args.get('search'),
+        'sort_by': request.args.get('sort_by'),
+        'sort_dir': request.args.get('sort_dir'),
         'limit': request.args.get('limit', 100),
         'offset': request.args.get('offset', 0),
     }
