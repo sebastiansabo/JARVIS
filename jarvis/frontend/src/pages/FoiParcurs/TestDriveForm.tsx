@@ -140,6 +140,9 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
   const user = useAuthStore((s) => s.user)
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
   const [openBlock, setOpenBlock] = useState<{ message: string; retry: () => void } | null>(null)
+  // Odometer-overlap soft gate: the backend 409s a km plecare below the car's
+  // real floor; the advisor confirms (legit back-date) or cancels to fix a typo.
+  const [overlapBlock, setOverlapBlock] = useState<{ message: string; retry: () => void } | null>(null)
 
   // ── Activation mode — reopens this form pre-filled from a PLANNED draft ──
   const [searchParams] = useSearchParams()
@@ -866,6 +869,8 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
     onError: (err: any, variables) => {
       if (err?.data?.open_session) {
         setOpenBlock({ message: err.data.error, retry: () => { setOpenBlock(null); submitMutation.mutate({ ...variables, allow_open_session: true }) } })
+      } else if (err?.data?.odometer_overlap) {
+        setOverlapBlock({ message: err.data.error, retry: () => { setOverlapBlock(null); submitMutation.mutate({ ...variables, allow_overlap: true }) } })
       }
     },
   })
@@ -1876,7 +1881,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
       </Card>
 
       {/* ── Submit ── */}
-      {(submitMutation.isError || planMutation.isError || activateMutation.isError) && !openBlock && (
+      {(submitMutation.isError || planMutation.isError || activateMutation.isError) && !openBlock && !overlapBlock && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           {((activateMutation.error || submitMutation.error || planMutation.error) as { data?: { error?: string } } | null)?.data?.error
             || 'Eroare la trimitere. Vă rugăm încercați din nou.'}
@@ -1935,6 +1940,24 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => { setOpenBlock(null); submitMutation.reset(); activateMutation.reset() }}>Închide</Button>
               {isAdmin && <Button size="sm" onClick={() => openBlock.retry()}>Pornește oricum</Button>}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Odometer-overlap soft gate — km plecare below the car's real floor.
+          A soft gate (not admin-only): the advisor confirms a legit back-date or
+          cancels to fix a mistyped start, which is how the overlap is prevented. */}
+      {overlapBlock && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => { setOverlapBlock(null); submitMutation.reset() }}>
+          <div className="w-full max-w-sm rounded-2xl bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-5 w-5" />
+              <h3 className="text-base font-semibold">Kilometraj sub realitatea mașinii</h3>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{overlapBlock.message}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setOverlapBlock(null); submitMutation.reset() }}>Corectează</Button>
+              <Button size="sm" onClick={() => overlapBlock.retry()}>Salvează oricum</Button>
             </div>
           </div>
         </div>

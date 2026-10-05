@@ -46,6 +46,11 @@ def _hermetic(monkeypatch):
     monkeypatch.setattr(td, 'is_privileged', lambda: False, raising=False)
     monkeypatch.setattr(td, 'log_history', lambda *a, **k: None, raising=False)
     monkeypatch.setattr(td, 'log_status_change', lambda *a, **k: None, raising=False)
+    # The odometer-floor guard on the create path reads the car's mileage floor;
+    # default it to 0 (no floor) so hermetic tests don't touch Postgres. Tests
+    # that care about the floor override this with their own value.
+    monkeypatch.setattr(td._fp_repo, 'get_mileage_floor',
+                        lambda vin, exclude_id=None: 0, raising=False)
 
 
 def _draft_payload(**overrides):
@@ -123,6 +128,43 @@ def test_internal_past_start_now_stays_filled(client, monkeypatch):
     assert resp.status_code == 200, resp.get_json()
     assert captured['status'] == 'FILLED'
     assert captured['km_start'] == 4200
+
+
+def test_internal_live_raises_km_start_to_floor(client, monkeypatch):
+    # An internal start-now session whose typed odometer is BELOW the car's real
+    # floor (a stale/guessed low internal reading) is silently raised to the
+    # floor: an internal drive must never be stored below reality, mirroring the
+    # internal /start path (api_start_internal_session).
+    monkeypatch.setattr(td._fp_repo, 'get_mileage_floor', lambda vin, exclude_id=None: 283)
+    captured = {}
+    monkeypatch.setattr(td._fp_repo, 'create_from_td_form',
+                        lambda data: captured.update(data) or {**data, 'id': 73})
+
+    resp = client.post('/api/foi-parcurs/test-drive',
+                       json=_draft_payload(status=None, odometer_start=261,
+                                           departure_datetime='2020-01-01T10:00:00'))
+
+    assert resp.status_code == 200, resp.get_json()
+    assert captured['status'] == 'FILLED'
+    assert captured['km_start'] == 283   # raised from the stale 261 to the car's floor
+    assert captured['km_end'] >= 283     # km_end never below the raised start
+
+
+def test_internal_live_km_end_clamped_to_raised_start(client, monkeypatch):
+    # If a stale odometer_end also comes in below the floor, km_end is clamped up
+    # to the raised km_start so the session can't record a negative distance.
+    monkeypatch.setattr(td._fp_repo, 'get_mileage_floor', lambda vin, exclude_id=None: 283)
+    captured = {}
+    monkeypatch.setattr(td._fp_repo, 'create_from_td_form',
+                        lambda data: captured.update(data) or {**data, 'id': 74})
+
+    resp = client.post('/api/foi-parcurs/test-drive',
+                       json=_draft_payload(status=None, odometer_start=261, odometer_end=270,
+                                           departure_datetime='2020-01-01T10:00:00'))
+
+    assert resp.status_code == 200, resp.get_json()
+    assert captured['km_start'] == 283
+    assert captured['km_end'] == 283   # clamped up from the stale 270
 
 
 # ── start: PLANNED internal draft → FILLED, no signature/PDF ──────────────────
