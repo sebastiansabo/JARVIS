@@ -247,6 +247,11 @@ export const foiParcursApi = {
         id: number; who: string; km_start: number; km_end: number
         prior_max_end: number; overlap_km: number; date: string | null
       }[]
+      inversion_count: number
+      inversions: {
+        id: number; who: string; km_start: number; km_end: number
+        date: string | null; prior_max_date: string
+      }[]
     }[]
   }>(`${BASE}/reports/reconciliation${qs(params)}`),
 

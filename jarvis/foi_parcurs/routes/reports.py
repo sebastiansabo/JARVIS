@@ -20,7 +20,7 @@ from ._shared import (
     _fp_repo, _vehicle_repo,
 )
 from core.roles.repositories import PermissionRepository
-from ..services.route_sheet_service import overlap_rows
+from ..services.route_sheet_service import overlap_rows, date_inversion_rows
 
 # Roles that may pick any company / see the whole group, unconditionally.
 _GROUP_ROLES = ('admin', 'superadmin', 'board')
@@ -134,10 +134,11 @@ def api_reports_sessions():
 @foi_parcurs_bp.route('/api/foi-parcurs/reports/reconciliation', methods=['GET'])
 @login_required
 def api_reports_reconciliation():
-    """Odometer-overlap reconciliation for the Rapoarte tab: per-car list of real
-    sessions whose start km fell below where the car already was (two drives
-    claiming the same km — the data bug behind a ⚠️). Same scope/filters as the
-    summary. The overlap walk is a pure, tested helper (overlap_rows)."""
+    """Reconciliation report for the Rapoarte tab — the two odometer anomalies the
+    route-sheet ⚠️ badge fires on, per car: OVERLAPS (overlap_rows — a start km
+    below where the car already was) and DATE INVERSIONS (date_inversion_rows — a
+    higher-odometer drive dated before a lower-odometer one). Same scope/filters as
+    the summary; both walks are pure, tested helpers."""
     company_id, is_group, err = _scoped_company()
     if err:
         return err
@@ -157,7 +158,8 @@ def api_reports_reconciliation():
     cars = []
     for vin, rows in by_vin.items():
         overlaps = overlap_rows(rows)
-        if not overlaps:
+        inversions = date_inversion_rows(rows)
+        if not overlaps and not inversions:
             continue
         cars.append({
             'vin': vin,
@@ -165,8 +167,11 @@ def api_reports_reconciliation():
             'count': len(overlaps),
             'total_overlap_km': sum(o['overlap_km'] for o in overlaps),
             'sessions': overlaps,
+            'inversion_count': len(inversions),
+            'inversions': inversions,
         })
-    cars.sort(key=lambda c: c['total_overlap_km'], reverse=True)
+    # Worst first: most overlap km, then most date inversions.
+    cars.sort(key=lambda c: (c['total_overlap_km'], c['inversion_count']), reverse=True)
 
     return jsonify({
         'success': True,
