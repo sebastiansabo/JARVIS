@@ -118,9 +118,9 @@ class PublishingService:
                     'external_listing_id': result.get('external_id'),
                     'external_url': result.get('external_url'),
                     'status': 'active',
-                    'published_at': datetime.utcnow().isoformat(),
+                    'published_at': datetime.utcnow(),
                     'expires_at': expires_at,
-                    'last_sync': datetime.utcnow().isoformat(),
+                    'last_sync': datetime.utcnow(),
                 }
             else:
                 listing_data = {
@@ -191,7 +191,7 @@ class PublishingService:
 
         updated = self._pub_repo.update_listing(listing_id, {
             'status': 'active',
-            'published_at': datetime.utcnow().isoformat(),
+            'published_at': datetime.utcnow(),
             'error_message': None,
         })
         return updated
@@ -264,7 +264,7 @@ class PublishingService:
             updated = self._pub_repo.update_listing(listing_id, {
                 'views': stats.get('views', listing.get('views', 0)),
                 'inquiries': stats.get('inquiries', listing.get('inquiries', 0)),
-                'last_sync': datetime.utcnow().isoformat(),
+                'last_sync': datetime.utcnow(),
             })
             self._pub_repo.log_sync(
                 listing['vehicle_id'], listing['platform_id'],
