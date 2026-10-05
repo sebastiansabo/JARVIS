@@ -14,6 +14,9 @@ import {
   Banknote,
   CheckSquare,
   SlidersHorizontal,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -39,6 +42,7 @@ import { TagBadgeList } from '@/components/shared/TagBadge'
 import { TagPicker, TagPickerButton } from '@/components/shared/TagPicker'
 import { TagFilter } from '@/components/shared/TagFilter'
 import { tagsApi } from '@/api/tags'
+import { EVENT_QUICK_RANGES, compareEventDates } from './eventsFilters'
 import { cn } from '@/lib/utils'
 import type { HrEvent } from '@/types/hr'
 import AddEventPage from './AddEventPage'
@@ -182,6 +186,7 @@ function EventsList() {
   const [filterFrom, setFilterFrom] = useState('')
   const [filterTo, setFilterTo] = useState('')
   const [filterTagIds, setFilterTagIds] = useState<number[]>([])
+  const [startSort, setStartSort] = useState<'asc' | 'desc' | null>(null)
   const [selected, setSelected] = useState<number[]>([])
   const [selectMode, setSelectMode] = useState(false)
   const [showFilters, setShowFilters] = useState(false)
@@ -236,13 +241,38 @@ function EventsList() {
   })
 
   // Apply tag filter client-side
-  const displayedEvents = useMemo(() => {
+  const tagFiltered = useMemo(() => {
     if (filterTagIds.length === 0) return dateFiltered
     return dateFiltered.filter((e) => {
       const tags = eventTagsMap[String(e.id)] ?? []
       return tags.some((t) => filterTagIds.includes(t.id))
     })
   }, [dateFiltered, filterTagIds, eventTagsMap])
+
+  // Optional client-side sort on the Start Date column
+  const displayedEvents = useMemo(() => {
+    if (!startSort) return tagFiltered
+    return [...tagFiltered].sort((a, b) => compareEventDates(a.start_date, b.start_date, startSort))
+  }, [tagFiltered, startSort])
+
+  // Quick date-range chips (reuse the existing filterFrom/filterTo pipeline)
+  const activeQuickRange = EVENT_QUICK_RANGES.find((r) => {
+    const { from, to } = r.range()
+    return filterFrom === from && filterTo === to
+  })?.key ?? null
+
+  const applyQuickRange = (r: (typeof EVENT_QUICK_RANGES)[number]) => {
+    const { from, to } = r.range()
+    if (filterFrom === from && filterTo === to) {
+      setFilterFrom('')
+      setFilterTo('')
+    } else {
+      setFilterFrom(from)
+      setFilterTo(to)
+    }
+  }
+
+  const toggleStartSort = () => setStartSort((s) => (s === 'asc' ? 'desc' : 'asc'))
 
   const deleteMutation = useMutation({
     mutationFn: (ids: number[]) => hrApi.bulkDeleteEvents(ids),
@@ -312,7 +342,7 @@ function EventsList() {
           { label: 'Events' },
         ]}
         search={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <SearchInput value={search} onChange={setSearch} placeholder="Search..." className={isSmall ? undefined : 'w-48'} collapsible={isSmall} />
             <Select value={filterCompany} onValueChange={setFilterCompany}>
               <SelectTrigger className="h-8 w-[140px] text-xs">
@@ -325,6 +355,18 @@ function EventsList() {
                 ))}
               </SelectContent>
             </Select>
+            {EVENT_QUICK_RANGES.map((r) => (
+              <Button
+                key={r.key}
+                type="button"
+                variant={activeQuickRange === r.key ? 'default' : 'outline'}
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => applyQuickRange(r)}
+              >
+                {r.label}
+              </Button>
+            ))}
           </div>
         }
         actions={
@@ -426,7 +468,19 @@ function EventsList() {
                   </TableHead>
                   <TableHead className="w-8" />
                   <TableHead>Event Name</TableHead>
-                  <TableHead>Start Date</TableHead>
+                  <TableHead
+                    className="cursor-pointer select-none whitespace-nowrap"
+                    onClick={toggleStartSort}
+                    aria-sort={startSort ? (startSort === 'asc' ? 'ascending' : 'descending') : 'none'}
+                  >
+                    <div className="flex items-center gap-1">
+                      Start Date
+                      {(() => {
+                        const Icon = startSort ? (startSort === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+                        return <Icon className={cn('h-3 w-3', startSort ? 'text-foreground' : 'text-muted-foreground/40')} />
+                      })()}
+                    </div>
+                  </TableHead>
                   <TableHead>End Date</TableHead>
                   <TableHead>Company</TableHead>
                   <TableHead>Brand</TableHead>
