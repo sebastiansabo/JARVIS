@@ -146,39 +146,44 @@ def test_reconcile_persist_false_makes_no_execute(monkeypatch):
     assert execute_calls == []
 
 
-def test_seed_defaults_if_empty_populates(monkeypatch):
-    upsert_field_calls = []
-    upsert_value_calls = []
-
+def test_ensure_defaults_backfills_all_entries_do_nothing(monkeypatch):
+    # ensure_defaults() upserts EVERY default field + value with ON CONFLICT DO
+    # NOTHING, so missing entries added to the seed after a connector was first
+    # seeded (e.g. all-wheel-*/mild-hybrid) get backfilled WITHOUT clobbering
+    # existing rows or manual edits. (Replaces seed-only-if-empty, which never
+    # backfilled prod.)
+    SchemaRepository._defaults_ensured = False
+    calls = []
     repo = SchemaRepository()
-    monkeypatch.setattr(repo, 'get_field_map', lambda: [])
-    monkeypatch.setattr(repo, 'get_value_map', lambda: {})
-    monkeypatch.setattr(repo, 'upsert_field',
-        lambda source_expr, ns, key, ttype, transform: upsert_field_calls.append(
-            (source_expr, ns, key, ttype, transform)))
-    monkeypatch.setattr(repo, 'upsert_value',
-        lambda dim, src, rov: upsert_value_calls.append((dim, src, rov)))
+    monkeypatch.setattr(repo, 'execute', lambda sql, params=None, **k: calls.append((sql, params)))
 
-    repo.seed_defaults_if_empty()
+    repo.ensure_defaults()
 
-    assert len(upsert_field_calls) == len(translations.DEFAULT_FIELD_MAP)
-    expected_value_count = sum(len(m) for m in translations.VALUE_TRANSLATIONS_SEED.values())
-    assert len(upsert_value_calls) == expected_value_count
+    n_fields = len(translations.DEFAULT_FIELD_MAP)
+    n_values = sum(len(m) for m in translations.VALUE_TRANSLATIONS_SEED.values())
+    assert len(calls) == n_fields + n_values
+    assert all('ON CONFLICT' in sql and 'DO NOTHING' in sql for sql, _ in calls)
+    # the previously-missing drive mapping is among the backfilled values
+    value_params = [p for sql, p in calls if 'carpark_shopify_value_map' in sql]
+    assert ('drive_type', 'all-wheel-auto', 'Integral') in [(p[0], p[1], p[2]) for p in value_params]
 
 
-def test_seed_defaults_noop_when_present(monkeypatch):
-    upsert_field_calls = []
-    upsert_value_calls = []
-
+def test_ensure_defaults_runs_once_per_process(monkeypatch):
+    SchemaRepository._defaults_ensured = False
+    calls = []
     repo = SchemaRepository()
-    monkeypatch.setattr(repo, 'get_field_map', lambda: [{'target_namespace': 'custom', 'target_key': 'marca'}])
-    monkeypatch.setattr(repo, 'get_value_map', lambda: {'fuel_type': {'Diesel': 'Motorină'}})
-    monkeypatch.setattr(repo, 'upsert_field',
-        lambda *a, **k: upsert_field_calls.append((a, k)))
-    monkeypatch.setattr(repo, 'upsert_value',
-        lambda *a, **k: upsert_value_calls.append((a, k)))
+    monkeypatch.setattr(repo, 'execute', lambda *a, **k: calls.append(1))
+    repo.ensure_defaults()
+    first = len(calls)
+    assert first > 0
+    repo.ensure_defaults()  # gated — no further inserts this process
+    assert len(calls) == first
 
-    repo.seed_defaults_if_empty()
 
-    assert upsert_field_calls == []
-    assert upsert_value_calls == []
+def test_seed_defaults_if_empty_is_backfill_alias(monkeypatch):
+    SchemaRepository._defaults_ensured = False
+    calls = []
+    repo = SchemaRepository()
+    monkeypatch.setattr(repo, 'execute', lambda *a, **k: calls.append(1))
+    repo.seed_defaults_if_empty()  # back-compat alias → ensure_defaults
+    assert len(calls) > 0
