@@ -19,15 +19,33 @@ from ._shared import (
     foi_parcurs_bp, jsonify, request, login_required, current_user, logger,
     _fp_repo, _vehicle_repo,
 )
+from core.roles.repositories import PermissionRepository
 
-# Roles that may pick any company / see the whole group.
+# Roles that may pick any company / see the whole group, unconditionally.
 _GROUP_ROLES = ('admin', 'superadmin', 'board')
+# Any OTHER role can be opened up to the whole-group report view per-role via the
+# Test Drive permission matrix: test_drive.reports.view_all. Instantiated at
+# import like the repos in _shared (no DB work until a method is called).
+_perm_repo = PermissionRepository()
 _MAX_TOP = 50
 _MAX_DRILL = 200
 
 
 def _is_group_viewer():
-    return (getattr(current_user, 'role_name', '') or '').lower() in _GROUP_ROLES
+    """True when the current user may report across companies (pass any company_id
+    or omit it for the whole group); False pins them to their own company.
+
+    Admin / superadmin / board keep group scope unconditionally. Every other role
+    is own-company by default, unless its role is granted test_drive.reports.view_all
+    in the permission matrix — letting admins hand the group report view to specific
+    roles (e.g. a brand/sales lead) without a code change."""
+    if (getattr(current_user, 'role_name', '') or '').lower() in _GROUP_ROLES:
+        return True
+    role_id = getattr(current_user, 'role_id', None)
+    if not role_id:
+        return False
+    perm = _perm_repo.check_permission_v2(role_id, 'test_drive', 'reports', 'view_all')
+    return bool(perm.get('has_permission'))
 
 
 def _scoped_company():

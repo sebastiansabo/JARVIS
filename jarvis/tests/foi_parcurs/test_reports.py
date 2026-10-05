@@ -27,11 +27,26 @@ import foi_parcurs.routes.reports as rep_mod
 
 
 class FakeUser:
-    def __init__(self, role_name='user', company_id=None):
+    def __init__(self, role_name='user', company_id=None, role_id=None):
         self.role_name = role_name
         self.company_id = company_id
+        self.role_id = role_id
         self.name = 'Tester'
         self.email = 't@e.ro'
+
+
+class FakePerm:
+    """Stand-in for PermissionRepository (no DB in these route tests). Records the
+    (role_id, module, entity, action) it was asked about and answers with a fixed
+    grant, so we can assert the route consults test_drive.reports.view_all."""
+    def __init__(self, has_permission=False):
+        self._has = has_permission
+        self.calls = []
+
+    def check_permission_v2(self, role_id, module, entity, action):
+        self.calls.append((role_id, module, entity, action))
+        scope = 'all' if self._has else 'deny'
+        return {'has_permission': self._has, 'scope': scope, 'has_explicit_entry': self._has}
 
 
 BUNDLE = {
@@ -98,12 +113,14 @@ class FakeVeh:
         return dict(FLEET)
 
 
-def make_client(monkeypatch, role='user', company_id=None):
+def make_client(monkeypatch, role='user', company_id=None, role_id=None, group_perm=False):
     fake_fp = FakeFp()
     fake_veh = FakeVeh()
+    fake_perm = FakePerm(has_permission=group_perm)
     monkeypatch.setattr(rep_mod, '_fp_repo', fake_fp)
     monkeypatch.setattr(rep_mod, '_vehicle_repo', fake_veh)
-    monkeypatch.setattr(rep_mod, 'current_user', FakeUser(role, company_id))
+    monkeypatch.setattr(rep_mod, '_perm_repo', fake_perm, raising=False)
+    monkeypatch.setattr(rep_mod, 'current_user', FakeUser(role, company_id, role_id))
     app = Flask(__name__)
     app.register_blueprint(foi_parcurs_bp)
     app.config['TESTING'] = True
@@ -111,6 +128,7 @@ def make_client(monkeypatch, role='user', company_id=None):
     tc = app.test_client()
     tc._fp = fake_fp
     tc._veh = fake_veh
+    tc._perm = fake_perm
     return tc
 
 
@@ -150,6 +168,31 @@ def test_board_is_group_viewer(monkeypatch):
     assert r.status_code == 200
     assert c._fp.bundle_args['company_id'] == 99
     assert r.get_json()['scope']['is_group'] is True
+
+
+def test_permission_grants_group_view_to_non_admin(monkeypatch):
+    """A non-group role (e.g. consilier) whose role is granted
+    test_drive.reports.view_all in the matrix becomes a group viewer: it may pass
+    any company_id (99 here, honored not overridden) and reports over the whole
+    group, exactly like admin/board."""
+    c = make_client(monkeypatch, role='consilier', company_id=11, role_id=7, group_perm=True)
+    r = c.get('/api/foi-parcurs/reports/summary?company_id=99&document_type=sales')
+    assert r.status_code == 200, r.get_json()
+    assert c._fp.bundle_args['company_id'] == 99
+    assert r.get_json()['scope']['is_group'] is True
+    # The route consulted exactly the Test Drive reports permission.
+    assert c._perm.calls and c._perm.calls[0][1:] == ('test_drive', 'reports', 'view_all')
+
+
+def test_non_admin_without_permission_scoped_to_own_company(monkeypatch):
+    """A non-group role WITHOUT the permission stays pinned to its own company
+    (today's default) even though it has a role_id — the requested company_id=99 is
+    ignored."""
+    c = make_client(monkeypatch, role='consilier', company_id=11, role_id=7, group_perm=False)
+    r = c.get('/api/foi-parcurs/reports/summary?company_id=99&document_type=sales')
+    assert r.status_code == 200, r.get_json()
+    assert c._fp.bundle_args['company_id'] == 11
+    assert r.get_json()['scope']['is_group'] is False
 
 
 def test_non_admin_without_company_denied(monkeypatch):
