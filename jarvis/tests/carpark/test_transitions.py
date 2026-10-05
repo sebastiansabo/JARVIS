@@ -92,13 +92,29 @@ def test_change_status_allows_reserved_exit_with_flag():
     assert result == {'id': 1, 'status': 'CHANGED'}
 
 
+def test_reserved_restore_targets_allowed():
+    """A vehicle can be reserved FROM READY_FOR_SALE / LISTED / PRICE_REDUCED /
+    AUCTION_CANDIDATE, so cancel_reservation must be able to restore it to any of
+    those. PRICE_REDUCED and AUCTION_CANDIDATE were missing → cancelling a car
+    reserved from either bricked it in RESERVED (the restore raised)."""
+    for target in ('LISTED', 'READY_FOR_SALE', 'PRICE_REDUCED', 'AUCTION_CANDIDATE', 'SOLD'):
+        assert is_valid_transition('RESERVED', target) is True, target
+
+
+def test_change_status_restores_reserved_to_price_reduced_with_flag():
+    svc = _svc_with_status('RESERVED')
+    result = svc.change_status(1, 'PRICE_REDUCED', via_dispo_action=True)
+    svc._repo.change_status.assert_called_once_with(1, 'PRICE_REDUCED', changed_by=None, notes=None)
+    assert result == {'id': 1, 'status': 'CHANGED'}
+
+
 def test_change_status_illegal_transition_raises_before_reserved_guard():
-    """RESERVED -> AUCTION_CANDIDATE isn't in TRANSITIONS['RESERVED'] at all
-    — the transition-matrix error must fire, not the RESERVED-exit message,
-    even with via_dispo_action=True."""
+    """A target that isn't in TRANSITIONS['RESERVED'] at all (RESERVED -> ACQUIRED)
+    — the transition-matrix error must fire, not the RESERVED-exit message, even
+    with via_dispo_action=True."""
     svc = _svc_with_status('RESERVED')
     with pytest.raises(ValueError, match='Tranziție interzisă'):
-        svc.change_status(1, 'AUCTION_CANDIDATE', via_dispo_action=True)
+        svc.change_status(1, 'ACQUIRED', via_dispo_action=True)
     svc._repo.change_status.assert_not_called()
 
 

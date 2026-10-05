@@ -11,13 +11,17 @@ Invocation:
     DATABASE_URL=postgresql://localhost/defaultdb \
         venv/bin/python -m pytest jarvis/tests/carpark/test_dispo_repository_sql.py -v
 """
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+
+import pytest
+
+from database import get_db, get_cursor, release_db
 
 from carpark.repositories.dispo_repository import DispoRepository, STAGE_STATUS_MAP
 from carpark.repositories.document_repository import DocumentRepository
 from carpark.repositories.reservation_repository import ReservationRepository
 
-from .conftest import TEST_COMPANY_ID
+from .conftest import TEST_COMPANY_ID, REAL_DB_AVAILABLE
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -59,6 +63,41 @@ def test_summary_gross_margin(dispo_seed):
     assert unsold['total_costs'] == 2000
     assert unsold['gross_margin'] is None
     assert unsold['margin_pct'] is None
+
+
+def test_summary_gross_margin_uses_net_buy_for_vat_rows():
+    """gross_margin must use net_buy (NET_BUY_SQL), NOT the GROSS acquisition_price,
+    so a VAT car's margin matches analytics and legacy-RON rows don't mix EUR/LEI.
+    Here gross=11900, net=10000 (VAT 19%), sold 11000, no costs → net margin 1000,
+    not the gross-basis -900. Self-contained (own insert + cleanup)."""
+    if not REAL_DB_AVAILABLE:
+        pytest.skip('Real Postgres not available — skipping Dispo net_buy margin test')
+    conn = get_db()
+    conn.autocommit = False
+    cur = get_cursor(conn)
+    today = date.today()
+    try:
+        cur.execute('DELETE FROM carpark_vehicles WHERE company_id = %s', (TEST_COMPANY_ID,))
+        cur.execute('''
+            INSERT INTO carpark_vehicles
+                (vin, brand, model, status, company_id, acquisition_date,
+                 acquisition_price, purchase_price_net, purchase_vat_rate,
+                 sale_date, sale_price)
+            VALUES (%s, %s, %s, 'SOLD', %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        ''', ('TESTDISPOVAT00001', 'TestBrand', 'VatModel', TEST_COMPANY_ID,
+              today - timedelta(days=30), 11900, 10000, 19,
+              today - timedelta(days=5), 11000))
+        vid = cur.fetchone()['id']
+        conn.commit()
+
+        result = DispoRepository().summary(TEST_COMPANY_ID, {})
+        row = next(r for r in result['rows'] if r['id'] == vid)
+        assert row['gross_margin'] == 1000  # 11000 - net_buy(10000) - 0
+    finally:
+        cur.execute('DELETE FROM carpark_vehicles WHERE company_id = %s', (TEST_COMPANY_ID,))
+        conn.commit()
+        release_db(conn)
 
 
 def test_summary_stage_counts_sum_correctly(dispo_seed):
