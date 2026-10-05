@@ -752,6 +752,7 @@ def create_schema_roles(conn, cursor):
         ('test_drive', 'Test Drive', 'bi-car-front', 'contracts', 'Registrations', 'correct', 'Correct date / odometer', "Correct a session's drive date & odometer readings (Foaie de Parcurs)", False, 2),
         ('test_drive', 'Test Drive', 'bi-car-front', 'contracts', 'Registrations', 'drive_type', 'Change drive type (internal/external)', 'Reclassify a session between internal (company) and client driving (Foaie de Parcurs)', False, 3),
         ('test_drive', 'Test Drive', 'bi-car-front', 'route_sheet', 'Foaie de Parcurs', 'unlock', 'Deblochează foaie finalizată', 'Deblochează o foaie de parcurs finalizată (blocată) — Admin + Dep Contabilitate', False, 4),
+        ('test_drive', 'Test Drive', 'bi-car-front', 'reports', 'Rapoarte', 'view_all', 'Vizualizare pe tot grupul', 'Vede rapoartele Driving Hub pe TOATE companiile (nu doar compania proprie) și poate alege orice companie în filtru. Fără aceasta, rapoartele rămân limitate la compania utilizatorului. Admin/board au acces oricum.', False, 5),
     ]
     for p in test_drive_perms:
         cursor.execute('''
@@ -770,18 +771,21 @@ def create_schema_roles(conn, cursor):
     ''')
     # Grant Test Drive access to Viewer role as well (consilieri use the mobile
     # Test Drive tile). Admins can still revoke/adjust it in the matrix.
-    # EXCLUDE drive_type + route_sheet.unlock: reclassifying internal↔external and
-    # unlocking a finalized foaie are privileged actions, default-deny for
-    # consilieri (admins grant per-role in the matrix). The unlock exclusion must
-    # persist across re-runs — the permission is defined in the same module, so a
-    # bare "module_key='test_drive'" grant would otherwise pick it up on re-migrate.
+    # EXCLUDE drive_type + route_sheet.unlock + reports.view_all: reclassifying
+    # internal↔external, unlocking a finalized foaie, and seeing reports across the
+    # WHOLE group are privileged actions, default-deny for consilieri (admins grant
+    # per-role in the matrix). reports.view_all stays own-company by default so a
+    # consilier's Rapoarte is scoped to their company unless explicitly opened up.
+    # The exclusions must persist across re-runs — the permissions live in the same
+    # module, so a bare "module_key='test_drive'" grant would otherwise pick them up
+    # on re-migrate.
     cursor.execute('''
         INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
         SELECT r.id, p.id, 'all', TRUE
         FROM roles r
         CROSS JOIN permissions_v2 p
         WHERE r.name = 'Viewer' AND p.module_key = 'test_drive'
-          AND p.action_key NOT IN ('drive_type', 'unlock')
+          AND p.action_key NOT IN ('drive_type', 'unlock', 'view_all')
         ON CONFLICT (role_id, permission_id) DO NOTHING
     ''')
     # Grant drive_type to Manager too — managers clean up sessions colleagues
