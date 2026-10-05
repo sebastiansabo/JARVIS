@@ -652,9 +652,75 @@ export function ReportsTab({ companyId, toolbarSlot, documentType, brand }: { co
                 rows={data.top_odometer.map((v) => ({ label: v.registration_number || v.model, value: v.odometer_km }))} />
             </ChartCard>
           </div>
+
+          {/* Odometer reconciliation — overlaps to clean up (data bugs behind ⚠️) */}
+          <ReconciliationCard companyId={companyId} from={from} to={to} docType={docType} brand={brandArg} />
         </>
       )}
     </div>
+  )
+}
+
+// Per-car list of odometer overlaps (two drives claiming the same km) for the
+// selected scope — turns the one-at-a-time ⚠️ into a proactive cleanup list.
+function ReconciliationCard({ companyId, from, to, docType, brand }: {
+  companyId: number; from: string; to: string; docType: string; brand?: string
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['fp-reconciliation', companyId, from, to, docType, brand],
+    queryFn: () => foiParcursApi.getReconciliation({
+      company_id: companyId || undefined, date_from: from, date_to: to,
+      document_type: docType, brand,
+    }),
+    staleTime: 30_000,
+  })
+  if (isLoading && !data) return <ChartSkeleton h={84} />
+  const cars = data?.cars ?? []
+  return (
+    <ChartCard title="Suprapuneri kilometraj" hint="pornire sub kilometrajul deja atins — de corectat">
+      {cars.length === 0 ? (
+        <p className="py-4 text-sm text-muted-foreground">Nicio suprapunere de kilometraj în perioada selectată. 🎉</p>
+      ) : (
+        <div className="space-y-3">
+          {cars.map((car) => (
+            <div key={car.vin} className="rounded-lg border p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-medium">
+                  {car.model} <span className="font-mono text-xs text-muted-foreground">{car.vin}</span>
+                </div>
+                <div className="text-xs font-medium text-amber-700 dark:text-amber-500">
+                  {car.count} {car.count === 1 ? 'suprapunere' : 'suprapuneri'} · {nf.format(car.total_overlap_km)} km
+                </div>
+              </div>
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <tr className="text-left">
+                      <th className="py-1 pr-3 font-medium">Data</th>
+                      <th className="py-1 pr-3 font-medium">Șofer</th>
+                      <th className="py-1 pr-3 font-medium">KM plecare-sosire</th>
+                      <th className="py-1 font-medium">Suprapunere</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {car.sessions.map((s) => (
+                      <tr key={s.id} className="border-t">
+                        <td className="py-1 pr-3 whitespace-nowrap text-muted-foreground">{s.date ?? '—'}</td>
+                        <td className="py-1 pr-3">{s.who}</td>
+                        <td className="py-1 pr-3 whitespace-nowrap tabular-nums">{s.km_start} → {s.km_end}</td>
+                        <td className="py-1 whitespace-nowrap text-amber-700 dark:text-amber-500">
+                          {nf.format(s.overlap_km)} km sub {nf.format(s.prior_max_end)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </ChartCard>
   )
 }
 

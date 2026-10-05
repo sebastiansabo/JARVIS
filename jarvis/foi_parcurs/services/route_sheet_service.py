@@ -379,6 +379,37 @@ def _rows_with_gaps(trips: list, km_min=None, km_max=None) -> list:
     return rows
 
 
+def overlap_rows(sessions: list) -> list:
+    """Real sessions whose km_start falls below the running max km_end of earlier
+    (lower-odometer) sessions — an odometer OVERLAP: two drives claiming km the car
+    had already passed (e.g. a drive back-filled with a stale start while an
+    intervening internal drive had already moved the car forward). Mirrors the
+    frontend `sessionAnomalies` overlap walk; powers the Rapoarte reconciliation
+    report. PLANNED/MISSED/PENDING never moved the car and are skipped.
+
+    Each row: {id, who, km_start, km_end, prior_max_end, overlap_km, date}."""
+    real = [s for s in sessions
+            if s.get('status') not in ('PLANNED', 'MISSED', 'PENDING')
+            and s.get('km_start') is not None and s.get('km_end') is not None]
+    real.sort(key=lambda s: (int(s['km_start']), int(s['km_end'])))
+    out = []
+    max_end = None
+    for s in real:
+        start = int(s['km_start'])
+        if max_end is not None and start < max_end:
+            out.append({
+                'id': s['id'],
+                'who': s.get('client_name') or s.get('advisor_name') or '—',
+                'km_start': start, 'km_end': int(s['km_end']),
+                'prior_max_end': max_end, 'overlap_km': max_end - start,
+                'date': s.get('date') or s.get('departure_datetime') or s.get('created_at'),
+            })
+        end = int(s['km_end'])
+        if max_end is None or end > max_end:
+            max_end = end
+    return out
+
+
 # ── HTML skeleton (locked numbers) + Playwright render ──
 
 def _scop_text(trip, prose_map=None, overrides=None) -> str:
