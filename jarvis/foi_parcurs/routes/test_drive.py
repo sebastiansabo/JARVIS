@@ -334,6 +334,36 @@ def api_submit_test_drive():
         if not isinstance(departure_damage, list):
             return jsonify({'success': False, 'error': 'departure_damage must be a list'}), 400
 
+        # Odometer-floor guard. A session must never START below the car's real
+        # current odometer (its stored reading or the top of its logged drives) —
+        # that produces the overlaps/gaps that plague heavily-shared cars.
+        #   • Internal drives are logged by whoever drove, often with a stale/low
+        #     reading — silently raise them to the floor (mirrors the internal
+        #     /start path, api_start_internal_session).
+        #   • Client drives get a soft 409 the advisor confirms, so a legitimate
+        #     back-dated entry (lower km than a later drive) still goes through
+        #     with allow_overlap.
+        # A PLANNED draft defers km to start/activation, so it skips the guard.
+        km_start = int(data.get('odometer_start') or 0)
+        if not is_draft:
+            floor = _fp_repo.get_mileage_floor(data['vin'])
+            if km_start < floor:
+                if is_internal:
+                    km_start = floor
+                elif not data.get('allow_overlap'):
+                    return jsonify({
+                        'success': False,
+                        'odometer_overlap': True,
+                        'expected_floor': floor,
+                        'provided': km_start,
+                        'error': (f'Kilometrajul de plecare ({km_start}) este sub '
+                                  f'kilometrajul actual al mașinii ({floor}). '
+                                  'Confirmă pentru a continua.'),
+                    }), 409
+        # km_end defaults to km_start when absent, and never drops below the
+        # (possibly floor-raised) km_start — no negative-distance sessions.
+        km_end = max(int(data.get('odometer_end') or 0), km_start)
+
         contract_data = {
             'contract_id': contract_id,
             'vin': data['vin'],
@@ -344,8 +374,8 @@ def api_submit_test_drive():
             'client_phone': client_phone,
             'route_type': 'TD',
             'slot_number': 0,
-            'km_start': int(data.get('odometer_start') or 0),
-            'km_end': int(data.get('odometer_end') or 0) or int(data.get('odometer_start') or 0),
+            'km_start': km_start,
+            'km_end': km_end,
             'distance_km': int(data.get('estimated_km') or 0),
             'fuel_tank_capacity_liters': tank,
             'fuel_gauge_start_level': start_level,
