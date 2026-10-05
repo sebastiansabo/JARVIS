@@ -23,7 +23,7 @@ import {
   DollarSign, Target, AlertTriangle, FolderOpen, FileText,
   BarChart3, PieChart, Download, SlidersHorizontal,
   Archive, Trash2, RotateCcw, AlertCircle, Heart, GitCompareArrows, X, Check, CalendarDays, Info,
-  Sparkles, ChevronDown, ChevronUp, Loader2,
+  Sparkles, ChevronDown, ChevronUp, Loader2, ArrowUp, ArrowDown, ArrowUpDown,
 } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -294,8 +294,8 @@ export default function Marketing() {
   const isMobile = useIsMobile()
   const isTablet = useIsTablet()
   const isSmall = isMobile || isTablet
-  const { filters, updateFilter, clearFilters, viewMode, setViewMode, visibleColumns, setVisibleColumns } = useMarketingStore(
-    useShallow((s) => ({ filters: s.filters, updateFilter: s.updateFilter, clearFilters: s.clearFilters, viewMode: s.viewMode, setViewMode: s.setViewMode, visibleColumns: s.visibleColumns, setVisibleColumns: s.setVisibleColumns }))
+  const { filters, updateFilter, setFilters, clearFilters, viewMode, setViewMode, visibleColumns, setVisibleColumns } = useMarketingStore(
+    useShallow((s) => ({ filters: s.filters, updateFilter: s.updateFilter, setFilters: s.setFilters, clearFilters: s.clearFilters, viewMode: s.viewMode, setViewMode: s.setViewMode, visibleColumns: s.visibleColumns, setVisibleColumns: s.setVisibleColumns }))
   )
   const [filtersOpen, setFiltersOpen] = useState(false)
   const effectiveViewMode = isMobile ? 'cards' : viewMode
@@ -315,6 +315,12 @@ export default function Marketing() {
       else if (next.size < 4) next.add(id)
       return next
     })
+  }
+
+  // Toggle server-side sort for a column: same column flips direction, new column starts ascending.
+  const handleSort = (sortKey: string) => {
+    const nextDir = filters.sort_by === sortKey && filters.sort_dir === 'asc' ? 'desc' : 'asc'
+    setFilters({ ...filters, sort_by: sortKey, sort_dir: nextDir, offset: 0 })
   }
 
   // Data queries
@@ -607,6 +613,9 @@ export default function Marketing() {
               projects={projects}
               onSelect={(p) => navigate(`/app/marketing/projects/${p.id}`)}
               visibleColumns={visibleColumns}
+              sort={filters.sort_by}
+              order={filters.sort_dir}
+              onSort={handleSort}
               compareMode={compareMode}
               compareIds={compareIds}
               onToggleCompare={toggleCompare}
@@ -1077,6 +1086,8 @@ export interface MktProjectColumn {
   label: string
   /** Custom header node; falls back to `label` when omitted. */
   header?: React.ReactNode
+  /** Backend sort field; when set, the column header becomes a sort toggle. */
+  sortKey?: string
   headClassName?: string
   cellClassName?: string
   render: (p: MktProject, ctx: MktProjectRowCtx) => React.ReactNode
@@ -1092,6 +1103,7 @@ export const MKT_PROJECT_COLUMNS: MktProjectColumn[] = [
   {
     key: 'name',
     label: 'Project',
+    sortKey: 'name',
     cellClassName: 'font-medium max-w-[200px] truncate',
     render: (p) => p.name,
   },
@@ -1146,6 +1158,7 @@ export const MKT_PROJECT_COLUMNS: MktProjectColumn[] = [
   {
     key: 'total_budget',
     label: 'Budget',
+    sortKey: 'total_budget',
     headClassName: 'text-right',
     cellClassName: 'text-right text-sm tabular-nums',
     render: (p, { budget }) => formatCurrency(budget, p.currency),
@@ -1153,6 +1166,7 @@ export const MKT_PROJECT_COLUMNS: MktProjectColumn[] = [
   {
     key: 'total_spent',
     label: 'Spent',
+    sortKey: 'total_spent',
     headClassName: 'text-right',
     cellClassName: 'text-right text-sm tabular-nums',
     render: (p, { spent }) => formatCurrency(spent, p.currency),
@@ -1181,12 +1195,14 @@ export const MKT_PROJECT_COLUMNS: MktProjectColumn[] = [
   {
     key: 'start_date',
     label: 'Start',
+    sortKey: 'start_date',
     cellClassName: 'text-sm text-muted-foreground',
     render: (p) => (p.start_date ? new Date(p.start_date).toLocaleDateString('ro-RO') : '—'),
   },
   {
     key: 'end_date',
     label: 'End',
+    sortKey: 'end_date',
     cellClassName: 'text-sm text-muted-foreground',
     render: (p) => (p.end_date ? new Date(p.end_date).toLocaleDateString('ro-RO') : '—'),
   },
@@ -1194,7 +1210,7 @@ export const MKT_PROJECT_COLUMNS: MktProjectColumn[] = [
 
 const MKT_PROJECT_COLUMN_MAP = new Map(MKT_PROJECT_COLUMNS.map((c) => [c.key, c]))
 
-export function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, compareIds, onToggleCompare, visibleColumns }: {
+export function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, compareIds, onToggleCompare, visibleColumns, sort, order, onSort }: {
   projects: MktProject[]
   onSelect: (p: MktProject) => void
   onArchive?: (p: MktProject) => void
@@ -1203,6 +1219,9 @@ export function ProjectTable({ projects, onSelect, onArchive, onDelete, compareM
   compareIds?: Set<number>
   onToggleCompare?: (id: number) => void
   visibleColumns?: string[]
+  sort?: string
+  order?: 'asc' | 'desc'
+  onSort?: (sortKey: string) => void
 }) {
   if (!projects.length) {
     return (
@@ -1224,9 +1243,27 @@ export function ProjectTable({ projects, onSelect, onArchive, onDelete, compareM
         <TableHeader>
           <TableRow>
             {compareMode && <TableHead className="w-10" />}
-            {cols.map((c) => (
-              <TableHead key={c.key} className={c.headClassName}>{c.header ?? c.label}</TableHead>
-            ))}
+            {cols.map((c) => {
+              const sortable = Boolean(c.sortKey && onSort)
+              if (!sortable) {
+                return <TableHead key={c.key} className={c.headClassName}>{c.header ?? c.label}</TableHead>
+              }
+              const active = sort === c.sortKey
+              const SortIcon = active ? (order === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+              return (
+                <TableHead
+                  key={c.key}
+                  className={cn('cursor-pointer select-none', c.headClassName)}
+                  onClick={() => onSort!(c.sortKey!)}
+                  aria-sort={active ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}
+                >
+                  <div className={cn('flex items-center gap-1', c.headClassName?.includes('text-right') && 'justify-end')}>
+                    {c.header ?? c.label}
+                    <SortIcon className={cn('h-3 w-3', active ? 'text-foreground' : 'text-muted-foreground/40')} />
+                  </div>
+                </TableHead>
+              )
+            })}
             {hasActions && <TableHead className="w-[80px]" />}
           </TableRow>
         </TableHeader>
