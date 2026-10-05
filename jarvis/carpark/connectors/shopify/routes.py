@@ -15,7 +15,7 @@ from . import taxonomy
 from .taxonomy_repository import TaxonomyMapRepository
 from .schema_repository import SchemaRepository
 from core.connectors.repositories.connector_repository import ConnectorRepository
-from core.utils.api_helpers import api_login_required, admin_required
+from core.utils.api_helpers import admin_required
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.photo_repository import PhotoRepository
 from carpark.repositories.publishing_repository import PublishingRepository
@@ -147,7 +147,7 @@ def _reconcile_best_effort(client) -> None:
 
 # ---------- config CRUD ----------
 @shopify_bp.route('/api/config', methods=['GET'])
-@api_login_required
+@carpark_required
 def get_accounts():
     rows = _repo.get_all_by_type(CONNECTOR_TYPE)
     return jsonify({'success': True, 'accounts': [_safe_account(r) for r in rows]})
@@ -219,7 +219,7 @@ def set_autosync():
 
 
 @shopify_bp.route('/api/test-connection', methods=['POST'])
-@api_login_required
+@admin_required
 def test_connection():
     connector = _get_single_account()
     if not connector:
@@ -239,7 +239,7 @@ def test_connection():
 
 # ---------- taxonomy ----------
 @shopify_bp.route('/api/taxonomy', methods=['GET'])
-@api_login_required
+@carpark_required
 def get_taxonomy():
     dim_cols = {d: taxonomy.vehicle_field_for(d) for d in taxonomy.DIMENSIONS}
     distinct = _taxo_repo.distinct_source_values(dim_cols)
@@ -259,7 +259,7 @@ def get_taxonomy():
 
 
 @shopify_bp.route('/api/metafield-choices', methods=['GET'])
-@api_login_required
+@carpark_required
 def get_metafield_choices():
     """Read-only diagnostic: the store's product metafield keys + each one's choice
     list, so we can see exactly which values custom.fuel/culoare/body_type accept
@@ -297,7 +297,7 @@ def save_taxonomy():
 
 # ---------- schema (field map + value map + store reconcile) ----------
 @shopify_bp.route('/api/schema', methods=['GET'])
-@api_login_required
+@carpark_required
 def get_schema():
     try:
         _schema_repo.seed_defaults_if_empty()
