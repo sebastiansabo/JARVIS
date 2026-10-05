@@ -20,6 +20,7 @@ from ._shared import (
     _fp_repo, _vehicle_repo,
 )
 from core.roles.repositories import PermissionRepository
+from ..services.route_sheet_service import overlap_rows
 
 # Roles that may pick any company / see the whole group, unconditionally.
 _GROUP_ROLES = ('admin', 'superadmin', 'board')
@@ -128,3 +129,47 @@ def api_reports_sessions():
                                         status=status, drive_type=drive_type,
                                         client_type=client_type, brand=brand, fuel_type=fuel_type)
     return jsonify({'success': True, 'sessions': sessions})
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/reports/reconciliation', methods=['GET'])
+@login_required
+def api_reports_reconciliation():
+    """Odometer-overlap reconciliation for the Rapoarte tab: per-car list of real
+    sessions whose start km fell below where the car already was (two drives
+    claiming the same km — the data bug behind a ⚠️). Same scope/filters as the
+    summary. The overlap walk is a pure, tested helper (overlap_rows)."""
+    company_id, is_group, err = _scoped_company()
+    if err:
+        return err
+
+    document_type = (request.args.get('document_type') or 'sales').strip() or 'sales'
+    date_from = (request.args.get('date_from') or '').strip() or None
+    date_to = (request.args.get('date_to') or '').strip() or None
+    brand = (request.args.get('brand') or '').strip() or None
+
+    sessions = _fp_repo.sessions_for_reconciliation(
+        company_id=company_id, date_from=date_from, date_to=date_to,
+        document_type=document_type, brand=brand)
+
+    by_vin = {}
+    for s in sessions:
+        by_vin.setdefault(s['vin'], []).append(s)
+    cars = []
+    for vin, rows in by_vin.items():
+        overlaps = overlap_rows(rows)
+        if not overlaps:
+            continue
+        cars.append({
+            'vin': vin,
+            'model': rows[0].get('model') or '—',
+            'count': len(overlaps),
+            'total_overlap_km': sum(o['overlap_km'] for o in overlaps),
+            'sessions': overlaps,
+        })
+    cars.sort(key=lambda c: c['total_overlap_km'], reverse=True)
+
+    return jsonify({
+        'success': True,
+        'scope': {'company_id': company_id, 'is_group': is_group, 'document_type': document_type},
+        'cars': cars,
+    })

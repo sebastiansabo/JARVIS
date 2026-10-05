@@ -102,6 +102,26 @@ class FakeFp:
                                   client_type=client_type, brand=brand, fuel_type=fuel_type)
         return list(SESSIONS)
 
+    def sessions_for_reconciliation(self, company_id=None, date_from=None, date_to=None,
+                                    document_type=None, brand=None):
+        self.recon_args = dict(company_id=company_id, date_from=date_from, date_to=date_to,
+                               document_type=document_type, brand=brand)
+        return list(RECON_SESSIONS)
+
+
+# Two cars: V1's chain has one overlap (#3 starts at 261, car already at 283),
+# V2 is a clean contiguous chain → excluded from the reconciliation report.
+RECON_SESSIONS = [
+    {'id': 1, 'vin': 'V1', 'model': 'MG S9', 'client_name': 'A', 'advisor_name': None,
+     'km_start': 160, 'km_end': 261, 'status': 'COMPLETED', 'date': '2026-09-02'},
+    {'id': 2, 'vin': 'V1', 'model': 'MG S9', 'client_name': 'B', 'advisor_name': None,
+     'km_start': 261, 'km_end': 283, 'status': 'COMPLETED', 'date': '2026-09-03'},
+    {'id': 3, 'vin': 'V1', 'model': 'MG S9', 'client_name': 'C', 'advisor_name': None,
+     'km_start': 261, 'km_end': 312, 'status': 'COMPLETED', 'date': '2026-09-04'},
+    {'id': 4, 'vin': 'V2', 'model': 'VW Golf', 'client_name': 'D', 'advisor_name': None,
+     'km_start': 10, 'km_end': 50, 'status': 'COMPLETED', 'date': '2026-09-01'},
+]
+
 
 class FakeVeh:
     def __init__(self):
@@ -336,3 +356,32 @@ def test_sessions_multi_status_cumulates(monkeypatch):
     r = c.get('/api/foi-parcurs/reports/sessions?vin=WVW1&status=complete,missed')
     assert r.status_code == 200
     assert c._fp.sessions_args['status'] == 'complete,missed'
+
+
+# ── Reconciliation report (odometer overlaps) ────────────────────────────────
+
+def test_reconciliation_groups_overlaps_by_car(monkeypatch):
+    """Per-car overlap rollup: only cars WITH an overlap appear; a clean chain is
+    excluded. The flagged session + overlap km are returned for the drill-down."""
+    c = make_client(monkeypatch, role='admin', company_id=16)
+    r = c.get('/api/foi-parcurs/reports/reconciliation?document_type=sales')
+    assert r.status_code == 200, r.get_json()
+    body = r.get_json()
+    assert body['success'] is True
+    assert [car['vin'] for car in body['cars']] == ['V1']  # V2 clean → excluded
+    car = body['cars'][0]
+    assert car['model'] == 'MG S9'
+    assert car['count'] == 1
+    assert car['total_overlap_km'] == 22
+    assert car['sessions'][0]['id'] == 3
+    assert car['sessions'][0]['overlap_km'] == 22
+
+
+def test_reconciliation_non_group_forced_to_own_company(monkeypatch):
+    """IDOR guard: a non-group user requesting ?company_id=99 is scoped to their
+    own company (11), same as the summary endpoint."""
+    c = make_client(monkeypatch, role='user', company_id=11)
+    r = c.get('/api/foi-parcurs/reports/reconciliation?company_id=99')
+    assert r.status_code == 200, r.get_json()
+    assert c._fp.recon_args['company_id'] == 11
+    assert r.get_json()['scope']['is_group'] is False
