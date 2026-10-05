@@ -6,10 +6,19 @@ import {
   type ColumnState,
 } from './dataTableFactory'
 
-const defaultColumns = [
-  'name', 'company_name', 'brand_name', 'project_type', 'status',
-  'total_budget', 'total_spent', 'owner_name', 'start_date', 'end_date',
+/**
+ * Default-visible project-table columns, in order. Mirrors the columns the
+ * table showed before the column-toggle control existed. `brand_name` and
+ * `end_date` are available in the catalog (see MKT_PROJECT_COLUMNS) but hidden
+ * by default.
+ */
+export const defaultColumns = [
+  'name', 'company_name', 'project_type', 'status', 'health',
+  'total_budget', 'total_spent', 'burn', 'owner_name', 'start_date',
 ]
+
+/** The project name is the row's identity and can never be hidden. */
+export const lockedColumns = new Set(['name'])
 
 interface MarketingState
   extends DataTableState<MktProjectFilters>,
@@ -25,6 +34,7 @@ export const useMarketingStore = create<MarketingState>((set) => ({
       columns: {
         storageKey: 'marketing-project-columns',
         defaults: defaultColumns,
+        locked: lockedColumns,
         pageId: 'marketing',
       },
       resetOffsetOnFilter: true,
