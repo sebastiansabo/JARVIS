@@ -19,6 +19,7 @@ from flask_login import login_required, current_user
 from carpark import carpark_bp
 from carpark.finance_guard import (
     FINANCE_VEHICLE_FIELDS as _FINANCE_ROW_FIELDS,
+    FINANCE_VEHICLE_TABLE_FIELDS as _FINANCE_TABLE_FIELDS,
     FINANCE_KPI_FIELDS as _FINANCE_KPI_FIELDS,
 )
 from carpark.repositories.dispo_repository import DispoRepository
@@ -73,9 +74,17 @@ def _has_finance_perm() -> bool:
 def _strip_finance(result):
     """Mutates a DispoRepository.summary() result in place, removing money
     fields from every row and nulling the totals block, for callers without
-    carpark.view_finance."""
+    carpark.view_finance.
+
+    Rows are SELECT v.* + computed aliases, so we drop BOTH the derived alias
+    money fields (_FINANCE_ROW_FIELDS) AND the physical carpark_vehicles finance
+    columns (_FINANCE_TABLE_FIELDS: purchase_price_net, minimum_price, total_cost,
+    cost_lines, pricing_sheets, acquisition_*, …) — the alias-only strip left the
+    table columns leaking. Mirrors the catalog + vehicle-detail strip."""
     for row in result.get('rows') or []:
         for field in _FINANCE_ROW_FIELDS:
+            row.pop(field, None)
+        for field in _FINANCE_TABLE_FIELDS:
             row.pop(field, None)
     result['totals'] = None
     return result

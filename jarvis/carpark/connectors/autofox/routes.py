@@ -14,11 +14,12 @@ import logging
 from flask import request, jsonify, current_app
 
 from . import autofox_bp
-from .service import AutofoxIngestService, AutofoxIngestError, CONNECTOR_TYPE
+from .service import AutofoxIngestService, AutofoxIngestError, CONNECTOR_TYPE, _validate_url
 from .client import AutofoxClient
 from core.connectors.repositories.connector_repository import ConnectorRepository
 from core.services import spaces_service
-from core.utils.api_helpers import api_login_required
+from core.utils.api_helpers import admin_required
+from carpark.routes.vehicles import carpark_required, carpark_edit_required
 
 logger = logging.getLogger('jarvis.autofox.routes')
 
@@ -56,7 +57,7 @@ def _safe(connector) -> dict:
 
 
 @autofox_bp.route('/api/config', methods=['GET'])
-@api_login_required
+@carpark_required
 def get_config():
     c = _connector()
     if not c:
@@ -65,12 +66,24 @@ def get_config():
 
 
 @autofox_bp.route('/api/config', methods=['POST'])
-@api_login_required
+@admin_required
 def save_config():
     """Body: {login_token?, api_base_url?}. login_token is the AutoFox pull API
-    credential (stored in credentials, never returned)."""
+    credential (stored in credentials, never returned).
+
+    SECURITY: @admin_required — this writes the AutoFox credential + api_base_url,
+    and the pull client sends that credential to api_base_url, so an attacker who
+    could set it would exfiltrate the token (SSRF). We additionally validate any
+    supplied api_base_url against the same SSRF guard the download path uses, so a
+    private/link-local/metadata host can never be stored (defence in depth)."""
     data = request.get_json(silent=True) or {}
     login_token = (data.get('login_token') or '').strip()
+    base_url = (data.get('api_base_url') or '').strip()
+    if base_url:
+        try:
+            _validate_url(base_url)
+        except AutofoxIngestError as e:
+            return jsonify({'success': False, 'error': e.message}), 400
     c = _connector()
     if not c:
         creds = {'login_token': login_token} if login_token else {}
@@ -95,7 +108,7 @@ def save_config():
 
 
 @autofox_bp.route('/api/logs', methods=['GET'])
-@api_login_required
+@carpark_required
 def get_logs():
     c = _connector()
     if not c:
@@ -107,7 +120,7 @@ def get_logs():
 # ── Per-vehicle photo sync (pull) ──
 
 @autofox_bp.route('/api/photos', methods=['GET'])
-@api_login_required
+@carpark_required
 def api_photos():
     """List AutoFox processed photos for a VIN, each flagged already-imported."""
     vin = (request.args.get('vin') or '').strip().upper()
@@ -131,7 +144,7 @@ def api_photos():
 
 
 @autofox_bp.route('/api/image', methods=['GET'])
-@api_login_required
+@carpark_required
 def api_image():
     """Thumbnail proxy: AutoFox media needs our Bearer token, which the browser
     can't send. Fetch server-side and stream back. SSRF-safe: `path` must be a
@@ -150,7 +163,7 @@ def api_image():
 
 
 @autofox_bp.route('/api/import', methods=['POST'])
-@api_login_required
+@carpark_edit_required
 def api_import():
     """Download + store the chosen AutoFox conversions for a VIN."""
     data = request.get_json(silent=True) or {}

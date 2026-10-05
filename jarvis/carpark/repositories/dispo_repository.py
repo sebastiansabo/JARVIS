@@ -9,6 +9,7 @@ from datetime import date, datetime, time
 from typing import Optional, Dict, Any, List
 
 from core.base_repository import BaseRepository
+from carpark.money import NET_BUY_SQL
 
 
 # Pipeline stage -> underlying carpark_vehicles.status values.
@@ -280,7 +281,7 @@ class DispoRepository(BaseRepository):
                 COALESCE(rt.total_revenues, 0) AS total_revenues,
                 COALESCE(rt.bonus_leasing, 0) AS bonus_leasing,
                 (COALESCE(v.sale_date, CURRENT_DATE) - v.acquisition_date) AS days_in_stock,
-                (v.sale_price - v.acquisition_price - COALESCE(ct.total_costs, 0)) AS gross_margin,
+                (v.sale_price - ({NET_BUY_SQL}) - COALESCE(ct.total_costs, 0)) AS gross_margin,
                 ar.reservation_id,
                 ar.reservation_end,
                 ar.client_name AS reservation_client_name,
@@ -324,7 +325,7 @@ class DispoRepository(BaseRepository):
                 COALESCE(SUM(v.acquisition_price), 0) AS acquisition_price,
                 COALESCE(SUM(ct.total_costs), 0) AS total_costs,
                 COALESCE(SUM(v.sale_price), 0) AS sale_price,
-                COALESCE(SUM(v.sale_price - v.acquisition_price - COALESCE(ct.total_costs, 0)), 0) AS gross_margin
+                COALESCE(SUM(v.sale_price - ({NET_BUY_SQL}) - COALESCE(ct.total_costs, 0)), 0) AS gross_margin
             {_JOINS}
             WHERE {where_sql}
         """, tuple(params))
@@ -411,7 +412,7 @@ class DispoRepository(BaseRepository):
                     WHERE v.status = ANY(%(active_statuses)s)
                       AND (CURRENT_DATE - v.acquisition_date) > 60
                 ) AS aged_over_60,
-                COALESCE(SUM(v.sale_price - v.acquisition_price - COALESCE(ct.total_costs, 0)) FILTER (
+                COALESCE(SUM(v.sale_price - ({NET_BUY_SQL}) - COALESCE(ct.total_costs, 0)) FILTER (
                     WHERE v.sale_date >= DATE_TRUNC('month', CURRENT_DATE)
                       AND v.sale_date < DATE_TRUNC('month', CURRENT_DATE) + INTERVAL '1 month'
                 ), 0) AS gross_margin_mtd

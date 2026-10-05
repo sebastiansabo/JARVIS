@@ -172,6 +172,22 @@ def test_cancel_reservation_restores_prior_status_from_history():
         1, 'LISTED', changed_by=42, notes='Client backed out', via_dispo_action=True)
 
 
+def test_cancel_reservation_keeps_reservation_active_if_status_restore_fails():
+    """Restore the status BEFORE cancelling the reservation row: if change_status
+    raises, the reservation must stay active (retryable) rather than being
+    cancelled while the vehicle is stuck in RESERVED (the brick)."""
+    svc, mocks = _svc()
+    mocks['reservation_repo'].active_for_vehicle.return_value = {'id': 7}
+    mocks['vehicle_service'].get_status_history.return_value = [
+        {'old_status': 'PRICE_REDUCED', 'new_status': 'RESERVED'}]
+    mocks['vehicle_service'].change_status.side_effect = ValueError('transition blew up')
+
+    with pytest.raises(ValueError):
+        svc.cancel_reservation(1, COMPANY_ID, USER, reason='Client backed out')
+
+    mocks['reservation_repo'].set_status.assert_not_called()
+
+
 def test_cancel_reservation_falls_back_to_ready_for_sale_when_no_history():
     svc, mocks = _svc()
     mocks['reservation_repo'].active_for_vehicle.return_value = {'id': 7}
@@ -216,6 +232,24 @@ def test_sell_negative_margin_without_minimum_price_raises():
     with pytest.raises(ValueError) as exc_info:
         svc.sell(1, COMPANY_ID, USER, _sell_data(sale_price=10000))  # 10000-8000-5000 = -3000
     assert str(exc_info.value).startswith('LOW_MARGIN')
+
+
+def test_sell_low_margin_gate_uses_net_buy_not_gross_acquisition():
+    """The gate must key off net_buy (VAT-recoverable acquisition basis), matching
+    the Dispo board's net-basis gross_margin — NOT the gross acquisition_price. A
+    VAT car that looks negative on the gross price is fine on the net basis, so the
+    sale must proceed. Gross basis: 11000 - 11900 = -900 → would wrongly block;
+    net basis: 11000 - 10000 = +1000 → proceeds."""
+    vehicle = dict(BASE_VEHICLE, minimum_price=None,
+                   acquisition_price=11900, purchase_price_net=10000,
+                   purchase_vat_rate=19)
+    svc, mocks = _svc(vehicle)
+    mocks['vehicle_service'].get_cost_totals.return_value = {
+        'total_amount': 0, 'total_vat': 0, 'total_with_vat': 0}
+
+    svc.sell(1, COMPANY_ID, USER, _sell_data(sale_price=11000))  # must NOT raise LOW_MARGIN
+
+    mocks['vehicle_service'].change_status.assert_called_once()  # sale proceeded
 
 
 def test_sell_low_margin_gate_uses_vat_exclusive_cost_basis():

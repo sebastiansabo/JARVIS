@@ -34,12 +34,47 @@ def connector(monkeypatch):
 
 @pytest.fixture
 def as_admin(monkeypatch):
+    # A fully-permissioned user patched into BOTH namespaces: admin_required reads
+    # current_user from api_helpers; carpark_required/carpark_edit_required read it
+    # from carpark.routes.vehicles (autofox routes import them from there).
     import core.utils.api_helpers as h
+    import carpark.routes.vehicles as v
 
     class _U:
         is_authenticated = True
+        id = 1
+        company_id = 1
+        can_access_carpark = True
+        can_edit_carpark = True
+        can_view_carpark_finance = True
+        can_access_settings = True
 
-    monkeypatch.setattr(h, 'current_user', _U())
+    u = _U()
+    monkeypatch.setattr(h, 'current_user', u)
+    monkeypatch.setattr(v, 'current_user', u)
+
+
+def _login_as(monkeypatch, **perms):
+    """Patch current_user (both namespaces) with a user carrying the given
+    permission flags; everything unspecified defaults False."""
+    import core.utils.api_helpers as h
+    import carpark.routes.vehicles as v
+
+    class _U:
+        is_authenticated = True
+        id = 2
+        company_id = 1
+        can_access_carpark = False
+        can_edit_carpark = False
+        can_view_carpark_finance = False
+        can_access_settings = False
+
+    u = _U()
+    for k, val in perms.items():
+        setattr(u, k, val)
+    monkeypatch.setattr(h, 'current_user', u)
+    monkeypatch.setattr(v, 'current_user', u)
+    return u
 
 
 class _FakeResp:
@@ -211,6 +246,49 @@ def test_photos_route_flags_already_imported(client, connector, as_admin, monkey
     j = r.get_json()
     assert j['matched_vehicle'] is True and j['vehicle_id'] == 42
     assert j['photos'][0]['already_imported'] is True
+
+
+# ── route authorization + SSRF-on-write (batch-3 hardening) ──
+
+def test_save_config_requires_admin(client, monkeypatch):
+    _login_as(monkeypatch, can_access_carpark=True, can_edit_carpark=True,
+              can_access_settings=False)
+    r = client.post('/autofox/api/config', json={'login_token': 'x'})
+    assert r.status_code == 403
+
+
+def test_import_requires_edit(client, monkeypatch):
+    _login_as(monkeypatch, can_access_carpark=True, can_edit_carpark=False)
+    r = client.post('/autofox/api/import',
+                    json={'vin': 'W' * 17, 'conversion_ids': ['1']})
+    assert r.status_code == 403
+
+
+def test_reads_require_carpark(client, monkeypatch):
+    _login_as(monkeypatch, can_access_carpark=False)
+    assert client.get('/autofox/api/config').status_code == 403
+    assert client.get('/autofox/api/logs').status_code == 403
+    assert client.get('/autofox/api/photos?vin=WBA1234567890ABCD').status_code == 403
+    assert client.get('/autofox/api/image?path=media/x.jpg').status_code == 403
+
+
+def test_save_config_rejects_ssrf_base_url(client, connector, as_admin, monkeypatch):
+    # A link-local / metadata base_url must be rejected before it can be stored,
+    # even for an admin (prevents SSRF credential exfiltration via the pull client).
+    r = client.post('/autofox/api/config', json={'api_base_url': 'http://169.254.169.254'})
+    assert r.status_code == 400
+
+
+def test_save_config_accepts_public_base_url(client, as_admin, monkeypatch):
+    saved = {}
+    monkeypatch.setattr(ax_routes._repo, 'get_by_type', lambda t: None)
+    monkeypatch.setattr(ax_routes._repo, 'save', lambda *a, **k: saved.update(k) or 5)
+    monkeypatch.setattr(ax_routes._repo, 'get', lambda cid: {
+        'id': 5, 'status': 'connected', 'credentials': {'login_token': 't'},
+        'config': {'api_base_url': 'https://8.8.8.8'}})
+    r = client.post('/autofox/api/config',
+                    json={'login_token': 't', 'api_base_url': 'https://8.8.8.8'})
+    assert r.status_code == 200
 
 
 def test_import_route_downloads_and_dedups(client, connector, as_admin, monkeypatch):

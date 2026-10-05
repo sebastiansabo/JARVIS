@@ -37,6 +37,7 @@ from carpark.repositories.transfer_repository import TransferRepository
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.services.vehicle_service import VehicleService
 from carpark.services.publishing_service import PublishingService
+from carpark.money import net_buy
 from core.notifications.notify import notify_user
 
 logger = logging.getLogger('jarvis.carpark')
@@ -197,12 +198,16 @@ class DispoService:
         if not reservation:
             raise ValueError('No active reservation to cancel')
 
-        cancelled = self._reservation_repo.set_status(reservation['id'], 'cancelled')
-
+        # Restore the pre-RESERVED status FIRST, then cancel the reservation row.
+        # If the status change fails, the reservation stays active (the whole
+        # action is retryable) instead of being cancelled while the vehicle is
+        # stuck in RESERVED with no reservation — the old order bricked the car.
         prior_status = self._prior_status_before_reserved(vehicle_id)
         updated_vehicle = self._vehicle_service.change_status(
             vehicle_id, prior_status, changed_by=_uid(user), notes=reason,
             via_dispo_action=True)
+
+        cancelled = self._reservation_repo.set_status(reservation['id'], 'cancelled')
 
         self._notify_vehicle_contacts(vehicle, 'Rezervare anulată', message=reason)
 
@@ -279,16 +284,15 @@ class DispoService:
         under the vehicle's minimum_price, and/or a negative prospective gross
         margin.
 
-        gross_margin = sale_price - acquisition_price - SUM(cost.amount),
-        using the VAT-EXCLUSIVE cost basis so this number reconciles with the
-        canonical gross_margin the salesperson sees in the Dispo summary
-        table: DispoRepository (dispo_repository.py) computes
-        `sale_price - acquisition_price - COALESCE(SUM(amount), 0)` where the
+        gross_margin = sale_price - net_buy - SUM(cost.amount), using net_buy
+        (the VAT-recoverable acquisition basis) and the VAT-EXCLUSIVE cost basis
+        so this number reconciles with the canonical gross_margin the salesperson
+        sees in the Dispo summary table: DispoRepository (dispo_repository.py)
+        computes `sale_price - NET_BUY_SQL - COALESCE(SUM(amount), 0)` where the
         cost total is `SUM(carpark_vehicle_costs.amount)` — base amounts only,
-        excluding the separate vat_amount column. We take
-        `get_cost_totals()['total_amount']` (= SUM(amount)) directly; note
-        `get_profitability()['total_costs']` is now also net (SUM(amount)), so
-        the two agree, but we read the cost total explicitly here for clarity."""
+        excluding the separate vat_amount column. We use `money.net_buy(vehicle)`
+        (the Python twin of NET_BUY_SQL: net EUR, legacy-RON aware) for the buy
+        side and `get_cost_totals()['total_amount']` (= SUM(amount)) for costs."""
         reasons: List[str] = []
         sale_price = float(sale_price)
 
@@ -296,10 +300,10 @@ class DispoService:
         if minimum_price is not None and sale_price < float(minimum_price):
             reasons.append(f'sale_price {sale_price} is below minimum_price {float(minimum_price)}')
 
-        acquisition_price = float(vehicle.get('acquisition_price') or 0)
+        buy = float(net_buy(vehicle))
         cost_totals = self._vehicle_service.get_cost_totals(vehicle_id) or {}
         total_costs = float(cost_totals.get('total_amount') or 0)  # VAT-exclusive: SUM(amount)
-        gross_margin = sale_price - acquisition_price - total_costs
+        gross_margin = sale_price - buy - total_costs
         if gross_margin < 0:
             reasons.append(f'gross margin would be negative ({gross_margin:.2f})')
 

@@ -35,7 +35,12 @@ TRANSITIONS = {
     'LISTED':            {'PRICE_REDUCED', 'AUCTION_CANDIDATE', 'RESERVED', 'SOLD', 'READY_FOR_SALE'},
     'PRICE_REDUCED':     {'AUCTION_CANDIDATE', 'RESERVED', 'SOLD', 'LISTED'},
     'AUCTION_CANDIDATE': {'RESERVED', 'SOLD', 'LISTED', 'TRANSFERRED'},
-    'RESERVED':          {'SOLD', 'LISTED', 'READY_FOR_SALE'},
+    # Includes every status a vehicle can be reserved FROM (READY_FOR_SALE,
+    # LISTED, PRICE_REDUCED, AUCTION_CANDIDATE) so cancel_reservation can restore
+    # the pre-RESERVED status. The plain route still can't exit RESERVED — the
+    # RESERVED-exit guard in change_status blocks that regardless of this matrix;
+    # only via_dispo_action (cancel_reservation/sell) reaches these targets.
+    'RESERVED':          {'SOLD', 'LISTED', 'READY_FOR_SALE', 'PRICE_REDUCED', 'AUCTION_CANDIDATE'},
     'SOLD':              {'DELIVERED', 'RESERVED', 'LISTED'},
     'DELIVERED':         {'RETURNED'},
     'RETURNED':          {'INSPECTION', 'READY_FOR_SALE'},

@@ -52,6 +52,7 @@ import app as app_module
 from app import app as flask_app
 from carpark.routes import vehicles as vehicles_module
 from carpark.routes import analytics as analytics_module
+from carpark.routes import dispo as dispo_module
 
 
 @pytest.fixture
@@ -235,6 +236,73 @@ def test_catalog_keeps_total_cost_with_finance(client, monkeypatch):
     assert r.status_code == 200
     item = r.get_json()['items'][0]
     assert item['total_cost'] == 12850, 'finance user must still see total_cost'
+
+
+# ═══════════════════════════════════════════════
+# GET /dispo/summary
+#
+# DispoRepository.summary() rows are SELECT v.* + computed aliases. _strip_finance
+# must drop BOTH the computed alias money fields AND the physical carpark_vehicles
+# finance columns (FINANCE_VEHICLE_TABLE_FIELDS) for non-finance users — the
+# alias-only strip left purchase_price_net/minimum_price/total_cost/cost_lines/
+# pricing_sheets/acquisition_* leaking.
+# ═══════════════════════════════════════════════
+
+def _dispo_summary_result():
+    return {
+        'rows': [{
+            'id': 1, 'vin': 'X' * 17, 'brand': 'BMW', 'status': 'LISTED',
+            # physical carpark_vehicles finance columns (leaked via SELECT v.*)
+            'purchase_price_net': 10000, 'minimum_price': 11500, 'total_cost': 12850,
+            'cost_lines': '[{"label":"x","amount":9}]',
+            'pricing_sheets': '[{"id":1,"margin":1500}]',
+            'acquisition_value': 12345, 'acquisition_vat': 2345,
+            'acquisition_currency': 'EUR', 'acquisition_exchange_rate': 4.97,
+            'purchase_vat_rate': 19.0, 'reconditioning_cost': 500,
+            'transport_cost': 200, 'registration_cost': 100, 'other_costs': 50,
+            # computed alias money fields
+            'acquisition_price': 14690, 'total_costs': 850, 'gross_margin': 1000,
+            'margin_pct': 7.0, 'bonus_leasing': 300,
+            # KEEP — selling side + attributes
+            'current_price': 18000, 'sale_price': 17500,
+        }],
+        'totals': {'gross_margin': 1000},
+        'total': 1, 'page': 1, 'per_page': 25,
+    }
+
+
+_DISPO_STRIP = (
+    'purchase_price_net', 'minimum_price', 'total_cost', 'cost_lines', 'pricing_sheets',
+    'acquisition_value', 'acquisition_vat', 'acquisition_currency',
+    'acquisition_exchange_rate', 'purchase_vat_rate', 'reconditioning_cost',
+    'transport_cost', 'registration_cost', 'other_costs',
+    'acquisition_price', 'total_costs', 'gross_margin', 'margin_pct', 'bonus_leasing',
+)
+
+
+def test_dispo_summary_strips_all_finance_without_finance(client, monkeypatch):
+    _login(client, monkeypatch, uid=94015, finance=False)
+    with mock.patch.object(dispo_module._dispo_repo, 'summary',
+                            return_value=_dispo_summary_result()):
+        r = client.get('/api/carpark/dispo/summary')
+    assert r.status_code == 200
+    body = r.get_json()
+    row = body['rows'][0]
+    for col in _DISPO_STRIP:
+        assert col not in row, f'finance field {col} leaked to non-finance in /dispo/summary'
+    assert row['current_price'] == 18000 and row['sale_price'] == 17500
+    assert body['totals'] is None
+
+
+def test_dispo_summary_keeps_finance_with_permission(client, monkeypatch):
+    _login(client, monkeypatch, uid=94016, finance=True)
+    with mock.patch.object(dispo_module._dispo_repo, 'summary',
+                            return_value=_dispo_summary_result()):
+        r = client.get('/api/carpark/dispo/summary')
+    assert r.status_code == 200
+    row = r.get_json()['rows'][0]
+    assert row['purchase_price_net'] == 10000 and row['total_cost'] == 12850
+    assert row['minimum_price'] == 11500
 
 
 # ═══════════════════════════════════════════════
