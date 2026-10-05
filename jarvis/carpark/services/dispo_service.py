@@ -35,7 +35,7 @@ from carpark.repositories.document_repository import DocumentRepository
 from carpark.repositories.reservation_repository import ReservationRepository
 from carpark.repositories.transfer_repository import TransferRepository
 from carpark.repositories.vehicle_repository import VehicleRepository
-from carpark.services.vehicle_service import VehicleService
+from carpark.services.vehicle_service import VehicleService, is_valid_transition
 from carpark.services.publishing_service import PublishingService
 from carpark.money import net_buy
 from core.notifications.notify import notify_user
@@ -146,6 +146,16 @@ class DispoService:
 
     # ── RESERVE ──
 
+    def _assert_transition_allowed(self, vehicle: Dict[str, Any], target: str) -> None:
+        """Raise (→ 400) if the vehicle can't legally move to `target`, BEFORE any
+        side effect is written. The guarded actions below (reserve/sell/deliver)
+        each create/update a row and only then called change_status — so an illegal
+        transition left an orphaned reservation / stray sale fields / stray
+        delivery_date behind. change_status re-checks this (belt and suspenders)."""
+        status = vehicle.get('status')
+        if not is_valid_transition(status, target):
+            raise ValueError(f'Tranziție interzisă: {status} → {target}')
+
     def reserve(self, vehicle_id: int, company_id: int, user, data: Dict[str, Any]) -> Dict[str, Any]:
         """Create an active reservation and move the vehicle to RESERVED."""
         vehicle = self._load_vehicle_or_raise(vehicle_id, company_id)
@@ -155,6 +165,7 @@ class DispoService:
             raise ValueError('client_name or client_id is required to reserve a vehicle')
         if not data.get('reservation_end'):
             raise ValueError('reservation_end is required to reserve a vehicle')
+        self._assert_transition_allowed(vehicle, 'RESERVED')
 
         reservation_data = {
             'client_id': data.get('client_id'),
@@ -237,6 +248,7 @@ class DispoService:
             missing.append('buyer_name or buyer_client_id')
         if missing:
             raise ValueError(f"Missing required fields to sell: {', '.join(missing)}")
+        self._assert_transition_allowed(vehicle, 'SOLD')
 
         if not data.get('confirm_low_margin'):
             reasons = self._low_margin_reasons(vehicle_id, vehicle, data['sale_price'])
@@ -322,6 +334,7 @@ class DispoService:
                 'MISSING_PV_LIVRARE: proces verbal de livrare document required before delivery')
         if not data.get('delivery_date'):
             raise ValueError('delivery_date is required to deliver a vehicle')
+        self._assert_transition_allowed(vehicle, 'DELIVERED')
 
         self._vehicle_service.update_vehicle(
             vehicle_id, {'delivery_date': data['delivery_date']},

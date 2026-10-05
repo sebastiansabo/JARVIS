@@ -248,6 +248,8 @@ class VehicleService:
             if not via_dispo_action:
                 if old_status == 'RESERVED' and new_status != 'RESERVED':
                     raise ValueError('Ieșirea din REZERVAT se face prin Anulare rezervare sau Vânzare')
+                if new_status == 'RESERVED' and old_status != 'RESERVED':
+                    raise ValueError('Rezervarea se face prin acțiunea Rezervă (necesită client + termen)')
                 if new_status == 'SOLD':
                     raise ValueError('Marcarea ca VÂNDUT se face prin acțiunea Vinde')
                 if new_status == 'DELIVERED':
