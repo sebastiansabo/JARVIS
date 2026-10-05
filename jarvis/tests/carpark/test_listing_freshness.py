@@ -11,6 +11,36 @@ def L(**kw):
 def test_none_listing_is_not_published():
     assert compute_listing_freshness(None, NOW, NOW) == 'not_published'
 
+
+# ── prod stores last_sync/expires_at as ISO STRINGS (carpark_vehicle_listings
+#    column drifted to TEXT + PublishingService isoformat writes). _aware must
+#    coerce them, not crash on str.tzinfo (the "An internal error occurred" 500
+#    on GET /shopify/api/vehicles/<id>/status after publish). ──
+
+def test_string_aware_last_sync_coerced_up_to_date():
+    synced = NOW - timedelta(hours=1)  # aware
+    out = compute_listing_freshness(
+        L(last_sync=synced.isoformat()), NOW - timedelta(hours=2), NOW)
+    assert out == 'up_to_date'
+
+
+def test_string_naive_last_sync_coerced():
+    synced = datetime(2026, 9, 15, 11, 0)  # naive, no tz
+    out = compute_listing_freshness(
+        L(last_sync=synced.isoformat()), NOW - timedelta(hours=2), NOW)
+    assert out == 'up_to_date'
+
+
+def test_string_expires_at_in_past_is_expired():
+    out = compute_listing_freshness(
+        L(expires_at=(NOW - timedelta(days=1)).isoformat()), NOW, NOW)
+    assert out == 'expired'
+
+
+def test_unparseable_string_last_sync_is_stale_not_crash():
+    out = compute_listing_freshness(L(last_sync='not-a-date'), NOW, NOW)
+    assert out == 'stale'  # treated as never-synced, no AttributeError
+
 def test_published_and_synced_after_edit_is_up_to_date():
     assert compute_listing_freshness(L(), NOW - timedelta(hours=2), NOW) == 'up_to_date'
 
