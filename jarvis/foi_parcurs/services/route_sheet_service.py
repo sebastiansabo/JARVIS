@@ -410,6 +410,35 @@ def overlap_rows(sessions: list) -> list:
     return out
 
 
+def date_inversion_rows(sessions: list) -> list:
+    """Real sessions whose drive date is EARLIER than the latest drive date among
+    earlier (lower-odometer) sessions — a DATE INVERSION: impossible when the
+    odometer only moves forward (a higher-odometer drive can't predate a
+    lower-odometer one). Mirrors the frontend `sessionAnomalies` date-inversion
+    check; the other half of the Rapoarte reconciliation report alongside
+    overlap_rows. PLANNED/MISSED/PENDING never moved the car and are skipped.
+
+    Each row: {id, who, km_start, km_end, date, prior_max_date}."""
+    real = [s for s in sessions
+            if s.get('status') not in ('PLANNED', 'MISSED', 'PENDING')
+            and s.get('km_start') is not None and s.get('km_end') is not None]
+    real.sort(key=lambda s: (int(s['km_start']), int(s['km_end'])))
+    out = []
+    max_date = ''
+    for s in real:
+        d = s.get('date') or s.get('departure_datetime') or s.get('created_at') or ''
+        if d and max_date and d < max_date:
+            out.append({
+                'id': s['id'],
+                'who': s.get('client_name') or s.get('advisor_name') or '—',
+                'km_start': int(s['km_start']), 'km_end': int(s['km_end']),
+                'date': d, 'prior_max_date': max_date,
+            })
+        if d and d > max_date:
+            max_date = d
+    return out
+
+
 # ── HTML skeleton (locked numbers) + Playwright render ──
 
 def _scop_text(trip, prose_map=None, overrides=None) -> str:
