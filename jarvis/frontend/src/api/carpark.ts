@@ -136,6 +136,22 @@ export const carparkApi = {
     }>('/api/carpark/vin/decode-civ', form)
   },
 
+  // Talon or CIV — auto-detected; superset of decodeCIV (adds document_type).
+  decodeDocument: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<{
+      success: boolean
+      data?: {
+        vehicle_fields: Partial<Vehicle>
+        provider: string
+        confidence: number
+        document_type: 'talon' | 'civ' | 'unknown'
+      }
+      error?: string
+    }>('/api/carpark/vin/decode-document', form)
+  },
+
   validateVIN: (vin: string) =>
     api.get<{ success: boolean; data: import('@/types/carpark').VINValidation }>(
       `/api/carpark/vin/validate/${encodeURIComponent(vin)}`,
