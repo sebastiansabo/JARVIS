@@ -263,6 +263,10 @@ def _register_blueprints(flask_app: Flask):
     from marketing.routes.td_public import td_public_bp
     flask_app.register_blueprint(td_public_bp, url_prefix='/api/td')
 
+    # Public (token-authenticated) lead-intake webhook for marketing projects.
+    from marketing.routes.leads_webhook import leads_webhook_bp
+    flask_app.register_blueprint(leads_webhook_bp, url_prefix='/marketing/api/webhooks')
+
     from core.mobile import mobile_bp
     flask_app.register_blueprint(mobile_bp)
 

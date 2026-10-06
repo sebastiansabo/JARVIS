@@ -300,6 +300,64 @@ def create_schema_marketing(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_clients_project ON mkt_project_clients(project_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_clients_client ON mkt_project_clients(client_id)')
 
+    # Per-project webhook tokens (Zapier lead intake). Only the SHA-256 hash is
+    # stored; the plaintext is shown to the user once at creation.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_project_webhooks (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES mkt_projects(id) ON DELETE CASCADE,
+            label TEXT NOT NULL,
+            token_hash TEXT NOT NULL,
+            token_prefix TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by INTEGER NOT NULL REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_used_at TIMESTAMP,
+            revoked_at TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS uq_mkt_project_webhooks_hash ON mkt_project_webhooks(token_hash)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_webhooks_project ON mkt_project_webhooks(project_id)')
+
+    # Project lead sheet — leads pushed in by webhook (or manual), owned by the
+    # project. NOT written to CRM. Converting to a CRM client is a later phase
+    # (converted_* columns are reserved for it).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_project_leads (
+            id SERIAL PRIMARY KEY,
+            project_id INTEGER NOT NULL REFERENCES mkt_projects(id) ON DELETE CASCADE,
+            contact_name TEXT,
+            phone TEXT,
+            phone_raw TEXT,
+            email TEXT,
+            company_name TEXT,
+            cui TEXT,
+            source TEXT,
+            utm_source TEXT,
+            utm_medium TEXT,
+            utm_campaign TEXT,
+            utm_term TEXT,
+            utm_content TEXT,
+            message TEXT,
+            model_of_interest TEXT,
+            raw_payload JSONB DEFAULT '{}'::jsonb,
+            status TEXT NOT NULL DEFAULT 'new',
+            status_notes TEXT,
+            received_via TEXT NOT NULL DEFAULT 'webhook',
+            webhook_id INTEGER REFERENCES mkt_project_webhooks(id) ON DELETE SET NULL,
+            converted_client_id INTEGER REFERENCES crm_clients(id) ON DELETE SET NULL,
+            converted_at TIMESTAMP,
+            converted_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT mkt_project_leads_status_check CHECK (status IN (
+                'new','contacted','qualified','converted','discarded'
+            ))
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_leads_project_status ON mkt_project_leads(project_id, status)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_leads_project_created ON mkt_project_leads(project_id, created_at DESC)')
+
     # KPI ↔ Deal Sources (aggregated CRM deal metrics)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS mkt_kpi_deal_sources (
