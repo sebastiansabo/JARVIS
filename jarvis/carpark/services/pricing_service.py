@@ -77,18 +77,25 @@ class PricingService:
     def get_promotion(self, promo_id: int) -> Optional[Dict[str, Any]]:
         return self._pricing_repo.get_promotion(promo_id)
 
-    def create_promotion(self, data: Dict[str, Any],
-                         created_by: int = None) -> Dict[str, Any]:
+    @staticmethod
+    def _validate_promotion_enums(data: Dict[str, Any]) -> None:
         if data.get('target_type') and data['target_type'] not in VALID_TARGET_TYPES:
             raise ValueError(f'Invalid target_type. Allowed: {", ".join(sorted(VALID_TARGET_TYPES))}')
         if data.get('promo_type') and data['promo_type'] not in VALID_PROMO_TYPES:
             raise ValueError(f'Invalid promo_type. Allowed: {", ".join(sorted(VALID_PROMO_TYPES))}')
         if data.get('discount_type') and data['discount_type'] not in VALID_DISCOUNT_TYPES:
             raise ValueError(f'Invalid discount_type. Allowed: {", ".join(sorted(VALID_DISCOUNT_TYPES))}')
+
+    def create_promotion(self, data: Dict[str, Any],
+                         created_by: int = None) -> Dict[str, Any]:
+        self._validate_promotion_enums(data)
         return self._pricing_repo.create_promotion(data, created_by=created_by)
 
     def update_promotion(self, promo_id: int,
                          data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        # Same enum validation as create — the PUT path previously skipped it, so
+        # a bad target_type wrote a dead promotion that silently never matched.
+        self._validate_promotion_enums(data)
         return self._pricing_repo.update_promotion(promo_id, data)
 
     def delete_promotion(self, promo_id: int) -> bool:
