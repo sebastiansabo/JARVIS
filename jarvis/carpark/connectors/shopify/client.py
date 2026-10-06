@@ -135,6 +135,19 @@ class ShopifyClient:
         node = data['productUpdate']
         return {'product': node.get('product'), 'userErrors': node.get('userErrors', [])}
 
+    _PRODUCT_GET = '''
+    query getProduct($id: ID!) {
+      product(id: $id) { id status }
+    }'''
+
+    def get_product(self, product_gid: str) -> Optional[Dict[str, Any]]:
+        """Fetch a product by GID. Returns {'id','status'} if it still exists on
+        the store, or None if it was DELETED on Shopify (the `product` field comes
+        back null for a missing/deleted id). Used to reconcile a JARVIS listing
+        whose product was removed on the storefront."""
+        data = self.graphql(self._PRODUCT_GET, {'id': product_gid})
+        return data.get('product')  # None → product no longer exists
+
     _ATTR_VALUES = '''
     query attrValues {
       taxonomy {

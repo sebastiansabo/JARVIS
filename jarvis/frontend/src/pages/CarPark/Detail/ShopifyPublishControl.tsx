@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Globe, Loader2, Undo2 } from 'lucide-react'
+import { AlertTriangle, Globe, Loader2, RefreshCw, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -139,8 +139,23 @@ export function ShopifyPublishControl({
     onError: (err: unknown) => toast.error(apiError(err, 'Retragere eșuată')),
   })
 
+  // Reconcile against the live store: if the product was deleted on Shopify, the
+  // chip would otherwise keep showing it as published. This re-checks and flips
+  // the local status to "not published" when the product is gone.
+  const verifyMutation = useMutation({
+    mutationFn: () => shopifyApi.verifyStatus(vehicleId),
+    onSuccess: (res) => {
+      invalidateStatus()
+      if (res.deleted_on_shopify)
+        toast.warning('Produsul nu mai există pe Shopify — status actualizat la „Nepublicat”.')
+      else toast.success('Status verificat — produsul există pe Shopify.')
+    },
+    onError: (err: unknown) => toast.error(apiError(err, 'Verificare status eșuată')),
+  })
+
   const isMutating =
-    previewMutation.isPending || publishMutation.isPending || unpublishMutation.isPending
+    previewMutation.isPending || publishMutation.isPending ||
+    unpublishMutation.isPending || verifyMutation.isPending
 
   const onPrimaryClick = () =>
     isPublished ? unpublishMutation.mutate() : previewMutation.mutate()
@@ -154,6 +169,22 @@ export function ShopifyPublishControl({
             lastSync={listing?.last_sync}
             expiresAt={listing?.expires_at}
           />
+        )}
+        {canEdit && isPublished && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="px-2"
+            disabled={isMutating || isLoading}
+            onClick={() => verifyMutation.mutate()}
+            title="Verifică dacă produsul mai există pe Shopify"
+          >
+            {verifyMutation.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RefreshCw className="h-3.5 w-3.5" />
+            )}
+          </Button>
         )}
         {canEdit && (
           <Button
