@@ -321,6 +321,9 @@ If you didn't request this, you can safely ignore this email.
     OTP_EXPIRY_MINUTES = 5
     OTP_MAX_ATTEMPTS = 5
     OTP_MAX_SENDS = 3
+    # Don't email a second login code while a still-valid one was just sent.
+    # Collapses rapid re-login bursts; explicit resend_otp() is unaffected.
+    OTP_RESEND_COOLDOWN_SECONDS = 90
     TRUSTED_DEVICE_MAX_AGE = 30 * 24 * 3600  # 30 days in seconds
     TRUSTED_COOKIE_NAME = 'jarvis_trusted_device'
 
@@ -343,12 +346,37 @@ If you didn't request this, you can safely ignore this email.
         raw = f'{user_agent}|{ip_prefix}'
         return hashlib.sha256(raw.encode()).hexdigest()
 
+    def _otp_within_cooldown(self, created_at) -> bool:
+        """True if an OTP created at ``created_at`` is still within the
+        resend cooldown window (so a new email should be suppressed)."""
+        if not created_at:
+            return False
+        if isinstance(created_at, str):
+            created_at = datetime.fromisoformat(created_at)
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - created_at).total_seconds()
+        return age < self.OTP_RESEND_COOLDOWN_SECONDS
+
     def generate_and_send_otp(self, user_id: int, user_email: str, user_name: str, secret_key: str) -> tuple:
         """Generate OTP, store hash in DB, send plaintext via email.
+
+        If the user already has a valid unused code sent within
+        OTP_RESEND_COOLDOWN_SECONDS, reuse it instead of emailing a new one.
+        This collapses rapid re-login bursts (which otherwise send one email
+        per attempt) on both the web and mobile paths. Explicit resend is
+        handled separately by resend_otp().
 
         Returns:
             (otp_id, success, error_message)
         """
+        existing = self.user_repo.get_active_otp_for_user(user_id)
+        if existing and self._otp_within_cooldown(existing.get('created_at')):
+            logger.info(
+                f"OTP send skipped for user {user_id}: valid code already sent "
+                f"within {self.OTP_RESEND_COOLDOWN_SECONDS}s, reusing it")
+            return existing['id'], True, None
+
         code = self._generate_otp_code()
         code_hash = self._hash_otp(code, secret_key)
         expires_at = datetime.now(timezone.utc) + timedelta(minutes=self.OTP_EXPIRY_MINUTES)
@@ -359,6 +387,10 @@ If you didn't request this, you can safely ignore this email.
             return None, False, "Failed to generate verification code"
 
         success, error = self._send_otp_email(user_name, user_email, code)
+        if not success:
+            # A never-delivered code must not be reused by the cooldown above
+            # on the next login attempt; invalidate it so a fresh one is sent.
+            self.user_repo.mark_otp_used(otp_id)
         return otp_id, success, error
 
     def resend_otp(self, otp_id: int, user_email: str, user_name: str, secret_key: str) -> tuple:

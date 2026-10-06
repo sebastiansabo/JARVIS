@@ -271,6 +271,20 @@ class UserRepository(BaseRepository):
             WHERE id = %s
         ''', (otp_id,))
 
+    def get_active_otp_for_user(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """Return the most recent unused, unexpired OTP for a user, or None.
+
+        Used to dedup rapid re-login OTP sends: reuse an in-flight code
+        instead of emailing a new one on every login attempt.
+        """
+        return self.query_one('''
+            SELECT id, user_id, code, expires_at, attempts, send_count, used_at, created_at
+            FROM otp_codes
+            WHERE user_id = %s AND used_at IS NULL AND expires_at > CURRENT_TIMESTAMP
+            ORDER BY created_at DESC
+            LIMIT 1
+        ''', (user_id,))
+
     def increment_otp_attempts(self, otp_id: int) -> int:
         """Increment wrong-attempt counter. Returns new attempt count."""
         row = self.query_one('''
