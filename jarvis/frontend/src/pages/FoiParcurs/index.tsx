@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   FileText,
@@ -186,6 +186,21 @@ export default function FoiParcurs() {
   const [tabToolbar, setTabToolbar] = useState<HTMLDivElement | null>(null)
   // Client vs internal drive filter — applies to the Sesiuni table + Calendar.
   const [driveType, setDriveType] = usePersistentState<'all' | 'client' | 'internal'>('fp.driveType', 'all')
+  // Deep-link from the Rapoarte reconciliation report: ?correctSession=<id> opens
+  // that session's Corectează on the Sesiuni tab. Reacts to the query (not just
+  // mount) because the report is a tab within this same page — navigating here
+  // doesn't remount the component.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [deepLinkCorrect, setDeepLinkCorrect] = useState<number | null>(null)
+  useEffect(() => {
+    const cs = searchParams.get('correctSession')
+    if (!cs) return
+    setActiveTab('parcurs')
+    setDeepLinkCorrect(Number(cs))
+    const next = new URLSearchParams(searchParams)
+    next.delete('correctSession')
+    setSearchParams(next, { replace: true })
+  }, [searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
   // Sales vs Service (Mașini de curtoazie) context — persisted, seeded from a
   // `?context=service` deep link. Forced back to 'sales' when the selected
   // company doesn't have Service enabled (see effect below).
@@ -331,7 +346,7 @@ export default function FoiParcurs() {
       {activeTab === 'contracts' && <ContractsTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} documentType={docType} />}
       {/* In the rental (Service) context the franchise brand filter doesn't apply —
           the courtesy stock is multi-brand — so pass an empty brand to show it all. */}
-      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
+      {activeTab === 'parcurs' && <SessionsTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} correctSession={deepLinkCorrect} onCorrectConsumed={() => setDeepLinkCorrect(null)} />}
       {activeTab === 'stock' && <StockTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} documentType={docType} />}
       {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
       {activeTab === 'reports' && <ReportsTab companyId={companyId} toolbarSlot={tabToolbar} documentType={docType} brand={docType !== 'sales' ? '' : brand} />}
@@ -2207,7 +2222,7 @@ const SESSION_COLUMNS = [
 ] as const
 type SessionColumnKey = (typeof SESSION_COLUMNS)[number]['key']
 
-export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlot, driveType = 'all', onDriveTypeChange, documentType = 'sales' }: { companyId: number; brand: string; onActivate?: (id: number) => void; onReturn?: (id: number) => void; toolbarSlot?: HTMLElement | null; driveType?: 'all' | 'client' | 'internal'; onDriveTypeChange?: (v: 'all' | 'client' | 'internal') => void; documentType?: DocType }) {
+export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlot, driveType = 'all', onDriveTypeChange, documentType = 'sales', correctSession = null, onCorrectConsumed }: { companyId: number; brand: string; onActivate?: (id: number) => void; onReturn?: (id: number) => void; toolbarSlot?: HTMLElement | null; driveType?: 'all' | 'client' | 'internal'; onDriveTypeChange?: (v: 'all' | 'client' | 'internal') => void; documentType?: DocType; correctSession?: number | null; onCorrectConsumed?: () => void }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
@@ -2337,6 +2352,21 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
   const vinVehicle = new Map(vehiclesList.map((v) => [v.vin, v]))
 
   const allContracts = data?.contracts ?? []
+  // Deep-link target: open the Corectează modal for ?correctSession=<id> once the
+  // contracts load, and filter to its car so it's visible behind the modal.
+  const correctOpenedRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!correctSession || correctOpenedRef.current === correctSession || !allContracts.length) return
+    const c = allContracts.find((x) => x.id === correctSession)
+    if (c) {
+      correctOpenedRef.current = correctSession
+      setFilterVin(c.vin)
+      setCorrecting(c)
+      // Clear the parent's deep-link state so switching tabs and returning
+      // doesn't re-open the modal (this tab remounts, resetting the local ref).
+      onCorrectConsumed?.()
+    }
+  }, [correctSession, allContracts]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Apply filters
   const filtered = allContracts.filter((c) => {

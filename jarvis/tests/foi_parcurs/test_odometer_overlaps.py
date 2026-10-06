@@ -99,3 +99,24 @@ def test_inversion_uses_advisor_name_when_no_client():
         {**_s(2, 200, 300), 'client_name': None, 'advisor_name': 'Internal Drv', 'date': '2026-09-05'},
     ])
     assert rows[0]['who'] == 'Internal Drv'
+
+
+# ── overlap rows carry the conflicting drive + a distance-preserving proposal ──
+
+def test_overlap_row_carries_conflict_and_proposal():
+    # A (client) takes the car to 283; B (internal) is logged starting at 261,
+    # 22 km below. The overlap row should name A as the conflict and propose
+    # moving B up to 283 (preserving its 22 km distance → 283→305).
+    rows = overlap_rows([
+        _s(1, 160, 283, who='Client A'),
+        _s(2, 261, 283, who='Internal B'),
+    ])
+    assert len(rows) == 1
+    r = rows[0]
+    assert r['id'] == 2
+    assert r['conflict']['id'] == 1
+    assert r['conflict']['who'] == 'Client A'
+    assert r['conflict']['km_start'] == 160
+    assert r['conflict']['km_end'] == 283
+    assert r['proposed_km_start'] == 283        # moved up to the ceiling
+    assert r['proposed_km_end'] == 305          # 283 + the original 22 km distance

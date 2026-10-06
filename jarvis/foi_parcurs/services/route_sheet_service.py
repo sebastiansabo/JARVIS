@@ -394,6 +394,7 @@ def overlap_rows(sessions: list) -> list:
     real.sort(key=lambda s: (int(s['km_start']), int(s['km_end'])))
     out = []
     max_end = None
+    max_end_session = None   # the drive currently holding the ceiling
     for s in real:
         start = int(s['km_start'])
         if max_end is not None and start < max_end:
@@ -403,11 +404,32 @@ def overlap_rows(sessions: list) -> list:
                 'km_start': start, 'km_end': int(s['km_end']),
                 'prior_max_end': max_end, 'overlap_km': max_end - start,
                 'date': s.get('date') or s.get('departure_datetime') or s.get('created_at'),
+                # The drive that owns the ceiling this one dips below — so the
+                # report can show both sides of the conflict.
+                'conflict': _row_neighbor(max_end_session),
+                # Distance-preserving fix: move the start up to the ceiling and
+                # keep the km driven, so it slots into the chain without overlap.
+                'proposed_km_start': max_end,
+                'proposed_km_end': max_end + (int(s['km_end']) - start),
             })
         end = int(s['km_end'])
         if max_end is None or end > max_end:
             max_end = end
+            max_end_session = s
     return out
+
+
+def _row_neighbor(s):
+    """Compact {id, who, km_start, km_end, date} for a session referenced by a
+    reconciliation row (the drive that set the overlapped ceiling). None if absent."""
+    if not s:
+        return None
+    return {
+        'id': s['id'],
+        'who': s.get('client_name') or s.get('advisor_name') or '—',
+        'km_start': int(s['km_start']), 'km_end': int(s['km_end']),
+        'date': s.get('date') or s.get('departure_datetime') or s.get('created_at'),
+    }
 
 
 def date_inversion_rows(sessions: list) -> list:

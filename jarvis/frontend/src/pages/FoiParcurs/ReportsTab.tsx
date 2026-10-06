@@ -1,7 +1,9 @@
 import { Suspense, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { cn, usePersistedState } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { foiParcursApi } from '@/api/foiParcurs'
@@ -666,6 +668,7 @@ export function ReportsTab({ companyId, toolbarSlot, documentType, brand }: { co
 function ReconciliationCard({ companyId, from, to, docType, brand }: {
   companyId: number; from: string; to: string; docType: string; brand?: string
 }) {
+  const navigate = useNavigate()
   const { data, isLoading } = useQuery({
     queryKey: ['fp-reconciliation', companyId, from, to, docType, brand],
     queryFn: () => foiParcursApi.getReconciliation({
@@ -677,7 +680,7 @@ function ReconciliationCard({ companyId, from, to, docType, brand }: {
   if (isLoading && !data) return <ChartSkeleton h={84} />
   const cars = data?.cars ?? []
   return (
-    <ChartCard title="Reconciliere kilometraj" hint="suprapuneri + date inversate — de corectat">
+    <ChartCard title="Reconciliere kilometraj" hint="o cursă pornește sub kilometrajul deja atins, ori are dată inversată — de corectat">
       {cars.length === 0 ? (
         <p className="py-4 text-sm text-muted-foreground">Nicio anomalie de kilometraj sau dată în perioada selectată. 🎉</p>
       ) : (
@@ -703,29 +706,31 @@ function ReconciliationCard({ companyId, from, to, docType, brand }: {
               </div>
 
               {car.sessions.length > 0 && (
-                <div className="mt-2 overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                      <tr className="text-left">
-                        <th className="py-1 pr-3 font-medium">Data</th>
-                        <th className="py-1 pr-3 font-medium">Șofer</th>
-                        <th className="py-1 pr-3 font-medium">KM plecare-sosire</th>
-                        <th className="py-1 font-medium">Suprapunere</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {car.sessions.map((s) => (
-                        <tr key={s.id} className="border-t">
-                          <td className="py-1 pr-3 whitespace-nowrap text-muted-foreground">{s.date ?? '—'}</td>
-                          <td className="py-1 pr-3">{s.who}</td>
-                          <td className="py-1 pr-3 whitespace-nowrap tabular-nums">{s.km_start} → {s.km_end}</td>
-                          <td className="py-1 whitespace-nowrap text-amber-700 dark:text-amber-500">
-                            {nf.format(s.overlap_km)} km sub {nf.format(s.prior_max_end)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="mt-2 space-y-2">
+                  {car.sessions.map((s) => (
+                    <div key={s.id} className="rounded-md bg-amber-500/5 p-2 text-xs">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <span className="text-muted-foreground">{s.date ?? '—'}</span>
+                          {' · '}<span className="font-medium">{s.who}</span>
+                          {' '}<span className="tabular-nums text-muted-foreground">({s.km_start} → {s.km_end})</span>
+                        </div>
+                        <Button variant="outline" size="sm" className="h-6 px-2 text-[11px]"
+                          onClick={() => navigate(`/app/foi-parcurs?correctSession=${s.id}`)}>
+                          Corectează
+                        </Button>
+                      </div>
+                      {/* #1 plain-language problem + the drive that owns the ceiling */}
+                      <div className="mt-1 text-amber-700 dark:text-amber-500">
+                        Pornește cu {nf.format(s.overlap_km)} km sub {nf.format(s.prior_max_end)} — mașina ajunsese deja acolo
+                        {s.conflict && <> prin <span className="font-medium">{s.conflict.who}</span> ({s.conflict.date ?? '—'} · <span className="tabular-nums">{s.conflict.km_start} → {s.conflict.km_end}</span>)</>}.
+                      </div>
+                      {/* #2 distance-preserving suggested correction */}
+                      <div className="mt-0.5 text-muted-foreground">
+                        Propus: <span className="font-medium text-foreground tabular-nums">{nf.format(s.proposed_km_start)} → {nf.format(s.proposed_km_end)}</span> <span className="text-[11px]">(păstrează distanța parcursă)</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
 
