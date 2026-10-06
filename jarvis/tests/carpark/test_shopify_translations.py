@@ -153,12 +153,13 @@ class TestValueTranslationsSeed:
         assert "front" in keys_lower or "fata" in keys_lower.get("front", "").lower()
 
     def test_drive_type_covers_canonical_all_wheel_slugs(self):
-        """Canonical Autovit AWD slugs must resolve to the store's existing 'Integral'
-        choice — they previously fell through to identity and were dropped on publish,
-        so every AWD car lost its custom.transmisie value."""
+        """Canonical Autovit AWD slugs must resolve to the store's existing 'Integrală'
+        choice (diacritic-exact — the store choice list uses 'Integrală', not 'Integral').
+        They previously fell through to identity and were dropped on publish, so every
+        AWD car lost its custom.transmisie value."""
         d = VALUE_TRANSLATIONS_SEED["drive_type"]
         for slug in ("all-wheel-permanent", "all-wheel-auto", "all-wheel-lock"):
-            assert d.get(slug) == "Integral", f"AWD slug {slug!r} not mapped to Integral"
+            assert d.get(slug) == "Integrală", f"AWD slug {slug!r} not mapped to Integrală"
 
     def test_value_translations_has_color_dimension(self):
         """VALUE_TRANSLATIONS_SEED has 'color_exterior' key."""
@@ -189,6 +190,42 @@ class TestValueTranslationsSeed:
         color = VALUE_TRANSLATIONS_SEED.get("color_exterior", {})
         # At least one color mapping should exist
         assert len(color) > 0
+
+    def test_color_fixes_rosu_diacritic(self):
+        """Romanian input 'Rosu'/'rosu' (no diacritic) must map to the correct
+        'Roșu' — JARVIS vehicles store the Romanian label, which previously fell
+        through to identity and pushed 'Rosu' without the ș."""
+        c = VALUE_TRANSLATIONS_SEED["color_exterior"]
+        assert c.get("Rosu") == "Roșu"
+        assert c.get("rosu") == "Roșu"
+
+    def test_color_self_maps_romanian_inputs(self):
+        """JARVIS stores Romanian colour labels (Gri/Albastru/Negru/Alb); the seed
+        must map them to themselves so lookup is explicit, not identity-fallback."""
+        c = VALUE_TRANSLATIONS_SEED["color_exterior"]
+        assert c.get("Gri") == "Gri"
+        assert c.get("Albastru") == "Albastru"
+        assert c.get("Negru") == "Negru"
+        assert c.get("Alb") == "Alb"
+
+    def test_color_covers_additional_base_colors(self):
+        """Common colours missing before: Roz, Bordo, Turcoaz, Bronz, Șampanie,
+        Crem, Antracit — each with English + Romanian source variants."""
+        c = VALUE_TRANSLATIONS_SEED["color_exterior"]
+        assert c.get("pink") == "Roz" and c.get("roz") == "Roz"
+        assert c.get("bordeaux") == "Bordo" and c.get("burgundy") == "Bordo" and c.get("visiniu") == "Bordo"
+        assert c.get("turquoise") == "Turcoaz" and c.get("turcoaz") == "Turcoaz"
+        assert c.get("bronze") == "Bronz" and c.get("bronz") == "Bronz"
+        assert c.get("champagne") == "Șampanie" and c.get("sampanie") == "Șampanie"
+        assert c.get("cream") == "Crem" and c.get("crem") == "Crem"
+        assert c.get("anthracite") == "Antracit" and c.get("graphite") == "Antracit" and c.get("antracit") == "Antracit"
+
+    def test_color_covers_manufacturer_marketing_names(self):
+        """Marketing colour names on current vehicles map to their base RO colour."""
+        c = VALUE_TRANSLATIONS_SEED["color_exterior"]
+        assert c.get("Snow White Pearl") == "Alb"
+        assert c.get("Sophisto Grey") == "Gri"
+        assert c.get("Fjord Blue") == "Albastru"
 
     def test_value_translations_has_body_type_dimension(self):
         """VALUE_TRANSLATIONS_SEED has 'body_type' key."""
