@@ -125,10 +125,7 @@ def login():
             auth_svc = _get_auth_service()
             cookie = request.cookies.get(auth_svc.TRUSTED_COOKIE_NAME)
             if auth_svc.validate_trusted_device_cookie(
-                cookie, user.id,
-                request.headers.get('User-Agent', ''),
-                request.remote_addr,
-                current_app.secret_key
+                cookie, user.id, current_app.secret_key
             ):
                 login_user(user, remember=remember)
                 _user_repo.update_last_login(user.id)
@@ -212,10 +209,7 @@ def verify_otp():
             # Set trusted device cookie
             resp = make_response(redirect(next_page or url_for('index')))
             cookie_value = auth_svc.create_trusted_device_cookie(
-                user.id,
-                request.headers.get('User-Agent', ''),
-                request.remote_addr,
-                current_app.secret_key
+                user.id, current_app.secret_key
             )
             resp.set_cookie(
                 auth_svc.TRUSTED_COOKIE_NAME,

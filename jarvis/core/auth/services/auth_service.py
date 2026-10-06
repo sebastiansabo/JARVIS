@@ -9,7 +9,6 @@ from typing import Optional, Dict, Any, List
 from werkzeug.security import check_password_hash
 from dataclasses import dataclass
 import hmac
-import hashlib
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 
 from core.utils.logging_config import get_logger
@@ -339,13 +338,6 @@ If you didn't request this, you can safely ignore this email.
         """Compare OTP hashes using timing-safe comparison."""
         return hmac.compare_digest(submitted_hash, stored_hash)
 
-    def _compute_device_hash(self, user_agent: str, ip_address: str) -> str:
-        """Compute a device fingerprint hash from User-Agent and IP /24 prefix."""
-        ip_parts = ip_address.split('.')
-        ip_prefix = '.'.join(ip_parts[:3]) if len(ip_parts) == 4 else ip_address
-        raw = f'{user_agent}|{ip_prefix}'
-        return hashlib.sha256(raw.encode()).hexdigest()
-
     def _otp_within_cooldown(self, created_at) -> bool:
         """True if an OTP created at ``created_at`` is still within the
         resend cooldown window (so a new email should be suppressed)."""
@@ -455,14 +447,25 @@ If you didn't request this, you can safely ignore this email.
         self.user_repo.mark_otp_used(otp_id)
         return True, ""
 
-    def create_trusted_device_cookie(self, user_id: int, user_agent: str, ip_address: str, secret_key: str) -> str:
-        """Create a signed trusted device cookie value."""
-        s = URLSafeTimedSerializer(secret_key)
-        device_hash = self._compute_device_hash(user_agent, ip_address)
-        return s.dumps({'uid': user_id, 'dh': device_hash})
+    def create_trusted_device_cookie(self, user_id: int, secret_key: str) -> str:
+        """Create a signed trusted-device cookie value.
 
-    def validate_trusted_device_cookie(self, cookie_value: str, user_id: int, user_agent: str, ip_address: str, secret_key: str) -> bool:
-        """Validate a trusted device cookie."""
+        Binds to the user id plus a random nonce — NOT a UA|IP fingerprint.
+        The IP fingerprint broke persistence behind the DO proxy (remote_addr is
+        the proxy, not the client) and on any client network change, forcing
+        repeat OTP challenges. The cookie is HMAC-signed and time-stamped via
+        URLSafeTimedSerializer, so it is tamper-proof and expires on its own;
+        the nonce just makes each device cookie unique.
+        """
+        s = URLSafeTimedSerializer(secret_key)
+        return s.dumps({'uid': user_id, 'nonce': secrets.token_urlsafe(16)})
+
+    def validate_trusted_device_cookie(self, cookie_value: str, user_id: int, secret_key: str) -> bool:
+        """Validate a trusted-device cookie: valid signature, not expired, uid matches.
+
+        Deliberately independent of UA/IP so trust survives network changes for
+        the full TRUSTED_DEVICE_MAX_AGE.
+        """
         if not cookie_value:
             return False
         s = URLSafeTimedSerializer(secret_key)
@@ -471,18 +474,13 @@ If you didn't request this, you can safely ignore this email.
         except (BadSignature, SignatureExpired):
             return False
 
-        if data.get('uid') != user_id:
-            return False
-
-        expected_hash = self._compute_device_hash(user_agent, ip_address)
-        return hmac.compare_digest(data.get('dh', ''), expected_hash)
+        return data.get('uid') == user_id
 
     def create_trusted_device_token(self, user_id: int, device_id: str, secret_key: str) -> str:
         """Create a signed, stateless trusted-device token for mobile 2FA.
 
-        Unlike create_trusted_device_cookie (which binds a UA+IP device_hash),
-        this binds the token to an explicit, stable device_id supplied by the
-        mobile app.
+        Like create_trusted_device_cookie, but binds the token to an explicit,
+        stable device_id supplied by the mobile app instead of a server nonce.
         """
         s = URLSafeTimedSerializer(secret_key)
         return s.dumps({'uid': user_id, 'did': device_id})
