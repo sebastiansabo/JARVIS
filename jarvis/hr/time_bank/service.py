@@ -24,13 +24,6 @@ class TimeBankService:
     def __init__(self):
         self.repo = TimeBankRepository()
 
-    def _available_for(self, user_id, tx_type):
-        """Balance a debit is checked against: the capped event pool for event
-        tx_types, otherwise the pooled total (existing personal behaviour)."""
-        if tx_type in EVENT_TX_TYPES:
-            return self.repo.get_event_balance(user_id)
-        return self.repo.get_balance(user_id)
-
     def credit(self, user_id, amount, tx_type, description=None,
                reference_type=None, reference_id=None, created_by=None):
         """Add hours to an employee's Time Bank.
@@ -124,9 +117,13 @@ class TimeBankService:
         if tx['status'] != 'pending':
             raise ValueError(f"Cannot approve: transaction is already '{tx['status']}'")
 
-        # For debits, check balance before approving (event debits vs the event pool)
-        if tx['amount'] < 0:
-            balance = self._available_for(tx['jarvis_user_id'], tx['tx_type'])
+        # Only the hard-capped event pool is guarded at approval: an event-pool debit
+        # must never drive `event_balance` below zero. The personal pool may overdraw
+        # by design (mirrors debit()/_SKIP_BALANCE_CHECK_TYPES — personal leave and
+        # manual personal debits are allowed to go negative), so personal debits are
+        # never blocked here.
+        if tx['amount'] < 0 and tx['tx_type'] in EVENT_TX_TYPES:
+            balance = self.repo.get_event_balance(tx['jarvis_user_id'])
             needed = abs(tx['amount'])
             if balance < needed:
                 raise ValueError(
