@@ -7,6 +7,8 @@ entirely and could push `event_balance` negative.
 """
 from decimal import Decimal
 
+import pytest
+
 import hr.time_bank.service as tb_service
 from hr.time_bank.service import TimeBankService
 
@@ -14,10 +16,12 @@ from hr.time_bank.service import TimeBankService
 class FakeRepo:
     """Stand-in for TimeBankRepository — no DB. Captures inserts, serves fixed balances."""
 
-    def __init__(self, event_balance=0, balance=0):
+    def __init__(self, event_balance=0, balance=0, tx=None):
         self._event_balance = Decimal(str(event_balance))
         self._balance = Decimal(str(balance))
+        self._tx = tx
         self.inserted = []
+        self.status_updates = []
 
     def has_reference(self, reference_type, reference_id):
         return False
@@ -31,6 +35,13 @@ class FakeRepo:
     def insert_transaction(self, **kwargs):
         self.inserted.append(kwargs)
         return {'id': len(self.inserted), **kwargs}
+
+    def get_transaction_by_id(self, tx_id):
+        return self._tx
+
+    def update_status(self, tx_id, status, approved_by=None):
+        self.status_updates.append({'tx_id': tx_id, 'status': status, 'approved_by': approved_by})
+        return {'id': tx_id, 'status': status, 'approved_by': approved_by}
 
 
 def _service_with(repo, monkeypatch):
@@ -79,3 +90,44 @@ def test_personal_leave_debit_still_allowed_to_go_negative(monkeypatch):
     svc.debit(user_id=9, amount=8, tx_type='leave_permit')
 
     assert repo.inserted[0]['amount'] == Decimal('-8')
+
+
+# ── approve(): personal pool may go negative, event pool must not ──
+
+def _pending(amount, tx_type):
+    return {'id': 1, 'jarvis_user_id': 9, 'amount': Decimal(str(amount)),
+            'tx_type': tx_type, 'status': 'pending'}
+
+
+def test_approve_personal_debit_allows_negative_balance(monkeypatch):
+    """A pending personal manual_debit approves even when the balance can't cover it —
+    the personal pool overdraws by design (regression: approve() used to block this)."""
+    repo = FakeRepo(balance=-11, tx=_pending(-4, 'manual_debit'))
+    svc = _service_with(repo, monkeypatch)
+
+    row = svc.approve(1, approved_by=49)
+
+    assert row['status'] == 'approved'
+    assert repo.status_updates == [{'tx_id': 1, 'status': 'approved', 'approved_by': 49}]
+
+
+def test_approve_event_debit_blocks_when_over_event_pool(monkeypatch):
+    """A pending event-pool debit still hard-blocks if it would drive the event pool
+    below zero (the event perk must never go negative)."""
+    repo = FakeRepo(event_balance=1, tx=_pending(-4, 'manual_event_debit'))
+    svc = _service_with(repo, monkeypatch)
+
+    with pytest.raises(ValueError, match='Insufficient balance'):
+        svc.approve(1, approved_by=49)
+
+    assert repo.status_updates == []
+
+
+def test_approve_event_debit_ok_within_event_pool(monkeypatch):
+    """An event-pool debit that fits the event pool approves normally."""
+    repo = FakeRepo(event_balance=5, tx=_pending(-4, 'manual_event_debit'))
+    svc = _service_with(repo, monkeypatch)
+
+    row = svc.approve(1, approved_by=49)
+
+    assert row['status'] == 'approved'
