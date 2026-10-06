@@ -174,6 +174,9 @@ class ChatService:
             return
 
         channel_name = channel['name']
+        is_direct = bool(channel.get('is_direct'))
+        # For a DM the channel has no name — title notifications with the sender.
+        label = author_name if is_direct else f'#{channel_name}'
         members = _repo.get_channel_members(channel_id)
         member_ids = {m['user_id'] for m in members}
         push_data = {'channel_id': str(channel_id), 'type': 'digest'}
@@ -186,7 +189,7 @@ class ChatService:
             if targets:
                 notify_with_push(
                     list(targets),
-                    f'📢 {channel_name}',
+                    (author_name if is_direct else f'📢 {channel_name}'),
                     message=f'{author_name}: {content[:120]}',
                     link=f'/app/digest?channel={channel_id}',
                     entity_type='digest_post', entity_id=post['id'],
@@ -201,7 +204,7 @@ class ChatService:
             if targets:
                 notify_with_push(
                     list(targets),
-                    f'📊 New poll in #{channel_name}',
+                    (author_name if is_direct else f'📊 New poll in #{channel_name}'),
                     message=f'{author_name}: {question[:120]}',
                     link=f'/app/digest?channel={channel_id}',
                     entity_type='digest_poll', entity_id=post['id'],
@@ -217,7 +220,7 @@ class ChatService:
             if targets:
                 notify_with_push(
                     list(targets),
-                    f'{author_name} mentioned you in #{channel_name}',
+                    (author_name if is_direct else f'{author_name} mentioned you in #{channel_name}'),
                     message=content[:120],
                     link=f'/app/digest?channel={channel_id}',
                     entity_type='digest_mention', entity_id=post['id'],
@@ -231,7 +234,7 @@ class ChatService:
             if targets:
                 notify_with_push(
                     list(targets),
-                    f'#{channel_name}',
+                    label,
                     message=f'{author_name}: {content[:120]}',
                     link=f'/app/digest?channel={channel_id}',
                     entity_type='digest_post', entity_id=post['id'],
@@ -248,7 +251,7 @@ class ChatService:
                 if reply_target:
                     notify_with_push(
                         list(reply_target),
-                        f'{author_name} replied to your post in #{channel_name}',
+                        (author_name if is_direct else f'{author_name} replied to your post in #{channel_name}'),
                         message=content[:120],
                         link=f'/app/digest?channel={channel_id}&parent={parent_id}',
                         entity_type='digest_reply', entity_id=post['id'],
