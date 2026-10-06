@@ -165,6 +165,12 @@ class DispoService:
             raise ValueError('client_name or client_id is required to reserve a vehicle')
         if not data.get('reservation_end'):
             raise ValueError('reservation_end is required to reserve a vehicle')
+        # Idempotency: don't stack a second active reservation on a vehicle that
+        # already has one (RESERVED→RESERVED is a valid same-status transition, so
+        # the transition guard wouldn't catch it). A duplicate active row would be
+        # orphaned — cancel/sell only close one.
+        if self._reservation_repo.active_for_vehicle(vehicle_id):
+            raise ValueError('Vehiculul are deja o rezervare activă')
         self._assert_transition_allowed(vehicle, 'RESERVED')
 
         reservation_data = {

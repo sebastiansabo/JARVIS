@@ -38,6 +38,30 @@ def test_eligible_manual_excludes_terminal_statuses(monkeypatch):
     assert {v['id'] for v in out} == {1, 3}  # SOLD excluded; RESERVED kept (not terminal)
 
 
+def test_update_promotion_validates_enums_like_create(monkeypatch):
+    """update_promotion skipped the target_type/promo_type/discount_type checks
+    create_promotion enforces, so a bad enum wrote a dead promotion that silently
+    never matched. It must validate the same way."""
+    import pytest
+    svc = PricingService()
+    # must not reach the repo for an invalid enum
+    monkeypatch.setattr(svc._pricing_repo, 'update_promotion',
+                        lambda pid, data: (_ for _ in ()).throw(AssertionError('repo reached')))
+    with pytest.raises(ValueError, match='target_type'):
+        svc.update_promotion(1, {'target_type': 'garbage'})
+    with pytest.raises(ValueError, match='discount_type'):
+        svc.update_promotion(1, {'discount_type': 'nonsense'})
+
+
+def test_update_promotion_allows_valid_enums(monkeypatch):
+    svc = PricingService()
+    captured = {}
+    monkeypatch.setattr(svc._pricing_repo, 'update_promotion',
+                        lambda pid, data: captured.update(data) or {'id': pid, **data})
+    svc.update_promotion(1, {'target_type': 'brand', 'discount_type': 'percent'})
+    assert captured['target_type'] == 'brand'
+
+
 def test_aging_excludes_terminal_statuses(monkeypatch):
     svc = PricingService()
     catalog = {'items': [

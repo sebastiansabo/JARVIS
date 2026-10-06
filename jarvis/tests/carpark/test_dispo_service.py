@@ -199,6 +199,20 @@ def test_cancel_reservation_falls_back_to_ready_for_sale_when_no_history():
         1, 'READY_FOR_SALE', changed_by=42, notes='Client backed out', via_dispo_action=True)
 
 
+def test_reserve_blocked_when_active_reservation_exists():
+    """Idempotency: a vehicle with an active reservation must not get a SECOND
+    one (RESERVED→RESERVED is a valid same-status transition, so the transition
+    guard alone wouldn't catch it) — otherwise cancel/sell only close one row and
+    the other is orphaned active forever."""
+    svc, mocks = _svc()
+    mocks['reservation_repo'].active_for_vehicle.return_value = {'id': 9, 'status': 'active'}
+    with pytest.raises(ValueError, match='rezervare activ'):
+        svc.reserve(1, COMPANY_ID, USER,
+                    {'client_name': 'Ion', 'reservation_end': '2026-09-01'})
+    mocks['reservation_repo'].create.assert_not_called()
+    mocks['vehicle_service'].change_status.assert_not_called()
+
+
 # ── guarded actions: invalid transition rejected BEFORE side-effects ────────
 
 def test_reserve_blocked_on_invalid_transition_no_row_created(monkeypatch):
