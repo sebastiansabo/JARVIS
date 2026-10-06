@@ -40,3 +40,48 @@ def test_open_direct_creates_for_valid_target(monkeypatch):
     out = svc.open_direct(5, 99)
     assert out == {'id': 11, 'is_direct': True}
     assert repo.created == (5, 99)
+
+
+class _NotifyRepo:
+    def __init__(self, channel, members):
+        self._channel = channel
+        self._members = members
+
+    def get_channel(self, cid):
+        return self._channel
+
+    def get_channel_members(self, cid):
+        return self._members
+
+    def get_post(self, pid):
+        return None
+
+
+def _capture_push(monkeypatch):
+    calls = []
+    monkeypatch.setattr('core.notifications.notify.notify_with_push',
+                        lambda *a, **k: calls.append(a))
+    return calls
+
+
+def test_notify_dm_uses_sender_name_as_title(monkeypatch):
+    repo = _NotifyRepo(
+        channel={'id': 11, 'is_direct': True, 'name': '', 'type': 'general', 'notify_mode': 'all'},
+        members=[{'user_id': 5}, {'user_id': 9}])
+    svc = _svc(monkeypatch, repo)
+    calls = _capture_push(monkeypatch)
+    svc._notify_post({'id': 100, 'parent_id': None}, 11, 5, 'hi', 'post', 'Alex', None)
+    assert len(calls) == 1
+    targets, title = calls[0][0], calls[0][1]
+    assert targets == [9]
+    assert title == 'Alex'
+
+
+def test_notify_group_keeps_hash_title(monkeypatch):
+    repo = _NotifyRepo(
+        channel={'id': 3, 'is_direct': False, 'name': 'Suport', 'type': 'general', 'notify_mode': 'all'},
+        members=[{'user_id': 5}, {'user_id': 9}])
+    svc = _svc(monkeypatch, repo)
+    calls = _capture_push(monkeypatch)
+    svc._notify_post({'id': 101, 'parent_id': None}, 3, 5, 'hi', 'post', 'Alex', None)
+    assert calls[0][1] == '#Suport'
