@@ -48,6 +48,32 @@ def test_transaction_date_rendered_in_romania_local_time():
     assert row[3] == 'manual_debit'
 
 
+def test_formula_injection_is_neutralised():
+    """A description that starts with a formula trigger must be stored as literal
+    text (prefixed with an apostrophe), never as an executable formula."""
+    transactions = [{
+        'created_at': None, 'employee_name': '=cmd|calc', 'tx_type': 'manual_debit',
+        'amount': -1.0, 'status': 'approved',
+        'description': '=HYPERLINK("http://evil","click")', 'created_by_name': '+SUM(A1)',
+    }]
+    wb = _load(build_time_bank_workbook(balances=[], transactions=transactions))
+    cell_name = wb['Tranzacții']['B2']
+    cell_desc = wb['Tranzacții']['G2']
+    cell_creator = wb['Tranzacții']['H2']
+    assert cell_name.data_type != 'f' and cell_name.value == "'=cmd|calc"
+    assert cell_desc.data_type != 'f' and cell_desc.value.startswith("'=HYPERLINK")
+    assert cell_creator.value == "'+SUM(A1)"
+
+
+def test_safe_values_are_not_mangled():
+    """Ordinary text and numbers pass through untouched."""
+    balances = [{'name': 'Roman Paul', 'company': 'Autoworld', 'department': 'Service',
+                 'balance': -15.0, 'personal_balance': -15.0, 'event_balance': 0.0, 'pending_count': 0}]
+    wb = _load(build_time_bank_workbook(balances=balances, transactions=[]))
+    row = [c.value for c in wb['Balanțe'][2]]
+    assert row == ['Roman Paul', 'Autoworld', 'Service', -15.0, -15.0, 0.0, 0]
+
+
 def test_naive_and_none_dates_are_safe():
     transactions = [
         {'created_at': None, 'employee_name': 'X', 'amount': 1.0},

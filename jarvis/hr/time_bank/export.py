@@ -4,7 +4,7 @@ Pure data→bytes helper: the route fetches the (scoped/filtered) rows and hands
 them here, so this stays DB-free and unit-testable.
 """
 import io
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import openpyxl
 from openpyxl.styles import Font
@@ -23,6 +23,20 @@ _BALANCE_WIDTHS = [26, 22, 22, 12, 14, 15, 9]
 _TX_HEADERS = ['Dată', 'Angajat', 'Companie', 'Tip', 'Ore',
                'Status', 'Descriere', 'Creat de', 'Aprobat de']
 _TX_WIDTHS = [17, 26, 22, 22, 8, 12, 42, 22, 22]
+
+
+# A cell whose text begins with one of these (or a control char) can be executed
+# as a formula when the .xlsx is opened — openpyxl itself stores a leading-'='
+# string as a real formula. Prefix such values with an apostrophe so they are
+# always treated as literal text (spreadsheet formula-injection guard).
+_FORMULA_TRIGGERS = ('=', '+', '-', '@', '\t', '\r', '\n')
+
+
+def _safe_text(value):
+    """Neutralise spreadsheet formula injection in a free-text cell."""
+    if isinstance(value, str) and value and value[0] in _FORMULA_TRIGGERS:
+        return "'" + value
+    return value
 
 
 def _fmt_dt(value):
@@ -70,9 +84,9 @@ def build_time_bank_workbook(balances, transactions):
     ws_bal.title = 'Balanțe'
     _write_sheet(ws_bal, _BALANCE_HEADERS, _BALANCE_WIDTHS, [
         [
-            b.get('name') or '',
-            b.get('company') or '',
-            b.get('department') or '',
+            _safe_text(b.get('name') or ''),
+            _safe_text(b.get('company') or ''),
+            _safe_text(b.get('department') or ''),
             _num(b.get('balance')),
             _num(b.get('personal_balance')),
             _num(b.get('event_balance')),
@@ -84,15 +98,15 @@ def build_time_bank_workbook(balances, transactions):
     ws_tx = wb.create_sheet('Tranzacții')
     _write_sheet(ws_tx, _TX_HEADERS, _TX_WIDTHS, [
         [
-            _fmt_dt(t.get('created_at')),
-            t.get('employee_name') or '',
-            t.get('employee_company') or '',
-            t.get('tx_type') or '',
+            _safe_text(_fmt_dt(t.get('created_at'))),
+            _safe_text(t.get('employee_name') or ''),
+            _safe_text(t.get('employee_company') or ''),
+            _safe_text(t.get('tx_type') or ''),
             _num(t.get('amount')),
-            t.get('status') or '',
-            t.get('description') or '',
-            t.get('created_by_name') or '',
-            t.get('approved_by_name') or '',
+            _safe_text(t.get('status') or ''),
+            _safe_text(t.get('description') or ''),
+            _safe_text(t.get('created_by_name') or ''),
+            _safe_text(t.get('approved_by_name') or ''),
         ]
         for t in transactions
     ])
