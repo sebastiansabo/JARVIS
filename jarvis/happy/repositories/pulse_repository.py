@@ -180,9 +180,40 @@ class PulseRepository(BaseRepository):
                     cursor.execute(
                         "INSERT INTO happy.pulse_invites (pulse_id, user_id) VALUES (%s, %s) "
                         "ON CONFLICT DO NOTHING", (pulse_id, uid))
-            cursor.execute("SELECT count(*) c FROM happy.pulse_invites WHERE pulse_id=%s", (pulse_id,))
-            return cursor.fetchone()["c"]
-        return self.execute_many(_work)
+            # Return the materialized recipient ids (count = len) so the caller
+            # can notify them. SELECT after the inserts so the active/ghost
+            # filter and ON CONFLICT de-dup are both reflected.
+            cursor.execute(
+                "SELECT user_id FROM happy.pulse_invites WHERE pulse_id=%s ORDER BY user_id",
+                (pulse_id,))
+            return [r["user_id"] for r in cursor.fetchall()]
+
+        invited_ids = self.execute_many(_work)
+        self._notify_pulse_opened(pulse, invited_ids)
+        return len(invited_ids)
+
+    def _notify_pulse_opened(self, pulse, user_ids):
+        """Announce a freshly-opened pulse to its invitees (in-app + push).
+
+        This is the "send" half of open_pulse (invites exist "to send +
+        remind"). Fired AFTER the invite transaction commits so a push/in-app
+        failure can never roll back or block going live; the pulse surfaces on
+        the Hub (/app/hub) via PulseCard. Anonymity is preserved — we only
+        notify the invite list, never record who opened/answered.
+        """
+        if not user_ids:
+            return
+        try:
+            from core.notifications.notify import notify_users
+            notify_users(
+                user_ids,
+                f"Sondaj nou: {pulse.get('title', 'Sondaj')}",
+                message="Spune-ne cum te simți — răspunde la noul sondaj (anonim).",
+                link="/app/hub",
+                category="happy_announce",
+            )
+        except Exception:
+            logger.exception("happy: pulse-open notify failed (pulse=%s)", pulse.get("id"))
 
     def close_pulse(self, pulse_id, now):
         """Close and DROP the invite list (spec §7.5 — dropped at close)."""
