@@ -281,6 +281,90 @@ def test_status_forbidden_without_carpark(client, monkeypatch):
     assert r.status_code == 403
 
 
+def _shopify_account():
+    return [{'id': 1, 'connector_type': 'shopify',
+             'config': {'store_domain': 'cb6c17-2.myshopify.com'},
+             'credentials': {'client_id': 'cid', 'client_secret': 'sec'}}]
+
+
+def test_verify_status_marks_deleted_product_not_published(client, monkeypatch):
+    monkeypatch.setattr(routes_mod._repo, 'get_all_by_type', lambda t: _shopify_account())
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id', lambda vid: {'id': vid, 'updated_at': None})
+    monkeypatch.setattr(routes_mod, 'ensure_platform', lambda pub, dom: 3)
+    state = {'listing': {'id': 5, 'external_listing_id': 'gid://shopify/Product/9', 'status': 'published'}}
+    monkeypatch.setattr(routes_mod._pub_repo, 'get_listing_by_vehicle_platform',
+                        lambda vid, pid: dict(state['listing']) if state['listing'] else None)
+    monkeypatch.setattr(routes_mod._pub_repo, 'update_listing',
+                        lambda lid, data: state.update(listing={**state['listing'], **data}))
+    monkeypatch.setattr(routes_mod, '_build_client', lambda c: object())
+
+    class FakeConn:
+        def __init__(self, *a, **k): pass
+        def verify(self, ext): return {'exists': False, 'status': None}
+    monkeypatch.setattr(routes_mod, 'ShopifyConnector', FakeConn)
+
+    r = client.post('/shopify/api/vehicles/7/verify-status')
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body['deleted_on_shopify'] is True
+    assert body['freshness'] == 'not_published'
+    assert state['listing']['status'] == 'not_published'
+    assert state['listing']['external_listing_id'] is None
+
+
+def test_verify_status_keeps_existing_product(client, monkeypatch):
+    monkeypatch.setattr(routes_mod._repo, 'get_all_by_type', lambda t: _shopify_account())
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id', lambda vid: {'id': vid, 'updated_at': None})
+    monkeypatch.setattr(routes_mod, 'ensure_platform', lambda pub, dom: 3)
+    monkeypatch.setattr(routes_mod._pub_repo, 'get_listing_by_vehicle_platform',
+                        lambda vid, pid: {'id': 5, 'external_listing_id': 'gid://shopify/Product/9',
+                                          'status': 'published', 'last_sync': None})
+    calls = []
+    monkeypatch.setattr(routes_mod._pub_repo, 'update_listing', lambda lid, data: calls.append(data))
+    monkeypatch.setattr(routes_mod, '_build_client', lambda c: object())
+
+    class FakeConn:
+        def __init__(self, *a, **k): pass
+        def verify(self, ext): return {'exists': True, 'status': 'ACTIVE'}
+    monkeypatch.setattr(routes_mod, 'ShopifyConnector', FakeConn)
+
+    r = client.post('/shopify/api/vehicles/7/verify-status')
+    assert r.status_code == 200
+    assert r.get_json()['deleted_on_shopify'] is False
+    assert calls == []  # no reconciliation write when the product still exists
+
+
+def test_verify_status_forbidden_without_carpark(client, monkeypatch):
+    class NoCarparkUser:
+        is_authenticated = True; id = 9; company_id = 10
+        can_access_carpark = False; can_edit_carpark = False; can_access_settings = False
+    user = NoCarparkUser()
+    monkeypatch.setattr(api_helpers, 'current_user', user)
+    monkeypatch.setattr(routes_mod, 'current_user', user)
+    r = client.post('/shopify/api/vehicles/7/verify-status')
+    assert r.status_code == 403
+
+
+def test_unpublish_reconciles_when_product_already_deleted(client, monkeypatch):
+    monkeypatch.setattr(routes_mod._repo, 'get_all_by_type', lambda t: _shopify_account())
+    monkeypatch.setattr(routes_mod, 'ensure_platform', lambda pub, dom: 3)
+    monkeypatch.setattr(routes_mod._pub_repo, 'get_listing_by_vehicle_platform',
+                        lambda vid, pid: {'id': 5, 'external_listing_id': 'gid://shopify/Product/9'})
+    writes = []
+    monkeypatch.setattr(routes_mod._pub_repo, 'update_listing', lambda lid, data: writes.append(data))
+
+    class FakeConn:
+        platform_id = 3
+        def __init__(self, *a, **k): pass
+        def deactivate(self, ext): return {'success': False, 'missing': True, 'error': 'Product does not exist'}
+    monkeypatch.setattr(routes_mod, 'ShopifyConnector', FakeConn)
+
+    r = client.post('/shopify/api/vehicles/7/unpublish')
+    assert r.status_code == 200
+    assert r.get_json().get('deleted_on_shopify') is True
+    assert writes[-1] == {'status': 'not_published', 'external_listing_id': None}
+
+
 def test_get_schema_returns_shape(client, monkeypatch):
     monkeypatch.setattr(routes_mod._repo, 'get_all_by_type',
         lambda t: [{'id': 1, 'connector_type': 'shopify',
