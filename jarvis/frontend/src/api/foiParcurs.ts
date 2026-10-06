@@ -246,6 +246,9 @@ export const foiParcursApi = {
       sessions: {
         id: number; who: string; km_start: number; km_end: number
         prior_max_end: number; overlap_km: number; date: string | null
+        conflict: { id: number; who: string; km_start: number; km_end: number; date: string | null } | null
+        proposed_km_start: number
+        proposed_km_end: number
       }[]
       inversion_count: number
       inversions: {
