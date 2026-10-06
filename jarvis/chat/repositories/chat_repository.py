@@ -36,6 +36,7 @@ class ChatRepository(BaseRepository):
                    lm.type AS last_message_type,
                    lm.created_at AS last_message_at,
                    lmu.name AS last_message_author
+                   ,cp.user_id AS counterpart_user_id, cpu.name AS counterpart_name
             FROM digest_channels c
             LEFT JOIN users u ON u.id = c.created_by
             LEFT JOIN digest_channel_members mem
@@ -48,10 +49,17 @@ class ChatRepository(BaseRepository):
                 LIMIT 1
             ) lm ON TRUE
             LEFT JOIN users lmu ON lmu.id = lm.user_id
+            LEFT JOIN LATERAL (
+                SELECT m2.user_id FROM digest_channel_members m2
+                WHERE m2.channel_id = c.id AND m2.user_id <> %(uid)s
+                ORDER BY m2.user_id LIMIT 1
+            ) cp ON c.is_direct
+            LEFT JOIN users cpu ON cpu.id = cp.user_id
             WHERE c.deleted_at IS NULL
               AND (c.is_private = FALSE OR mem.user_id IS NOT NULL)
               AND (%(archived)s = (mem.archived_at IS NOT NULL))
-              AND (%(q)s IS NULL OR c.name ILIKE %(qlike)s OR lm.content ILIKE %(qlike)s)
+              AND (%(q)s IS NULL OR c.name ILIKE %(qlike)s OR lm.content ILIKE %(qlike)s
+                   OR (c.is_direct AND cpu.name ILIKE %(qlike)s))
             ORDER BY (mem.pinned_at IS NOT NULL) DESC, mem.pinned_at DESC,
                      COALESCE(lm.created_at, c.created_at) DESC
         ''', {
