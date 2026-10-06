@@ -55,6 +55,8 @@ def create_channel():
 @chat_bp.route('/channels/<int:channel_id>', methods=['PUT'])
 @login_required
 def update_channel(channel_id):
+    if _svc.is_direct(channel_id):
+        return jsonify({'error': 'Not available for direct messages'}), 409
     if not _svc.is_admin_or_moderator(channel_id, current_user.id):
         return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
     data = request.get_json()
@@ -67,6 +69,8 @@ def update_channel(channel_id):
 @chat_bp.route('/channels/<int:channel_id>', methods=['DELETE'])
 @login_required
 def delete_channel(channel_id):
+    if _svc.is_direct(channel_id):
+        return jsonify({'error': 'Not available for direct messages'}), 409
     if not _svc.is_admin_or_moderator(channel_id, current_user.id):
         return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
     _svc.delete_channel(channel_id)
@@ -111,6 +115,8 @@ def get_channel_targets(channel_id):
 @chat_bp.route('/channels/<int:channel_id>/targets', methods=['PUT'])
 @login_required
 def update_channel_targets(channel_id):
+    if _svc.is_direct(channel_id):
+        return jsonify({'error': 'Not available for direct messages'}), 409
     data = request.get_json()
     if not data or 'targets' not in data:
         return jsonify({'success': False, 'error': 'targets required'}), 400
@@ -123,6 +129,8 @@ def update_channel_targets(channel_id):
 @chat_bp.route('/channels/<int:channel_id>/settings', methods=['PUT'])
 @login_required
 def update_channel_settings(channel_id):
+    if _svc.is_direct(channel_id):
+        return jsonify({'error': 'Not available for direct messages'}), 409
     if not _svc.is_admin_or_moderator(channel_id, current_user.id):
         return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
     data = request.get_json()
@@ -135,6 +143,8 @@ def update_channel_settings(channel_id):
 @chat_bp.route('/channels/<int:channel_id>/clear-history', methods=['POST'])
 @login_required
 def clear_channel_history(channel_id):
+    if _svc.is_direct(channel_id):
+        return jsonify({'error': 'Not available for direct messages'}), 409
     if not _svc.is_admin_or_moderator(channel_id, current_user.id):
         return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
     _svc.clear_channel_history(channel_id)
@@ -153,6 +163,8 @@ def list_members(channel_id):
 @chat_bp.route('/channels/<int:channel_id>/members', methods=['POST'])
 @login_required
 def add_member(channel_id):
+    if _svc.is_direct(channel_id):
+        return jsonify({'error': 'Not available for direct messages'}), 409
     if not _svc.is_admin_or_moderator(channel_id, current_user.id):
         return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
     data = request.get_json()
@@ -165,6 +177,8 @@ def add_member(channel_id):
 @chat_bp.route('/channels/<int:channel_id>/members/<int:user_id>', methods=['DELETE'])
 @login_required
 def remove_member(channel_id, user_id):
+    if _svc.is_direct(channel_id):
+        return jsonify({'error': 'Not available for direct messages'}), 409
     if not _svc.is_admin_or_moderator(channel_id, current_user.id):
         return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
     _svc.remove_member(channel_id, user_id)
@@ -174,6 +188,8 @@ def remove_member(channel_id, user_id):
 @chat_bp.route('/channels/<int:channel_id>/members/<int:user_id>/role', methods=['PUT'])
 @login_required
 def set_member_role(channel_id, user_id):
+    if _svc.is_direct(channel_id):
+        return jsonify({'error': 'Not available for direct messages'}), 409
     if not _svc.is_admin_or_moderator(channel_id, current_user.id):
         return jsonify({'success': False, 'error': 'Admin or moderator required'}), 403
     data = request.get_json()
@@ -193,6 +209,29 @@ def search_users():
         return jsonify({'success': True, 'data': []})
     users = _svc.search_users(q)
     return jsonify({'success': True, 'data': users})
+
+
+# ── Direct Messages ──────────────────────────────────────
+
+@chat_bp.route('/direct', methods=['POST'])
+@login_required
+def open_direct():
+    raw = (request.get_json(silent=True) or {}).get('user_id')
+    try:
+        other_id = int(raw)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'user_id required'}), 400
+    try:
+        channel = _svc.open_direct(current_user.id, other_id)
+    except ValueError:
+        return jsonify({'error': 'Cannot start a conversation with yourself'}), 400
+    except LookupError:
+        return jsonify({'error': 'User not found'}), 404
+    other = next((m for m in _svc.get_channel_members(channel['id'])
+                  if m['user_id'] != current_user.id), None)
+    return jsonify({'channel': {**channel,
+                                'counterpart_user_id': other['user_id'] if other else None,
+                                'counterpart_name': other['user_name'] if other else None}})
 
 
 # ── Posts ────────────────────────────────────────────────

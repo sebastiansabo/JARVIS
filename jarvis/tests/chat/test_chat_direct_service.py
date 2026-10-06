@@ -85,3 +85,26 @@ def test_notify_group_keeps_hash_title(monkeypatch):
     calls = _capture_push(monkeypatch)
     svc._notify_post({'id': 101, 'parent_id': None}, 3, 5, 'hi', 'post', 'Alex', None)
     assert calls[0][1] == '#Suport'
+
+
+class _ChannelRepo:
+    def __init__(self, channel):
+        self._channel = channel
+
+    def get_channel(self, cid):
+        return self._channel
+
+
+def test_is_direct_true_for_dm(monkeypatch):
+    svc = _svc(monkeypatch, _ChannelRepo({'id': 11, 'is_direct': True}))
+    assert svc.is_direct(11) is True
+
+
+def test_is_direct_false_for_group(monkeypatch):
+    svc = _svc(monkeypatch, _ChannelRepo({'id': 3, 'is_direct': False}))
+    assert svc.is_direct(3) is False
+
+
+def test_is_direct_false_when_missing(monkeypatch):
+    svc = _svc(monkeypatch, _ChannelRepo(None))
+    assert svc.is_direct(999) is False
