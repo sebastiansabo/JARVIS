@@ -101,6 +101,11 @@ class ChatService:
             return True
         return self.is_admin_or_moderator(channel_id, user_id)
 
+    def is_direct(self, channel_id):
+        """True iff the channel exists and is a 1:1 direct message."""
+        channel = _repo.get_channel(channel_id)
+        return bool(channel and channel.get('is_direct'))
+
     # ── Channel Targets ──────────────────────────────────────
 
     def get_channel_targets(self, channel_id):
