@@ -99,6 +99,24 @@ class ChatRepository(BaseRepository):
             VALUES (%s, %s, %s, %s, %s, %s) RETURNING *
         ''', (name, description, channel_type, is_private, created_by, notify_mode), returning=True)
 
+    def create_or_get_direct(self, initiator_id, other_id):
+        """Return the DM channel for the unordered pair, creating it (with both
+        members) if absent. Race-safe via the partial unique index on dm_key."""
+        a, b = sorted((int(initiator_id), int(other_id)))
+        dm_key = f'{a}:{b}'
+        row = self.execute('''
+            INSERT INTO digest_channels (name, type, is_private, is_direct, dm_key, created_by)
+            VALUES ('', 'general', TRUE, TRUE, %s, %s)
+            ON CONFLICT (dm_key) WHERE is_direct DO NOTHING
+            RETURNING *
+        ''', (dm_key, initiator_id), returning=True)
+        if row is None:
+            return self.query_one(
+                'SELECT * FROM digest_channels WHERE dm_key = %s AND is_direct', (dm_key,))
+        self.add_member(row['id'], a, 'member')
+        self.add_member(row['id'], b, 'member')
+        return row
+
     def update_channel(self, channel_id, name, description):
         return self.execute('''
             UPDATE digest_channels SET name = %s, description = %s, updated_at = CURRENT_TIMESTAMP
@@ -168,6 +186,14 @@ class ChatRepository(BaseRepository):
               AND (name ILIKE %s OR email ILIKE %s){gfrag}
             ORDER BY name LIMIT %s
         ''', (like, like, *gargs, limit))
+
+    def get_active_user(self, user_id):
+        """Active user visible to the caller (ghost-aware, like the directory).
+        Returns {id, name} or None — used to validate a DM target."""
+        gfrag, gargs = ghost_exclude_clause('id')
+        return self.query_one(
+            f'SELECT id, name FROM users WHERE id = %s AND is_active = TRUE{gfrag}',
+            (user_id, *gargs))
 
     # ── Channel Targets (Level-based audience) ────────────
 
