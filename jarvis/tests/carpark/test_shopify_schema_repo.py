@@ -165,7 +165,7 @@ def test_ensure_defaults_backfills_all_entries_do_nothing(monkeypatch):
     assert all('ON CONFLICT' in sql and 'DO NOTHING' in sql for sql, _ in calls)
     # the previously-missing drive mapping is among the backfilled values
     value_params = [p for sql, p in calls if 'carpark_shopify_value_map' in sql]
-    assert ('drive_type', 'all-wheel-auto', 'Integral') in [(p[0], p[1], p[2]) for p in value_params]
+    assert ('drive_type', 'all-wheel-auto', 'Integrală') in [(p[0], p[1], p[2]) for p in value_params]
 
 
 def test_ensure_defaults_runs_once_per_process(monkeypatch):
