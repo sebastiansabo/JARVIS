@@ -154,3 +154,53 @@ def test_valid_return_calls_record_return_and_returns_completed_contract(client,
         'return_advisor_signature': 'data:image/png;base64,advisor',
         'return_client_signature': 'data:image/png;base64,client',
     }
+
+
+# ── Soft overlap guard: a return km_end must not reach into a later drive ─────
+
+def _td_with_vin(km_start=1000, vin='V1'):
+    return {**_td_contract(km_start=km_start), 'vin': vin}
+
+
+def test_return_km_end_past_next_session_warns_409(client, monkeypatch):
+    # The return-side of the interleaving overlap: km_end (1200) reaches past the
+    # next drive's start (1150) → soft 409 for the advisor to confirm.
+    monkeypatch.setattr(test_drive_mod._fp_repo, 'get_contract_by_id', lambda id: _td_with_vin(km_start=1000))
+    monkeypatch.setattr(test_drive_mod._fp_repo, 'next_session_start',
+                        lambda vin, above_km, exclude_id=None: 1150, raising=False)
+    resp = client.put('/api/foi-parcurs/test-drive/1/return', json={
+        'km_end': 1200, 'advisor_signature': 'sig-a', 'client_signature': 'sig-c',
+    })
+    assert resp.status_code == 409, resp.get_json()
+    body = resp.get_json()
+    assert body['odometer_overlap'] is True
+    assert body['next_km_start'] == 1150
+    assert body['provided'] == 1200
+
+
+def test_return_overlap_allowed_with_override(client, monkeypatch):
+    # allow_overlap lets the honest real-time return through (the later drive is
+    # usually the stale one).
+    monkeypatch.setattr(test_drive_mod._fp_repo, 'get_contract_by_id', lambda id: _td_with_vin(km_start=1000))
+    monkeypatch.setattr(test_drive_mod._fp_repo, 'next_session_start',
+                        lambda vin, above_km, exclude_id=None: 1150, raising=False)
+    monkeypatch.setattr(test_drive_mod._fp_repo, 'record_return',
+                        lambda cid, d: {**_td_with_vin(km_start=1000), 'km_end': d['km_end'], 'status': 'COMPLETED'})
+    resp = client.put('/api/foi-parcurs/test-drive/1/return', json={
+        'km_end': 1200, 'allow_overlap': True, 'advisor_signature': 'sig-a', 'client_signature': 'sig-c',
+    })
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()['contract']['km_end'] == 1200
+
+
+def test_return_no_later_session_no_warning(client, monkeypatch):
+    # No drive ahead of this one → nothing to overlap → normal completion.
+    monkeypatch.setattr(test_drive_mod._fp_repo, 'get_contract_by_id', lambda id: _td_with_vin(km_start=1000))
+    monkeypatch.setattr(test_drive_mod._fp_repo, 'next_session_start',
+                        lambda vin, above_km, exclude_id=None: None, raising=False)
+    monkeypatch.setattr(test_drive_mod._fp_repo, 'record_return',
+                        lambda cid, d: {**_td_with_vin(km_start=1000), 'km_end': d['km_end'], 'status': 'COMPLETED'})
+    resp = client.put('/api/foi-parcurs/test-drive/1/return', json={
+        'km_end': 1250, 'advisor_signature': 'sig-a', 'client_signature': 'sig-c',
+    })
+    assert resp.status_code == 200, resp.get_json()

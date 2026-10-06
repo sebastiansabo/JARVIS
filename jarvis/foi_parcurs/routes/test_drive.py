@@ -1043,6 +1043,24 @@ def api_return_test_drive(id):
                 'error': f'km_end ({km_end}) cannot be less than km_start ({km_start})',
             }), 400
 
+        # Soft overlap guard: a return's end odometer must not reach past the next
+        # drive up the chain (the return-side of the interleaving overlap — a long
+        # drive returning over a back-dated short one logged while it was out). If
+        # it does, warn; the advisor confirms (allow_overlap — the later drive is
+        # usually the stale one) or corrects. Mirrors the create-path soft gate.
+        vin = contract.get('vin')
+        if vin and km_start is not None and not data.get('allow_overlap'):
+            nxt = _fp_repo.next_session_start(vin, km_start, exclude_id=id)
+            if nxt is not None and km_end > nxt:
+                return jsonify({
+                    'success': False,
+                    'odometer_overlap': True,
+                    'next_km_start': nxt,
+                    'provided': km_end,
+                    'error': (f'Kilometrajul de sosire ({km_end}) depășește pornirea '
+                              f'următoarei curse ({nxt}). Confirmă pentru a continua.'),
+                }), 409
+
         return_damage = data.get('return_damage') or []
         if not isinstance(return_damage, list):
             return jsonify({'success': False, 'error': 'return_damage must be a list'}), 400
@@ -1063,7 +1081,6 @@ def api_return_test_drive(id):
 
         # Advance the vehicle's stored odometer to the latest reading (never backwards)
         try:
-            vin = contract.get('vin')
             if vin:
                 veh = _vehicle_repo.get_by_vin(vin)
                 if veh and (veh.get('odometer_km') is None or km_end > veh['odometer_km']):
