@@ -6,7 +6,7 @@ describe('BuyBack / TradeIn tile', () => {
     const tile = appTiles.find((t) => t.key === 'buyback')
     expect(tile).toBeDefined()
     expect(tile?.route).toBeUndefined()
-    expect(tile?.label).toBe('BuyBack / TradeIn')
+    expect(tile?.label).toBe('BuyBack')
   })
 
   it('is visible when the user can access buyback', () => {

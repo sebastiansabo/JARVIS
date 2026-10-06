@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import {
   ArrowLeft,
@@ -167,6 +167,53 @@ const emptyForm: BuyBackFormState = {
   drive_folder_link: '',
 }
 
+// Map a fetched record → editable form state (Corectează flow). Nulls become ''
+// so inputs stay controlled; numeric fields pass through (the <Input>s coerce).
+function recordToForm(r: BuybackRecord): BuyBackFormState {
+  const s = (v: string | null | undefined) => v ?? ''
+  const n = (v: number | null | undefined): string | number => v ?? ''
+  return {
+    advisor_id: r.advisor_id ?? null,
+    advisor_name: s(r.advisor_name),
+    acquisition_type: s(r.acquisition_type),
+    is_trade_in: !!r.is_trade_in,
+    client_type: s(r.client_type),
+    vat_status: s(r.vat_status),
+    client_id: r.client_id ?? null,
+    seller_name: s(r.seller_name),
+    seller_email: s(r.seller_email),
+    seller_phone: s(r.seller_phone),
+    seller_cui: s(r.seller_cui),
+    brand: s(r.brand),
+    brand_id: null,
+    model: s(r.model),
+    variant: s(r.variant),
+    equipment: s(r.equipment),
+    vin: s(r.vin),
+    mileage_km: n(r.mileage_km),
+    engine_capacity_cm3: n(r.engine_capacity_cm3),
+    fuel_type: s(r.fuel_type),
+    transmission: s(r.transmission),
+    gearbox: s(r.gearbox),
+    manufacture_date: s(r.manufacture_date),
+    first_registration_date: s(r.first_registration_date),
+    service_history_uptodate: !!r.service_history_uptodate,
+    extra_wheels: !!r.extra_wheels,
+    keys_count: n(r.keys_count),
+    has_damage: !!r.has_damage,
+    damage_details: s(r.damage_details),
+    general_condition: n(r.general_condition),
+    images: [],
+    target_vehicle_text: s(r.target_vehicle_text),
+    target_carpark_vehicle_id: r.target_carpark_vehicle_id ?? null,
+    crm_deal_id: r.crm_deal_id ?? null,
+    client_asking_price_eur: n(r.client_asking_price_eur),
+    client_source: s(r.client_source),
+    other_details: s(r.other_details),
+    drive_folder_link: s(r.drive_folder_link),
+  }
+}
+
 // ── The backend's `_CREATE_FIELDS` whitelist (buyback/routes/records.py) —
 //    `vin`/`brand`/`model` are handled separately below (always required,
 //    never omitted); every other field here is optional. ──
@@ -297,6 +344,9 @@ interface BuyBackFormProps {
 // ── Component ──────────────────────────────────────────────────────────
 export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormProps = {}) {
   const navigate = useNavigate()
+  const { id: routeId } = useParams<{ id?: string }>()
+  const editId = !embedded && routeId ? Number(routeId) : null
+  const isEdit = editId != null
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [form, setForm] = useState<BuyBackFormState>(emptyForm)
@@ -306,12 +356,27 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
   const set = <K extends keyof BuyBackFormState>(key: K, value: BuyBackFormState[K]) =>
     setForm((f) => ({ ...f, [key]: value }))
 
-  // Prefill the advisor from the logged-in user once auth resolves.
+  // Edit (Corectează): load the existing record and prefill the form once.
+  const { data: editData } = useQuery({
+    queryKey: ['buyback-record', editId],
+    queryFn: () => buybackApi.getRecord(editId as number),
+    enabled: isEdit,
+  })
+  const prefilledRef = useRef(false)
   useEffect(() => {
-    if (user && !form.advisor_id) {
+    if (isEdit && editData?.record && !prefilledRef.current) {
+      prefilledRef.current = true
+      setForm(recordToForm(editData.record))
+    }
+  }, [isEdit, editData])
+
+  // Prefill the advisor from the logged-in user once auth resolves — create only
+  // (in edit we keep the record's original advisor).
+  useEffect(() => {
+    if (!isEdit && user && !form.advisor_id) {
       setForm((f) => ({ ...f, advisor_id: user.id, advisor_name: f.advisor_name || user.name }))
     }
-  }, [user]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [user, isEdit]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: opts } = useQuery({
     queryKey: ['buyback-options'],
@@ -495,10 +560,24 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
     onError: (err: any) => setSubmitError(err?.data?.error || err?.message || 'Salvarea a eșuat'),
   })
 
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      buybackApi.updateRecord(editId as number, buildCreatePayload(form) as unknown as Partial<BuybackRecord>),
+    onSuccess: () => {
+      setSubmitError(null)
+      queryClient.invalidateQueries({ queryKey: ['buyback-records'] })
+      queryClient.invalidateQueries({ queryKey: ['buyback-record', editId] })
+      navigate(`/app/buyback/${editId}`)
+    },
+    onError: (err: any) => setSubmitError(err?.data?.error || err?.message || 'Salvarea a eșuat'),
+  })
+
+  const mutation = isEdit ? updateMutation : createMutation
+
   function handleSubmit() {
-    if (createMutation.isPending) return
+    if (mutation.isPending) return
     if (!canSubmit) { setAttempted(true); return }
-    createMutation.mutate()
+    mutation.mutate()
   }
 
   function handleBack() {
@@ -509,12 +588,12 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
   const err = (bad: boolean) => attempted && bad
 
   return (
-    <div className={cn('space-y-4', !embedded && 'max-w-3xl mx-auto p-4 md:p-6')}>
+    <div className={cn('space-y-6', !embedded && 'max-w-2xl mx-auto p-4 md:p-6')}>
       <div className="flex items-center justify-between gap-2">
         <Button variant="ghost" size="sm" onClick={handleBack}>
           <ArrowLeft className="h-4 w-4 mr-1" />Înapoi
         </Button>
-        <h1 className="text-lg font-semibold">Solicitare Preț BuyBack / TradeIn</h1>
+        <h1 className="text-lg font-semibold">{isEdit ? 'Corectează solicitarea' : 'Solicitare Preț BuyBack'}</h1>
         <div className="w-16" />
       </div>
 
@@ -933,18 +1012,24 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
 
           <div className="space-y-1.5">
             <Label className="text-xs">Condiție Generală (1-5)</Label>
-            <div className="flex gap-1.5">
-              {[1, 2, 3, 4, 5].map((n) => (
-                <Button
-                  key={n}
-                  type="button"
-                  size="sm"
-                  variant={String(form.general_condition) === String(n) ? 'default' : 'outline'}
-                  onClick={() => set('general_condition', n)}
-                >
-                  {n}
-                </Button>
-              ))}
+            {/* 44px segmented control (matches TestDriveForm's fuel selector) */}
+            <div className="grid h-11 grid-cols-5 gap-1 rounded-lg bg-secondary p-1">
+              {[1, 2, 3, 4, 5].map((n) => {
+                const active = String(form.general_condition) === String(n)
+                return (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => set('general_condition', n)}
+                    className={cn(
+                      'rounded-md text-sm font-medium transition-colors',
+                      active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
+                    )}
+                  >
+                    {n}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -958,9 +1043,9 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
                     type="button"
                     aria-label="Șterge poza"
                     onClick={() => removeImage(idx)}
-                    className="absolute -top-1.5 -right-1.5 rounded-full bg-destructive text-white p-0.5"
+                    className="absolute -top-2 -right-2 rounded-full bg-destructive text-white p-1"
                   >
-                    <X className="h-3 w-3" />
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
               ))}
@@ -1073,11 +1158,18 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
         </CardContent>
       </Card>
 
-      <div className="flex justify-end gap-2 pb-8">
-        <Button variant="outline" onClick={handleBack}>Anulează</Button>
-        <Button onClick={handleSubmit} disabled={createMutation.isPending || !canSubmit}>
-          {createMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
-          Trimite Solicitarea
+      <div className="flex gap-2 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+        <Button variant="outline" size="lg" className="flex-1" onClick={handleBack}>
+          Anulează
+        </Button>
+        <Button
+          size="lg"
+          className={cn('flex-1', attempted && !canSubmit && 'bg-destructive hover:bg-destructive/90')}
+          onClick={handleSubmit}
+          disabled={mutation.isPending}
+        >
+          {mutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+          {isEdit ? 'Salvează modificările' : 'Trimite Solicitarea'}
         </Button>
       </div>
     </div>
