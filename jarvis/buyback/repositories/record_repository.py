@@ -95,7 +95,8 @@ class RecordRepository(BaseRepository):
              sort_by='created_at', sort_dir='DESC'):
         """Paginated, filtered list. Returns (rows, total).
 
-        `q` is an ILIKE substring match over brand/model/vin/record_code.
+        `q` is an ILIKE substring match over brand/model/vin/record_code and
+        the seller/client fields (seller_name/email/phone/cui).
         date_from/date_to filter on created_at; date_to is inclusive of the
         whole day. `sort_by`/`sort_dir` are validated against a whitelist —
         the only place a caller-influenced value is interpolated into SQL
@@ -112,17 +113,26 @@ class RecordRepository(BaseRepository):
             where_clauses.append('r.company_id = %s')
             params.append(company_id)
         if status:
-            where_clauses.append('r.status = %s')
-            params.append(status)
+            # `status` may be a single value or a comma-separated set (the Hub
+            # multi-select filter) → match any of them.
+            vals = [s for s in str(status).split(',') if s]
+            if len(vals) == 1:
+                where_clauses.append('r.status = %s')
+                params.append(vals[0])
+            elif vals:
+                where_clauses.append('r.status = ANY(%s)')
+                params.append(vals)
         if acquisition_type:
             where_clauses.append('r.acquisition_type = %s')
             params.append(acquisition_type)
         if q:
             where_clauses.append(
-                '(r.brand ILIKE %s OR r.model ILIKE %s OR r.vin ILIKE %s OR r.record_code ILIKE %s)'
+                '(r.brand ILIKE %s OR r.model ILIKE %s OR r.vin ILIKE %s OR r.record_code ILIKE %s'
+                ' OR r.seller_name ILIKE %s OR r.seller_email ILIKE %s'
+                ' OR r.seller_phone ILIKE %s OR r.seller_cui ILIKE %s)'
             )
             like = f'%{q}%'
-            params.extend([like, like, like, like])
+            params.extend([like] * 8)
         if date_from:
             where_clauses.append('r.created_at >= %s')
             params.append(date_from)

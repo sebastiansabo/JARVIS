@@ -127,7 +127,7 @@ export const appTiles: (AppTile & { shortLabel?: string })[] = [
   { key: 'driving', label: 'Driving Sessions', shortLabel: 'Driving', icon: Car, bg: 'bg-teal-600', fg: 'text-white' },
   { key: 'courtesy', label: 'Mașini de curtoazie', shortLabel: 'Curtoazie', icon: KeyRound, bg: 'bg-indigo-600', fg: 'text-white' },
   { key: 'field_sales', label: 'Field Sales', shortLabel: 'Teren', icon: MapPin, bg: 'bg-teal-600', fg: 'text-white' },
-  { key: 'buyback', label: 'BuyBack / TradeIn', shortLabel: 'BuyBack', icon: ArrowLeftRight, bg: 'bg-amber-600', fg: 'text-white' },
+  { key: 'buyback', label: 'BuyBack', shortLabel: 'BuyBack', icon: ArrowLeftRight, bg: 'bg-amber-600', fg: 'text-white' },
 ]
 
 const MONTHS_RO = ['Ianuarie', 'Februarie', 'Martie', 'Aprilie', 'Mai', 'Iunie', 'Iulie', 'August', 'Septembrie', 'Octombrie', 'Noiembrie', 'Decembrie']
@@ -410,7 +410,7 @@ export default function Hub() {
           )}
           {activeModule === 'buyback' && (
             <Suspense fallback={<div className="py-8 text-center text-muted-foreground text-sm">Loading...</div>}>
-              <HubBuybackPanel onBack={() => setActiveModule(null)} />
+              <HubBuybackPanel />
             </Suspense>
           )}
 
@@ -553,34 +553,17 @@ export default function Hub() {
   )
 }
 
-// ─── Apps Card (max 6, expandable) ──────────────────────
+// ─── Apps Card (shows all tiles) ──────────────────────
 
 function HubAppsCard({ tiles, onSelect }: { tiles: AppTile[]; onSelect: (key: NonNullable<ActiveModule>) => void }) {
-  const [showAll, setShowAll] = useState(false)
-  const limit = 8
-  const hasMore = tiles.length > limit
-  const displayed = showAll ? tiles : tiles.slice(0, limit)
-
   return (
     <Card>
       <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium text-muted-foreground">Apps</CardTitle>
-          {hasMore && (
-            <button
-              type="button"
-              onClick={() => setShowAll(s => !s)}
-              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {showAll ? 'Show less' : `All (${tiles.length})`}
-              <ChevronRight className={cn('h-3 w-3 transition-transform', showAll && 'rotate-90')} />
-            </button>
-          )}
-        </div>
+        <CardTitle className="text-sm font-medium text-muted-foreground">Apps</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap gap-6">
-          {displayed.map((tile) => {
+          {tiles.map((tile) => {
             const Icon = tile.icon
             return (
               <button
