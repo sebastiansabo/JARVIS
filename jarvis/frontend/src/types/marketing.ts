@@ -457,6 +457,57 @@ export interface CrmClientSearchResult {
   deal_count: number
 }
 
+export type MktLeadStatus = 'new' | 'contacted' | 'qualified' | 'converted' | 'discarded'
+
+export interface MktProjectLead {
+  id: number
+  project_id: number
+  contact_name: string | null
+  phone: string | null
+  phone_raw: string | null
+  email: string | null
+  company_name: string | null
+  cui: string | null
+  source: string | null
+  utm_source: string | null
+  utm_medium: string | null
+  utm_campaign: string | null
+  utm_term: string | null
+  utm_content: string | null
+  message: string | null
+  model_of_interest: string | null
+  raw_payload: Record<string, unknown>
+  status: MktLeadStatus
+  status_notes: string | null
+  received_via: string
+  webhook_id: number | null
+  converted_client_id: number | null
+  converted_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface MktProjectWebhook {
+  id: number
+  project_id: number
+  label: string
+  token_prefix: string | null
+  is_active: boolean
+  created_at: string
+  last_used_at: string | null
+  revoked_at: string | null
+  created_by_name: string | null
+}
+
+export interface MktWebhookCreated {
+  success: boolean
+  id: number
+  label: string
+  token: string
+  token_prefix: string
+  webhook_url: string
+}
+
 export interface CrmDeal {
   id: number
   source: string | null
