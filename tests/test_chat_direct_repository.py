@@ -64,3 +64,16 @@ class TestGetActiveUser:
         repo.get_active_user(42)
         assert 'is_active = TRUE' in cap['sql']
         assert cap['args'][0] == 42
+
+
+class TestGetChannelsCounterpart:
+    def test_query_resolves_counterpart_and_gates_on_is_direct(self):
+        repo = ChatRepository()
+        cap = {}
+        repo.query_all = lambda sql, args=None: cap.update(sql=sql, args=args) or []
+        repo.get_channels(user_id=5)
+        sql = cap['sql']
+        assert 'counterpart_user_id' in sql
+        assert 'counterpart_name' in sql
+        assert 'ON c.is_direct' in sql           # counterpart LATERAL gated to DMs
+        assert 'c.is_direct AND cpu.name ILIKE' in sql  # DM search by counterpart name
