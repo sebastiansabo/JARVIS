@@ -187,7 +187,11 @@ export default function InternalSessionForm({
     // TestDriveForm.commitVehicle) — otherwise switching from car A to car B
     // keeps A's mileage and submits a wrong odometer for B. Still editable after.
     const v = allVehicles.find((x) => x.vin === nextVin)
-    if (v?.odometer_km != null) setKmStart(String(v.odometer_km))
+    // Pre-fill from the car's real floor (max of stored odometer + top logged
+    // km_end), not the stored odometer alone — otherwise a lagging odometer_km
+    // shows a value the backend then silently raises. Mirrors TestDriveForm.
+    const floor = v?.mileage_floor ?? v?.odometer_km
+    if (floor != null) setKmStart(String(floor))
   }
 
   // A departure in the future can't be a live drive — a car that hasn't left

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, Suspense, lazy } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, ChevronLeft } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronLeft } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -48,6 +48,9 @@ export default function TestDriveReturn({ id: idProp, embedded, onDone, onCancel
   const [showDamage, setShowDamage] = useState(false)
   const [attempted, setAttempted] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  // Soft overlap gate: the backend 409s a return km_end that reaches past the
+  // next drive's start; the advisor confirms (back-dated/stale later drive) or fixes.
+  const [overlapConfirm, setOverlapConfirm] = useState<string | null>(null)
 
   // Seed advisor signature (reused across submissions) once.
   useEffect(() => {
@@ -64,7 +67,9 @@ export default function TestDriveReturn({ id: idProp, embedded, onDone, onCancel
   }, [contract])
 
   const mutation = useMutation({
-    mutationFn: () => foiParcursApi.submitTestDriveReturn(id!, buildReturnPayload(form)),
+    mutationFn: (allowOverlap?: boolean) => foiParcursApi.submitTestDriveReturn(id!, {
+      ...buildReturnPayload(form), ...(allowOverlap ? { allow_overlap: true } : {}),
+    }),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
       queryClient.invalidateQueries({ queryKey: ['fp-test-drive', id] })
@@ -72,7 +77,11 @@ export default function TestDriveReturn({ id: idProp, embedded, onDone, onCancel
       if (embedded) onDone?.(res.contract)
       else navigate(`/app/foi-parcurs?tab=parcurs`)
     },
-    onError: (e: unknown) => setSubmitError(e instanceof Error ? e.message : 'Trimiterea a eșuat.'),
+    onError: (e: unknown) => {
+      const data = (e as { data?: { odometer_overlap?: boolean; error?: string } })?.data
+      if (data?.odometer_overlap) setOverlapConfirm(data.error || 'Kilometrajul de sosire depășește următoarea cursă.')
+      else setSubmitError(e instanceof Error ? e.message : 'Trimiterea a eșuat.')
+    },
   })
 
   const goBack = () => { if (embedded) onCancel?.(); else navigate('/app/foi-parcurs') }
@@ -84,8 +93,8 @@ export default function TestDriveReturn({ id: idProp, embedded, onDone, onCancel
   const handleSubmit = () => {
     if (mutation.isPending) return
     if (!isReturnValid(form, kmStart)) { setAttempted(true); return }
-    setSubmitError(null)
-    mutation.mutate()
+    setSubmitError(null); setOverlapConfirm(null)
+    mutation.mutate(undefined)
   }
 
   const Header = (
@@ -175,6 +184,22 @@ export default function TestDriveReturn({ id: idProp, embedded, onDone, onCancel
           onClick={handleSubmit} disabled={mutation.isPending}>
           {mutation.isPending ? 'Se trimite…' : 'Finalizează retur'}
         </Button>
+
+        {overlapConfirm && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => { setOverlapConfirm(null); mutation.reset() }}>
+            <div className="w-full max-w-sm rounded-2xl bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="h-5 w-5" />
+                <h3 className="text-base font-semibold">Kilometraj peste cursa următoare</h3>
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">{overlapConfirm}</p>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => { setOverlapConfirm(null); mutation.reset() }}>Corectează</Button>
+                <Button size="sm" onClick={() => { setOverlapConfirm(null); mutation.mutate(true) }}>Salvează oricum</Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

@@ -451,6 +451,18 @@ class FoiParcursRepository(BaseRepository):
             (client_id,),
         )
 
+    def next_session_start(self, vin: str, above_km: int, exclude_id=None):
+        """Smallest km_start among this car's real (non-PLANNED) sessions whose
+        km_start is strictly above `above_km` — the next drive up the odometer.
+        Used to warn when a return km_end would reach into it; None if there's no
+        later drive."""
+        row = self.query_one(
+            "SELECT MIN(km_start) AS nxt FROM foi_de_parcurs "
+            "WHERE vin = %s AND status <> 'PLANNED' AND km_start IS NOT NULL "
+            "AND km_start > %s AND (%s::int IS NULL OR id <> %s)",
+            (vin, above_km, exclude_id, exclude_id))
+        return int(row['nxt']) if row and row.get('nxt') is not None else None
+
     def get_odometer_readings(self, vin: str) -> list:
         """All drives for a VIN in chronological order (departure time, falling
         back to created_at) — every route_type, so odometer continuity/gap

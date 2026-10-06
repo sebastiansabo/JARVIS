@@ -658,6 +658,9 @@ export interface ReturnTestDrivePayload {
   advisor_signature: string
   client_signature: string
   return_datetime?: string
+  /** Confirm a return km_end that reaches past the next drive's start, set after
+   *  the user accepts the overlap warning. */
+  allow_overlap?: boolean
 }
 
 // ── Vehicle conflict — GET /vehicles/{vin}/conflicts response row. Matches
