@@ -407,3 +407,31 @@ def test_reconciliation_includes_date_inversions(monkeypatch):
     assert car['inversion_count'] == 1
     assert car['inversions'][0]['id'] == 11
     assert car['inversions'][0]['prior_max_date'] == '2026-09-10'
+
+
+def test_reconciliation_plan_returns_corrected_chain(monkeypatch):
+    """Read-only 'Repară toate' preview: the corrected monotonic chain for one car,
+    with each drive's old→new km (B bumped up, C cascaded)."""
+    c = make_client(monkeypatch, role='admin', company_id=16)
+    sess = [
+        {'id': 1, 'vin': 'V1', 'model': 'MG S9', 'client_name': 'A', 'advisor_name': None, 'km_start': 160, 'km_end': 283, 'status': 'COMPLETED', 'date': '2026-09-01'},
+        {'id': 2, 'vin': 'V1', 'model': 'MG S9', 'client_name': 'B', 'advisor_name': None, 'km_start': 261, 'km_end': 283, 'status': 'COMPLETED', 'date': '2026-09-02'},
+        {'id': 3, 'vin': 'V1', 'model': 'MG S9', 'client_name': 'C', 'advisor_name': None, 'km_start': 283, 'km_end': 354, 'status': 'COMPLETED', 'date': '2026-09-03'},
+        {'id': 9, 'vin': 'V2', 'model': 'VW', 'client_name': 'D', 'advisor_name': None, 'km_start': 10, 'km_end': 50, 'status': 'COMPLETED', 'date': '2026-09-01'},
+    ]
+    monkeypatch.setattr(c._fp, 'sessions_for_reconciliation', lambda **kw: sess)
+    r = c.get('/api/foi-parcurs/reports/reconciliation/plan?vin=V1')
+    assert r.status_code == 200, r.get_json()
+    body = r.get_json()
+    assert body['vin'] == 'V1' and body['model'] == 'MG S9'
+    assert body['changed_count'] == 2                 # B bumped + C cascaded
+    chain = body['chain']
+    assert [x['id'] for x in chain] == [1, 2, 3]       # only V1, odometer order
+    assert (chain[1]['new_km_start'], chain[1]['new_km_end']) == (283, 305)
+    assert (chain[2]['new_km_start'], chain[2]['new_km_end']) == (305, 376)
+
+
+def test_reconciliation_plan_requires_vin(monkeypatch):
+    c = make_client(monkeypatch, role='admin', company_id=16)
+    r = c.get('/api/foi-parcurs/reports/reconciliation/plan')
+    assert r.status_code == 400

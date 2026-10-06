@@ -120,3 +120,39 @@ def test_overlap_row_carries_conflict_and_proposal():
     assert r['conflict']['km_end'] == 283
     assert r['proposed_km_start'] == 283        # moved up to the ceiling
     assert r['proposed_km_end'] == 305          # 283 + the original 22 km distance
+
+
+# ── corrected_chain: batch-consistent monotonic reconstruction (preview) ──────
+
+from foi_parcurs.services.route_sheet_service import corrected_chain  # noqa: E402
+
+
+def test_corrected_chain_bumps_overlap_and_cascades():
+    # A (client) 160→283 anchor; B (internal) 261→283 overlaps → bump to 283→305
+    # (keeps its 22 km); C (client) 283→354 now starts below B's new end → cascades
+    # to 305→376 (keeps its 71 km). Applying all → monotonic, no overlap.
+    chain = corrected_chain([
+        _s(1, 160, 283, who='A'),
+        _s(2, 261, 283, who='B'),
+        _s(3, 283, 354, who='C'),
+    ])
+    assert [r['id'] for r in chain] == [1, 2, 3]
+    assert chain[0]['changed'] is False
+    assert (chain[1]['new_km_start'], chain[1]['new_km_end'], chain[1]['changed']) == (283, 305, True)
+    assert (chain[2]['new_km_start'], chain[2]['new_km_end'], chain[2]['changed']) == (305, 376, True)
+    assert chain[1]['old_km_start'] == 261 and chain[1]['old_km_end'] == 283
+
+
+def test_corrected_chain_clean_chain_unchanged():
+    chain = corrected_chain([_s(1, 100, 200), _s(2, 200, 300)])
+    assert all(r['changed'] is False for r in chain)
+    assert (chain[1]['new_km_start'], chain[1]['new_km_end']) == (200, 300)
+
+
+def test_corrected_chain_skips_planned_and_missed():
+    chain = corrected_chain([
+        _s(1, 100, 200),
+        _s(2, 150, 150, status='MISSED'),
+        _s(3, 200, 300, status='PLANNED'),
+    ])
+    assert [r['id'] for r in chain] == [1]

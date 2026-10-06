@@ -461,6 +461,44 @@ def date_inversion_rows(sessions: list) -> list:
     return out
 
 
+def corrected_chain(sessions: list) -> list:
+    """Propose a batch-consistent, monotonic odometer chain for a car. Walking in
+    odometer order, each overlapping drive is bumped up to the running max while
+    KEEPING its distance, which raises the max for the drives after it — so a good
+    drive displaced by an inserted overlap cascades up too. Non-overlapping drives
+    stay put. Applying every move at once yields a chain with no overlaps.
+
+    Read-only preview behind the report's "Repară toate": a reconstruction that
+    preserves each drive's distance, NOT a recovery of the true dashboard readings.
+    PLANNED/MISSED/PENDING never moved the car and are excluded.
+
+    Each row: {id, who, date, old_km_start, old_km_end, new_km_start, new_km_end,
+    changed}."""
+    real = [s for s in sessions
+            if s.get('status') not in ('PLANNED', 'MISSED', 'PENDING')
+            and s.get('km_start') is not None and s.get('km_end') is not None]
+    real.sort(key=lambda s: (int(s['km_start']), int(s['km_end'])))
+    out = []
+    max_end = None
+    for s in real:
+        ks, ke = int(s['km_start']), int(s['km_end'])
+        if max_end is not None and ks < max_end:
+            new_start = max_end
+            new_end = max_end + (ke - ks)
+        else:
+            new_start, new_end = ks, ke
+        out.append({
+            'id': s['id'],
+            'who': s.get('client_name') or s.get('advisor_name') or '—',
+            'date': s.get('date') or s.get('departure_datetime') or s.get('created_at'),
+            'old_km_start': ks, 'old_km_end': ke,
+            'new_km_start': new_start, 'new_km_end': new_end,
+            'changed': new_start != ks or new_end != ke,
+        })
+        max_end = new_end if max_end is None else max(max_end, new_end)
+    return out
+
+
 # ── HTML skeleton (locked numbers) + Playwright render ──
 
 def _scop_text(trip, prose_map=None, overrides=None) -> str:

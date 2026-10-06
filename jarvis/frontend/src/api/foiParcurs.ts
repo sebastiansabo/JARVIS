@@ -258,6 +258,24 @@ export const foiParcursApi = {
     }[]
   }>(`${BASE}/reports/reconciliation${qs(params)}`),
 
+  getReconciliationPlan: (params: {
+    vin: string
+    company_id?: number
+    date_from?: string
+    date_to?: string
+    document_type?: string
+    brand?: string
+  }) => api.get<{
+    success: boolean
+    vin: string; model: string; changed_count: number
+    chain: {
+      id: number; who: string; date: string | null
+      old_km_start: number; old_km_end: number
+      new_km_start: number; new_km_end: number
+      changed: boolean
+    }[]
+  }>(`${BASE}/reports/reconciliation/plan${qs(params)}`),
+
   allocateClient: (contractId: number, data: { client_id: number; itinerary: string; advisor_name: string; signature_svg?: string }) =>
     api.put<{ success: boolean; contract: FoiContract }>(`${BASE}/contracts/${contractId}/allocate`, data),
 
