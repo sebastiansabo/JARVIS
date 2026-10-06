@@ -20,7 +20,7 @@ from ._shared import (
     _fp_repo, _vehicle_repo,
 )
 from core.roles.repositories import PermissionRepository
-from ..services.route_sheet_service import overlap_rows, date_inversion_rows
+from ..services.route_sheet_service import overlap_rows, date_inversion_rows, corrected_chain
 
 # Roles that may pick any company / see the whole group, unconditionally.
 _GROUP_ROLES = ('admin', 'superadmin', 'board')
@@ -177,4 +177,40 @@ def api_reports_reconciliation():
         'success': True,
         'scope': {'company_id': company_id, 'is_group': is_group, 'document_type': document_type},
         'cars': cars,
+    })
+
+
+@foi_parcurs_bp.route('/api/foi-parcurs/reports/reconciliation/plan', methods=['GET'])
+@login_required
+def api_reports_reconciliation_plan():
+    """Read-only preview of a batch-consistent corrected odometer chain for ONE car
+    (?vin=), same scope/filters as the reconciliation report. Powers "Repară toate":
+    shows every drive that would move (old→new) so the user can review the whole fix
+    before any write. Nothing is persisted here."""
+    company_id, is_group, err = _scoped_company()
+    if err:
+        return err
+
+    vin = (request.args.get('vin') or '').strip()
+    if not vin:
+        return jsonify({'success': False, 'error': 'vin is required'}), 400
+    document_type = (request.args.get('document_type') or 'sales').strip() or 'sales'
+    date_from = (request.args.get('date_from') or '').strip() or None
+    date_to = (request.args.get('date_to') or '').strip() or None
+    brand = (request.args.get('brand') or '').strip() or None
+
+    sessions = _fp_repo.sessions_for_reconciliation(
+        company_id=company_id, date_from=date_from, date_to=date_to,
+        document_type=document_type, brand=brand)
+    rows = [s for s in sessions if s.get('vin') == vin]
+    chain = corrected_chain(rows)
+    changed = [r for r in chain if r['changed']]
+
+    return jsonify({
+        'success': True,
+        'scope': {'company_id': company_id, 'is_group': is_group, 'document_type': document_type},
+        'vin': vin,
+        'model': (rows[0].get('model') or '—') if rows else '—',
+        'changed_count': len(changed),
+        'chain': chain,
     })

@@ -669,6 +669,7 @@ function ReconciliationCard({ companyId, from, to, docType, brand }: {
   companyId: number; from: string; to: string; docType: string; brand?: string
 }) {
   const navigate = useNavigate()
+  const [planVin, setPlanVin] = useState<string | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['fp-reconciliation', companyId, from, to, docType, brand],
     queryFn: () => foiParcursApi.getReconciliation({
@@ -691,7 +692,7 @@ function ReconciliationCard({ companyId, from, to, docType, brand }: {
                 <div className="text-sm font-medium">
                   {car.model} <span className="font-mono text-xs text-muted-foreground">{car.vin}</span>
                 </div>
-                <div className="flex flex-wrap gap-x-3 text-xs font-medium">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-medium">
                   {car.count > 0 && (
                     <span className="text-amber-700 dark:text-amber-500">
                       {car.count} {car.count === 1 ? 'suprapunere' : 'suprapuneri'} · {nf.format(car.total_overlap_km)} km
@@ -701,6 +702,12 @@ function ReconciliationCard({ companyId, from, to, docType, brand }: {
                     <span className="text-rose-700 dark:text-rose-400">
                       {car.inversion_count} {car.inversion_count === 1 ? 'dată inversată' : 'date inversate'}
                     </span>
+                  )}
+                  {car.count > 0 && (
+                    <Button variant="outline" size="sm" className="h-6 px-2 text-[11px]"
+                      onClick={() => setPlanVin(car.vin)}>
+                      Repară toate (preview)
+                    </Button>
                   )}
                 </div>
               </div>
@@ -765,7 +772,74 @@ function ReconciliationCard({ companyId, from, to, docType, brand }: {
           ))}
         </div>
       )}
+      {planVin && (
+        <ReconcilePlanDialog vin={planVin} companyId={companyId} from={from} to={to}
+          docType={docType} brand={brand} onClose={() => setPlanVin(null)} />
+      )}
     </ChartCard>
+  )
+}
+
+// Read-only "Repară toate" preview — the batch-consistent corrected chain for a car,
+// old → new per drive. Nothing writes; applying in bulk is a separate step.
+function ReconcilePlanDialog({ vin, companyId, from, to, docType, brand, onClose }: {
+  vin: string; companyId: number; from: string; to: string; docType: string; brand?: string; onClose: () => void
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['fp-reconciliation-plan', vin, companyId, from, to, docType, brand],
+    queryFn: () => foiParcursApi.getReconciliationPlan({
+      vin, company_id: companyId || undefined, date_from: from, date_to: to, document_type: docType, brand,
+    }),
+    staleTime: 30_000,
+  })
+  const chain = data?.chain ?? []
+  return (
+    <Dialog open onOpenChange={(o) => { if (!o) onClose() }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-sm">
+            Reparare kilometraj — {data?.model ?? ''} <span className="font-mono text-xs text-muted-foreground">{vin}</span>
+          </DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground">
+          Previzualizare — <strong>nimic nu se salvează</strong>. Reconstrucție care păstrează distanța fiecărei curse
+          și elimină suprapunerile{data ? <> · {data.changed_count} {data.changed_count === 1 ? 'cursă mutată' : 'curse mutate'}</> : null}.
+        </p>
+        {isLoading ? (
+          <p className="py-6 text-center text-sm text-muted-foreground">Se calculează…</p>
+        ) : (
+          <div className="max-h-[50vh] overflow-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-background text-[11px] uppercase tracking-wide text-muted-foreground">
+                <tr className="text-left">
+                  <th className="py-1 pr-3 font-medium">Data</th>
+                  <th className="py-1 pr-3 font-medium">Șofer</th>
+                  <th className="py-1 pr-3 font-medium">KM actual</th>
+                  <th className="py-1 font-medium">KM propus</th>
+                </tr>
+              </thead>
+              <tbody>
+                {chain.map((r) => (
+                  <tr key={r.id} className={cn('border-t', r.changed && 'bg-amber-500/10')}>
+                    <td className="py-1 pr-3 whitespace-nowrap text-muted-foreground">{r.date ?? '—'}</td>
+                    <td className="py-1 pr-3">{r.who}</td>
+                    <td className="py-1 pr-3 whitespace-nowrap tabular-nums text-muted-foreground">{nf.format(r.old_km_start)} → {nf.format(r.old_km_end)}</td>
+                    <td className="py-1 whitespace-nowrap tabular-nums">
+                      {r.changed
+                        ? <span className="font-medium text-amber-700 dark:text-amber-500">{nf.format(r.new_km_start)} → {nf.format(r.new_km_end)}</span>
+                        : <span className="text-muted-foreground">neschimbat</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-[11px] text-muted-foreground">
+          Aplicarea în lot va fi disponibilă separat. Până atunci, corectează cursele manual din Sesiuni (butonul „Corectează”).
+        </p>
+      </DialogContent>
+    </Dialog>
   )
 }
 
