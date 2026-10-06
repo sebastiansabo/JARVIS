@@ -65,6 +65,15 @@ class ChatService:
     def search_users(self, query):
         return _repo.search_users(query)
 
+    def open_direct(self, initiator_id, other_id):
+        """Create-or-get the 1:1 DM channel between the two users.
+        Raises ValueError (self-DM) or LookupError (unknown/invisible target)."""
+        if int(other_id) == int(initiator_id):
+            raise ValueError('cannot_dm_self')
+        if _repo.get_active_user(other_id) is None:
+            raise LookupError('user_not_found')
+        return _repo.create_or_get_direct(initiator_id, other_id)
+
     def can_access_channel(self, channel_id, user_id):
         channel = _repo.get_channel(channel_id)
         if not channel:
