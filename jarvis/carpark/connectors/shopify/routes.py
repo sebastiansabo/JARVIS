@@ -438,7 +438,48 @@ def unpublish_vehicle(vid):
     result = conn.deactivate(listing['external_listing_id'])
     if result.get('success'):
         _pub_repo.update_listing(listing['id'], {'status': 'archived'})
+    elif result.get('missing'):
+        # Product was already deleted on Shopify — unpublish is moot; reconcile
+        # the local listing to not_published so the chip stops showing it live.
+        _pub_repo.update_listing(listing['id'],
+                                 {'status': 'not_published', 'external_listing_id': None})
+        result = {'success': True, 'deleted_on_shopify': True}
     return jsonify(result), (200 if result.get('success') else 400)
+
+
+@shopify_bp.route('/api/vehicles/<int:vid>/verify-status', methods=['POST'])
+@carpark_required
+def verify_vehicle_status(vid):
+    """Reconcile the JARVIS listing against the live Shopify store: if the product
+    was DELETED on the storefront, flip the listing to not_published (clearing the
+    stale GID) so the status chip stops showing it as live. Returns the recomputed
+    freshness. Powers the Detail 'Verifică status' button."""
+    vehicle = _vehicle_repo.get_by_id(vid)
+    if not vehicle:
+        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+    connector = _get_single_account()
+    if not connector:
+        return jsonify({'success': False, 'error': 'Shopify is not configured'}), 400
+    v_updated = vehicle.get('updated_at')
+    platform_id = ensure_platform(_pub_repo, _parse_json(connector, 'config').get('store_domain', ''))
+    listing = _pub_repo.get_listing_by_vehicle_platform(vid, platform_id)
+    if not listing or not listing.get('external_listing_id'):
+        return jsonify({'success': True, 'listing': listing, 'freshness': 'not_published',
+                        'vehicle_updated_at': v_updated, 'deleted_on_shopify': False})
+    try:
+        res = ShopifyConnector(_build_client(connector), _pub_repo, platform_id)\
+            .verify(listing['external_listing_id'])
+    except Exception:
+        logger.exception('Shopify verify-status failed for vehicle %s', vid)
+        return jsonify({'success': False, 'error': 'Verify failed'}), 502
+    deleted = not res['exists']
+    if deleted:
+        _pub_repo.update_listing(listing['id'],
+                                 {'status': 'not_published', 'external_listing_id': None})
+        listing = _pub_repo.get_listing_by_vehicle_platform(vid, platform_id)
+    freshness = compute_listing_freshness(listing, v_updated, datetime.now(timezone.utc))
+    return jsonify({'success': True, 'listing': listing, 'freshness': freshness,
+                    'vehicle_updated_at': v_updated, 'deleted_on_shopify': deleted})
 
 
 @shopify_bp.route('/api/vehicles/<int:vid>/status', methods=['GET'])

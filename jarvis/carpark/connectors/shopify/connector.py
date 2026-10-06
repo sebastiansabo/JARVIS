@@ -157,9 +157,23 @@ class ShopifyConnector(BaseConnector):
         """Intentional no-op: updates flow through publish()'s idempotent upsert."""
         return {'success': True}
 
+    def verify(self, external_id: str) -> Dict[str, Any]:
+        """Check whether the listing's product still exists on Shopify.
+        Returns {'exists': bool, 'status': <shopify status or None>}. Used by the
+        'Verifică status' action to reconcile a product deleted on the storefront."""
+        product = self.client.get_product(external_id)
+        if not product:
+            return {'exists': False, 'status': None}
+        return {'exists': True, 'status': product.get('status')}
+
     def deactivate(self, external_id: str) -> Dict[str, Any]:
         res = self.client.set_product_status(external_id, 'ARCHIVED')
         if res['userErrors']:
+            # If the product is already gone on Shopify, unpublish is effectively
+            # done — surface that so the caller can reconcile the listing to
+            # not_published instead of failing the action.
+            if _is_missing_product_error(res['userErrors']):
+                return {'success': False, 'missing': True, 'error': 'Product does not exist'}
             return {'success': False, 'error': str(res['userErrors'])}
         return {'success': True}
 

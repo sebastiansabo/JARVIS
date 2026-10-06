@@ -53,7 +53,12 @@ export const shopifyApi = {
     api.post<{ success: boolean; saved: number }>(`${BASE}/taxonomy`, { mappings }),
   previewVehicle: (vid: number) => api.get<{ success: boolean; eligible: boolean; blocking_reason?: string | null; warnings: string[] }>(`${BASE}/vehicles/${vid}/preview`),
   publishVehicle: (vid: number) => api.post<{ success: boolean; external_id?: string; external_url?: string; warnings?: string[]; error?: string }>(`${BASE}/vehicles/${vid}/publish`, {}),
-  unpublishVehicle: (vid: number) => api.post<{ success: boolean; error?: string }>(`${BASE}/vehicles/${vid}/unpublish`, {}),
+  unpublishVehicle: (vid: number) => api.post<{ success: boolean; error?: string; deleted_on_shopify?: boolean }>(`${BASE}/vehicles/${vid}/unpublish`, {}),
+  verifyStatus: (vid: number) => api.post<{
+    success: boolean
+    deleted_on_shopify: boolean
+    freshness: 'not_published' | 'up_to_date' | 'stale' | 'expired' | 'inactive' | 'error'
+  }>(`${BASE}/vehicles/${vid}/verify-status`, {}),
   vehicleStatus: (vid: number) => api.get<{
     success: boolean
     listing: { status: string; external_url?: string; last_sync?: string | null; published_at?: string | null; expires_at?: string | null; error_message?: string | null } | null
