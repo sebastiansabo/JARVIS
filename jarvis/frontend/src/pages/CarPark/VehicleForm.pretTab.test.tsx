@@ -23,7 +23,7 @@ vi.mock('@/stores/carParkStore', () => ({
 
 function renderNewVehicleForm(entry = '/edit/new') {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  return render(
+  const result = render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
@@ -32,6 +32,11 @@ function renderNewVehicleForm(entry = '/edit/new') {
       </MemoryRouter>
     </QueryClientProvider>,
   )
+  // New-vehicle intake is gated behind a talon/CIV scan; these field-level tests
+  // reveal the form by choosing manual entry (edit-mode renders have no gate).
+  const manual = screen.queryByRole('button', { name: /Introdu manual/i })
+  if (manual) fireEvent.click(manual)
+  return result
 }
 
 test('the acquisition tab is renamed to "Preț"', () => {

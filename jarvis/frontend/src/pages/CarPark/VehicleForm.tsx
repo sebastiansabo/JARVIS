@@ -592,6 +592,11 @@ export default function VehicleForm() {
   const [isDecoding, setIsDecoding] = useState(false)
   const [decodeResult, setDecodeResult] = useState<VINDecodeResult | null>(null)
 
+  // Scan-first intake: a new vehicle stays gated behind a talon/CIV scan prompt
+  // until the user either applies a scan or chooses to enter data manually.
+  const [scanGatePassed, setScanGatePassed] = useState(false)
+  const gateActive = !isEdit && !scanGatePassed
+
   const handleDecodeVIN = async () => {
     const vin = (form.vin as string)?.trim().toUpperCase()
     if (!vin || vin.length !== 17) {
@@ -628,6 +633,7 @@ export default function VehicleForm() {
     }
     setForm((prev) => ({ ...prev, ...fields }))
     setDecodeResult(null)
+    setScanGatePassed(true) // scan applied → reveal the form (prefilled)
     toast.success('Date aplicate în formular')
   }
 
@@ -640,12 +646,12 @@ export default function VehicleForm() {
     e.target.value = '' // allow re-selecting the same file
     if (!file) return
     if (file.size > 12 * 1024 * 1024) {
-      toast.error('Fișierul CIV este prea mare (max 12MB).')
+      toast.error('Fișierul este prea mare (max 12MB).')
       return
     }
     setIsImportingCiv(true)
     try {
-      const result = await carparkApi.decodeCIV(file)
+      const result = await carparkApi.decodeDocument(file)
       const f = result.data?.vehicle_fields as Record<string, unknown> | undefined
       if (result.success && f && Object.keys(f).length > 0) {
         // Reuse the VIN-decode preview card so the user reviews before applying.
@@ -662,16 +668,16 @@ export default function VehicleForm() {
             drive_type: f.drive_type ?? '',
           },
           vehicle_fields: f,
-          provider: 'CIV',
+          provider: result.data?.provider ?? 'Document',
           confidence: result.data?.confidence ?? 0.9,
         } as unknown as VINDecodeResult
         setDecodeResult(preview)
-        toast.success('CIV citit — verifică datele și apasă „Aplică".')
+        toast.success('Document citit — verifică datele și apasă „Aplică".')
       } else {
-        toast.error(result.error || 'Nu am putut extrage date din CIV.')
+        toast.error(result.error || 'Nu am putut extrage date din document.')
       }
     } catch (err: any) {
-      toast.error(err?.data?.error || 'Importul CIV a eșuat.')
+      toast.error(err?.data?.error || 'Scanarea documentului a eșuat.')
     } finally {
       setIsImportingCiv(false)
     }
@@ -765,6 +771,7 @@ export default function VehicleForm() {
   const restoreDraft = () => {
     if (pendingDraft) setForm((prev) => ({ ...prev, ...pendingDraft }))
     setPendingDraft(null)
+    setScanGatePassed(true) // resuming a draft must reveal the form past the scan gate
   }
   const discardDraft = () => {
     localStorage.removeItem(draftKey)
@@ -1042,33 +1049,37 @@ export default function VehicleForm() {
               className="hidden"
               onChange={handleCivFile}
             />
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => civInputRef.current?.click()}
-              disabled={isImportingCiv}
-              title="Importă datele dintr-o poză sau PDF al CIV-ului"
-            >
-              {isImportingCiv ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              ) : (
-                <Upload className="mr-1 h-4 w-4" />
-              )}
-              Importă CIV
-            </Button>
+            {!gateActive && (
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => civInputRef.current?.click()}
+                disabled={isImportingCiv}
+                title="Importă datele dintr-o poză sau PDF al talonului sau CIV-ului"
+              >
+                {isImportingCiv ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="mr-1 h-4 w-4" />
+                )}
+                Importă talon/CIV
+              </Button>
+            )}
             <Button variant="outline" type="button" asChild>
               <Link to={isEdit ? `/app/carpark/${id}` : '/app/carpark'}>
                 Cancel
               </Link>
             </Button>
-            <Button type="submit" disabled={isPending}>
-              {isPending ? (
-                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-              ) : (
-                <Save className="mr-1 h-4 w-4" />
-              )}
-              {isEdit ? 'Save Changes' : 'Create Vehicle'}
-            </Button>
+            {!gateActive && (
+              <Button type="submit" disabled={isPending}>
+                {isPending ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="mr-1 h-4 w-4" />
+                )}
+                {isEdit ? 'Save Changes' : 'Create Vehicle'}
+              </Button>
+            )}
           </div>
         }
       />
@@ -1086,6 +1097,36 @@ export default function VehicleForm() {
           </div>
         </div>
       )}
+      {gateActive ? (
+        <Card className="mx-auto mt-6 max-w-xl space-y-4 p-8 text-center">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold">Scanează talonul sau CIV-ul</h2>
+            <p className="text-sm text-muted-foreground">
+              Fă o poză sau încarcă un PDF al talonului (Certificat de Înmatriculare) sau al CIV-ului.
+              Completăm automat datele mașinii, iar tu le verifici înainte de salvare.
+            </p>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <Button
+              type="button"
+              size="lg"
+              onClick={() => civInputRef.current?.click()}
+              disabled={isImportingCiv}
+            >
+              {isImportingCiv ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="mr-1 h-4 w-4" />
+              )}
+              Scanează talon sau CIV
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => setScanGatePassed(true)}>
+              Introdu manual
+            </Button>
+          </div>
+        </Card>
+      ) : (
+      <>
       <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="vehicul">Vehicul</TabsTrigger>
@@ -1188,12 +1229,6 @@ export default function VehicleForm() {
               </Button>
             </div>
             {vinError && <p className="text-xs text-red-500">{vinError}</p>}
-            <DecodePreviewDialog
-              result={decodeResult}
-              form={form}
-              onApply={applyDecodedFields}
-              onClose={() => setDecodeResult(null)}
-            />
           </div>
           <TextField label="Nr. stoc" name="nr_stoc" value={form.nr_stoc as string} onChange={handleChange} />
           <TextField label="Număr înmatriculare" name="registration_number" value={(form.registration_number as string) ?? ''} onChange={handleChange} placeholder="e.g. B 123 ABC" />
@@ -1801,6 +1836,15 @@ export default function VehicleForm() {
           {isEdit ? 'Save Changes' : 'Create Vehicle'}
         </Button>
       </div>
+      </>
+      )}
+
+      <DecodePreviewDialog
+        result={decodeResult}
+        form={form}
+        onApply={applyDecodedFields}
+        onClose={() => setDecodeResult(null)}
+      />
     </form>
   )
 }
