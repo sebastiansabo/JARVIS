@@ -593,7 +593,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
         <Button variant="ghost" size="sm" onClick={handleBack}>
           <ArrowLeft className="h-4 w-4 mr-1" />Înapoi
         </Button>
-        <h1 className="text-lg font-semibold">{isEdit ? 'Corectează solicitarea' : 'Solicitare Preț BuyBack / TradeIn'}</h1>
+        <h1 className="text-lg font-semibold">{isEdit ? 'Corectează solicitarea' : 'Solicitare Preț BuyBack'}</h1>
         <div className="w-16" />
       </div>
 

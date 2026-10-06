@@ -8,12 +8,20 @@ const api = vi.hoisted(() => ({
   listRecords: vi.fn(),
   getRecord: vi.fn(),
   getLookupOptions: vi.fn(),
+  getCompanies: vi.fn(),
   postOffer: vi.fn(),
   recordDecision: vi.fn(),
 }))
 vi.mock('@/api/buyback', () => ({ buybackApi: api }))
 vi.mock('@/pages/BuyBack/BuyBackForm', () => ({ default: () => <div>mock-buyback-form</div> }))
 vi.mock('@/lib/media', () => ({ mediaUrl: (v: string | null | undefined) => v ?? '' }))
+
+// useIsMobile drives the desktop-pills vs mobile-filter-modal split.
+const mobile = vi.hoisted(() => ({ value: false }))
+vi.mock('@/lib/utils', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/utils')>()
+  return { ...actual, useIsMobile: () => mobile.value }
+})
 
 // role + permissions read at render → mutate per test to exercise gating.
 const auth = vi.hoisted(() => ({ user: {} as Record<string, unknown> }))
@@ -42,7 +50,7 @@ function wrap() {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter>
-        <HubBuybackPanel onBack={() => {}} />
+        <HubBuybackPanel />
       </MemoryRouter>
     </QueryClientProvider>
   )
@@ -50,9 +58,12 @@ function wrap() {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear() // reset usePersistedState (tenant company) between tests
+  mobile.value = false
   api.listRecords.mockResolvedValue({ records: [], total: 0, page: 1, per_page: 200 })
   api.getRecord.mockResolvedValue({ record: REC(), offers: [], photos: [], events: [] })
   api.getLookupOptions.mockResolvedValue({})
+  api.getCompanies.mockResolvedValue({ companies: [] })
   api.postOffer.mockResolvedValue({ offer: {} })
   api.recordDecision.mockResolvedValue({ record: {} })
   auth.user = { role_name: 'user', permissions: {} }
@@ -90,7 +101,8 @@ describe('HubBuybackPanel in-panel detail', () => {
     })
     api.getLookupOptions.mockResolvedValue({ fuel_types: [{ value: 'diesel', label: 'Diesel' }] })
     wrap()
-    fireEvent.click(await screen.findByText('BMW 320d'))
+    fireEvent.click(await screen.findByText('BMW 320d')) // expand card
+    fireEvent.click(await screen.findByText('Vezi detalii')) // open full detail
     // Section headings are rendered only by the detail view, never the list —
     // their presence proves the detail opened in-panel.
     expect(await screen.findByText('Vehicul')).toBeInTheDocument()
@@ -98,7 +110,7 @@ describe('HubBuybackPanel in-panel detail', () => {
     expect(screen.getByText('Prețuri')).toBeInTheDocument()
     expect(screen.getByText('Poze')).toBeInTheDocument()
     // RO lookup label resolved (diesel → Diesel) and photos empty-safe.
-    expect(screen.getByText('Diesel')).toBeInTheDocument()
+    expect(await screen.findByText('Diesel')).toBeInTheDocument()
     expect(screen.getByText('Nicio poză')).toBeInTheDocument()
     expect(api.getRecord).toHaveBeenCalledWith(7)
   })
@@ -118,9 +130,31 @@ const OFFER = (over: Partial<BuybackOffer> = {}): BuybackOffer =>
 async function openDetail() {
   api.listRecords.mockResolvedValue({ records: [REC()], total: 1, page: 1, per_page: 200 })
   wrap()
-  fireEvent.click(await screen.findByText('BMW 320d'))
+  fireEvent.click(await screen.findByText('BMW 320d')) // expand card
+  fireEvent.click(await screen.findByText('Vezi detalii')) // open full detail
   await screen.findByText('Vehicul')
 }
+
+describe('HubBuybackPanel card accordion', () => {
+  it('expands a card to a summary (year / mileage / report / Vezi detalii) and collapses', async () => {
+    auth.user = { role_name: 'user', permissions: {} }
+    api.listRecords.mockResolvedValue({
+      records: [REC({ mileage_km: 85000, first_registration_date: '2019-06-01', inspection_report_key: 'reports/bb-7.pdf' })],
+      total: 1,
+      page: 1,
+      per_page: 200,
+    })
+    api.getRecord.mockResolvedValue({ record: REC(), offers: [OFFER()], photos: [], events: [] })
+    wrap()
+    fireEvent.click(await screen.findByText('BMW 320d')) // expand
+    expect(await screen.findByText('Vezi detalii')).toBeInTheDocument()
+    expect(screen.getByText(/An:/)).toBeInTheDocument()
+    expect(screen.getByText(/Rulaj:/)).toBeInTheDocument()
+    expect(screen.getByText(/Raport avarii/)).toBeInTheDocument() // inspection_report_key present
+    fireEvent.click(screen.getByText('BMW 320d')) // collapse
+    await waitFor(() => expect(screen.queryByText('Vezi detalii')).not.toBeInTheDocument())
+  })
+})
 
 describe('HubBuybackPanel detail — offers/decision (mobile parity)', () => {
   it('posts an initial offer on PENDING_EVALUATION with buyback.offer.manage', async () => {
@@ -242,6 +276,22 @@ describe('HubBuybackPanel list — filter + search (mobile parity)', () => {
     )
   })
 
+  it('multi-selects statuses (comma-joined) via the desktop pills', async () => {
+    auth.user = { role_name: 'user', permissions: {} }
+    wrap()
+    await screen.findByText('Nicio solicitare')
+    fireEvent.click(screen.getByText('Achiziționat')) // BOUGHT
+    fireEvent.click(screen.getByText('Pierdut')) // LOST
+    await waitFor(() =>
+      expect(api.listRecords).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'BOUGHT,LOST' }))
+    )
+    // toggling one off narrows back to the remaining status
+    fireEvent.click(screen.getByText('Achiziționat'))
+    await waitFor(() =>
+      expect(api.listRecords).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'LOST' }))
+    )
+  })
+
   it('re-queries the list with the debounced search text', async () => {
     auth.user = { role_name: 'user', permissions: {} }
     wrap()
@@ -262,6 +312,43 @@ describe('HubBuybackPanel intake overlay (iOS sheet)', () => {
     expect(await screen.findByText('mock-buyback-form')).toBeInTheDocument()
     fireEvent.click(screen.getByLabelText('Închide'))
     await waitFor(() => expect(screen.queryByText('mock-buyback-form')).not.toBeInTheDocument())
+  })
+})
+
+describe('HubBuybackPanel tenant filter', () => {
+  it('shows the company selector when the user has more than one company', async () => {
+    auth.user = { role_name: 'user', permissions: {} }
+    api.getCompanies.mockResolvedValue({ companies: [{ id: 11, name: 'Autoworld SRL' }, { id: 22, name: 'MG Motor' }] })
+    wrap()
+    expect(await screen.findByRole('combobox')).toBeInTheDocument()
+  })
+
+  it('hides the company selector with a single company', async () => {
+    auth.user = { role_name: 'user', permissions: {} }
+    api.getCompanies.mockResolvedValue({ companies: [{ id: 11, name: 'Autoworld SRL' }] })
+    wrap()
+    await screen.findByText('Nicio solicitare')
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  })
+})
+
+describe('HubBuybackPanel mobile — Filtre modal', () => {
+  it('multi-selects via the Filtre modal, then clears', async () => {
+    mobile.value = true
+    auth.user = { role_name: 'user', permissions: {} }
+    wrap()
+    await screen.findByPlaceholderText(/Caută/i)
+    fireEvent.click(screen.getByRole('button', { name: /filtre/i }))
+    fireEvent.click(await screen.findByText('Achiziționat'))
+    fireEvent.click(screen.getByText('Pierdut'))
+    await waitFor(() =>
+      expect(api.listRecords).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'BOUGHT,LOST' }))
+    )
+    // Clearing empties the selection → the clear button (gated on a non-empty
+    // selection) disappears. (No refetch to assert: the empty-filter query key
+    // was already cached at mount.)
+    fireEvent.click(screen.getByText(/Șterge filtrele/i))
+    await waitFor(() => expect(screen.queryByText(/Șterge filtrele/i)).not.toBeInTheDocument())
   })
 })
 

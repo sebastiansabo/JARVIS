@@ -75,6 +75,7 @@ export default function BuybackPanelDetail({ id, onBack }: { id: number; onBack:
   const { data, isLoading, isError } = useQuery({
     queryKey: ['buyback-record', id],
     queryFn: () => buybackApi.getRecord(id),
+    staleTime: 30_000,
   })
   const { data: lookups } = useQuery({
     queryKey: ['buyback-options'],
@@ -99,7 +100,7 @@ export default function BuybackPanelDetail({ id, onBack }: { id: number; onBack:
   if (isLoading) {
     return (
       <div className="space-y-4">
-        {header('BuyBack / TradeIn')}
+        {header('BuyBack')}
         <div className="flex justify-center py-12">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
         </div>
@@ -110,7 +111,7 @@ export default function BuybackPanelDetail({ id, onBack }: { id: number; onBack:
   if (isError || !data) {
     return (
       <div className="space-y-4">
-        {header('BuyBack / TradeIn')}
+        {header('BuyBack')}
         <p className="py-12 text-center text-sm text-destructive">Solicitare negăsită</p>
       </div>
     )
@@ -129,6 +130,8 @@ export default function BuybackPanelDetail({ id, onBack }: { id: number; onBack:
       )}
 
       <div className="space-y-3">
+        <BuybackOffersPanel id={id} record={record} offers={offers} />
+
         <Section title="Vehicul">
           <Field label="Marca" value={record.brand || '—'} />
           <Field label="Model" value={record.model || '—'} />
@@ -188,8 +191,6 @@ export default function BuybackPanelDetail({ id, onBack }: { id: number; onBack:
             </div>
           )}
         </Section>
-
-        <BuybackOffersPanel id={id} record={record} offers={offers} />
       </div>
     </div>
   )
