@@ -148,6 +148,65 @@ def time_bank_user_transactions(user_id):
         return safe_error_response(e)
 
 
+# ── Export ──
+
+# Transactions are exported in full (not paginated); this caps a pathological
+# table so the request can't run away. Prod is well under this.
+_EXPORT_MAX_ROWS = 100000
+
+
+@time_bank_bp.route('/api/time-bank/export', methods=['GET'])
+@api_login_required
+def time_bank_export():
+    """Download a two-sheet .xlsx: Balanțe (per-employee pools) + Tranzacții (ledger).
+
+    Honours the same manager/HR scoping as the tab, and the Tranzacții tab's
+    filters (tx_type/status/user_id/date_from/date_to) when supplied.
+    """
+    forbidden = _require_hr()
+    if forbidden:
+        return forbidden
+    try:
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        from .export import build_time_bank_workbook
+
+        svc = TimeBankService()
+        managed = _get_managed_ids()
+
+        show_all = request.args.get('all', '').lower() in ('1', 'true', 'yes')
+        balances = svc.get_all_balances(include_all_employees=show_all)
+        if managed is not None:
+            balances = [b for b in balances if b['user_id'] in managed]
+
+        tx_type = request.args.get('tx_type') or None
+        status = request.args.get('status') or None
+        date_from = request.args.get('date_from') or None
+        date_to = request.args.get('date_to') or None
+        filter_user = request.args.get('user_id')
+        filter_user = int(filter_user) if filter_user else None
+        if filter_user and managed is not None and filter_user not in managed:
+            return jsonify({'success': False, 'error': 'Access denied'}), 403
+
+        transactions = svc.get_all_transactions(
+            limit=_EXPORT_MAX_ROWS, offset=0, tx_type=tx_type, user_id=filter_user,
+            status=status, date_from=date_from, date_to=date_to,
+        )
+        if managed is not None:
+            transactions = [t for t in transactions if t.get('jarvis_user_id') in managed]
+
+        xlsx = build_time_bank_workbook(balances=balances, transactions=transactions)
+        today = datetime.now(ZoneInfo('Europe/Bucharest')).strftime('%Y-%m-%d')
+        return send_file(
+            io.BytesIO(xlsx),
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f'time_bank_export_{today}.xlsx',
+        )
+    except Exception as e:  # noqa: BLE001
+        return safe_error_response(e)
+
+
 # ── Manual Credit/Debit ──
 
 @time_bank_bp.route('/api/time-bank/credit', methods=['POST'])

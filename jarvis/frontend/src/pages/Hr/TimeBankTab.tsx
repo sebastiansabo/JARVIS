@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Loader2, Upload, Plus, Minus, ArrowRightLeft,
+  Loader2, Upload, Download, Plus, Minus, ArrowRightLeft,
   ChevronDown, TrendingUp, TrendingDown, Check, X, Clock, CheckCircle2,
   HelpCircle, ArrowDown, MessageCircle,
 } from 'lucide-react'
@@ -175,6 +175,12 @@ function BalancesPanel({ search }: { search: string }) {
           </Button>
           <Button variant="outline" size="sm" onClick={() => { setAddMode('t0'); setSelectedUserId(''); setAmount('') }}>
             <TrendingUp className="mr-1.5 h-4 w-4" /> Set T0
+          </Button>
+          <div className="w-px h-5 bg-border" />
+          <Button asChild variant="outline" size="sm">
+            <a href="/hr/api/time-bank/export" download>
+              <Download className="mr-1.5 h-4 w-4" /> Export Excel
+            </a>
           </Button>
           <div className="w-px h-5 bg-border" />
           <input
