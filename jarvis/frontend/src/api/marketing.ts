@@ -28,6 +28,10 @@ import type {
   MktProjectClient,
   CrmClientSearchResult,
   CrmDeal,
+  MktProjectLead,
+  MktLeadStatus,
+  MktProjectWebhook,
+  MktWebhookCreated,
   MktKpiDealSource,
   MktKpiDeal,
   AvailableDeal,
@@ -378,6 +382,29 @@ export const marketingApi = {
 
   getClientCampaigns: (clientId: number) =>
     api.get<{ campaigns: { id: number; project_id: number; project_name: string; project_status: string; start_date: string | null; end_date: string | null; total_budget: number; currency: string; created_at: string }[] }>(`${BASE}/crm-clients/${clientId}/campaigns`),
+
+  // ---- Project Leads ----
+
+  getProjectLeads: (projectId: number, params?: { status?: string; search?: string; limit?: number; offset?: number }) =>
+    api.get<{ leads: MktProjectLead[]; status_counts: Record<string, number> }>(
+      `${BASE}/projects/${projectId}/leads${toQs({ ...params })}`),
+
+  updateLead: (projectId: number, leadId: number, data: { status?: MktLeadStatus; status_notes?: string }) =>
+    api.patch<{ success: boolean }>(`${BASE}/projects/${projectId}/leads/${leadId}`, data),
+
+  deleteLead: (projectId: number, leadId: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/projects/${projectId}/leads/${leadId}`),
+
+  // ---- Lead Webhook Tokens ----
+
+  getProjectWebhooks: (projectId: number) =>
+    api.get<{ webhooks: MktProjectWebhook[]; webhook_url: string }>(`${BASE}/projects/${projectId}/webhooks`),
+
+  createWebhook: (projectId: number, label: string) =>
+    api.post<MktWebhookCreated>(`${BASE}/projects/${projectId}/webhooks`, { label }),
+
+  revokeWebhook: (projectId: number, webhookId: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/projects/${projectId}/webhooks/${webhookId}`),
 
   // ---- KPI Deal Sources ----
 
