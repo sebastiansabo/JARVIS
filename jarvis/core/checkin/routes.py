@@ -7,7 +7,6 @@ from flask_login import current_user
 from . import checkin_bp
 from .service import CheckinService
 from core.utils.api_helpers import safe_error_response
-from core.roles.repositories.permission_repository import PermissionRepository
 
 service = CheckinService()
 
@@ -65,15 +64,6 @@ def punch():
         if client_ip and ',' in client_ip:
             client_ip = client_ip.split(',')[0].strip()
 
-        # Check if user's role has bypass_radius permission
-        bypass_radius = False
-        role_id = getattr(current_user, 'role_id', None)
-        if getattr(current_user, 'can_access_settings', False):
-            bypass_radius = True
-        elif role_id:
-            perm = PermissionRepository().check_permission_v2(role_id, 'hr', 'checkin', 'bypass_radius')
-            bypass_radius = perm.get('has_permission', False)
-
         result = service.punch(
             jarvis_user_id=current_user.id,
             lat=data.get('lat'),
@@ -81,7 +71,6 @@ def punch():
             direction=data.get('direction'),
             client_ip=client_ip,
             qr_token=data.get('qr_token'),
-            bypass_radius=bypass_radius,
         )
         status_code = 200 if result['success'] else 400
         return jsonify(result), status_code
