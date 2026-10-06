@@ -138,8 +138,17 @@ def create_schema_digest(conn, cursor):
         "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS notify_mode TEXT DEFAULT 'all'",
         # Chat messenger: channel avatar/photo (Connecteam-style group image)
         "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS avatar_url TEXT",
+        # Direct messages: a DM is a private 2-member channel with is_direct=TRUE.
+        "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS is_direct BOOLEAN DEFAULT FALSE",
+        # Canonical pair key "minUserId:maxUserId" — deduped by the partial unique index below.
+        "ALTER TABLE digest_channels ADD COLUMN IF NOT EXISTS dm_key TEXT",
     ]:
         cursor.execute(col_sql)
+
+    # One DM channel per unordered pair; partial so it only constrains DMs.
+    cursor.execute(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_digest_channels_dm_key '
+        'ON digest_channels(dm_key) WHERE is_direct')
 
     # Chat messenger: per-member conversation state (pin / archive / mute).
     for col_sql in [
