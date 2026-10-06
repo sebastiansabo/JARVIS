@@ -46,6 +46,7 @@ const TAB_ORDER: TabKey[] = ['vehicul', 'specificatii', 'other']
 // and VIN decode (connectors/vin_decoder .to_vehicle_fields()).
 const FIELD_META: Record<string, FieldMeta> = {
   vin: { label: 'Serie șasiu (VIN)', tab: 'vehicul' },
+  registration_number: { label: 'Număr înmatriculare', tab: 'vehicul' },
   brand: { label: 'Marcă', tab: 'vehicul' },
   model: { label: 'Model', tab: 'vehicul' },
   variant: { label: 'Versiune', tab: 'vehicul' },
