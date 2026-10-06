@@ -69,8 +69,13 @@ class CheckinService:
 
     # ── Punch ──
 
-    def punch(self, jarvis_user_id, lat=None, lng=None, direction=None, client_ip=None, qr_token=None, bypass_radius=False):
-        """Validate GPS, IP, or QR and insert punch. Returns dict with success/error."""
+    def punch(self, jarvis_user_id, lat=None, lng=None, direction=None, client_ip=None, qr_token=None):
+        """Validate GPS, IP, or QR and insert punch. Returns dict with success/error.
+
+        A punch is accepted only when the user is inside a configured location's
+        radius, on its WiFi IP, or scanning its QR token. There is no per-user or
+        permission-based radius bypass.
+        """
         # 1. Resolve user mapping
         mapping = self.repo.get_biostar_user_id(jarvis_user_id)
         if not mapping:
@@ -96,11 +101,6 @@ class CheckinService:
                     nearest_dist, nearest = d, loc
 
             if nearest_dist <= nearest['allowed_radius_meters']:
-                matched_loc = nearest
-                match_source = 'gps_mobile'
-                match_dist = round(nearest_dist, 1)
-            elif bypass_radius:
-                # User has bypass permission — accept nearest location regardless of distance
                 matched_loc = nearest
                 match_source = 'gps_mobile'
                 match_dist = round(nearest_dist, 1)
