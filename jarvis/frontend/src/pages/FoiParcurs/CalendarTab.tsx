@@ -270,7 +270,7 @@ export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', 
           <Button variant="outline" size="icon" onClick={() => go(1)}>
             <ChevronRight className="h-4 w-4" />
           </Button>
-          <h3 className="text-base font-semibold capitalize ml-2">{periodLabel}</h3>
+          <h3 className="ml-2 hidden text-base font-semibold capitalize md:block">{periodLabel}</h3>
           {isLoading && <span className="text-xs text-muted-foreground">Se încarcă...</span>}
         </div>
         {/* View switcher — same segmented control as the Hub / Field Sales calendars. */}
