@@ -5,7 +5,7 @@ import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus, carColor, internalComment } from '@/pages/FoiParcurs/sessionStatus'
-import { clientCell } from '@/pages/FoiParcurs/sessionParty'
+import { sessionIdentity } from '@/pages/FoiParcurs/sessionParty'
 import type { DocType } from '@/pages/FoiParcurs/documentType'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
@@ -181,12 +181,13 @@ export default function DrivingCalendar({ companyId, brand, carFilter = [], cons
           color: carColor(c.vin), // colour by car
           groupKey: c.vin || undefined, // same-car overlap (interlaced) detection
           // Compact block: driver (person) · car · company. The bold title is
-          // the person who drives (Client = Driver — advisor for internal, else
-          // the driver contact / client). The company line is the booking's
-          // company (the company client itself, else the person's own company).
-          title: clientCell(c).primary,
+          // the person who drives (advisor for internal, else the driver contact /
+          // client). The meta line is the firm — only for a company booking with a
+          // distinct driver (identity.company); never repeat the company when it's
+          // already the title (driverless/pre-fix sessions).
+          title: sessionIdentity(c).title,
           subtitle: vehicleName(c.vin ? vinVehicle.get(c.vin) : undefined, c.vin),
-          meta: c.is_internal ? (internalComment(c) ?? undefined) : (clientCell(c).secondary ?? c.client_company ?? undefined),
+          meta: c.is_internal ? (internalComment(c) ?? undefined) : (sessionIdentity(c).company ?? undefined),
           draggable: sessionStatus(c).key === 'planificat', // only planned sessions reschedule
         }]
       })

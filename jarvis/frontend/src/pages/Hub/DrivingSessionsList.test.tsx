@@ -134,6 +134,34 @@ describe('DrivingSessionsList reschedule (for everyone)', () => {
   })
 })
 
+describe('DrivingSessionsList company booking identity (driver-led + Firmă/Șofer)', () => {
+  beforeEach(() => {
+    getContracts.mockResolvedValue({
+      contracts: [
+        { id: 70, status: 'PLANNED', client_name: 'VINUM PARTIUM SRL', driver_name: 'Calin Gonta',
+          client_company: 'VINUM PARTIUM SRL', client_phone: '0740', vin: 'VCMP', advisor_name: 'Adv X',
+          departure_datetime: '2999-01-01T09:00', km_start: 10 },
+      ], total: 1, page: 1, per_page: 1000,
+    })
+    getVehicles.mockResolvedValue({ vehicles: [] })
+  })
+
+  it('leads the card with the driver and shows the company on a Firmă line', async () => {
+    wrap(<DrivingSessionsList companyId={9} brand="" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(await screen.findByText('Calin Gonta')).toBeInTheDocument()     // driver = title
+    expect(screen.getByText('VINUM PARTIUM SRL')).toBeInTheDocument()       // company = Firmă line
+  })
+
+  it('expands to a Șofer field (driver) and a Firmă client field (company)', async () => {
+    wrap(<DrivingSessionsList companyId={9} brand="" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    fireEvent.click(await screen.findByText('Calin Gonta'))
+    expect(screen.getByText('Șofer')).toBeInTheDocument()
+    expect(screen.getByText('Firmă client')).toBeInTheDocument()
+    // driver shows as both the card title and the Șofer field value
+    expect(screen.getAllByText('Calin Gonta').length).toBeGreaterThanOrEqual(2)
+  })
+})
+
 describe('DrivingSessionsList internal sessions', () => {
   beforeEach(() => {
     getContracts.mockResolvedValue({
