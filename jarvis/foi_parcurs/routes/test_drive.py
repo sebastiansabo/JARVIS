@@ -328,6 +328,17 @@ def api_submit_test_drive():
                 if not str(client_phone or '').strip():
                     return jsonify({'success': False,
                                     'error': 'Clientul trebuie să aibă un număr de telefon.'}), 400
+            elif _is_company_client(crm_client) and data.get('driver_contact_id'):
+                # Planning a company booking: the hard gate above is deferred to
+                # activation, but if the planner already chose a driver contact we
+                # resolve it now (best-effort, no gate error) so the PLANNED session
+                # shows the actual driver instead of the company — the driver
+                # snapshot below reads driver_contact. A foreign/unknown contact is
+                # ignored (left to re-gate at activation).
+                _dc = _contact_repo.get(int(data['driver_contact_id']))
+                if _dc and _dc.get('client_id') == client_id:
+                    driver_contact_id = data['driver_contact_id']
+                    driver_contact = _dc
 
         # Structured vehicle-condition report captured at handover (optional).
         departure_damage = data.get('departure_damage') or []
