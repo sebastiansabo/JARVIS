@@ -51,7 +51,7 @@ import { DateField } from '@/components/ui/date-field'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { StatCard } from '@/components/shared/StatCard'
 import { StatusBadge } from '@/components/shared/StatusBadge'
@@ -265,6 +265,12 @@ export default function Profile() {
                     <Pencil className="h-3.5 w-3.5 mr-1.5" />
                     Edit profile
                   </Button>
+                  <Button size="sm" variant="outline" asChild>
+                    <a href="/logout">
+                      <LogOut className="h-3.5 w-3.5 mr-1.5" />
+                      Logout
+                    </a>
+                  </Button>
                 </>
               )}
 
@@ -290,6 +296,13 @@ export default function Profile() {
                     <DropdownMenuItem onClick={() => setEditOpen(true)}>
                       <Pencil className="h-4 w-4 mr-2" />
                       Edit profile
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem asChild>
+                      <a href="/logout">
+                        <LogOut className="h-4 w-4 mr-2" />
+                        Logout
+                      </a>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>

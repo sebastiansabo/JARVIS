@@ -1,5 +1,5 @@
 import { Outlet, Link } from 'react-router-dom'
-import { Menu, MapPin, UserCircle, Bot } from 'lucide-react'
+import { Menu, MapPin, UserCircle, Bot, LogOut } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { fetchColumnDefaults } from '@/lib/columnDefaults'
@@ -9,6 +9,7 @@ import { ThemeToggle } from './ThemeToggle'
 import { NotificationBell } from './NotificationBell'
 import { AiAgentWidget, AiAgentPanel } from './AiAgentWidget'
 import { Button } from '@/components/ui/button'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Toaster } from '@/components/ui/sonner'
@@ -142,10 +143,35 @@ export default function Layout() {
             <div className="h-[44px] w-[44px] flex items-center justify-center">
               <NotificationBell />
             </div>
-            {/* My Account (logout lives inside the account page). */}
-            <Link to="/app/profile" className="h-[44px] w-[44px] flex items-center justify-center text-muted-foreground">
-              <UserCircle className="h-[22px] w-[22px]" />
-            </Link>
+            {/* My Account — profile + logout. (Mobile lands on the Hub for every
+                role, and Viewers have no sidebar here, so this menu is the only
+                logout path on mobile — keep the Logout item.) */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label="Account menu"
+                  className="h-[44px] w-[44px] flex items-center justify-center text-muted-foreground"
+                >
+                  <UserCircle className="h-[22px] w-[22px]" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem asChild>
+                  <Link to="/app/profile">
+                    <UserCircle className="mr-2 h-4 w-4" />
+                    My Profile
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <a href="/logout">
+                    <LogOut className="mr-2 h-4 w-4" />
+                    Logout
+                  </a>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 

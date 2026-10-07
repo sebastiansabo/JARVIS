@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
-import { MemoryRouter } from 'react-router-dom'
+import { render, screen, fireEvent } from '@testing-library/react'
+import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import type { User } from '@/types'
 
 const { useAuth } = vi.hoisted(() => ({ useAuth: vi.fn() }))
@@ -47,6 +47,8 @@ beforeAll(() => {
 
 beforeEach(() => {
   useAuth.mockReset()
+  // Layout's heartbeat effect pings /api/heartbeat once mounted.
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
 })
 
 describe('Layout consent gate wiring', () => {
@@ -81,5 +83,44 @@ describe('Layout consent gate wiring', () => {
     )
     expect(screen.queryByTestId('consent-gate')).not.toBeInTheDocument()
     expect(screen.getByTestId('sidebar')).toBeInTheDocument()
+  })
+})
+
+// The mobile header's account menu is the ONLY logout path on mobile: every
+// role lands on the Hub there, and Viewers get no hamburger/sidebar — so the
+// Logout item inside this menu must always be present.
+describe('Layout mobile header account menu', () => {
+  function renderLayout() {
+    return render(
+      <MemoryRouter initialEntries={['/app/hub']}>
+        <Routes>
+          <Route path="/app" element={<Layout />}>
+            <Route path="hub" element={<div>hub content</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>,
+    )
+  }
+
+  it('exposes a Logout link (href=/logout) and a My Profile link for a Viewer', async () => {
+    useAuth.mockReturnValue({ user: baseUser({ role_name: 'Viewer', consents_complete: true }), isLoading: false })
+    renderLayout()
+
+    // Radix menu triggers open on pointerdown (button 0), not click.
+    fireEvent.pointerDown(screen.getByRole('button', { name: /account menu/i }), { button: 0 })
+
+    const logout = await screen.findByRole('menuitem', { name: /logout/i })
+    expect(logout).toHaveAttribute('href', '/logout')
+    expect(screen.getByRole('menuitem', { name: /my profile/i })).toBeInTheDocument()
+  })
+
+  it('exposes the same Logout link for a non-Viewer', async () => {
+    useAuth.mockReturnValue({ user: baseUser({ role_name: 'Admin', consents_complete: true }), isLoading: false })
+    renderLayout()
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: /account menu/i }), { button: 0 })
+
+    const logout = await screen.findByRole('menuitem', { name: /logout/i })
+    expect(logout).toHaveAttribute('href', '/logout')
   })
 })
