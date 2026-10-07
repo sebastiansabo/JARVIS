@@ -364,7 +364,8 @@ class TdBookingService:
 
         crm_client_id = self._find_or_create_crm_client(booking)
         try:
-            fp_id = self._confirm_pending(booking, crm_client_id)
+            # Public customer confirm: never block on an overlap -- soft-warn only.
+            fp_id = self._confirm_pending(booking, crm_client_id, enforce_availability=False)
         except TdBookingNotPending:
             # The booking was pending when we read it, but under the advisory lock the
             # FOR-UPDATE guard saw it is no longer pending -- a racing/duplicate confirm
@@ -402,7 +403,8 @@ class TdBookingService:
             if crm_client_id is None:
                 crm_client_id = self._find_or_create_crm_client(booking)
             try:
-                self._confirm_pending(booking, crm_client_id)
+                # Public customer confirm: never block on an overlap -- soft-warn only.
+                self._confirm_pending(booking, crm_client_id, enforce_availability=False)
                 confirmed += 1
             except TdBookingNotPending:
                 # A racing/duplicate confirm already finished this one -- count it
@@ -454,11 +456,15 @@ class TdBookingService:
                                crm_client_id, exc_info=True)
         return crm_client_id
 
-    def _confirm_pending(self, booking, crm_client_id):
+    def _confirm_pending(self, booking, crm_client_id, enforce_availability=True):
         """Confirm ONE pending booking into a PLANNED fișă via the race-safe
         atomic confirm, then persist the CRM link + advisor and notify staff.
         Returns the new fp_id; propagates TdConflict / TdBookingNotPending to the
-        caller (single vs group each handle them differently)."""
+        caller (single vs group each handle them differently).
+
+        `enforce_availability` is False for the PUBLIC customer confirm (an overlap
+        never blocks, just flags the staff notification) and True for staff/admin
+        confirms, which keep the hard availability gate."""
         page = self.repo.get_page(booking['page_id'])
         car = self.repo.get_car(booking['car_id'])
         slot = self.repo.query_one('SELECT * FROM mkt_td_slots WHERE id=%s', (booking['slot_id'],))
@@ -467,11 +473,12 @@ class TdBookingService:
 
         fp_row = self._build_fp_row(booking, page, car, slot, advisor_name, crm_client_id)
         res = self.repo.confirm_booking_atomic(
-            booking['id'], car['vin'], slot['starts_at'], slot['ends_at'], fp_row)
+            booking['id'], car['vin'], slot['starts_at'], slot['ends_at'], fp_row,
+            enforce_availability=enforce_availability)
         # confirm_booking_atomic already flipped status + foi_de_parcurs_id; this
         # persists the CRM link + advisor that the atomic step doesn't know about.
         self.repo.mark_confirmed(booking['id'], crm_client_id, res['fp_id'], advisor_id)
-        self._notify_staff(page, booking, advisor_id)
+        self._notify_staff(page, booking, advisor_id, warning=res.get('soft_conflict'))
         return res['fp_id']
 
     # ---- cancel ----
@@ -665,8 +672,10 @@ class TdBookingService:
         row = self._base.query_one('SELECT name FROM users WHERE id=%s', (user_id,))
         return row['name'] if row else ''
 
-    def _notify_staff(self, page, booking, advisor_id):
-        """Best-effort staff notification; a failure here must never fail a confirm."""
+    def _notify_staff(self, page, booking, advisor_id, warning=None):
+        """Best-effort staff notification; a failure here must never fail a confirm.
+        `warning` (a soft-conflict reason from an unenforced public confirm) appends a
+        'possible overlap' line so staff can resolve the clash the public form allowed."""
         try:
             from core.notifications.notify import notify_with_push
             ids = list(page.get('notify_user_ids') or [])
@@ -674,9 +683,12 @@ class TdBookingService:
                 ids.append(advisor_id)
             ids = list({i for i in ids if i})
             if ids:
+                message = f"{booking['customer_name']} · {booking['customer_phone_e164']}"
+                if warning:
+                    message += '  ⚠ posibilă suprapunere — verificați disponibilitatea mașinii'
                 notify_with_push(
                     ids, 'Programare test drive nouă',
-                    message=f"{booking['customer_name']} · {booking['customer_phone_e164']}",
+                    message=message,
                     category='system')
         except Exception:
             logger.warning('staff notify failed for booking %s', booking['id'], exc_info=True)

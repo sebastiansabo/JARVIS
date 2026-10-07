@@ -206,6 +206,31 @@ def test_confirm_conflicts_when_vehicle_locked(booking):
         "SELECT id FROM foi_de_parcurs WHERE contract_id=%s", (f'CFA-CONFIRM-{_VIN}',)) is None
 
 
+def test_confirm_soft_allows_overlap_when_not_enforced(booking):
+    """enforce_availability=False (the public customer confirm path): a seeded
+    overlapping live session no longer blocks -- the PLANNED fișă is still created and
+    the soft conflict reason is returned for the staff warning. 'Never block, soft-warn'."""
+    p, c, s, b, company_id = booking
+    _seed_conflict_fp(_VIN, company_id)
+    res = repo.confirm_booking_atomic(b['id'], _VIN, _FRM, _TO,
+                                      _fp_row(_VIN, company_id), enforce_availability=False)
+    assert res['fp_id']
+    assert res.get('soft_conflict')  # a reason string the staff notification surfaces
+    assert repo.get_booking(b['id'])['status'] == 'confirmed'
+    fp = repo.query_one('SELECT status FROM foi_de_parcurs WHERE id=%s', (res['fp_id'],))
+    assert fp['status'] == 'PLANNED'
+
+
+def test_soft_confirm_still_guards_non_pending_booking(booking):
+    """Even with enforce_availability=False, booking-state integrity still holds: a
+    non-pending booking raises TdBookingNotPending (that's not an overlap)."""
+    p, c, s, b, company_id = booking
+    repo.execute("UPDATE mkt_td_bookings SET status='confirmed' WHERE id=%s", (b['id'],))
+    with pytest.raises(TdBookingNotPending):
+        repo.confirm_booking_atomic(b['id'], _VIN, _FRM, _TO,
+                                    _fp_row(_VIN, company_id), enforce_availability=False)
+
+
 def test_confirm_replay_guard_when_already_confirmed(booking):
     """Replay/double-confirm guard (the FOR UPDATE pending-check): a booking that is
     no longer 'pending_confirm' raises TdConflict before any FP row is created."""

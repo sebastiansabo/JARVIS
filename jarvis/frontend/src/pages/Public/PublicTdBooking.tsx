@@ -539,7 +539,16 @@ export default function PublicTdBooking() {
                   </button>
 
                   {expanded && (
-                    <div className="flex flex-wrap gap-2 px-4 pb-4">
+                    <div className="px-4 pb-4">
+                    {/* Soft overlap notice: some intervals may already be busy, but the
+                        car and its slots are never hidden — the team confirms. */}
+                    {carSlots.some((s) => s.overlap) && (
+                      <p className="mb-2 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                        Intervalele marcate pot fi deja ocupate — le confirmăm împreună cu echipa.
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
                     {carSlots.map((s) => {
                         const rank = selectedIds.indexOf(s.id) // GLOBAL: -1 unpicked, 0 rezervat, ≥1 preferință
                         const active = rank >= 0
@@ -554,6 +563,7 @@ export default function PublicTdBooking() {
                             aria-pressed={active}
                             disabled={disabled}
                             onClick={() => toggleSlot(s)}
+                            title={s.overlap ? s.overlap.label : undefined}
                             className={
                               'inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium ' +
                               'outline-none motion-safe:transition-colors focus-visible:ring-2 ' +
@@ -577,10 +587,15 @@ export default function PublicTdBooking() {
                                 {rank + 1}
                               </span>
                             )}
+                            {/* Soft overlap dot on an unpicked busy slot — still bookable. */}
+                            {!active && s.overlap && (
+                              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" aria-hidden="true" />
+                            )}
                             {timeFmt.format(new Date(s.starts_at))}
                           </button>
                         )
                       })}
+                    </div>
                     </div>
                   )}
                 </article>

@@ -61,21 +61,71 @@ def test_materialize_generates_two_slots(page):
     assert svc.materialize_slots(page['id']) == 0      # idempotent
 
 
-def test_available_filters_by_3way(page, monkeypatch):
+# An all-day local session (Europe/Bucharest +03:00) overlaps both materialized slots.
+_ALLDAY_CONFLICT = [{'departure_datetime': '2099-10-01T00:00:00+03:00',
+                     'return_datetime': '2099-10-02T00:00:00+03:00',
+                     'client_name': 'Ion', 'status': 'FILLED'}]
+
+
+def test_no_conflict_returns_all_slots_unannotated(page, monkeypatch):
     svc = TdSlotService()
     svc.materialize_slots(page['id'])
     now = datetime(2099, 1, 1, tzinfo=timezone.utc)
-    # available_slots now batches availability per VIN (no per-slot is_car_free);
-    # drive the FP-conflict gate directly. Slots materialize in Europe/Bucharest
-    # (+03:00), so the conflict must cover that local window -- an all-day local
-    # session overlaps both slots -> busy.
-    monkeypatch.setattr(svc.fp, 'find_conflicts',
-                        lambda vin, frm, to: [{'departure_datetime': '2099-10-01T00:00:00+03:00',
-                                               'return_datetime': '2099-10-02T00:00:00+03:00'}])
-    assert svc.available_slots(page['id'], now) == []
-    # no conflict + no lock/open-session/hold for the (unknown) test VIN -> both slots.
     monkeypatch.setattr(svc.fp, 'find_conflicts', lambda vin, frm, to: [])
-    assert len(svc.available_slots(page['id'], now)) == 2
+    out = svc.available_slots(page['id'], now)
+    assert len(out) == 2
+    assert all(s['overlap'] is None for s in out)
+
+
+def test_overlapping_conflict_is_annotated_not_dropped(page, monkeypatch):
+    # A time-overlapping live session must NO LONGER remove the slot -- it is
+    # returned with a soft `overlap` marker so the public page can warn, never hide.
+    svc = TdSlotService()
+    svc.materialize_slots(page['id'])
+    now = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    monkeypatch.setattr(svc.fp, 'find_conflicts', lambda vin, frm, to: list(_ALLDAY_CONFLICT))
+    out = svc.available_slots(page['id'], now)
+    assert len(out) == 2
+    assert all(s['overlap'] and s['overlap']['kind'] == 'session' for s in out)
+
+
+def test_open_session_no_longer_hides_whole_car(page, monkeypatch):
+    # The reported bug: a FILLED td_form session that does NOT overlap the slots
+    # (find_conflicts empty) used to blank the whole car via get_open_session. The
+    # time-blind whole-car gate is gone -- non-overlapping slots stay bookable.
+    svc = TdSlotService()
+    svc.materialize_slots(page['id'])
+    now = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    monkeypatch.setattr(svc.fp, 'find_conflicts', lambda vin, frm, to: [])
+    monkeypatch.setattr(svc.fp, 'get_open_session',
+                        lambda vin, *a, **k: {'id': 1, 'route_type': 'TD'})
+    out = svc.available_slots(page['id'], now)
+    assert len(out) == 2
+    assert all(s['overlap'] is None for s in out)
+
+
+def test_lockout_still_hides_car(page, monkeypatch):
+    # A manual lockout is a deliberate "car unavailable" (service/shop) -- it stays a
+    # hard hide on the public page, not a soft overlap warning.
+    svc = TdSlotService()
+    svc.materialize_slots(page['id'])
+    now = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    monkeypatch.setattr(svc.fp, 'find_conflicts', lambda vin, frm, to: [])
+    monkeypatch.setattr(svc.veh, 'get_lock_by_vin', lambda vin: {'locked_out': True})
+    assert svc.available_slots(page['id'], now) == []
+
+
+def test_pending_hold_is_annotated_not_dropped(page, monkeypatch):
+    svc = TdSlotService()
+    svc.materialize_slots(page['id'])
+    now = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    monkeypatch.setattr(svc.fp, 'find_conflicts', lambda vin, frm, to: [])
+    monkeypatch.setattr(svc.repo, 'pending_hold_windows',
+                        lambda vin, now_utc: [{'starts_at': '2099-10-01T10:00:00+03:00',
+                                               'ends_at': '2099-10-01T11:00:00+03:00'}])
+    out = svc.available_slots(page['id'], now)
+    assert len(out) == 2
+    assert all(s['overlap'] and s['overlap']['kind'] == 'hold' for s in out)
 
 
 def test_available_respects_lead_time(page):
