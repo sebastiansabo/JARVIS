@@ -81,6 +81,19 @@ describe('DrivingCalendar', () => {
     expect(await screen.findByTestId('tg-block-14')).toHaveTextContent('VINUM PARTIUM SRL')  // company on the card
   })
 
+  it('driverless company booking: shows the company only as the title, not duplicated as a meta line', async () => {
+    getContracts.mockResolvedValueOnce({
+      contracts: [
+        { id: 15, status: 'PLANNED', vin: 'VF9', client_name: 'SEBA TEST COMPANY S.R.L.',
+          client_company: 'SEBA TEST COMPANY S.R.L.', driver_name: 'SEBA TEST COMPANY S.R.L.',
+          departure_datetime: todayIso, km_start: 5 },
+      ], total: 1, page: 1, per_page: 1000,
+    })
+    wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
+    expect(await screen.findByTestId('tg-title-15')).toHaveTextContent('SEBA TEST COMPANY S.R.L.')
+    expect(screen.queryByTestId('tg-meta-15')).not.toBeInTheDocument()   // no duplicate company line
+  })
+
   it('switches to Month view (weekday grid)', async () => {
     wrap(<DrivingCalendar companyId={11} brand="" onActivate={vi.fn()} onReturn={vi.fn()} onAdd={vi.fn()} />)
     await screen.findByTestId('tg-block-11')

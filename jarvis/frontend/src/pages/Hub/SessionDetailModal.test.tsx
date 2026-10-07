@@ -35,6 +35,15 @@ const internalWithComment = {
   ...base, client_name: null, status: 'FILLED', td_status: 'driving',
   is_internal: true, company_id: 5, itinerary: 'Deplasare SNN – pregatiri livrare',
 }
+const companyBooking = {
+  ...base, client_name: 'VINUM PARTIUM SRL', driver_name: 'Calin Gonta',
+  client_company: 'VINUM PARTIUM SRL', status: 'PLANNED',
+}
+// Pre-fix company session: no distinct driver captured (driver_name == company).
+const driverlessCompany = {
+  ...base, client_name: 'SEBA TEST COMPANY S.R.L.', driver_name: 'SEBA TEST COMPANY S.R.L.',
+  client_company: 'SEBA TEST COMPANY S.R.L.', status: 'PLANNED',
+}
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -81,6 +90,30 @@ describe('SessionDetailModal', () => {
     expect(screen.queryByText('Client')).not.toBeInTheDocument()
     expect(screen.getByText('Ana')).toBeInTheDocument()            // driver = advisor
     expect(await screen.findByText('0755000111')).toBeInTheDocument() // phone from Users profile
+  })
+
+  it('company booking: shows the driver as Șofer and the company as Firmă client, not duplicated', () => {
+    wrap(<SessionDetailModal session={companyBooking as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(screen.getByText('Șofer')).toBeInTheDocument()
+    expect(screen.getByText('Calin Gonta')).toBeInTheDocument()        // driver
+    expect(screen.getByText('Firmă client')).toBeInTheDocument()
+    expect(screen.getAllByText('VINUM PARTIUM SRL')).toHaveLength(1)   // company shown once
+  })
+
+  it('person client with an employer company: shows Client + the employer as Firmă client (not Șofer)', () => {
+    const personWithEmployer = { ...base, client_name: 'Ion Pop', driver_name: 'Ion Pop',
+      client_company: 'ACME Angajator SRL', status: 'PLANNED' }
+    wrap(<SessionDetailModal session={personWithEmployer as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(screen.getByText('Ion Pop')).toBeInTheDocument()
+    expect(screen.getByText('Firmă client')).toBeInTheDocument()
+    expect(screen.getByText('ACME Angajator SRL')).toBeInTheDocument()
+    expect(screen.queryByText('Șofer')).not.toBeInTheDocument()
+  })
+
+  it('driverless (pre-fix) company: company shown once, no empty Șofer label', () => {
+    wrap(<SessionDetailModal session={driverlessCompany as never} onClose={vi.fn()} onActivate={vi.fn()} onReturn={vi.fn()} />)
+    expect(screen.getAllByText('SEBA TEST COMPANY S.R.L.')).toHaveLength(1)
+    expect(screen.queryByText('Șofer')).not.toBeInTheDocument()
   })
 
   it('planned session shows Începe + Renunță (no Retur) and Începe calls onActivate', () => {

@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Car, Gauge, User2, Search, RotateCcw, PlayCircle, ChevronDown,
-  FileDown, Trash2, Phone, CalendarDays, Clock, Pencil, CalendarClock,
+  FileDown, Trash2, Phone, CalendarDays, Clock, Pencil, CalendarClock, Building2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
-import { sessionParty, clientCell } from '@/pages/FoiParcurs/sessionParty'
+import { sessionParty, sessionIdentity } from '@/pages/FoiParcurs/sessionParty'
 import { useUsersDirectory } from '@/pages/FoiParcurs/useUsersDirectory'
 import type { DocType } from '@/pages/FoiParcurs/documentType'
 import ModifiedBadge from '@/pages/FoiParcurs/ModifiedBadge'
@@ -256,11 +256,14 @@ function SessionCard({
   // (status IN PLANNED/MISSED). Open/returned/finalized drives are not moved.
   const canReschedule = ss.key === 'planificat' || ss.key === 'ratat'
 
-  // Client = Driver: the card leads with the person who drives — the contact for
-  // a company booking, the driving user for an internal log, the client
-  // otherwise — with the company kept on a secondary line (cc.secondary).
+  // Driver-led identity: the title is the person who drives; for a company
+  // booking the firm (identity.company) + driver (identity.driver) surface as
+  // explicit labeled lines/fields. Shared with the modal + calendar.
   const party = sessionParty(c, usersByPhone)
-  const cc = clientCell(c)
+  const identity = sessionIdentity(c)
+  // Secondary tags that would otherwise crowd the name out on a narrow card —
+  // moved to their own wrap row, rendered only when at least one applies.
+  const hasTags = party.isInternal || !!c.corrected_at || !!c.rescheduled_at || !!c.event_id
   const vehicleName = vehicle
     ? [vehicle.mark, vehicle.model].filter(Boolean).join(' ') || vehicle.registration_number || c.vin
     : c.vin || '—'
@@ -278,24 +281,40 @@ function SessionCard({
             <Car className="h-4 w-4 text-blue-600 dark:text-blue-400" />
           </div>
           <div className="min-w-0 flex-1">
+            {/* Row 1: name takes the full width (truncates) with only the status
+                pill beside it — so the client/driver name stays readable on a
+                narrow card. */}
             <div className="flex items-center gap-2">
-              <span className="truncate text-[15px] font-semibold leading-tight">{cc.primary}</span>
+              <span className="min-w-0 flex-1 truncate text-[15px] font-semibold leading-tight">{identity.title}</span>
               <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', ss.badgeClass)}>
                 {ss.label}
               </span>
-              {party.isInternal && (
-                <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Intern
-                </span>
-              )}
-              <ModifiedBadge session={c} />
-              <RescheduledBadge session={c} />
-              <EventBadge session={c} />
             </div>
+            {/* Row 2: secondary tags wrap below the name instead of crowding it. */}
+            {hasTags && (
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                {party.isInternal && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Intern
+                  </span>
+                )}
+                <ModifiedBadge session={c} />
+                <RescheduledBadge session={c} />
+                <EventBadge session={c} />
+              </div>
+            )}
             <div className="mt-0.5 flex items-center gap-1 truncate text-[13px] text-muted-foreground">
               <Gauge className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">{vehicleName}</span>
             </div>
+            {/* Firmă — the company behind a company booking (the driver leads the
+                title above). Hidden for person/internal bookings. */}
+            {identity.company && (
+              <div className="mt-0.5 flex items-center gap-1 truncate text-[12px] text-muted-foreground">
+                <Building2 className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{identity.company}</span>
+              </div>
+            )}
             <div className="mt-1 flex items-center justify-between gap-2">
               {/* For internal logs the driver IS the advisor (already the card
                   title), so the advisor sub-line would just repeat it. */}
@@ -340,10 +359,12 @@ function SessionCard({
         <div className="border-t border-border/60 bg-muted/20 px-3.5 py-3">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[13px]">
             <div className="min-w-0">
-              <dt className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">{party.label}</dt>
-              <dd className="mt-0.5 truncate font-medium">{cc.primary}</dd>
-              {cc.secondary && <dd className="truncate text-[11px] text-muted-foreground" title={cc.secondary}>{cc.secondary}</dd>}
+              {/* For a company booking the title is the driver → label it Șofer and
+                  show the firm as its own field; otherwise it's the client/driver. */}
+              <dt className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">{identity.company ? 'Șofer' : party.label}</dt>
+              <dd className="mt-0.5 truncate font-medium">{identity.title}</dd>
             </div>
+            {identity.company && <Field label="Firmă client" value={identity.company} icon={<Building2 className="h-3 w-3" />} />}
             <Field label="Telefon" value={party.phone} icon={<Phone className="h-3 w-3" />} />
             <Field label="Vehicul" value={vehicleName} />
             <Field label="VIN" value={c.vin || '—'} mono />

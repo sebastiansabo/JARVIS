@@ -1,8 +1,27 @@
 import { describe, it, expect } from 'vitest'
-import { sessionParty, buildUserPhoneMap, clientCell } from './sessionParty'
+import { sessionParty, buildUserPhoneMap, clientCell, sessionIdentity } from './sessionParty'
 import type { FoiContract } from '@/types/foiParcurs'
 
 const c = (over: Partial<FoiContract>) => over as FoiContract
+
+describe('sessionIdentity (driver-led title + explicit company/driver)', () => {
+  it('company booking with a distinct driver: title=driver, company+driver filled', () => {
+    expect(sessionIdentity(c({ client_name: 'VINUM PARTIUM SRL', driver_name: 'Calin Gonta' })))
+      .toEqual({ title: 'Calin Gonta', company: 'VINUM PARTIUM SRL', driver: 'Calin Gonta' })
+  })
+  it('person booking: title=person, no company, no separate driver', () => {
+    expect(sessionIdentity(c({ client_name: 'Ion Pop', driver_name: 'Ion Pop' })))
+      .toEqual({ title: 'Ion Pop', company: null, driver: null })
+  })
+  it('company booking with no driver on file (pre-fix): title=company, no driver/company field', () => {
+    expect(sessionIdentity(c({ client_name: 'VINUM PARTIUM SRL', driver_name: null })))
+      .toEqual({ title: 'VINUM PARTIUM SRL', company: null, driver: null })
+  })
+  it('internal log: title=driving user, no company/driver field', () => {
+    expect(sessionIdentity(c({ is_internal: true, advisor_name: 'Patrasc Roger', driver_name: null })))
+      .toEqual({ title: 'Patrasc Roger', company: null, driver: null })
+  })
+})
 
 describe('clientCell (who the Client column shows — the person who drives)', () => {
   it('company booking: the driver is primary, the company is the secondary line', () => {

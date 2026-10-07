@@ -37,6 +37,30 @@ export function clientCell(c: FoiContract): ClientCell {
   return { primary: client || '—', secondary: null }
 }
 
+export interface SessionIdentity {
+  /** The card title — the person who drives (driver-led): the driver contact for
+   *  a company booking, the client for a person booking, the driving user for an
+   *  internal log, or the company itself when no driver is on file (pre-fix). */
+  title: string
+  /** The firm behind a company booking, shown as a labeled "Firmă" field; null
+   *  when there's no distinct company (person client / internal / no driver). */
+  company: string | null
+  /** The driver person when distinct from the client/company (company bookings),
+   *  shown as a labeled "Șofer" field; null otherwise. */
+  driver: string | null
+}
+
+/**
+ * Driver-led identity for a session card: the title leads with the person who
+ * drives, and the company + driver are surfaced as explicit labeled fields when
+ * a company booking names a distinct driver. One source of truth shared by the
+ * Hub list card, the detail modal, and the calendar block.
+ */
+export function sessionIdentity(c: FoiContract): SessionIdentity {
+  const cc = clientCell(c)
+  return { title: cc.primary, company: cc.secondary, driver: cc.secondary ? cc.primary : null }
+}
+
 export interface SessionParty {
   /** true when this is an internal (QuickSession) driving log — no customer. */
   isInternal: boolean
