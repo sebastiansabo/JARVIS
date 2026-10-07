@@ -723,7 +723,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
   const monthName = (m: number) => new Date(2000, m - 1).toLocaleString('ro-RO', { month: 'long' })
 
   const toolbar = (
-    <div className="flex items-center gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Select value={String(filterMonth)} onValueChange={(v) => setFilterMonth(Number(v))}>
         <SelectTrigger className="h-8 w-[150px]"><SelectValue /></SelectTrigger>
         <SelectContent>
@@ -770,14 +770,14 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
             <TableHeader>
               <TableRow>
                 <TableHead className="w-8" />
-                <TableHead>Make</TableHead>
+                <TableHead className="hidden lg:table-cell">Make</TableHead>
                 <TableHead>Model</TableHead>
-                <TableHead>VIN</TableHead>
-                <TableHead>KM start</TableHead>
-                <TableHead>KM end</TableHead>
-                <TableHead>Total KM</TableHead>
-                <TableHead>Sesiuni</TableHead>
-                <TableHead>Clienți</TableHead>
+                <TableHead className="hidden xl:table-cell">VIN</TableHead>
+                <TableHead className="hidden lg:table-cell">KM start</TableHead>
+                <TableHead className="hidden lg:table-cell">KM end</TableHead>
+                <TableHead className="hidden sm:table-cell">Total KM</TableHead>
+                <TableHead className="hidden md:table-cell">Sesiuni</TableHead>
+                <TableHead className="hidden md:table-cell">Clienți</TableHead>
                 <TableHead className="text-right">Foaie de parcurs</TableHead>
               </TableRow>
             </TableHeader>
@@ -808,7 +808,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                       <TableCell className="py-2">
                         {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
                       </TableCell>
-                      <TableCell className="text-sm">{veh?.mark || <span className="text-muted-foreground">—</span>}</TableCell>
+                      <TableCell className="hidden text-sm lg:table-cell">{veh?.mark || <span className="text-muted-foreground">—</span>}</TableCell>
                       <TableCell className="text-sm font-medium">
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span>{veh?.model || <span className="text-muted-foreground">—</span>}</span>
@@ -827,12 +827,12 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                           )}
                         </div>
                       </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">{sheet.vin}</TableCell>
-                      <TableCell className="text-sm whitespace-nowrap">{kmStart.toLocaleString('ro-RO')}</TableCell>
-                      <TableCell className="text-sm whitespace-nowrap">{kmEnd.toLocaleString('ro-RO')}</TableCell>
-                      <TableCell className="text-sm whitespace-nowrap font-medium">{totalKm.toLocaleString('ro-RO')} km</TableCell>
-                      <TableCell>{sheet.sessions.length}</TableCell>
-                      <TableCell>{clientCount}</TableCell>
+                      <TableCell className="hidden font-mono text-xs text-muted-foreground xl:table-cell">{sheet.vin}</TableCell>
+                      <TableCell className="hidden text-sm whitespace-nowrap lg:table-cell">{kmStart.toLocaleString('ro-RO')}</TableCell>
+                      <TableCell className="hidden text-sm whitespace-nowrap lg:table-cell">{kmEnd.toLocaleString('ro-RO')}</TableCell>
+                      <TableCell className="hidden text-sm whitespace-nowrap font-medium sm:table-cell">{totalKm.toLocaleString('ro-RO')} km</TableCell>
+                      <TableCell className="hidden md:table-cell">{sheet.sessions.length}</TableCell>
+                      <TableCell className="hidden md:table-cell">{clientCount}</TableCell>
                       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-2">
                           {stored?.status === 'finalizat' ? (
@@ -846,17 +846,6 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                               Salvat
                             </Badge>
                           )}
-                          {/* Download this car's per-session contract PDFs for the
-                              period as a ZIP — exactly the sessions in this row. */}
-                          <Button asChild variant="outline" size="sm" className="h-7 w-7 p-0"
-                            title="Descarcă contractele lunii (ZIP)">
-                            <a
-                              href={foiParcursApi.getRouteSheetContractsZipUrl(sheet.vin, filterYear, filterMonth, companyId, documentType)}
-                              download
-                            >
-                              <FileArchive className="h-3.5 w-3.5" />
-                            </a>
-                          </Button>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="outline" size="sm" className="h-7 gap-1" disabled={!monthChosen}
@@ -873,6 +862,14 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                               <DropdownMenuItem asChild>
                                 <a href={foiParcursApi.getRouteSheetXlsxUrl(sheet.vin, filterYear, filterMonth, includeInternal)} download>
                                   <FileSpreadsheet className="mr-2 h-4 w-4" /> Excel
+                                </a>
+                              </DropdownMenuItem>
+                              {/* Per-session contract PDFs for the period as a ZIP —
+                                  exactly the sessions in this row. In the menu so it's
+                                  reachable on mobile too (no cramped action-cell icon). */}
+                              <DropdownMenuItem asChild>
+                                <a href={foiParcursApi.getRouteSheetContractsZipUrl(sheet.vin, filterYear, filterMonth, companyId, documentType)} download>
+                                  <FileArchive className="mr-2 h-4 w-4" /> Contracte lună (ZIP)
                                 </a>
                               </DropdownMenuItem>
                               {/* Finalizat / lock — freezes the foaie + its underlying sessions.
@@ -934,9 +931,9 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                   <TableHead>Data</TableHead>
                                   <TableHead>Client</TableHead>
                                   <TableHead>Locul / Scopul</TableHead>
-                                  <TableHead>Distanță parcursă</TableHead>
-                                  <TableHead>Distanță estimată</TableHead>
-                                  <TableHead>KM</TableHead>
+                                  <TableHead className="hidden lg:table-cell">Distanță parcursă</TableHead>
+                                  <TableHead className="hidden lg:table-cell">Distanță estimată</TableHead>
+                                  <TableHead className="hidden md:table-cell">KM</TableHead>
                                   <TableHead>Status</TableHead>
                                   <TableHead className="text-right">PDF</TableHead>
                                 </TableRow>
@@ -951,9 +948,9 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                         </TableCell>
                                         <TableCell><span className="text-muted-foreground text-xs">—</span></TableCell>
                                         <TableCell className="text-xs italic text-amber-700 dark:text-amber-500">Gap kilometraj (nejustificat)</TableCell>
-                                        <TableCell className="text-sm whitespace-nowrap font-medium">{row.distance} km</TableCell>
-                                        <TableCell className="text-xs text-muted-foreground">—</TableCell>
-                                        <TableCell className="text-xs whitespace-nowrap">{row.kmStart} - {row.kmEnd}</TableCell>
+                                        <TableCell className="hidden text-sm whitespace-nowrap font-medium lg:table-cell">{row.distance} km</TableCell>
+                                        <TableCell className="hidden text-xs text-muted-foreground lg:table-cell">—</TableCell>
+                                        <TableCell className="hidden text-xs whitespace-nowrap md:table-cell">{row.kmStart} - {row.kmEnd}</TableCell>
                                         <TableCell><Badge variant="outline" className="text-xs">Gap</Badge></TableCell>
                                         <TableCell className="text-right">
                                           <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
@@ -1003,11 +1000,11 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                                           vin={sheet.vin} year={filterYear} month={filterMonth}
                                         />
                                       </TableCell>
-                                      <TableCell className="text-sm whitespace-nowrap">
+                                      <TableCell className="hidden text-sm whitespace-nowrap lg:table-cell">
                                         {sessionActualKm(c) != null ? `${sessionActualKm(c)} km` : '—'}
                                       </TableCell>
-                                      <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{sessionEstimatedKm(c)} km</TableCell>
-                                      <TableCell className="whitespace-nowrap"><KmCell c={c} canEdit={canCorrect} /></TableCell>
+                                      <TableCell className="hidden text-xs whitespace-nowrap text-muted-foreground lg:table-cell">{sessionEstimatedKm(c)} km</TableCell>
+                                      <TableCell className="hidden whitespace-nowrap md:table-cell"><KmCell c={c} canEdit={canCorrect} /></TableCell>
                                       <TableCell>
                                         <div className="flex items-center gap-1">
                                           <Badge className={`text-xs ${ss.badgeClass}`}>{ss.label}</Badge>
@@ -1781,7 +1778,7 @@ function FileButton({ onPick, label, disabled }: { onPick: (f: File) => void; la
     <>
       <input ref={ref} type="file" accept="image/png,image/jpeg,image/webp,application/pdf" className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) onPick(f); if (ref.current) ref.current.value = '' }} />
-      <Button type="button" variant="outline" size="sm" className="h-7" disabled={disabled} onClick={() => ref.current?.click()}>
+      <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => ref.current?.click()}>
         <Paperclip className="mr-1 h-3.5 w-3.5" /> {label}
       </Button>
     </>
@@ -1925,33 +1922,35 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label className="text-xs">{isE ? 'Încărcări' : 'Alimentări'}</Label>
-            <Button type="button" variant="outline" size="sm" className="h-7" onClick={() => addRow(kind)}>
+            <Button type="button" variant="outline" size="sm" onClick={() => addRow(kind)}>
               <Plus className="mr-1 h-3.5 w-3.5" /> Adaugă
             </Button>
           </div>
           {entries.length === 0 && <p className="text-xs text-muted-foreground">{isE ? 'Nicio încărcare. Adaugă bonurile de energie.' : 'Nicio alimentare. Adaugă bonurile de combustibil.'}</p>}
           {entries.map(({ a, i }) => (
-            <div key={i} className="space-y-1">
-              <div className="flex items-center gap-1.5">
-                <Input type="date" className="h-8 w-[118px] shrink-0 text-xs" value={a.date} onChange={(e) => setRow(i, 'date', e.target.value)} />
-                <Input className="h-8 flex-1 min-w-0 text-xs" placeholder="Bon" value={a.bon} onChange={(e) => setRow(i, 'bon', e.target.value)} />
-                <Input type="number" step="0.01" className="h-8 w-20 shrink-0 text-xs" placeholder={isE ? 'kWh' : 'Litri'} value={a.liters} onChange={(e) => setRow(i, 'liters', e.target.value)} />
-                <Input type="number" step="0.01" className="h-8 w-20 shrink-0 text-xs" placeholder="Lei" value={a.lei} onChange={(e) => setRow(i, 'lei', e.target.value)} />
-                <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeRow(i)}>
-                  <XIcon className="h-3.5 w-3.5" />
-                </Button>
+            <div key={i} className="space-y-1.5 rounded-md border p-2">
+              <div className="grid grid-cols-2 gap-1.5">
+                <Input type="date" className="h-9" value={a.date} onChange={(e) => setRow(i, 'date', e.target.value)} />
+                <div className="flex justify-end">
+                  <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => removeRow(i)} title="Elimină rândul">
+                    <XIcon className="h-4 w-4" />
+                  </Button>
+                </div>
+                <Input className="col-span-2 h-9" placeholder="Bon" value={a.bon} onChange={(e) => setRow(i, 'bon', e.target.value)} />
+                <Input type="number" step="0.01" inputMode="decimal" className="h-9" placeholder={isE ? 'kWh' : 'Litri'} value={a.liters} onChange={(e) => setRow(i, 'liters', e.target.value)} />
+                <Input type="number" step="0.01" inputMode="decimal" className="h-9" placeholder="Lei" value={a.lei} onChange={(e) => setRow(i, 'lei', e.target.value)} />
               </div>
-              <div className="flex items-center gap-1.5 pl-0.5">
+              <div className="flex items-center gap-1.5">
                 {busyReceipt === i ? (
                   <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Se încarcă…</span>
                 ) : a.receipt ? (
                   <>
                     <a href={foiParcursApi.mediaUrl(a.receipt.key)} target="_blank" rel="noopener"
-                      className="inline-flex items-center gap-1 text-xs text-primary hover:underline truncate max-w-[220px]">
-                      <Paperclip className="h-3.5 w-3.5 shrink-0" /> {a.receipt.filename}
+                      className="inline-flex min-w-0 flex-1 items-center gap-1 truncate text-xs text-primary hover:underline">
+                      <Paperclip className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{a.receipt.filename}</span>
                     </a>
-                    <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setReceipt(i, null)} title="Elimină bonul">
-                      <XIcon className="h-3 w-3" />
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setReceipt(i, null)} title="Elimină bonul">
+                      <XIcon className="h-4 w-4" />
                     </Button>
                   </>
                 ) : (
@@ -1981,21 +1980,21 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
           <DialogTitle>Foaie de parcurs — <span className="font-mono text-sm">{vin}</span></DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-[380px_1fr] flex-1 overflow-hidden">
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto md:grid-cols-[380px_1fr] md:overflow-hidden">
           {/* Left: user-entered fuel inputs */}
-          <div className="space-y-3 overflow-y-auto pr-1">
+          <div className="space-y-3 md:overflow-y-auto md:pr-1">
             {usesTank && consumSection('l', fuelEntries, norma, setNorma)}
             {usesBatt && consumSection('kWh', energyEntries, normaEnergie, setNormaEnergie)}
 
             {/* Evenimente — tie Comodat sessions to promo events (AI). Import from
                 the HR calendar (period) or add manually. */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <Label className="text-xs">Evenimente (promovare)</Label>
-                <div className="flex gap-1.5">
+                <div className="flex shrink-0 gap-1.5">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button type="button" variant="outline" size="sm" className="h-7" disabled={!periodEvents.length}
+                      <Button type="button" variant="outline" size="sm" disabled={!periodEvents.length}
                         title={periodEvents.length ? undefined : 'Niciun eveniment în această lună'}>
                         <Search className="mr-1 h-3.5 w-3.5" /> Din evenimente
                       </Button>
@@ -2009,24 +2008,24 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
-                  <Button type="button" variant="outline" size="sm" className="h-7" onClick={addEvent}>
+                  <Button type="button" variant="outline" size="sm" onClick={addEvent}>
                     <Plus className="mr-1 h-3.5 w-3.5" /> Adaugă
                   </Button>
                 </div>
               </div>
               {events.length === 0 && <p className="text-xs text-muted-foreground">Fără evenimente. O cursă se leagă de un eveniment doar dacă data ei e în intervalul evenimentului.</p>}
               {events.map((e, i) => (
-                <div key={i} className="space-y-1">
+                <div key={i} className="space-y-1.5 rounded-md border p-2">
                   <div className="flex items-center gap-1.5">
-                    <Input className="h-8 flex-1 min-w-0 text-xs" placeholder="Nume eveniment" value={e.name} onChange={(ev) => setEventRow(i, 'name', ev.target.value)} />
-                    <Button type="button" variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeEvent(i)}>
-                      <XIcon className="h-3.5 w-3.5" />
+                    <Input className="h-9 min-w-0 flex-1" placeholder="Nume eveniment" value={e.name} onChange={(ev) => setEventRow(i, 'name', ev.target.value)} />
+                    <Button type="button" variant="ghost" size="icon" className="shrink-0" onClick={() => removeEvent(i)} title="Elimină evenimentul">
+                      <XIcon className="h-4 w-4" />
                     </Button>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <Input type="date" className="h-8 flex-1 text-xs" title="Început" value={e.start} onChange={(ev) => setEventRow(i, 'start', ev.target.value)} />
-                    <span className="text-xs text-muted-foreground">–</span>
-                    <Input type="date" className="h-8 flex-1 text-xs" title="Sfârșit" min={e.start || undefined} value={e.end} onChange={(ev) => setEventRow(i, 'end', ev.target.value)} />
+                    <Input type="date" className="h-9 min-w-0 flex-1" title="Început" value={e.start} onChange={(ev) => setEventRow(i, 'start', ev.target.value)} />
+                    <span className="shrink-0 text-xs text-muted-foreground">–</span>
+                    <Input type="date" className="h-9 min-w-0 flex-1" title="Sfârșit" min={e.start || undefined} value={e.end} onChange={(ev) => setEventRow(i, 'end', ev.target.value)} />
                   </div>
                 </div>
               ))}
@@ -2048,8 +2047,8 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
                     className="inline-flex flex-1 min-w-0 items-center gap-1 text-xs text-primary hover:underline">
                     <Paperclip className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{f.filename}</span>
                   </a>
-                  <Button type="button" variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => removeAttachment(f.key)} title="Șterge fișierul">
-                    <XIcon className="h-3.5 w-3.5" />
+                  <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeAttachment(f.key)} title="Șterge fișierul">
+                    <XIcon className="h-4 w-4" />
                   </Button>
                 </div>
               ))}
@@ -2074,15 +2073,15 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
           </div>
 
           {/* Right: PDF preview */}
-          <div className="min-h-[60vh] rounded border bg-muted/20 overflow-hidden">
+          <div className="min-h-[55vh] overflow-hidden rounded border bg-muted/20 md:min-h-[60vh]">
             {loading ? (
-              <div className="flex h-[60vh] items-center justify-center gap-2 text-muted-foreground">
+              <div className="flex h-[55vh] items-center justify-center gap-2 text-muted-foreground md:h-[60vh]">
                 <Loader2 className="h-5 w-5 animate-spin" /> Se generează documentul cu AI…
               </div>
             ) : url ? (
-              <iframe src={url} title="Foaie de parcurs" className="h-[60vh] w-full" />
+              <iframe src={url} title="Foaie de parcurs" className="h-[55vh] w-full md:h-[60vh]" />
             ) : (
-              <div className="flex h-[60vh] items-center justify-center text-sm text-muted-foreground px-6 text-center">
+              <div className="flex h-[55vh] items-center justify-center px-6 text-center text-sm text-muted-foreground md:h-[60vh]">
                 Completează normă/alimentări (opțional) și apasă „Generează”.
               </div>
             )}
