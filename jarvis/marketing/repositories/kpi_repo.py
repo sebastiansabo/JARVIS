@@ -342,23 +342,174 @@ class KpiRepository(BaseRepository):
     def link_lead_source(self, project_kpi_id, role='input', metric='count',
                          status_filter=None, source_filter=None,
                          date_from=None, date_to=None):
-        """Link a project-leads source to a KPI. Returns the new id."""
-        row = self.execute('''
-            INSERT INTO mkt_kpi_lead_sources
-                (project_kpi_id, role, metric, status_filter, source_filter, date_from, date_to)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-            RETURNING id
-        ''', (project_kpi_id, role, metric,
-              list(status_filter) if status_filter else None,
-              source_filter or None, date_from or None, date_to or None),
-            returning=True)
-        return row['id'] if row else None
+        """Link a project-leads source to a KPI. Returns the new id.
+
+        For a raw (no-formula) KPI with no filters, seeds current_value to the
+        current project lead count and lays down one 'lead:<id>' snapshot per
+        existing lead, so the live +1/-1 tally (increment_lead_count /
+        decrement_lead_count) starts correct and later deletes reverse exactly.
+        """
+        has_filters = bool(status_filter) or bool(source_filter) or bool(date_from) or bool(date_to)
+
+        def _work(cursor):
+            cursor.execute('''
+                INSERT INTO mkt_kpi_lead_sources
+                    (project_kpi_id, role, metric, status_filter, source_filter, date_from, date_to)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            ''', (project_kpi_id, role, metric,
+                  list(status_filter) if status_filter else None,
+                  source_filter or None, date_from or None, date_to or None))
+            row = cursor.fetchone()
+            source_id = row['id'] if row else None
+            if source_id and not has_filters and self._is_raw_lead_kpi(cursor, project_kpi_id):
+                cursor.execute(
+                    'SELECT project_id FROM mkt_project_kpis WHERE id = %s', (project_kpi_id,))
+                project_id = cursor.fetchone()['project_id']
+                # One 'lead:<id>' snapshot per not-yet-counted lead (idempotent).
+                cursor.execute('''
+                    INSERT INTO mkt_kpi_snapshots (project_kpi_id, value, source, notes)
+                    SELECT %s, 1, 'lead', 'lead:' || l.id
+                    FROM mkt_project_leads l
+                    WHERE l.project_id = %s
+                      AND NOT EXISTS (
+                        SELECT 1 FROM mkt_kpi_snapshots s
+                        WHERE s.project_kpi_id = %s AND s.source = 'lead'
+                          AND s.notes = 'lead:' || l.id)
+                ''', (project_kpi_id, project_id, project_kpi_id))
+                cursor.execute('''
+                    UPDATE mkt_project_kpis
+                    SET current_value = (SELECT COUNT(*) FROM mkt_project_leads WHERE project_id = %s),
+                        updated_at = NOW()
+                    WHERE id = %s
+                ''', (project_id, project_kpi_id))
+            return source_id
+        return self.execute_many(_work)
 
     def unlink_lead_source(self, project_kpi_id, source_id):
-        """Remove a lead source from a KPI (scoped by KPI)."""
-        return self.execute(
-            'DELETE FROM mkt_kpi_lead_sources WHERE id = %s AND project_kpi_id = %s',
-            (source_id, project_kpi_id)) > 0
+        """Remove a lead source from a KPI (scoped by KPI).
+
+        If this removes the KPI's LAST unfiltered lead source, tear down the
+        live tally it seeded: drop the 'lead:<id>' ledger snapshots and subtract
+        exactly their count from current_value (mirrors unlink_kpi_deal). A KPI
+        that still has another unfiltered lead source keeps counting, so its
+        tally is left intact.
+        """
+        def _work(cursor):
+            cursor.execute(
+                'DELETE FROM mkt_kpi_lead_sources WHERE id = %s AND project_kpi_id = %s',
+                (source_id, project_kpi_id))
+            if cursor.rowcount == 0:
+                return False
+            cursor.execute('''
+                SELECT 1 FROM mkt_kpi_lead_sources
+                WHERE project_kpi_id = %s
+                  AND status_filter IS NULL AND source_filter IS NULL
+                  AND date_from IS NULL AND date_to IS NULL
+                LIMIT 1
+            ''', (project_kpi_id,))
+            if cursor.fetchone():
+                return True  # another unfiltered source still counts leads
+            cursor.execute(
+                "DELETE FROM mkt_kpi_snapshots WHERE project_kpi_id = %s AND source = 'lead'",
+                (project_kpi_id,))
+            removed = cursor.rowcount
+            if removed:
+                cursor.execute('''
+                    UPDATE mkt_project_kpis
+                    SET current_value = GREATEST(COALESCE(current_value, 0) - %s, 0),
+                        updated_at = NOW()
+                    WHERE id = %s
+                ''', (removed, project_kpi_id))
+            return True
+        return self.execute_many(_work)
+
+    # ---- Live lead tally (Option B: +1 on lead create, -1 on delete) ----
+    #
+    # Mirrors link_kpi_deal / unlink_kpi_deal but keyed on lead_id. Applies only
+    # to RAW (no-formula) KPIs whose lead source has no filters, so "count" means
+    # "every project lead" — membership never changes, so a running tally stays
+    # correct. Formula KPIs (e.g. 'spent / leads') keep resolving leads via
+    # sync_kpi and are left untouched here. The 'lead:<id>' snapshot doubles as
+    # the per-lead ledger (idempotency guard + exact reversal) and the trend line.
+
+    @staticmethod
+    def _is_raw_lead_kpi(cursor, project_kpi_id):
+        cursor.execute('''
+            SELECT 1 FROM mkt_project_kpis pk
+            JOIN mkt_kpi_definitions kd ON kd.id = pk.kpi_definition_id
+            WHERE pk.id = %s AND kd.formula IS NULL
+        ''', (project_kpi_id,))
+        return cursor.fetchone() is not None
+
+    def _raw_lead_kpi_ids(self, cursor, project_id):
+        """KPI ids in a project whose value is a raw, unfiltered lead count."""
+        cursor.execute('''
+            SELECT DISTINCT pk.id
+            FROM mkt_project_kpis pk
+            JOIN mkt_kpi_lead_sources ls ON ls.project_kpi_id = pk.id
+            JOIN mkt_kpi_definitions kd ON kd.id = pk.kpi_definition_id
+            WHERE pk.project_id = %s
+              AND kd.formula IS NULL
+              AND ls.status_filter IS NULL AND ls.source_filter IS NULL
+              AND ls.date_from IS NULL AND ls.date_to IS NULL
+        ''', (project_id,))
+        return [r['id'] for r in cursor.fetchall()]
+
+    def increment_lead_count(self, project_id, lead_id):
+        """+1 each raw lead-count KPI in the project for a newly-created lead.
+
+        Idempotent per (kpi, lead): a retried webhook POST won't double-count,
+        because the 'lead:<id>' snapshot is the guard. Returns KPIs changed.
+        """
+        note = f'lead:{lead_id}'
+
+        def _work(cursor):
+            changed = 0
+            for kpi_id in self._raw_lead_kpi_ids(cursor, project_id):
+                cursor.execute('''
+                    INSERT INTO mkt_kpi_snapshots (project_kpi_id, value, source, notes)
+                    SELECT %s, 1, 'lead', %s
+                    WHERE NOT EXISTS (
+                        SELECT 1 FROM mkt_kpi_snapshots
+                        WHERE project_kpi_id = %s AND source = 'lead' AND notes = %s)
+                    RETURNING id
+                ''', (kpi_id, note, kpi_id, note))
+                if cursor.fetchone():
+                    cursor.execute('''
+                        UPDATE mkt_project_kpis
+                        SET current_value = COALESCE(current_value, 0) + 1, updated_at = NOW()
+                        WHERE id = %s
+                    ''', (kpi_id,))
+                    changed += 1
+            return changed
+        return self.execute_many(_work)
+
+    def decrement_lead_count(self, project_id, lead_id):
+        """-1 each KPI that had counted this lead (by its 'lead:<id>' snapshot).
+
+        Driven off the ledger snapshot, so it only reverses KPIs that actually
+        counted the lead and floors current_value at 0. Returns KPIs changed.
+        """
+        note = f'lead:{lead_id}'
+
+        def _work(cursor):
+            cursor.execute('''
+                SELECT s.id AS snap_id, s.project_kpi_id
+                FROM mkt_kpi_snapshots s
+                JOIN mkt_project_kpis pk ON pk.id = s.project_kpi_id
+                WHERE pk.project_id = %s AND s.source = 'lead' AND s.notes = %s
+            ''', (project_id, note))
+            rows = cursor.fetchall()
+            for r in rows:
+                cursor.execute('DELETE FROM mkt_kpi_snapshots WHERE id = %s', (r['snap_id'],))
+                cursor.execute('''
+                    UPDATE mkt_project_kpis
+                    SET current_value = GREATEST(COALESCE(current_value, 0) - 1, 0), updated_at = NOW()
+                    WHERE id = %s
+                ''', (r['project_kpi_id'],))
+            return len(rows)
+        return self.execute_many(_work)
 
     # ---- Sync / Recalculate ----
 
