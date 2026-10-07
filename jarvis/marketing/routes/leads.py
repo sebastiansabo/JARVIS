@@ -22,6 +22,7 @@ from marketing import marketing_bp
 from marketing.repositories import (
     ProjectLeadRepository, ProjectWebhookRepository, ActivityRepository,
     ProjectRepository, ProjectClientLinkRepository, MemberRepository,
+    KpiRepository,
 )
 from marketing.services.project_service import ProjectService
 from marketing.services.lead_convert import resolve_or_create_client
@@ -38,6 +39,7 @@ _lead_repo = ProjectLeadRepository()
 _webhook_repo = ProjectWebhookRepository()
 _activity_repo = ActivityRepository()
 _project_repo = ProjectRepository()
+_kpi_repo = KpiRepository()
 _client_link_repo = ProjectClientLinkRepository()
 _client_repo = ClientRepository()
 _member_repo = MemberRepository()
@@ -151,6 +153,11 @@ def api_delete_project_lead(project_id, lead_id):
     if _lead_repo.delete(project_id, lead_id):
         _activity_repo.log(project_id, 'lead_deleted', actor_id=current_user.id,
                            details={'lead_id': lead_id})
+        # Keep raw lead-count KPIs live: -1 for the removed lead (best-effort).
+        try:
+            _kpi_repo.decrement_lead_count(project_id, lead_id)
+        except Exception:
+            logger.exception('Failed to lower lead-count KPIs for project %s', project_id)
         return jsonify({'success': True})
     return error_response('Lead not found', 404)
 

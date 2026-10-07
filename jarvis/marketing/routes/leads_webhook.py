@@ -16,6 +16,7 @@ from flask import Blueprint, request, jsonify
 from marketing.repositories.webhook_repo import ProjectWebhookRepository
 from marketing.repositories.lead_repo import ProjectLeadRepository
 from marketing.repositories.activity_repo import ActivityRepository
+from marketing.repositories.kpi_repo import KpiRepository
 from marketing.services import webhook_token
 from marketing.services.lead_intake import normalize_lead_payload
 from core.utils.api_helpers import RateLimiter, safe_error_response
@@ -27,6 +28,7 @@ leads_webhook_bp = Blueprint('leads_webhook', __name__)
 _webhook_repo = ProjectWebhookRepository()
 _lead_repo = ProjectLeadRepository()
 _activity_repo = ActivityRepository()
+_kpi_repo = KpiRepository()
 _rate_limiter = RateLimiter()      # per-token (defence in depth)
 _ip_rate_limiter = RateLimiter()   # per-IP, pre-auth
 
@@ -128,5 +130,12 @@ def intake_lead():
                            details={'lead_id': lead_id, 'source': payload.get('source')})
     except Exception:
         logger.exception('Failed to log lead_received activity for project %s', project_id)
+
+    # Keep raw lead-count KPIs live: +1 for this new lead (best-effort — a KPI
+    # hiccup must never fail lead intake). Idempotent, so a retried POST is safe.
+    try:
+        _kpi_repo.increment_lead_count(project_id, lead_id)
+    except Exception:
+        logger.exception('Failed to bump lead-count KPIs for project %s', project_id)
 
     return jsonify({'success': True, 'lead_id': lead_id}), 201
