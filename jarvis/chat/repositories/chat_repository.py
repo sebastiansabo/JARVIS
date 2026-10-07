@@ -442,6 +442,17 @@ class ChatRepository(BaseRepository):
         poll['total_votes'] = sum(o['vote_count'] for o in poll['options'])
         return poll
 
+    def channel_id_for_poll(self, poll_id):
+        """Resolve a poll's channel via its post — for access checks on the
+        poll-id scoped vote/unvote routes. Returns the channel_id or None."""
+        row = self.query_one('''
+            SELECT p.channel_id
+            FROM digest_polls pl
+            JOIN digest_posts p ON p.id = pl.post_id
+            WHERE pl.id = %s AND p.deleted_at IS NULL
+        ''', (poll_id,))
+        return row['channel_id'] if row else None
+
     def get_user_votes(self, poll_id, user_id):
         return self.query_all('''
             SELECT option_id FROM digest_poll_votes WHERE poll_id = %s AND user_id = %s

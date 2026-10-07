@@ -254,6 +254,8 @@ def get_post(post_id):
     post = _svc.get_post(post_id)
     if not post:
         return jsonify({'success': False, 'error': 'Post not found'}), 404
+    if not _svc.can_access_channel(post['channel_id'], current_user.id):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
     return jsonify({'success': True, 'data': post})
 
 
@@ -304,6 +306,8 @@ def delete_post(post_id):
 @chat_bp.route('/posts/<int:post_id>/pin', methods=['POST'])
 @login_required
 def toggle_pin(post_id):
+    if not _svc.can_access_post(post_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
     post = _svc.toggle_pin(post_id)
     if not post:
         return jsonify({'success': False, 'error': 'Post not found'}), 404
@@ -315,6 +319,8 @@ def toggle_pin(post_id):
 @chat_bp.route('/posts/<int:post_id>/reactions', methods=['POST'])
 @login_required
 def toggle_reaction(post_id):
+    if not _svc.can_access_post(post_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
     data = request.get_json()
     if not data or not data.get('emoji'):
         return jsonify({'success': False, 'error': 'Emoji is required'}), 400
@@ -327,6 +333,8 @@ def toggle_reaction(post_id):
 @chat_bp.route('/posts/<int:post_id>/poll', methods=['GET'])
 @login_required
 def get_poll(post_id):
+    if not _svc.can_access_post(post_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
     poll = _svc.get_poll(post_id, current_user.id)
     if not poll:
         return jsonify({'success': False, 'error': 'Poll not found'}), 404
@@ -336,6 +344,8 @@ def get_poll(post_id):
 @chat_bp.route('/polls/<int:poll_id>/vote', methods=['POST'])
 @login_required
 def vote(poll_id):
+    if not _svc.can_access_poll(poll_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
     data = request.get_json()
     if not data or not data.get('option_id'):
         return jsonify({'success': False, 'error': 'option_id is required'}), 400
@@ -346,6 +356,8 @@ def vote(poll_id):
 @chat_bp.route('/polls/<int:poll_id>/unvote', methods=['POST'])
 @login_required
 def unvote(poll_id):
+    if not _svc.can_access_poll(poll_id, current_user.id):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
     data = request.get_json()
     if not data or not data.get('option_id'):
         return jsonify({'success': False, 'error': 'option_id is required'}), 400
