@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus, internalComment } from '@/pages/FoiParcurs/sessionStatus'
-import { sessionParty, clientCell } from '@/pages/FoiParcurs/sessionParty'
+import { sessionParty, sessionIdentity } from '@/pages/FoiParcurs/sessionParty'
 import { useUsersDirectory } from '@/pages/FoiParcurs/useUsersDirectory'
 import ModifiedBadge from '@/pages/FoiParcurs/ModifiedBadge'
 import EventBadge from '@/pages/FoiParcurs/EventBadge'
@@ -118,7 +118,12 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
   const comment = internalComment(c)
   const { phoneByName } = useUsersDirectory()
   const party = sessionParty(c, phoneByName)
-  const cc = clientCell(c)
+  const identity = sessionIdentity(c)
+  // "Firmă client": the company booking's firm (identity.company), else a person
+  // client's employer company — but never when it would just repeat the title
+  // (a driverless/pre-fix company session, where the firm IS the title).
+  const clientCompany = identity.company
+    ?? (!party.isInternal && c.client_company && c.client_company !== identity.title ? c.client_company : null)
   const vehicleName = vehicle
     ? [vehicle.mark, vehicle.model].filter(Boolean).join(' ') || vehicle.registration_number || c.vin
     : c.vin || '—'
@@ -139,13 +144,14 @@ export default function SessionDetailModal({ session: c, vehicle, onClose, onAct
 
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[13px]">
             <div className="min-w-0">
+              {/* Driver-led: for a company booking the title is the driver → label
+                  it Șofer and show the firm as its own field (no duplicate). */}
               <dt className="flex items-center gap-1 text-[11px] uppercase tracking-wide text-muted-foreground/70">
-                {party.isInternal && <User2 className="h-3 w-3" />}{party.label}
+                {party.isInternal && <User2 className="h-3 w-3" />}{identity.company ? 'Șofer' : party.label}
               </dt>
-              <dd className="mt-0.5 truncate font-medium">{cc.primary}</dd>
-              {cc.secondary && <dd className="truncate text-[11px] text-muted-foreground" title={cc.secondary}>{cc.secondary}</dd>}
+              <dd className="mt-0.5 truncate font-medium">{identity.title}</dd>
             </div>
-            {!party.isInternal && c.client_company && <Field label="Firmă client" value={c.client_company} icon={<Building2 className="h-3 w-3" />} />}
+            {clientCompany && <Field label="Firmă client" value={clientCompany} icon={<Building2 className="h-3 w-3" />} />}
             <Field label="Telefon" value={party.phone} icon={<Phone className="h-3 w-3" />} />
             {!party.isInternal && c.client_email && <Field label="Email" value={c.client_email} icon={<Mail className="h-3 w-3" />} />}
             {!party.isInternal && <Field label="Consilier" value={c.advisor_name || '—'} icon={<User2 className="h-3 w-3" />} />}
