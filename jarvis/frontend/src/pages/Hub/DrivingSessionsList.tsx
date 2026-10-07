@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Car, Gauge, User2, Search, RotateCcw, PlayCircle, ChevronDown,
-  FileDown, Trash2, Phone, CalendarDays, Clock, Pencil,
+  FileDown, Trash2, Phone, CalendarDays, Clock, Pencil, CalendarClock,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { naiveDate } from '@/lib/naiveDate'
@@ -12,9 +12,11 @@ import { sessionParty, clientCell } from '@/pages/FoiParcurs/sessionParty'
 import { useUsersDirectory } from '@/pages/FoiParcurs/useUsersDirectory'
 import type { DocType } from '@/pages/FoiParcurs/documentType'
 import ModifiedBadge from '@/pages/FoiParcurs/ModifiedBadge'
+import RescheduledBadge from '@/pages/FoiParcurs/RescheduledBadge'
 import EventBadge from '@/pages/FoiParcurs/EventBadge'
 import CorrectSessionDialog, { type CorrectionPayload } from '@/pages/FoiParcurs/CorrectSessionDialog'
 import ExtendSessionDialog from '@/pages/FoiParcurs/ExtendSessionDialog'
+import RescheduleSessionDialog, { type ReschedulePayload } from '@/pages/FoiParcurs/RescheduleSessionDialog'
 import { useAuthStore } from '@/stores/authStore'
 import { toast } from 'sonner'
 import type { FoiContract, FpVehicle } from '@/types/foiParcurs'
@@ -62,6 +64,7 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
   const [expandedId, setExpandedId] = useState<number | null>(null)
   const [correcting, setCorrecting] = useState<FoiContract | null>(null)
   const [extending, setExtending] = useState<FoiContract | null>(null)
+  const [rescheduling, setRescheduling] = useState<FoiContract | null>(null)
   const user = useAuthStore((s) => s.user)
   const isAdmin = ['admin', 'superadmin'].includes((user?.role_name ?? '').toLowerCase())
   const { phoneByName } = useUsersDirectory()
@@ -91,6 +94,11 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
     mutationFn: (vars: { id: number; return_datetime: string }) => foiParcursApi.extendReturn(vars.id, { return_datetime: vars.return_datetime }),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }); setExtending(null) },
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Prelungirea a eșuat'),
+  })
+  const rescheduleMutation = useMutation({
+    mutationFn: (vars: { id: number; data: ReschedulePayload }) => foiParcursApi.rescheduleTestDrive(vars.id, vars.data),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }); setRescheduling(null) },
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Replanificarea a eșuat'),
   })
 
   const items = useMemo(() => {
@@ -186,6 +194,7 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
               usersByPhone={phoneByName}
               onExtend={() => setExtending(c)}
               onCorrect={() => setCorrecting(c)}
+              onReschedule={() => setRescheduling(c)}
               onEditPlan={onEditPlan ? () => onEditPlan(c.id) : undefined}
             />
           ))}
@@ -207,13 +216,21 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
           onSubmit={(rd) => extendMutation.mutate({ id: extending.id, return_datetime: rd })}
         />
       )}
+      {rescheduling && (
+        <RescheduleSessionDialog
+          session={rescheduling}
+          submitting={rescheduleMutation.isPending}
+          onClose={() => setRescheduling(null)}
+          onSubmit={(d) => rescheduleMutation.mutate({ id: rescheduling.id, data: d })}
+        />
+      )}
     </div>
   )
 }
 
 function SessionCard({
   contract: c, vehicle, expanded, onToggle, onActivate, onReturn, onDiscard, discarding,
-  isAdmin, usersByPhone, onExtend, onCorrect, onEditPlan,
+  isAdmin, usersByPhone, onExtend, onCorrect, onReschedule, onEditPlan,
 }: {
   contract: FoiContract
   vehicle?: FpVehicle
@@ -227,12 +244,17 @@ function SessionCard({
   usersByPhone: Map<string, string | null>
   onExtend: () => void
   onCorrect: () => void
+  onReschedule: () => void
   onEditPlan?: () => void
 }) {
   const ss = sessionStatus(c)
   const isPlanned = ss.key === 'planificat'
   const isDone = ss.key === 'finalizat'
   const showRetur = ss.key === 'driving' || ss.key === 'intarziat'
+  // A not-yet-driven session can be moved to a new time: PLANNED (incl. late) or
+  // a MISSED no-show (Ratat), reviving it to Planificat. Mirrors the backend gate
+  // (status IN PLANNED/MISSED). Open/returned/finalized drives are not moved.
+  const canReschedule = ss.key === 'planificat' || ss.key === 'ratat'
 
   // Client = Driver: the card leads with the person who drives — the contact for
   // a company booking, the driving user for an internal log, the client
@@ -267,6 +289,7 @@ function SessionCard({
                 </span>
               )}
               <ModifiedBadge session={c} />
+              <RescheduledBadge session={c} />
               <EventBadge session={c} />
             </div>
             <div className="mt-0.5 flex items-center gap-1 truncate text-[13px] text-muted-foreground">
@@ -357,6 +380,17 @@ function SessionCard({
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-amber-700 ring-1 ring-amber-300 transition-colors hover:bg-amber-50 dark:text-amber-400 dark:ring-amber-800 dark:hover:bg-amber-950/20"
               >
                 <Clock className="h-3.5 w-3.5" /> Prelungește
+              </button>
+            )}
+            {/* Replanifică — move a PLANNED (incl. late) or Ratat session to a new
+                time, reviving a no-show. Available to everyone (not admin-gated). */}
+            {canReschedule && (
+              <button
+                type="button"
+                onClick={onReschedule}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-[13px] font-medium text-sky-700 ring-1 ring-sky-300 transition-colors hover:bg-sky-50 dark:text-sky-400 dark:ring-sky-800 dark:hover:bg-sky-950/20"
+              >
+                <CalendarClock className="h-3.5 w-3.5" /> Replanifică
               </button>
             )}
             {/* Corectează — full edit for a not-started (planned) session, else
