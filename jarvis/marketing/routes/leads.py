@@ -65,6 +65,17 @@ def _require_project_access(project_id):
     return None
 
 
+def _webhook_url():
+    """Public webhook URL to display. Force https for real hosts — behind the
+    TLS-terminating proxy Flask sees http, but an http URL 301-redirects and the
+    redirect drops the POST body/method (client then sees 405). Keep localhost
+    on http for local dev."""
+    root = request.host_url.rstrip('/')
+    if root.startswith('http://') and not any(h in root for h in ('localhost', '127.0.0.1')):
+        root = 'https://' + root[len('http://'):]
+    return root + _WEBHOOK_PATH
+
+
 # ---- Lead sheet ----
 
 @marketing_bp.route('/api/projects/<int:project_id>/leads', methods=['GET'])
@@ -213,7 +224,7 @@ def api_list_project_webhooks(project_id):
         return denied
     return jsonify({
         'webhooks': _webhook_repo.list_by_project(project_id),
-        'webhook_url': request.host_url.rstrip('/') + _WEBHOOK_PATH,
+        'webhook_url': _webhook_url(),
     })
 
 
@@ -244,7 +255,7 @@ def api_create_project_webhook(project_id):
             'label': label,
             'token': plaintext,          # shown once — never retrievable again
             'token_prefix': token_prefix,
-            'webhook_url': request.host_url.rstrip('/') + _WEBHOOK_PATH,
+            'webhook_url': _webhook_url(),
         }), 201
     except Exception as e:
         return safe_error_response(e)
