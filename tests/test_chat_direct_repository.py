@@ -77,3 +77,18 @@ class TestGetChannelsCounterpart:
         assert 'counterpart_name' in sql
         assert 'ON c.is_direct' in sql           # counterpart LATERAL gated to DMs
         assert 'c.is_direct AND cpu.name ILIKE' in sql  # DM search by counterpart name
+
+
+class TestChannelIdForPoll:
+    def test_resolves_channel_via_poll_post_join(self):
+        repo = ChatRepository()
+        cap = {}
+        repo.query_one = lambda sql, args=None: cap.update(sql=sql, args=args) or {'channel_id': 42}
+        assert repo.channel_id_for_poll(7) == 42
+        assert 'digest_polls' in cap['sql'] and 'digest_posts' in cap['sql']
+        assert cap['args'] == (7,)
+
+    def test_returns_none_when_poll_missing(self):
+        repo = ChatRepository()
+        repo.query_one = lambda sql, args=None: None
+        assert repo.channel_id_for_poll(7) is None
