@@ -21,7 +21,7 @@ except ImportError:  # pragma: no cover
 from marketing import marketing_bp
 from marketing.repositories import (
     ProjectLeadRepository, ProjectWebhookRepository, ActivityRepository,
-    ProjectRepository, ProjectClientLinkRepository,
+    ProjectRepository, ProjectClientLinkRepository, MemberRepository,
 )
 from marketing.services.project_service import ProjectService
 from marketing.services.lead_convert import resolve_or_create_client
@@ -40,6 +40,7 @@ _activity_repo = ActivityRepository()
 _project_repo = ProjectRepository()
 _client_link_repo = ProjectClientLinkRepository()
 _client_repo = ClientRepository()
+_member_repo = MemberRepository()
 _service = ProjectService()
 
 _WEBHOOK_PATH = '/marketing/api/webhooks/leads'
@@ -104,7 +105,14 @@ def api_update_project_lead(project_id, lead_id):
     # assigned_to is only touched when the key is present (value may be null = unassign).
     update_kwargs = {'status': status, 'status_notes': status_notes}
     if 'assigned_to' in data:
-        update_kwargs['assigned_to'] = data['assigned_to']
+        assignee = data['assigned_to']
+        # A non-null assignee must be a member of THIS project — mirrors the
+        # member-only frontend picker and stops assigning to an arbitrary user id.
+        if assignee is not None:
+            member_ids = {m['user_id'] for m in _member_repo.get_by_project(project_id)}
+            if assignee not in member_ids:
+                return error_response('Assignee must be a member of this project', 400)
+        update_kwargs['assigned_to'] = assignee
 
     if status is None and status_notes is None and 'assigned_to' not in data:
         return error_response('Nothing to update', 400)
