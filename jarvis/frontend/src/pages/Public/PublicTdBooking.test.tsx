@@ -383,4 +383,26 @@ describe('PublicTdBooking', () => {
     expect(await screen.findByText('Ești pe lista de așteptare')).toBeInTheDocument()
     expect(screen.queryByText('Programările tale')).not.toBeInTheDocument()
   })
+
+  it('shows an overlapping slot with a soft warning instead of hiding it', async () => {
+    getPage.mockResolvedValueOnce({
+      ...PAGE,
+      slots: [
+        { id: 100, car_id: 10, vin: 'VIN1', starts_at: '2099-10-01T10:00:00', ends_at: '2099-10-01T11:00:00',
+          overlap: { kind: 'session', label: 'Interval posibil ocupat' } },
+        { id: 101, car_id: 10, vin: 'VIN1', starts_at: '2099-10-01T11:00:00', ends_at: '2099-10-01T12:00:00' },
+      ],
+    })
+    renderPage()
+    await screen.findByText('MG ZS')
+    fireEvent.click(screen.getByRole('button', { name: /MG ZS/ })) // expand the car accordion
+
+    // The busy slot is NOT hidden — it is still a clickable chip, with a warning title.
+    const busy = screen.getByRole('button', { name: '10:00' })
+    expect(busy).toBeInTheDocument()
+    expect(busy).toHaveAttribute('title', 'Interval posibil ocupat')
+    // A soft per-car notice appears; the clear slot carries no warning title.
+    expect(screen.getByText(/pot fi deja ocupate/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '11:00' })).not.toHaveAttribute('title')
+  })
 })

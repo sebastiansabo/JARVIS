@@ -424,13 +424,22 @@ class TdBookingRepository(BaseRepository):
         "SELECT 1 FROM foi_de_parcurs fp "
         "WHERE fp.vin=%s AND fp.status='FILLED' AND fp.source='td_form' LIMIT 1")
 
-    def confirm_booking_atomic(self, booking_id, vin, frm, to, fp_row: dict) -> dict:
+    def confirm_booking_atomic(self, booking_id, vin, frm, to, fp_row: dict,
+                               enforce_availability: bool = True) -> dict:
         """Confirm a pending booking under a per-VIN advisory lock, re-running the
         3-way availability check on the confirm transaction's own cursor so the lock
         actually covers it, then creating the operational PLANNED foi_de_parcurs row
-        and flipping the booking to 'confirmed' -- all in ONE transaction. Raises
-        TdConflict (rolling everything back) if the booking is no longer pending or
-        the car is no longer free.
+        and flipping the booking to 'confirmed' -- all in ONE transaction. Returns
+        {'fp_id', 'soft_conflict'}.
+
+        `enforce_availability` (default True = the staff/admin confirm): an overlapping
+        session / lockout / open-session raises TdConflict and rolls everything back.
+        When False (the PUBLIC customer confirm), those checks NO LONGER block -- the
+        PLANNED fišă is created even over an overlap, and the first conflict reason is
+        returned as `soft_conflict` so the caller can flag it to staff ('never block,
+        soft-warn'). The booking-state (FOR UPDATE pending) guard ALWAYS holds -- a
+        non-pending booking still raises TdBookingNotPending regardless of the flag,
+        because that is integrity, not an availability overlap.
 
         Known limitation (MVP): the advisory lock serializes concurrent *public*
         confirms for a VIN, but a staff-created FP insert does not take the lock, so a
@@ -447,19 +456,27 @@ class TdBookingRepository(BaseRepository):
             if not row or row['status'] != 'pending_confirm':
                 # Distinct subclass so the service can respond idempotently to a
                 # racing/duplicate confirm instead of flipping a good booking to
-                # 'conflict'. The 3 availability rechecks below still raise plain
-                # TdConflict.
+                # 'conflict'. Always raised (even when availability is not enforced).
                 raise TdBookingNotPending('booking not pending')
-            # 3-way availability recheck, all on THIS cursor (inside the lock).
+            # 3-way availability recheck, all on THIS cursor (inside the lock). When
+            # availability is not enforced, the first hit is recorded as a soft warning
+            # for staff instead of blocking the confirm.
+            soft_conflict = None
             cursor.execute(self._CONFLICT_SQL, (vin, to, frm))
             if cursor.fetchone():
-                raise TdConflict('overlapping TD session')
+                if enforce_availability:
+                    raise TdConflict('overlapping TD session')
+                soft_conflict = soft_conflict or 'overlapping TD session'
             cursor.execute(self._LOCK_SQL, (vin,))
             if cursor.fetchone():
-                raise TdConflict('vehicle locked/blocked')
+                if enforce_availability:
+                    raise TdConflict('vehicle locked/blocked')
+                soft_conflict = soft_conflict or 'vehicle locked/blocked'
             cursor.execute(self._OPEN_SQL, (vin,))
             if cursor.fetchone():
-                raise TdConflict('vehicle already out')
+                if enforce_availability:
+                    raise TdConflict('vehicle already out')
+                soft_conflict = soft_conflict or 'vehicle already out'
             # Create the operational PLANNED FP row (column-driven insert).
             cols = list(fp_row.keys())
             ph = ', '.join(['%s'] * len(cols))
@@ -470,7 +487,7 @@ class TdBookingRepository(BaseRepository):
             cursor.execute(
                 "UPDATE mkt_td_bookings SET status='confirmed', foi_de_parcurs_id=%s, "
                 "confirmed_at=NOW(), updated_at=NOW() WHERE id=%s", (fp_id, booking_id))
-            return {'fp_id': fp_id}
+            return {'fp_id': fp_id, 'soft_conflict': soft_conflict}
         return self.execute_many(_work)
 
     def reassign_booking_atomic(self, booking_id, new_slot_id, new_car_id, new_advisor_id,

@@ -6,6 +6,9 @@ export interface TdSlot {
   vin: string
   starts_at: string
   ends_at: string
+  // Soft overlap marker: null/absent = clear; else a warning the car/slot may be
+  // busy (another drive or a pending hold). The slot is still bookable — never hidden.
+  overlap?: { kind: 'session' | 'hold'; label: string } | null
 }
 
 export interface TdCar {
