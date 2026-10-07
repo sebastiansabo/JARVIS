@@ -34,6 +34,7 @@ import type {
   MktWebhookCreated,
   MktLeadConvertResult,
   MktKpiDealSource,
+  MktKpiLeadSource,
   MktKpiDeal,
   AvailableDeal,
 } from '@/types/marketing'
@@ -423,6 +424,17 @@ export const marketingApi = {
 
   unlinkKpiDealSource: (kpiId: number, sourceId: number) =>
     api.delete<{ success: boolean }>(`${BASE}/kpis/${kpiId}/deal-sources/${sourceId}`),
+
+  // ---- KPI Project-Lead Sources ----
+
+  getKpiLeadSources: (kpiId: number) =>
+    api.get<{ lead_sources: MktKpiLeadSource[] }>(`${BASE}/kpis/${kpiId}/lead-sources`),
+
+  linkKpiLeadSource: (kpiId: number, data: { role?: string; status_filter?: string[]; source_filter?: string; date_from?: string; date_to?: string }) =>
+    api.post<{ success: boolean; id: number }>(`${BASE}/kpis/${kpiId}/lead-sources`, data),
+
+  unlinkKpiLeadSource: (kpiId: number, sourceId: number) =>
+    api.delete<{ success: boolean }>(`${BASE}/kpis/${kpiId}/lead-sources/${sourceId}`),
 
   // ---- KPI Individual Deals ----
 

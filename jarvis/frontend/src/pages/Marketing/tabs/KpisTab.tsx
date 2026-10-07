@@ -13,11 +13,103 @@ import { cn } from '@/lib/utils'
 import { Textarea } from '@/components/ui/textarea'
 import {
   Plus, Trash2, DollarSign, Target, Link2, RefreshCw, BarChart3, Eye,
-  Sparkles, Pencil, UserCheck, ShoppingCart, Search,
+  Sparkles, Pencil, UserCheck, ShoppingCart, Search, Inbox,
 } from 'lucide-react'
 import { marketingApi } from '@/api/marketing'
-import type { MktProjectKpi, KpiBenchmarks, MktKpiDealSource } from '@/types/marketing'
+import type { MktProjectKpi, KpiBenchmarks, MktKpiDealSource, MktKpiLeadSource } from '@/types/marketing'
 import { fmt, fmtDatetime } from './utils'
+
+const LEAD_STATUS_OPTS: { v: string; label: string }[] = [
+  { v: 'new', label: 'New' }, { v: 'contacted', label: 'Contacted' },
+  { v: 'qualified', label: 'Qualified' }, { v: 'converted', label: 'Converted' },
+  { v: 'discarded', label: 'Discarded' },
+]
+
+/* Project-Leads KPI source: counts mkt_project_leads matching the chosen
+   statuses / source / date range toward the KPI (role = first KPI variable). */
+function LeadSourceSection({ leadSources, vars, onAdd, onRemove }: {
+  leadSources: MktKpiLeadSource[]
+  vars: string[]
+  onAdd: (p: { role: string; status_filter?: string[]; source_filter?: string; date_from?: string; date_to?: string }) => void
+  onRemove: (id: number) => void
+}) {
+  const [role, setRole] = useState(vars[0] ?? 'input')
+  const [statuses, setStatuses] = useState<string[]>([])
+  const [source, setSource] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const multiVar = vars.length > 1
+
+  const toggle = (v: string) => setStatuses((s) => s.includes(v) ? s.filter((x) => x !== v) : [...s, v])
+  const add = () => {
+    onAdd({
+      role,
+      status_filter: statuses.length ? statuses : undefined,
+      source_filter: source.trim() || undefined,
+      date_from: dateFrom || undefined,
+      date_to: dateTo || undefined,
+    })
+    setStatuses([]); setSource(''); setDateFrom(''); setDateTo('')
+  }
+
+  return (
+    <div className="rounded-lg border p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <Inbox className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-sm font-semibold">Project Leads</span>
+        {leadSources.length > 0 && (
+          <Badge variant="default" className="text-[10px] h-4 px-1.5">{leadSources.length}</Badge>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">Counts leads from this project's Leads tab toward the KPI.</p>
+      {leadSources.map((ls) => (
+        <div key={ls.id} className="flex items-center justify-between rounded-md bg-muted/50 px-2.5 py-1.5">
+          <div className="flex items-center gap-1.5 text-sm flex-wrap">
+            <Inbox className="h-3.5 w-3.5 text-muted-foreground" />
+            <span>Leads</span>
+            {multiVar && <Badge variant="secondary" className="text-[10px] h-4 px-1.5 font-mono">→ {ls.role}</Badge>}
+            {ls.status_filter?.length
+              ? ls.status_filter.map((s) => <Badge key={s} variant="outline" className="text-[10px] h-4 px-1.5">{s}</Badge>)
+              : <Badge variant="outline" className="text-[10px] h-4 px-1.5">all statuses</Badge>}
+            {ls.source_filter && <span className="text-[10px] text-muted-foreground">src: {ls.source_filter}</span>}
+            {(ls.date_from || ls.date_to) && <span className="text-[10px] text-muted-foreground">{ls.date_from ?? '…'} → {ls.date_to ?? '…'}</span>}
+          </div>
+          <button className="hover:text-destructive" onClick={() => onRemove(ls.id)}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+      <div className="space-y-2 rounded-md border border-dashed p-2">
+        {multiVar && (
+          <Select value={role} onValueChange={setRole}>
+            <SelectTrigger className="h-7 w-full text-xs"><SelectValue placeholder="Variable" /></SelectTrigger>
+            <SelectContent>
+              {vars.map((v) => <SelectItem key={v} value={v} className="text-xs font-mono">{v}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
+        <div className="flex flex-wrap items-center gap-1">
+          {LEAD_STATUS_OPTS.map((o) => (
+            <button key={o.v} type="button" onClick={() => toggle(o.v)}
+              className={cn('rounded-full px-2 py-0.5 text-[11px] border transition-colors',
+                statuses.includes(o.v) ? 'bg-primary text-primary-foreground border-primary' : 'bg-background hover:bg-muted')}>
+              {o.label}
+            </button>
+          ))}
+          {statuses.length === 0 && <span className="text-[10px] text-muted-foreground self-center">(all statuses)</span>}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Input className="h-7 w-32 text-xs" placeholder="source/utm (opt)" value={source} onChange={(e) => setSource(e.target.value)} />
+          <Input type="date" className="h-7 w-[8.5rem] text-xs" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <Input type="date" className="h-7 w-[8.5rem] text-xs" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          <Button size="sm" className="h-7 text-xs" onClick={add}>
+            <Plus className="h-3 w-3 mr-1" /> Add
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ── MiniSparkline ──
 
@@ -522,6 +614,13 @@ export function KpisTab({ projectId }: { projectId: number }) {
   })
   const linkedDealSources: MktKpiDealSource[] = kpiDealData?.deal_sources ?? []
 
+  const { data: kpiLeadData } = useQuery({
+    queryKey: ['mkt-kpi-lead-sources', linkSourcesKpiId],
+    queryFn: () => marketingApi.getKpiLeadSources(linkSourcesKpiId!),
+    enabled: !!linkSourcesKpiId,
+  })
+  const linkedLeadSources: MktKpiLeadSource[] = kpiLeadData?.lead_sources ?? []
+
   const { data: kpiDealsData } = useQuery({
     queryKey: ['mkt-kpi-deals', linkSourcesKpiId],
     queryFn: () => marketingApi.getKpiDeals(linkSourcesKpiId!),
@@ -614,6 +713,17 @@ export function KpisTab({ projectId }: { projectId: number }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['mkt-kpi-deal-sources', linkSourcesKpiId] })
     },
+  })
+
+  const linkLeadSourceMut = useMutation({
+    mutationFn: (payload: { role: string; status_filter?: string[]; source_filter?: string; date_from?: string; date_to?: string }) =>
+      marketingApi.linkKpiLeadSource(linkSourcesKpiId!, payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mkt-kpi-lead-sources', linkSourcesKpiId] }),
+  })
+
+  const unlinkLeadSourceMut = useMutation({
+    mutationFn: (sourceId: number) => marketingApi.unlinkKpiLeadSource(linkSourcesKpiId!, sourceId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mkt-kpi-lead-sources', linkSourcesKpiId] }),
   })
 
   const linkDealMut = useMutation({
@@ -1480,6 +1590,15 @@ export function KpisTab({ projectId }: { projectId: number }) {
                     </PopoverContent>
                   </Popover>
                 </div>
+
+                {/* Project Leads section */}
+                <LeadSourceSection
+                  key={linkSourcesKpiId ?? 'none'}
+                  leadSources={linkedLeadSources}
+                  vars={vars}
+                  onAdd={(p) => linkLeadSourceMut.mutate(p)}
+                  onRemove={(id) => unlinkLeadSourceMut.mutate(id)}
+                />
                 </div>
                 <div className="flex justify-end pt-2">
                   <Button variant="outline" onClick={() => {

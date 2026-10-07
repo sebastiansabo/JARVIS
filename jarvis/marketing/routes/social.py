@@ -10,6 +10,7 @@ from marketing.repositories import (
     KpiRepository, ProjectRepository,
 )
 from marketing.decorators import mkt_permission_required
+from marketing.services.lead_intake import LEAD_STATUSES
 from core.utils.api_helpers import get_json_or_error, safe_error_response
 
 logger = logging.getLogger('jarvis.marketing.routes.social')
@@ -628,6 +629,54 @@ def api_unlink_kpi_deal_source(kpi_id, source_id):
     if _kpi_repo.unlink_deal_source(kpi_id, source_id):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Deal source not found'}), 404
+
+
+# ---- KPI ↔ Project Lead Sources ----
+
+@marketing_bp.route('/api/kpis/<int:kpi_id>/lead-sources', methods=['GET'])
+@login_required
+@mkt_permission_required('kpi', 'view')
+def api_get_kpi_lead_sources(kpi_id):
+    """Get project-lead sources linked to a KPI."""
+    return jsonify({'lead_sources': _kpi_repo.get_kpi_lead_sources(kpi_id)})
+
+
+@marketing_bp.route('/api/kpis/<int:kpi_id>/lead-sources', methods=['POST'])
+@login_required
+@mkt_permission_required('kpi', 'edit')
+def api_link_kpi_lead_source(kpi_id):
+    """Link a project-leads source to a KPI (counts mkt_project_leads)."""
+    data, error = get_json_or_error()
+    if error:
+        return error
+    role = data.get('role', 'input')
+    if not role or not isinstance(role, str) or not role.replace('_', '').isalpha():
+        return jsonify({'success': False, 'error': 'role must be a valid variable name'}), 400
+    statuses = data.get('status_filter') or None
+    if statuses is not None and (not isinstance(statuses, list)
+                                 or any(s not in LEAD_STATUSES for s in statuses)):
+        return jsonify({'success': False, 'error': 'Invalid status_filter'}), 400
+    try:
+        source_id = _kpi_repo.link_lead_source(
+            kpi_id, role=role, metric='count',
+            status_filter=statuses,
+            source_filter=data.get('source_filter'),
+            date_from=data.get('date_from'),
+            date_to=data.get('date_to'),
+        )
+        return jsonify({'success': True, 'id': source_id}), 201
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@marketing_bp.route('/api/kpis/<int:kpi_id>/lead-sources/<int:source_id>', methods=['DELETE'])
+@login_required
+@mkt_permission_required('kpi', 'edit')
+def api_unlink_kpi_lead_source(kpi_id, source_id):
+    """Remove a project-leads source from a KPI."""
+    if _kpi_repo.unlink_lead_source(kpi_id, source_id):
+        return jsonify({'success': True})
+    return jsonify({'success': False, 'error': 'Lead source not found'}), 404
 
 
 # ---- KPI ↔ Individual Deals ----
