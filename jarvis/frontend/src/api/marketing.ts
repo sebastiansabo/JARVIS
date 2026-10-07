@@ -32,6 +32,7 @@ import type {
   MktLeadStatus,
   MktProjectWebhook,
   MktWebhookCreated,
+  MktLeadConvertResult,
   MktKpiDealSource,
   MktKpiDeal,
   AvailableDeal,
@@ -385,15 +386,21 @@ export const marketingApi = {
 
   // ---- Project Leads ----
 
-  getProjectLeads: (projectId: number, params?: { status?: string; search?: string; limit?: number; offset?: number }) =>
+  getProjectLeads: (projectId: number, params?: { status?: string; search?: string; assigned_to?: string; limit?: number; offset?: number }) =>
     api.get<{ leads: MktProjectLead[]; status_counts: Record<string, number> }>(
       `${BASE}/projects/${projectId}/leads${toQs({ ...params })}`),
 
-  updateLead: (projectId: number, leadId: number, data: { status?: MktLeadStatus; status_notes?: string }) =>
+  updateLead: (projectId: number, leadId: number, data: { status?: MktLeadStatus; status_notes?: string; assigned_to?: number | null }) =>
     api.patch<{ success: boolean }>(`${BASE}/projects/${projectId}/leads/${leadId}`, data),
 
   deleteLead: (projectId: number, leadId: number) =>
     api.delete<{ success: boolean }>(`${BASE}/projects/${projectId}/leads/${leadId}`),
+
+  convertLead: (projectId: number, leadId: number) =>
+    api.post<MktLeadConvertResult>(`${BASE}/projects/${projectId}/leads/${leadId}/convert`),
+
+  leadsExportUrl: (projectId: number, params?: { status?: string; search?: string; assigned_to?: string }) =>
+    `${BASE}/projects/${projectId}/leads/export${toQs({ ...params })}`,
 
   // ---- Lead Webhook Tokens ----
 

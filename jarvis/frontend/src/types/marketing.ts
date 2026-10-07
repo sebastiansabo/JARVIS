@@ -479,12 +479,23 @@ export interface MktProjectLead {
   raw_payload: Record<string, unknown>
   status: MktLeadStatus
   status_notes: string | null
+  assigned_to: number | null
+  assigned_to_name: string | null
+  external_id: string | null
   received_via: string
   webhook_id: number | null
   converted_client_id: number | null
   converted_at: string | null
+  converted_by: number | null
   created_at: string
   updated_at: string
+}
+
+export interface MktLeadConvertResult {
+  success: boolean
+  client_id: number
+  created: boolean
+  linked: boolean
 }
 
 export interface MktProjectWebhook {
