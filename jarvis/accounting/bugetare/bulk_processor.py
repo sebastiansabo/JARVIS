@@ -96,7 +96,11 @@ def extract_text_from_pdf(file_path: str) -> str:
         with open(file_path, 'rb') as f:
             reader = PyPDF2.PdfReader(f)
             for page in reader.pages:
-                text += page.extract_text() or ''
+                # Join pages with a newline — PyPDF2 does not append one, so the
+                # last line of page N would otherwise glue onto the first line of
+                # page N+1 (e.g. "...6,31 RONQ5 Magyar"), corrupting the first
+                # campaign of each subsequent page in parse_meta_invoice.
+                text += (page.extract_text() or '') + '\n'
     except Exception:
         pass
     return text
