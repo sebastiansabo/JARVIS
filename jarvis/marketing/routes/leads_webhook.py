@@ -35,6 +35,7 @@ _RATE_MAX = 60          # requests per token / window
 _RATE_WINDOW = 60       # seconds
 _IP_RATE_MAX = 120      # per-IP / window (generous — a caller sends one lead at a time)
 _IP_RATE_WINDOW = 60
+_DEDUP_WINDOW_MIN = 10  # retries within this window (no external_id) are absorbed
 
 # NOTE: RateLimiter is per-gunicorn-worker in-memory state (see api_helpers), so the
 # effective ceiling is workers x limit and it resets on deploy. Accepted for v1; a
@@ -99,9 +100,25 @@ def intake_lead():
         return jsonify({'success': False, 'error': str(e)}), 400
 
     project_id = webhook['project_id']
+    external_id = (data.get('external_id') or request.headers.get('Idempotency-Key') or '').strip() or None
+
+    # Idempotency: strict on a client-supplied id, else a short time-window on
+    # identity so a retried POST doesn't create a duplicate lead.
+    if external_id:
+        existing = _lead_repo.get_by_external_id(project_id, external_id)
+        if existing:
+            return jsonify({'success': True, 'lead_id': existing['id'], 'duplicate': True}), 200
+    else:
+        existing = _lead_repo.find_recent_duplicate(
+            project_id, phone=payload.get('phone'), email=payload.get('email'),
+            within_minutes=_DEDUP_WINDOW_MIN)
+        if existing:
+            return jsonify({'success': True, 'lead_id': existing['id'], 'duplicate': True}), 200
+
     try:
         lead_id = _lead_repo.create(
-            project_id, payload, received_via='webhook', webhook_id=webhook['id'])
+            project_id, payload, received_via='webhook', webhook_id=webhook['id'],
+            external_id=external_id)
         _webhook_repo.touch_last_used(webhook['id'])
     except Exception as e:
         return safe_error_response(e)

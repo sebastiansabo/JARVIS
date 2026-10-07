@@ -343,6 +343,8 @@ def create_schema_marketing(conn, cursor):
             raw_payload JSONB DEFAULT '{}'::jsonb,
             status TEXT NOT NULL DEFAULT 'new',
             status_notes TEXT,
+            assigned_to INTEGER REFERENCES users(id),
+            external_id TEXT,
             received_via TEXT NOT NULL DEFAULT 'webhook',
             webhook_id INTEGER REFERENCES mkt_project_webhooks(id) ON DELETE SET NULL,
             converted_client_id INTEGER REFERENCES crm_clients(id) ON DELETE SET NULL,
@@ -357,6 +359,13 @@ def create_schema_marketing(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_leads_project_status ON mkt_project_leads(project_id, status)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_leads_project_created ON mkt_project_leads(project_id, created_at DESC)')
+    # Phase 2 additive columns (tables created by Phase 1 predate these).
+    cursor.execute("ALTER TABLE mkt_project_leads ADD COLUMN IF NOT EXISTS assigned_to INTEGER REFERENCES users(id)")
+    cursor.execute("ALTER TABLE mkt_project_leads ADD COLUMN IF NOT EXISTS external_id TEXT")
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_project_leads_assigned ON mkt_project_leads(assigned_to)')
+    # Strict idempotency key for webhook retries that carry their own id.
+    cursor.execute('CREATE UNIQUE INDEX IF NOT EXISTS uq_mkt_project_leads_external '
+                   'ON mkt_project_leads(project_id, external_id) WHERE external_id IS NOT NULL')
 
     # KPI ↔ Deal Sources (aggregated CRM deal metrics)
     cursor.execute('''
