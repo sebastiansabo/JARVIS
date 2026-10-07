@@ -6,20 +6,30 @@
 All gated by marketing.project view/edit. The public intake endpoint lives
 separately in leads_webhook.py.
 """
+import io
 import logging
+from datetime import datetime
 
-from flask import jsonify, request, g
+from flask import jsonify, request, g, send_file
 from flask_login import login_required, current_user
+
+try:  # py3.9+ stdlib; backport on older runtimes
+    from zoneinfo import ZoneInfo
+except ImportError:  # pragma: no cover
+    from backports.zoneinfo import ZoneInfo
 
 from marketing import marketing_bp
 from marketing.repositories import (
     ProjectLeadRepository, ProjectWebhookRepository, ActivityRepository,
-    ProjectRepository,
+    ProjectRepository, ProjectClientLinkRepository,
 )
 from marketing.services.project_service import ProjectService
+from marketing.services.lead_convert import resolve_or_create_client
+from marketing.services.leads_export import build_leads_workbook
 from marketing.decorators import mkt_permission_required
 from marketing.services import webhook_token
 from marketing.services.lead_intake import LEAD_STATUSES
+from crm.repositories.client_repository import ClientRepository
 from core.utils.api_helpers import get_json_or_error, error_response, safe_error_response
 
 logger = logging.getLogger('jarvis.marketing.routes.leads')
@@ -28,9 +38,12 @@ _lead_repo = ProjectLeadRepository()
 _webhook_repo = ProjectWebhookRepository()
 _activity_repo = ActivityRepository()
 _project_repo = ProjectRepository()
+_client_link_repo = ProjectClientLinkRepository()
+_client_repo = ClientRepository()
 _service = ProjectService()
 
 _WEBHOOK_PATH = '/marketing/api/webhooks/leads'
+_RO_TZ = ZoneInfo('Europe/Bucharest')
 
 
 def _require_project_access(project_id):
@@ -63,10 +76,11 @@ def api_list_project_leads(project_id):
         return denied
     status = request.args.get('status') or None
     search = request.args.get('search', '').strip() or None
+    assigned_to = request.args.get('assigned_to') or None
     limit = min(int(request.args.get('limit', 100)), 500)
     offset = int(request.args.get('offset', 0))
     leads = _lead_repo.list_by_project(project_id, status=status, search=search,
-                                       limit=limit, offset=offset)
+                                       assigned_to=assigned_to, limit=limit, offset=offset)
     return jsonify({'leads': leads, 'status_counts': _lead_repo.status_counts(project_id)})
 
 
@@ -87,15 +101,21 @@ def api_update_project_lead(project_id, lead_id):
         return error_response(f'Invalid status: {status}', 400)
 
     status_notes = data.get('status_notes')
-    if status is None and status_notes is None:
+    # assigned_to is only touched when the key is present (value may be null = unassign).
+    update_kwargs = {'status': status, 'status_notes': status_notes}
+    if 'assigned_to' in data:
+        update_kwargs['assigned_to'] = data['assigned_to']
+
+    if status is None and status_notes is None and 'assigned_to' not in data:
         return error_response('Nothing to update', 400)
 
     try:
-        updated = _lead_repo.update(project_id, lead_id, status=status, status_notes=status_notes)
+        updated = _lead_repo.update(project_id, lead_id, **update_kwargs)
         if not updated:
             return error_response('Lead not found', 404)
         _activity_repo.log(project_id, 'lead_updated', actor_id=current_user.id,
-                           details={'lead_id': lead_id, 'status': status})
+                           details={'lead_id': lead_id, 'status': status,
+                                    'assigned_to': data.get('assigned_to')})
         return jsonify({'success': True})
     except Exception as e:
         return safe_error_response(e)
@@ -114,6 +134,63 @@ def api_delete_project_lead(project_id, lead_id):
                            details={'lead_id': lead_id})
         return jsonify({'success': True})
     return error_response('Lead not found', 404)
+
+
+@marketing_bp.route('/api/projects/<int:project_id>/leads/<int:lead_id>/convert', methods=['POST'])
+@login_required
+@mkt_permission_required('project', 'edit')
+def api_convert_lead(project_id, lead_id):
+    """Convert a lead into a CRM client, link it to the project, mark converted."""
+    denied = _require_project_access(project_id)
+    if denied:
+        return denied
+    # Converting writes to the CRM (creates/links a crm_clients row), so it
+    # requires CRM edit rights on top of marketing.project.edit.
+    if not getattr(current_user, 'can_edit_crm', False):
+        return error_response('CRM edit permission required to convert a lead', 403)
+    lead = _lead_repo.get_for_project(project_id, lead_id)
+    if not lead:
+        return error_response('Lead not found', 404)
+    if lead.get('converted_client_id'):
+        return error_response('Lead already converted', 409)
+
+    try:
+        client_id, created = resolve_or_create_client(_client_repo, lead)
+        # Link to the project (idempotent); surfaces in the Clients tab.
+        linked = _client_link_repo.link(project_id, client_id, current_user.id) is not None
+        _lead_repo.mark_converted(project_id, lead_id, client_id, current_user.id)
+        _activity_repo.log(project_id, 'lead_converted', actor_id=current_user.id,
+                           details={'lead_id': lead_id, 'client_id': client_id, 'created': created})
+        return jsonify({'success': True, 'client_id': client_id,
+                        'created': created, 'linked': linked})
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@marketing_bp.route('/api/projects/<int:project_id>/leads/export', methods=['GET'])
+@login_required
+@mkt_permission_required('project', 'view')
+def api_export_leads(project_id):
+    """Export the (filtered) lead sheet as .xlsx."""
+    denied = _require_project_access(project_id)
+    if denied:
+        return denied
+    status = request.args.get('status') or None
+    search = request.args.get('search', '').strip() or None
+    assigned_to = request.args.get('assigned_to') or None
+    try:
+        leads = _lead_repo.list_by_project(project_id, status=status, search=search,
+                                           assigned_to=assigned_to, limit=10000, offset=0)
+        xlsx = build_leads_workbook(leads)
+        today = datetime.now(_RO_TZ).strftime('%Y-%m-%d')
+        return send_file(
+            io.BytesIO(xlsx),
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f'leads_project_{project_id}_{today}.xlsx',
+        )
+    except Exception as e:
+        return safe_error_response(e)
 
 
 # ---- Webhook token management ----

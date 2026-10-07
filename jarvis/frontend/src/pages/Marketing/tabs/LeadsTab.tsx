@@ -6,11 +6,13 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Inbox, Trash2, Copy, Check, Webhook, Phone, Mail, Building2 } from 'lucide-react'
+import { Inbox, Trash2, Copy, Check, Webhook, Phone, Mail, Building2, UserPlus, Download, UserCheck } from 'lucide-react'
 import { cn, useDebounce } from '@/lib/utils'
 import { marketingApi } from '@/api/marketing'
-import type { MktProjectLead, MktLeadStatus, MktWebhookCreated } from '@/types/marketing'
+import type { MktProjectLead, MktLeadStatus, MktWebhookCreated, MktMember } from '@/types/marketing'
 import { fmtDatetime } from './utils'
+
+const UNASSIGNED = '__unassigned__'
 
 const STATUSES: MktLeadStatus[] = ['new', 'contacted', 'qualified', 'converted', 'discarded']
 
@@ -178,14 +180,20 @@ function WebhookDialog({ projectId, open, onOpenChange }: {
 export function LeadsTab({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState<MktLeadStatus | 'all'>('all')
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('all')
   const [search, setSearch] = useState('')
   const debouncedSearch = useDebounce(search, 300)
   const [showWebhooks, setShowWebhooks] = useState(false)
 
+  const assignedParam = assigneeFilter === 'all'
+    ? undefined
+    : (assigneeFilter === UNASSIGNED ? 'unassigned' : assigneeFilter)
+
   const { data } = useQuery({
-    queryKey: ['mkt-project-leads', projectId, statusFilter, debouncedSearch],
+    queryKey: ['mkt-project-leads', projectId, statusFilter, assigneeFilter, debouncedSearch],
     queryFn: () => marketingApi.getProjectLeads(projectId, {
       status: statusFilter === 'all' ? undefined : statusFilter,
+      assigned_to: assignedParam,
       search: debouncedSearch || undefined,
     }),
   })
@@ -193,15 +201,46 @@ export function LeadsTab({ projectId }: { projectId: number }) {
   const counts = data?.status_counts ?? {}
   const total = Object.values(counts).reduce((a, b) => a + Number(b), 0)
 
+  const { data: membersData } = useQuery({
+    queryKey: ['mkt-project-members', projectId],
+    queryFn: () => marketingApi.getMembers(projectId),
+  })
+  const members: MktMember[] = membersData?.members ?? []
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['mkt-project-leads', projectId] })
+
   const statusMut = useMutation({
     mutationFn: ({ leadId, status }: { leadId: number; status: MktLeadStatus }) =>
       marketingApi.updateLead(projectId, leadId, { status }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mkt-project-leads', projectId] }),
+    onSuccess: invalidate,
+  })
+
+  const assignMut = useMutation({
+    mutationFn: ({ leadId, assigned_to }: { leadId: number; assigned_to: number | null }) =>
+      marketingApi.updateLead(projectId, leadId, { assigned_to }),
+    onSuccess: invalidate,
+  })
+
+  const convertMut = useMutation({
+    mutationFn: (leadId: number) => marketingApi.convertLead(projectId, leadId),
+    onSuccess: (res) => {
+      invalidate()
+      queryClient.invalidateQueries({ queryKey: ['mkt-project-clients', projectId] })
+      alert(res.created ? 'New CRM client created and linked to this project.'
+                        : 'Linked to an existing CRM client and marked converted.')
+    },
+    onError: () => alert('Could not convert this lead.'),
   })
 
   const deleteMut = useMutation({
     mutationFn: (leadId: number) => marketingApi.deleteLead(projectId, leadId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['mkt-project-leads', projectId] }),
+    onSuccess: invalidate,
+  })
+
+  const exportHref = marketingApi.leadsExportUrl(projectId, {
+    status: statusFilter === 'all' ? undefined : statusFilter,
+    assigned_to: assignedParam,
+    search: debouncedSearch || undefined,
   })
 
   return (
@@ -228,12 +267,25 @@ export function LeadsTab({ projectId }: { projectId: number }) {
           ))}
         </div>
         <div className="flex items-center gap-2">
+          <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+            <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue placeholder="Assignee" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" className="text-xs">All assignees</SelectItem>
+              <SelectItem value={UNASSIGNED} className="text-xs">Unassigned</SelectItem>
+              {members.map((m) => (
+                <SelectItem key={m.user_id} value={String(m.user_id)} className="text-xs">{m.user_name ?? `User ${m.user_id}`}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Input
-            className="h-8 w-48"
+            className="h-8 w-44"
             placeholder="Search leads..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          <Button asChild size="sm" variant="outline">
+            <a href={exportHref} download><Download className="h-3.5 w-3.5 mr-1.5" /> Export</a>
+          </Button>
           <Button size="sm" variant="outline" onClick={() => setShowWebhooks(true)}>
             <Webhook className="h-3.5 w-3.5 mr-1.5" /> Webhook
           </Button>
@@ -257,8 +309,9 @@ export function LeadsTab({ projectId }: { projectId: number }) {
                 <TableHead>Company</TableHead>
                 <TableHead>Source</TableHead>
                 <TableHead>Message</TableHead>
+                <TableHead>Assigned</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="w-10" />
+                <TableHead className="w-20" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -299,6 +352,20 @@ export function LeadsTab({ projectId }: { projectId: number }) {
                     {l.message ?? l.model_of_interest ?? '—'}
                   </TableCell>
                   <TableCell>
+                    <Select
+                      value={l.assigned_to != null ? String(l.assigned_to) : UNASSIGNED}
+                      onValueChange={(v) => assignMut.mutate({ leadId: l.id, assigned_to: v === UNASSIGNED ? null : Number(v) })}
+                    >
+                      <SelectTrigger className="h-7 w-[130px] text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={UNASSIGNED} className="text-xs text-muted-foreground">Unassigned</SelectItem>
+                        {members.map((m) => (
+                          <SelectItem key={m.user_id} value={String(m.user_id)} className="text-xs">{m.user_name ?? `User ${m.user_id}`}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </TableCell>
+                  <TableCell>
                     <Select value={l.status} onValueChange={(v) => statusMut.mutate({ leadId: l.id, status: v as MktLeadStatus })}>
                       <SelectTrigger className={cn('h-7 w-[120px] text-xs border-0', STATUS_COLOR[l.status])}>
                         <SelectValue />
@@ -311,10 +378,29 @@ export function LeadsTab({ projectId }: { projectId: number }) {
                     </Select>
                   </TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="icon" className="h-7 w-7"
-                      onClick={() => deleteMut.mutate(l.id)}>
-                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      {l.converted_client_id ? (
+                        <Badge variant="outline" className="text-xs text-emerald-600 border-emerald-300">
+                          <UserCheck className="h-3 w-3 mr-1" /> CRM
+                        </Badge>
+                      ) : (
+                        <Button
+                          variant="ghost" size="icon" className="h-7 w-7"
+                          title="Convert to CRM client"
+                          disabled={convertMut.isPending}
+                          onClick={() => {
+                            if (confirm('Create/link a CRM client from this lead and mark it converted?'))
+                              convertMut.mutate(l.id)
+                          }}
+                        >
+                          <UserPlus className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                      )}
+                      <Button variant="ghost" size="icon" className="h-7 w-7"
+                        onClick={() => deleteMut.mutate(l.id)}>
+                        <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
