@@ -222,12 +222,11 @@ export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { on
 
   return (
     <div className="space-y-4">
-      {/* Desktop: controls sit inline on the breadcrumb title row. Phones get the
-          fixed bottom pill below instead, so skip the header toolbar there. */}
-      {/* Controls live in the Hub header slot on ALL widths — the mobile
-          breadcrumb renders that slot too, so phones get icon-only controls on
-          the title row. Inline fallback stays desktop-only. */}
-      {headerSlot ? createPortal(inlineActions, headerSlot) : (!isMobile && <div className="flex justify-end">{inlineActions}</div>)}
+      {/* Desktop: controls sit inline on the breadcrumb title row (portaled into
+          the Hub header slot, with an inline fallback when no slot is exposed).
+          Phones DON'T portal here — the breadcrumb scrolls away with the list, so
+          phones get the fixed bottom pill below instead (always visible). */}
+      {!isMobile && (headerSlot ? createPortal(inlineActions, headerSlot) : <div className="flex justify-end">{inlineActions}</div>)}
 
       {hasCompany && tab === 'sessions' && (
         <DrivingSessionsList
@@ -365,9 +364,11 @@ export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { on
         </div>
       )}
 
-      {/* Phone fallback control surface — only when there's no header slot to
-          portal into (the breadcrumb normally provides one on mobile too). */}
-      {isMobile && !headerSlot && (
+      {/* Phone control surface — a fixed bottom pill (mirrors the Hub's global
+          nav pill). Always rendered on mobile: the breadcrumb's header slot
+          scrolls away with the list, and the Hub's own pill is suppressed for
+          driving/courtesy, so this is the only persistent navbar on phones. */}
+      {isMobile && (
         <DrivingBottomBar
           tab={tab}
           onTab={setTab}
