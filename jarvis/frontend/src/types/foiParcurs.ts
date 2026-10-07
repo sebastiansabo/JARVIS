@@ -297,6 +297,9 @@ export interface FoiContract {
   // → drives the "Modificat" badge + who/when tooltip.
   corrected_at?: string | null
   corrected_by?: string | null
+  // Set when a PLANNED/MISSED session's time was moved (reschedule), reviving a
+  // no-show to PLANNED → drives the "Replanificat" badge + when tooltip.
+  rescheduled_at?: string | null
   // Set when an internal drive was soft-superseded by a gap redistribution — its
   // KM is now covered by client/gap-fill km, so it drops out of the foaie + KM
   // totals but stays here (badged "Absorbit", restorable) for audit.

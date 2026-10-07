@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
-const { getContracts, getVehicles, getContractPdfUrl, discardTestDrive } = vi.hoisted(() => ({
+const { getContracts, getVehicles, getContractPdfUrl, discardTestDrive, rescheduleTestDrive } = vi.hoisted(() => ({
   getContracts: vi.fn().mockResolvedValue({
     contracts: [
       { id: 11, status: 'FILLED', td_status: 'driving', vin: 'VF1', client_name: 'Ion Pop', advisor_name: 'Cons A', departure_datetime: '2026-07-27T10:00', km_start: 100 },
@@ -13,8 +13,9 @@ const { getContracts, getVehicles, getContractPdfUrl, discardTestDrive } = vi.ho
   getVehicles: vi.fn().mockResolvedValue({ vehicles: [{ vin: 'VF1', mark: 'Volvo', model: 'XC40' }] }),
   getContractPdfUrl: vi.fn((id: number) => `/pdf/${id}`),
   discardTestDrive: vi.fn().mockResolvedValue({ success: true }),
+  rescheduleTestDrive: vi.fn().mockResolvedValue({ success: true }),
 }))
-vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { getContracts, getVehicles, getContractPdfUrl, discardTestDrive } }))
+vi.mock('@/api/foiParcurs', () => ({ foiParcursApi: { getContracts, getVehicles, getContractPdfUrl, discardTestDrive, rescheduleTestDrive } }))
 
 // Users directory — resolves an internal session's driver (advisor) to their
 // profile phone. Default empty; the internal-sessions block sets a match.
@@ -81,6 +82,55 @@ describe('DrivingSessionsList', () => {
     await screen.findByText('Ion Pop')
     expect(getContracts).toHaveBeenCalledWith(expect.objectContaining({ document_type: 'sales' }))
     expect(getVehicles).toHaveBeenCalledWith(true, 'sales')
+  })
+})
+
+describe('DrivingSessionsList reschedule (for everyone)', () => {
+  beforeEach(() => {
+    rescheduleTestDrive.mockClear()
+    getContracts.mockResolvedValue({
+      contracts: [
+        { id: 61, status: 'MISSED', vin: 'VR1', client_name: 'Rata Client', advisor_name: 'Cons R', departure_datetime: '2026-07-01T09:00', km_start: 10 },
+        { id: 62, status: 'PLANNED', vin: 'VR2', client_name: 'Plan Client', advisor_name: 'Cons P', departure_datetime: '2999-01-01T09:00', km_start: 20 },
+        { id: 63, status: 'FILLED', td_status: 'driving', vin: 'VR3', client_name: 'Drive Client', advisor_name: 'Cons D', departure_datetime: '2026-07-02T09:00', km_start: 30 },
+        { id: 64, status: 'COMPLETED', td_status: 'complete', vin: 'VR4', client_name: 'Done Client', advisor_name: 'Cons F', departure_datetime: '2026-07-03T09:00', km_start: 40, km_end: 80,
+          rescheduled_at: '2026-07-01T12:00' },
+      ], total: 4, page: 1, per_page: 1000,
+    })
+    getVehicles.mockResolvedValue({ vehicles: [] })
+  })
+
+  it('offers Replanifică on a Ratat (missed) session — no admin role needed', async () => {
+    wrap(<DrivingSessionsList companyId={9} brand="" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    fireEvent.click(await screen.findByText('Rata Client'))          // expand the Ratat card
+    expect(screen.getByRole('button', { name: /replanifică/i })).toBeInTheDocument()
+  })
+
+  it('offers Replanifică on a Planificat session', async () => {
+    wrap(<DrivingSessionsList companyId={9} brand="" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    fireEvent.click(await screen.findByText('Plan Client'))
+    expect(screen.getByRole('button', { name: /replanifică/i })).toBeInTheDocument()
+  })
+
+  it('does NOT offer Replanifică on an in-progress (driving) session', async () => {
+    wrap(<DrivingSessionsList companyId={9} brand="" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    fireEvent.click(await screen.findByText('Drive Client'))
+    expect(screen.queryByRole('button', { name: /replanifică/i })).not.toBeInTheDocument()
+  })
+
+  it('opens the reschedule dialog when Replanifică is clicked', async () => {
+    wrap(<DrivingSessionsList companyId={9} brand="" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    fireEvent.click(await screen.findByText('Rata Client'))
+    fireEvent.click(screen.getByRole('button', { name: /replanifică/i }))
+    expect(await screen.findByText('Replanifică sesiunea')).toBeInTheDocument()
+    expect(screen.getByLabelText('Nouă plecare')).toBeInTheDocument()
+  })
+
+  it('shows a Replanificat badge on a session that was rescheduled', async () => {
+    wrap(<DrivingSessionsList companyId={9} brand="" onActivate={vi.fn()} onReturn={vi.fn()} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Arhivă' }))  // id 64 is finalized
+    expect(await screen.findByText('Done Client')).toBeInTheDocument()
+    expect(screen.getByText('Replanificat')).toBeInTheDocument()
   })
 })
 

@@ -25,7 +25,7 @@ _LIST_COLUMNS = (
     'fp.driver_license_number, fp.driver_license_expiry, fp.gdpr_consent, '
     'fp.inspection_acceptance, fp.inspection_id, fp.general_conditions_accepted, '
     'fp.general_conditions_accepted_at, fp.pdf_legal_path, fp.pdf_custom_path, '
-    'fp.corrected_at, fp.corrected_by, '
+    'fp.corrected_at, fp.corrected_by, fp.rescheduled_at, '
     'fp.absorbed_at, fp.absorbed_by, '
     'fp.is_internal, '
     'fp.driver_name, fp.driver_contact_id, fp.event_id, '
@@ -577,10 +577,12 @@ class FoiParcursRepository(BaseRepository):
 
     def reschedule_session(self, contract_id: int, departure_datetime, return_datetime) -> dict:
         """Move a PLANNED/MISSED session to a new time and revive it to PLANNED,
-        clearing the missed/late-notify stamps. Guarded to those two statuses."""
+        clearing the missed/late-notify stamps and stamping rescheduled_at (the
+        "Replanificat" audit marker). Guarded to those two statuses."""
         sql = (
             "UPDATE foi_de_parcurs SET departure_datetime = %s, return_datetime = %s, "
-            "status = 'PLANNED', missed_at = NULL, late_notified_at = NULL, updated_at = NOW() "
+            "status = 'PLANNED', missed_at = NULL, late_notified_at = NULL, "
+            "rescheduled_at = NOW(), updated_at = NOW() "
             "WHERE id = %s AND route_type = 'TD' AND status IN ('PLANNED', 'MISSED') RETURNING *"
         )
         row = self.execute(sql, (departure_datetime, return_datetime, contract_id), returning=True)
