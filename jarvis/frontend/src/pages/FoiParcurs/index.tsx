@@ -8,6 +8,9 @@ import {
   Route,
   Search,
   UserPlus,
+  CalendarDays,
+  BarChart3,
+  Building2,
   Check,
   ArrowUpDown,
   Trash2,
@@ -84,11 +87,13 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { useIsMobile } from '@/hooks/useMediaQuery'
 import SignatureCanvas from '@/components/shared/SignatureCanvas'
 import { DriverLicenseSection } from './CreateClientPanel'
 import { SearchInput } from '@/components/shared/SearchInput'
 import { useAuthStore } from '@/stores/authStore'
-import { foiParcursApi, type StoredRouteSheet, type RouteSheetAlimentare, type RouteSheetEvent, type RouteSheetFile, type SessionImportResult } from '@/api/foiParcurs'
+import { foiParcursApi, type StoredRouteSheet, type RouteSheetAlimentare, type RouteSheetEvent, type RouteSheetFile } from '@/api/foiParcurs'
 import { hrApi } from '@/api/hr'
 import {
   fuelUnit,
@@ -172,6 +177,16 @@ function usePersistentState<T>(key: string, initial: T) {
   }, [key, state])
   return [state, setState] as const
 }
+
+// Driving Hub tabs — shared by the desktop TabsList and the mobile bottom nav.
+const DRIVING_TABS = [
+  { value: 'stock', label: 'Park', icon: Car },
+  { value: 'parcurs', label: 'Sesiuni', icon: Route },
+  { value: 'calendar', label: 'Calendar', icon: CalendarDays },
+  { value: 'contracts', label: 'Foi', icon: FileText },
+  { value: 'reports', label: 'Rapoarte', icon: BarChart3 },
+  { value: 'settings', label: 'Setări', icon: Settings },
+] as const
 
 // ── Main Page ──
 export default function FoiParcurs() {
@@ -264,12 +279,43 @@ export default function FoiParcurs() {
     ? (driveType === 'client' ? 'Clients' : driveType === 'internal' ? 'Intern' : null)
     : null
 
+  // Company / brand / doc-type controls — rendered inline on desktop and inside
+  // the mobile "Filtre" popover, so both stay bound to the same state.
+  const headerFilters = (
+    <>
+      <Select value={String(companyId)} onValueChange={(v) => setCompanyId(Number(v))}>
+        <SelectTrigger className="w-full md:w-56">
+          <SelectValue placeholder="Selectează compania" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="0">Toate companiile</SelectItem>
+          {companies.map((c) => (
+            <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {docType === 'sales' && brands.length > 0 && (
+        <Select value={brand} onValueChange={setBrand}>
+          <SelectTrigger className="w-full md:w-44">
+            <SelectValue placeholder="Selectează brandul" />
+          </SelectTrigger>
+          <SelectContent>
+            {brands.map((b) => (
+              <SelectItem key={b} value={b}>{b}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+      {documentTypes.length > 1 && <DocTypeSelect value={docType} types={documentTypes} onChange={setDocType} />}
+    </>
+  )
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24 md:pb-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         {/* Breadcrumb title — consistent "Driving Hub › <tab>" across all tabs. */}
         <div className="flex items-center gap-1.5 text-xl sm:text-2xl font-semibold tracking-tight">
-          <span className="text-muted-foreground">Driving Hub</span>
+          <span className="hidden text-muted-foreground md:inline">Driving Hub</span>
           <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground/50" />
           <span className={cn(driveTypeLabel && 'text-muted-foreground')}>{activeTabLabel}</span>
           {driveTypeLabel && (
@@ -283,30 +329,17 @@ export default function FoiParcurs() {
           <Button size="icon" title="Sesiune nouă" aria-label="Sesiune nouă" onClick={() => setChoosingSession(true)}>
             <Plus className="h-4 w-4" />
           </Button>
-          <Select value={String(companyId)} onValueChange={(v) => setCompanyId(Number(v))}>
-            <SelectTrigger className="w-56">
-              <SelectValue placeholder="Selectează compania" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="0">Toate companiile</SelectItem>
-              {companies.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {docType === 'sales' && brands.length > 0 && (
-            <Select value={brand} onValueChange={setBrand}>
-              <SelectTrigger className="w-44">
-                <SelectValue placeholder="Selectează brandul" />
-              </SelectTrigger>
-              <SelectContent>
-                {brands.map((b) => (
-                  <SelectItem key={b} value={b}>{b}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          {documentTypes.length > 1 && <DocTypeSelect value={docType} types={documentTypes} onChange={setDocType} />}
+          {/* Desktop: company/brand/doc-type inline. Mobile: collapsed behind a
+              "Filtre" popover so the header stays compact. */}
+          <div className="hidden items-center gap-2 md:flex">{headerFilters}</div>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button size="icon" variant="outline" className="md:hidden" title="Filtre companie" aria-label="Filtre companie">
+                <Building2 className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-64 space-y-2">{headerFilters}</PopoverContent>
+          </Popover>
         </div>
       </div>
 
@@ -329,13 +362,13 @@ export default function FoiParcurs() {
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'contracts' | 'parcurs' | 'stock' | 'calendar' | 'reports' | 'settings')}>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <TabsList>
-            <TabsTrigger value="stock">Driving Park</TabsTrigger>
-            <TabsTrigger value="parcurs">Sesiuni Driving</TabsTrigger>
-            <TabsTrigger value="calendar">Calendar</TabsTrigger>
-            <TabsTrigger value="contracts">Foi de Parcurs</TabsTrigger>
-            <TabsTrigger value="reports">Rapoarte</TabsTrigger>
-            <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsList className="hidden md:inline-flex">
+            <TabsTrigger value="stock" title="Driving Park" aria-label="Driving Park"><Car className="h-4 w-4" />Driving Park</TabsTrigger>
+            <TabsTrigger value="parcurs" title="Sesiuni Driving" aria-label="Sesiuni Driving"><Route className="h-4 w-4" />Sesiuni Driving</TabsTrigger>
+            <TabsTrigger value="calendar" title="Calendar" aria-label="Calendar"><CalendarDays className="h-4 w-4" />Calendar</TabsTrigger>
+            <TabsTrigger value="contracts" title="Foi de Parcurs" aria-label="Foi de Parcurs"><FileText className="h-4 w-4" />Foi de Parcurs</TabsTrigger>
+            <TabsTrigger value="reports" title="Rapoarte" aria-label="Rapoarte"><BarChart3 className="h-4 w-4" />Rapoarte</TabsTrigger>
+            <TabsTrigger value="settings" title="Settings" aria-label="Settings"><Settings className="h-4 w-4" />Settings</TabsTrigger>
           </TabsList>
           {/* The active tab renders its toolbar (Calendar controls or Sesiuni
               filters) into this slot, so it shares the tabs' line. */}
@@ -351,95 +384,42 @@ export default function FoiParcurs() {
       {activeTab === 'calendar' && <CalendarTab companyId={companyId} brand={docType !== 'sales' ? '' : brand} toolbarSlot={tabToolbar} driveType={driveType} onDriveTypeChange={setDriveType} documentType={docType} />}
       {activeTab === 'reports' && <ReportsTab companyId={companyId} toolbarSlot={tabToolbar} documentType={docType} brand={docType !== 'sales' ? '' : brand} />}
       {activeTab === 'settings' && <SettingsTab documentType={docType} companyId={companyId} />}
+
+      {/* Mobile bottom navigation — app-style tab bar (desktop uses the top TabsList). */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden">
+        <div className="grid grid-cols-6">
+          {DRIVING_TABS.map((t) => {
+            const Icon = t.icon
+            const active = activeTab === t.value
+            return (
+              <button
+                key={t.value}
+                type="button"
+                onClick={() => setActiveTab(t.value)}
+                aria-label={t.label}
+                aria-current={active}
+                className={cn(
+                  'flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
+                  active ? 'text-primary' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <Icon className="h-5 w-5" />
+                <span className="max-w-full truncate px-0.5">{t.label}</span>
+              </button>
+            )
+          })}
+        </div>
+      </nav>
     </div>
   )
 }
 
 // ── Contracts Tab — Form → Preview → Save Batch ──
 export function ContractsTab({ companyId, brand = '', toolbarSlot, documentType = 'sales' }: { companyId: number; brand?: string; toolbarSlot?: HTMLElement | null; documentType?: DocType }) {
-  const [importOpen, setImportOpen] = useState(false)
-  const toolbar = (
-    <Button variant="outline" size="sm" className="h-8" onClick={() => setImportOpen(true)}>
-      <Download className="mr-1.5 h-4 w-4" /> Importă sesiuni
-    </Button>
-  )
   return (
     <div className="space-y-4">
-      {/* RouteSheetsTable renders first so its month/year filters land in the slot
-          before the Importă button (filters left, action right). */}
       <RouteSheetsTable companyId={companyId} brand={brand} toolbarSlot={toolbarSlot} documentType={documentType} />
-      {toolbarSlot ? createPortal(toolbar, toolbarSlot) : <div className="flex justify-end">{toolbar}</div>}
-      <SessionImportDialog companyId={companyId} open={importOpen} onOpenChange={setImportOpen} />
     </div>
-  )
-}
-
-// ── Bulk session import — download template, upload filled Excel, show report ──
-function SessionImportDialog({ companyId, open, onOpenChange }: {
-  companyId: number; open: boolean; onOpenChange: (o: boolean) => void
-}) {
-  const queryClient = useQueryClient()
-  const [file, setFile] = useState<File | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [result, setResult] = useState<SessionImportResult | null>(null)
-
-  useEffect(() => { if (open) { setFile(null); setError(''); setResult(null) } }, [open])
-
-  const doImport = async () => {
-    if (!file || !companyId) return
-    setBusy(true); setError(''); setResult(null)
-    try {
-      const r = await foiParcursApi.importSessions(companyId, file)
-      setResult(r)
-      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
-      queryClient.invalidateQueries({ queryKey: ['fp-vehicles'] })
-    } catch (e: any) {
-      setError(e?.message || 'Import eșuat')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader><DialogTitle>Importă sesiuni</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          Descarcă template-ul, completează sesiunile (o linie per cursă), apoi încarcă fișierul.
-          VIN-urile inexistente creează mașina; duplicatele sunt ignorate.
-        </p>
-        <a href={foiParcursApi.getSessionImportTemplateUrl(companyId)} download>
-          <Button variant="outline" size="sm" className="h-8" disabled={!companyId}>
-            <Download className="mr-1.5 h-4 w-4" /> Descarcă template
-          </Button>
-        </a>
-        <Input type="file" accept=".xlsx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-        {error && <div className="text-sm text-red-600">{error}</div>}
-        {result && (
-          <div className="rounded border p-3 text-sm space-y-1">
-            <div className="flex flex-wrap gap-3">
-              <Badge className="bg-green-600 text-white">Adăugate: {result.inserted}</Badge>
-              <Badge variant="outline">Ignorate (dup): {result.skipped}</Badge>
-              <Badge className="bg-blue-600 text-white">Mașini create: {result.cars_created}</Badge>
-              {result.errors.length > 0 && <Badge variant="destructive">Erori: {result.errors.length}</Badge>}
-            </div>
-            {result.errors.length > 0 && (
-              <ul className="mt-1 max-h-40 overflow-y-auto text-xs text-red-600">
-                {result.errors.map((er, i) => <li key={i}>Linia {er.row}: {er.message}</li>)}
-              </ul>
-            )}
-          </div>
-        )}
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>Închide</Button>
-          <Button onClick={doImport} disabled={!file || busy}>
-            {busy ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Download className="mr-1.5 h-4 w-4" />}
-            Importă
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }
 
@@ -580,6 +560,9 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const isMobile = useIsMobile()
+  // Mobile taps open a simplified sessions pop-up instead of the inline expand.
+  const [sessionsModalVin, setSessionsModalVin] = useState<string | null>(null)
   const [previewVin, setPreviewVin] = useState<string | null>(null)
   const [redistribute, setRedistribute] = useState<{ vin: string; gap: GapRow | null; sessions: WinSession[]; boundary?: 'start' | 'end' } | null>(null)
   const [correcting, setCorrecting] = useState<FoiContract | null>(null)
@@ -614,8 +597,8 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
     onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Deblocarea a eșuat'),
   })
   const now = new Date()
-  const [filterYear, setFilterYear] = useState<number>(now.getFullYear())
-  const [filterMonth, setFilterMonth] = useState<number>(now.getMonth() + 1) // 0 = all months
+  const [filterYear, setFilterYear] = usePersistentState<number>('fp.filterYear', now.getFullYear())
+  const [filterMonth, setFilterMonth] = usePersistentState<number>('fp.filterMonth', now.getMonth() + 1) // 0 = all months
   const monthChosen = filterMonth !== 0 // a Foaie de parcurs is monthly — needs a specific month
   // Cosmetic export toggle: include/exclude internal (company) drives in the
   // generated foaie (PDF + Excel). Off drops them from the listing but keeps the
@@ -722,10 +705,11 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
 
   const monthName = (m: number) => new Date(2000, m - 1).toLocaleString('ro-RO', { month: 'long' })
 
-  const toolbar = (
-    <div className="flex flex-wrap items-center gap-2">
+  // Month/year date filters — inline on desktop, behind a "Perioadă" popover on mobile.
+  const dateFilters = (
+    <>
       <Select value={String(filterMonth)} onValueChange={(v) => setFilterMonth(Number(v))}>
-        <SelectTrigger className="h-8 w-[150px]"><SelectValue /></SelectTrigger>
+        <SelectTrigger className="h-8 w-full md:w-[150px]"><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value="0">Toate lunile</SelectItem>
           {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -734,11 +718,24 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
         </SelectContent>
       </Select>
       <Select value={String(filterYear)} onValueChange={(v) => setFilterYear(Number(v))}>
-        <SelectTrigger className="h-8 w-[100px]"><SelectValue /></SelectTrigger>
+        <SelectTrigger className="h-8 w-full md:w-[100px]"><SelectValue /></SelectTrigger>
         <SelectContent>
           {years.map((y) => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
         </SelectContent>
       </Select>
+    </>
+  )
+  const toolbar = (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="hidden items-center gap-2 md:flex">{dateFilters}</div>
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 md:hidden">
+            <CalendarDays className="h-4 w-4" /> Perioadă
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-56 space-y-2">{dateFilters}</PopoverContent>
+      </Popover>
       {!isLoading && <span className="text-xs text-muted-foreground">{cars.length} mașini</span>}
       <label className="ml-1 flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
         title="Include sesiunile interne (companie) în foaia de parcurs exportată (PDF/Excel)">
@@ -803,7 +800,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                   <React.Fragment key={sheet.vin}>
                     <TableRow
                       className={`cursor-pointer ${isOpen ? 'bg-primary/10 hover:bg-primary/15 border-l-2 border-l-primary' : 'hover:bg-muted/50'}`}
-                      onClick={() => toggle(sheet.vin)}
+                      onClick={() => (isMobile ? setSessionsModalVin(sheet.vin) : toggle(sheet.vin))}
                     >
                       <TableCell className="py-2">
                         {isOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
@@ -921,7 +918,7 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
                         </div>
                       </TableCell>
                     </TableRow>
-                    {isOpen && (
+                    {isOpen && !isMobile && (
                       <TableRow className="bg-muted/20 hover:bg-muted/20">
                         <TableCell colSpan={10} className="p-0">
                           <div className="px-4 py-2">
@@ -1049,6 +1046,89 @@ function RouteSheetsTable({ companyId, brand = '', toolbarSlot, documentType = '
           </Table>
         </Card>
       )}
+
+      {/* Mobile: tapping a car opens a simplified sessions pop-up (Data · Client ·
+          KM · Acțiune). Desktop uses the inline expand above. */}
+      <Dialog open={!!sessionsModalVin} onOpenChange={(o) => { if (!o) setSessionsModalVin(null) }}>
+        <DialogContent className="max-h-[85vh] w-[95vw] max-w-lg overflow-y-auto">
+          {(() => {
+            const ms = sessionsModalVin ? cars.find((c) => c.vin === sessionsModalVin) : null
+            if (!ms) return null
+            const mv = vinMap.get(ms.vin)
+            const msVisible = includeInternal ? ms.sessions : ms.sessions.filter((c) => !c.is_internal)
+            const msAnom = sessionAnomalies(ms.sessions)
+            const rows = withGaps(msVisible, ms.kmMin, ms.kmMax)
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="text-base">{[mv?.mark, mv?.model].filter(Boolean).join(' ') || ms.vin}</DialogTitle>
+                </DialogHeader>
+                <Table className="w-full table-fixed">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10">Zi</TableHead>
+                      <TableHead>Client</TableHead>
+                      <TableHead className="w-24">KM</TableHead>
+                      <TableHead className="w-16 text-right">Acțiune</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rows.slice().reverse().map((row) => {
+                      if (row.gap) {
+                        return (
+                          <TableRow key={row.id} className="bg-amber-500/10">
+                            <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{new Date(row.date).getDate()}</TableCell>
+                            <TableCell className="text-xs italic text-amber-700 dark:text-amber-500">Gap km</TableCell>
+                            <TableCell className="text-xs whitespace-nowrap">{row.kmStart} - {row.kmEnd}</TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="outline" size="icon" className="h-8 w-8" title="Redistribuie km"
+                                onClick={() => setRedistribute({
+                                  vin: ms.vin, gap: row,
+                                  sessions: [...msVisible]
+                                    .sort((a, b) => (a.km_start ?? 0) - (b.km_start ?? 0) || (a.km_end ?? 0) - (b.km_end ?? 0))
+                                    .map((s) => ({ id: s.id, kmStart: s.km_start ?? 0, kmEnd: s.km_end ?? 0, driver: s.client_name || s.advisor_name || '—' })),
+                                })}>
+                                <ArrowLeftRight className="h-3.5 w-3.5" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      }
+                      const c = row.session
+                      return (
+                        <TableRow key={c.id} className={msAnom.has(c.id) ? 'bg-amber-500/10' : ''}>
+                          <TableCell className="text-xs whitespace-nowrap text-muted-foreground">{new Date(driveDate(c)).getDate()}</TableCell>
+                          <TableCell className="overflow-hidden">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <div className="min-w-0 break-words"><ClientCellContent c={c} hideCompany /></div>
+                              {c.is_internal && <Badge variant="outline" className="shrink-0 text-[10px]">Intern</Badge>}
+                            </div>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-xs"><KmCell c={c} canEdit={canCorrect} /></TableCell>
+                          <TableCell className="text-right">
+                            {canCorrect ? (
+                              <Button variant="outline" size="icon" className="h-8 w-8" title="Corectează"
+                                onClick={() => sessionStatus(c).key === 'planificat' ? navigate(`/app/foi-parcurs/test-drive?edit=${c.id}`) : setCorrecting(c)}>
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                    {rows.length === 0 && (
+                      <TableRow><TableCell colSpan={4} className="text-center text-sm text-muted-foreground">Nicio sesiune.</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </>
+            )
+          })()}
+        </DialogContent>
+      </Dialog>
+
       <RouteSheetPreviewDialog
         vin={previewVin}
         year={filterYear}
@@ -1795,6 +1875,7 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
   const usesBatt = usesBattery(vehicleFuelType || undefined)
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [pdfOpen, setPdfOpen] = useState(false) // mobile: PDF opens in a pop-up (no inline preview)
   const [error, setError] = useState('')
   const [norma, setNorma] = useState('')
   const [normaEnergie, setNormaEnergie] = useState('')
@@ -1838,6 +1919,7 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
 
   // On open: prefill the form from the stored sheet, and if one exists show it.
   useEffect(() => {
+    setPdfOpen(false) // close the mobile PDF viewer whenever the dialog switches/closes
     if (!vin) return
     // Prefill Normă from the stored sheet, else fall back to the car profile.
     setNorma(
@@ -1911,14 +1993,18 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
   // Entries carry their original index so the two sections can edit the shared list.
   const fuelEntries = alim.map((a, i) => ({ a, i })).filter((x) => x.a.unit !== 'kWh')
   const energyEntries = alim.map((a, i) => ({ a, i })).filter((x) => x.a.unit === 'kWh')
-  const consumSection = (kind: 'l' | 'kWh', entries: { a: AlimRow; i: number }[], normaVal: string, setNormaVal: (v: string) => void) => {
+  const consumSection = (kind: 'l' | 'kWh', entries: { a: AlimRow; i: number }[], normaVal: string, setNormaVal: (v: string) => void, vehicleHasNorma: boolean) => {
     const isE = kind === 'kWh'
     return (
       <>
-        <div className="space-y-1.5">
-          <Label className="text-xs">{isE ? 'Normă energie (kWh/100 km)' : 'Normă consum (l/100 km)'}</Label>
-          <Input type="number" step="0.1" value={normaVal} onChange={(e) => setNormaVal(e.target.value)} placeholder={isE ? 'ex. 17.5' : 'ex. 6.5'} />
-        </div>
+        {/* Normă — only prompt for it when the car profile (CarPark) doesn't already
+            carry one; otherwise the stored/profile value is used silently. */}
+        {!vehicleHasNorma && (
+          <div className="space-y-1.5">
+            <Label className="text-xs">{isE ? 'Normă energie (kWh/100 km)' : 'Normă consum (l/100 km)'}</Label>
+            <Input type="number" step="0.1" value={normaVal} onChange={(e) => setNormaVal(e.target.value)} placeholder={isE ? 'ex. 17.5' : 'ex. 6.5'} />
+          </div>
+        )}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label className="text-xs">{isE ? 'Încărcări' : 'Alimentări'}</Label>
@@ -1975,16 +2061,20 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
 
   return (
     <Dialog open={!!vin} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="w-[95vw] max-w-[1120px] sm:max-w-[1120px] max-h-[92vh] overflow-hidden flex flex-col">
+      <DialogContent showCloseButton={false} className="w-[95vw] max-w-[1120px] sm:max-w-[1120px] max-h-[92vh] overflow-hidden flex flex-col">
         <DialogHeader>
-          <DialogTitle>Foaie de parcurs — <span className="font-mono text-sm">{vin}</span></DialogTitle>
+          <DialogTitle className="pr-12">Foaie de parcurs — <span className="font-mono text-sm">{vin}</span></DialogTitle>
         </DialogHeader>
+        <button type="button" onClick={onClose} aria-label="Închide"
+          className="absolute right-3 top-3 rounded-md p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <XIcon className="h-5 w-5" />
+        </button>
 
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 overflow-y-auto md:grid-cols-[380px_1fr] md:overflow-hidden">
           {/* Left: user-entered fuel inputs */}
           <div className="space-y-3 md:overflow-y-auto md:pr-1">
-            {usesTank && consumSection('l', fuelEntries, norma, setNorma)}
-            {usesBatt && consumSection('kWh', energyEntries, normaEnergie, setNormaEnergie)}
+            {usesTank && consumSection('l', fuelEntries, norma, setNorma, vehicleNorma != null)}
+            {usesBatt && consumSection('kWh', energyEntries, normaEnergie, setNormaEnergie, vehicleNormaEnergie != null)}
 
             {/* Evenimente — tie Comodat sessions to promo events (AI). Import from
                 the HR calendar (period) or add manually. */}
@@ -2072,30 +2162,43 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
             {error && <div className="text-sm text-red-600">{error}</div>}
           </div>
 
-          {/* Right: PDF preview */}
-          <div className="min-h-[55vh] overflow-hidden rounded border bg-muted/20 md:min-h-[60vh]">
+          {/* Right: PDF preview — inline on desktop only; mobile opens it in a pop-up. */}
+          <div className="hidden min-h-[60vh] overflow-hidden rounded border bg-muted/20 md:block">
             {loading ? (
-              <div className="flex h-[55vh] items-center justify-center gap-2 text-muted-foreground md:h-[60vh]">
+              <div className="flex h-[60vh] items-center justify-center gap-2 text-muted-foreground">
                 <Loader2 className="h-5 w-5 animate-spin" /> Se generează documentul cu AI…
               </div>
             ) : url ? (
-              <iframe src={url} title="Foaie de parcurs" className="h-[55vh] w-full md:h-[60vh]" />
+              <iframe src={url} title="Foaie de parcurs" className="h-[60vh] w-full" />
             ) : (
-              <div className="flex h-[55vh] items-center justify-center px-6 text-center text-sm text-muted-foreground md:h-[60vh]">
+              <div className="flex h-[60vh] items-center justify-center px-6 text-center text-sm text-muted-foreground">
                 Completează normă/alimentări (opțional) și apasă „Generează”.
               </div>
             )}
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="flex-row justify-end gap-2">
           {url && !loading && (
-            <a href={url} download={fileName}>
-              <Button><Download className="mr-1.5 h-4 w-4" /> Descarcă PDF</Button>
-            </a>
+            <>
+              <Button type="button" variant="outline" className="md:hidden" onClick={() => setPdfOpen(true)}>
+                <FileText className="mr-1.5 h-4 w-4" /> Vezi PDF
+              </Button>
+              <a href={url} download={fileName}>
+                <Button><Download className="mr-1.5 h-4 w-4" /> Descarcă PDF</Button>
+              </a>
+            </>
           )}
         </DialogFooter>
       </DialogContent>
+
+      {/* Mobile PDF viewer — opened from the "Vezi PDF" footer button. */}
+      <Dialog open={pdfOpen} onOpenChange={setPdfOpen}>
+        <DialogContent className="h-[90vh] w-[95vw] max-w-3xl overflow-hidden p-0">
+          <DialogHeader className="sr-only"><DialogTitle>Foaie de parcurs — {vin}</DialogTitle></DialogHeader>
+          {url && <iframe src={url} title="Foaie de parcurs" className="h-full w-full" />}
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }
@@ -3559,6 +3662,7 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
   const visibleCols = React.useMemo(() => new Set(visibleColKeys), [visibleColKeys])
   const [showColMenu, setShowColMenu] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  const isMobile = useIsMobile()
   // Column sort — Odometer / Fuel Type / Zile Stoc. Header click cycles asc → desc → none.
   const [sort, setSort] = useState<{ key: 'odometer' | 'fuel_type' | 'age' | null; dir: 'asc' | 'desc' }>({
     key: null,
@@ -3834,7 +3938,9 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
   }
   const resetCols = () => setVisibleColKeys(STOCK_COLUMNS.filter((c) => c.default).map((c) => c.key))
 
-  const show = (key: StockColumnKey) => visibleCols.has(key)
+  // Mobile forces a compact, fixed column set (no column management there).
+  const show = (key: StockColumnKey) =>
+    isMobile ? key === 'model' || key === 'vin' || key === 'odometer' : visibleCols.has(key)
 
   const toolbar = (
     <div className="flex items-center gap-2">
@@ -3842,7 +3948,7 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
             <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} className="rounded" />
             Arată arhivate
           </label>
-          <div className="relative">
+          <div className="relative hidden md:block">
             <Button size="sm" variant="outline" className="h-8" onClick={() => setShowColMenu(!showColMenu)}>
               <SlidersHorizontal className="mr-1.5 h-4 w-4" />
               Columns
@@ -4046,9 +4152,9 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
                           </span>
                         )}
                       </div>
-                      {(health.tags.length > 0 || !!v.upcoming_planned?.length) && (
+                      {((!isMobile && health.tags.length > 0) || !!v.upcoming_planned?.length) && (
                         <div className="mt-1 flex flex-wrap items-center gap-1">
-                          {health.tags.slice(0, 3).map((t, i) => (
+                          {!isMobile && health.tags.slice(0, 3).map((t, i) => (
                             <span
                               key={i}
                               className={cn('rounded px-1 py-px text-[10px] font-medium leading-tight', healthChipCls[t.gravity])}
@@ -4056,7 +4162,7 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
                               {t.label}
                             </span>
                           ))}
-                          {health.tags.length > 3 && (
+                          {!isMobile && health.tags.length > 3 && (
                             <span
                               className="rounded px-1 py-px text-[10px] font-medium leading-tight text-muted-foreground"
                               title={health.tags.map((t) => t.label).join(', ')}
@@ -4090,7 +4196,7 @@ function StockTab({ companyId, brand, toolbarSlot, documentType = 'sales' }: { c
                     </TableCell>
                   )}
                   {show('mark') && <TableCell>{v.mark}</TableCell>}
-                  {show('vin') && <TableCell className="font-mono text-xs">{v.vin}</TableCell>}
+                  {show('vin') && <TableCell className="font-mono text-xs">{isMobile ? v.vin.slice(-6) : v.vin}</TableCell>}
                   {show('car_id') && <TableCell className="text-sm">{v.car_id || '—'}</TableCell>}
                   {show('reg_number') && (
                     <TableCell className="text-sm">
