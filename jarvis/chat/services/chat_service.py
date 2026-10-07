@@ -82,6 +82,22 @@ class ChatService:
             return True
         return _repo.is_member(channel_id, user_id)
 
+    def can_access_post(self, post_id, user_id):
+        """Whether the user may read/react to a post — gated by its channel.
+        False if the post is missing. Used by the post-id scoped routes."""
+        post = _repo.get_post(post_id)
+        if not post:
+            return False
+        return self.can_access_channel(post['channel_id'], user_id)
+
+    def can_access_poll(self, poll_id, user_id):
+        """Whether the user may read/vote on a poll — gated by its channel.
+        False if the poll is missing. Used by the poll-id scoped routes."""
+        channel_id = _repo.channel_id_for_poll(poll_id)
+        if channel_id is None:
+            return False
+        return self.can_access_channel(channel_id, user_id)
+
     def is_admin_or_moderator(self, channel_id, user_id):
         members = _repo.get_channel_members(channel_id)
         for m in members:
