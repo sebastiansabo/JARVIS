@@ -25,6 +25,7 @@ vi.mock('@/pages/FoiParcurs/InternalSessionForm', () => ({ default: ({ onCancel 
 vi.mock('@/pages/FoiParcurs/TestDriveReturn', () => ({ default: ({ id }: { id: number }) => <div>return-overlay:{id}</div> }))
 
 import HubDrivingPanel from './HubDrivingPanel'
+import { HubHeaderSlotContext } from './hubHeaderSlot'
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -78,5 +79,25 @@ describe('HubDrivingPanel — mobile bottom bar', () => {
     await screen.findByText(/sessions:11/)
     fireEvent.click(screen.getByRole('button', { name: 'Parc' }))
     expect(await screen.findByText(/park:11/)).toBeInTheDocument()
+  })
+
+  // Production condition: the Hub ALWAYS wraps the panel in a HubHeaderSlotContext
+  // whose value is the breadcrumb's (non-fixed, scrolls-away) toolbar div. The
+  // fixed phone navbar must still render on mobile — otherwise, with the Hub's
+  // own global pill also suppressed for driving/courtesy, there is no persistent
+  // navbar and it "disappears" as the list scrolls.
+  it('still renders the fixed bottom navbar on mobile even when a header slot is provided', async () => {
+    const slot = document.createElement('div')
+    document.body.appendChild(slot)
+    wrap(
+      <HubHeaderSlotContext.Provider value={slot}>
+        <HubDrivingPanel onBack={vi.fn()} />
+      </HubHeaderSlotContext.Provider>,
+    )
+    await screen.findByText(/sessions:11/)
+    // The bottom bar's Back is uniquely labelled "Înapoi la Hub" (the breadcrumb
+    // portal actions have no Back button), so its presence proves the fixed pill.
+    expect(screen.getByRole('button', { name: /înapoi la hub/i })).toBeInTheDocument()
+    document.body.removeChild(slot)
   })
 })
