@@ -385,6 +385,22 @@ def create_schema_marketing(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_kpi_deal_src_kpi ON mkt_kpi_deal_sources(project_kpi_id)')
 
+    # KPI ↔ Project Lead sources (count mkt_project_leads toward a KPI)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS mkt_kpi_lead_sources (
+            id SERIAL PRIMARY KEY,
+            project_kpi_id INTEGER NOT NULL REFERENCES mkt_project_kpis(id) ON DELETE CASCADE,
+            role TEXT NOT NULL DEFAULT 'input',
+            metric TEXT NOT NULL DEFAULT 'count',
+            status_filter TEXT[],
+            source_filter TEXT,
+            date_from DATE,
+            date_to DATE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_mkt_kpi_lead_src_kpi ON mkt_kpi_lead_sources(project_kpi_id)')
+
     # Individual deal links to KPIs (each deal = 1 unit toward the KPI)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS mkt_kpi_deals (
