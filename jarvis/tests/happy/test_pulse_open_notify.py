@@ -9,14 +9,18 @@ core.notifications.notify.notify_users is monkeypatched to capture the fan-out.
 """
 from unittest.mock import MagicMock
 
+import pytest
+
 import happy.repositories.pulse_repository as pr
 
 
-def _fake_execute_many(invite_rows):
+def _fake_execute_many(invite_rows, rowcount=1):
     """Run open_pulse's _work(cursor) against a MagicMock cursor whose final
-    SELECT of invited user_ids returns invite_rows."""
+    SELECT of invited user_ids returns invite_rows. rowcount is what the
+    atomic draft->live UPDATE reports (1 = this call won the open, 0 = lost)."""
     def _run(work):
         cur = MagicMock()
+        cur.rowcount = rowcount
         cur.fetchall.return_value = invite_rows
         cur.fetchone.return_value = {"c": len(invite_rows)}
         return work(cur)
@@ -77,3 +81,23 @@ def test_open_pulse_survives_notification_failure(monkeypatch):
     monkeypatch.setattr("core.notifications.notify.notify_users", _boom)
 
     assert repo.open_pulse(pulse_id=7, now="2026-10-06T00:00:00Z") == 1
+
+
+def test_open_pulse_concurrent_loser_does_not_renotify(monkeypatch):
+    """If the atomic draft->live UPDATE affects 0 rows (another request already
+    opened this pulse), bail with not_draft instead of re-materializing and
+    re-notifying — otherwise a double-clicked Open double-notifies everyone."""
+    repo = pr.PulseRepository()
+    _draft_pulse(repo, monkeypatch)
+    monkeypatch.setattr(repo, "execute_many",
+                        _fake_execute_many([{"user_id": 11}], rowcount=0))
+
+    calls = {"n": 0}
+    monkeypatch.setattr("core.notifications.notify.notify_users",
+                        lambda *a, **k: calls.__setitem__("n", calls["n"] + 1))
+
+    with pytest.raises(pr.PulseError) as exc:
+        repo.open_pulse(pulse_id=7, now="2026-10-06T00:00:00Z")
+
+    assert str(exc.value) == "not_draft"
+    assert calls["n"] == 0

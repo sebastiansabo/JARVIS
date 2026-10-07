@@ -159,9 +159,17 @@ class PulseRepository(BaseRepository):
         def _work(cursor):
             cursor.execute(
                 "UPDATE happy.pulses SET status='live', opens_at=%s, "
-                "settings_locked_at=COALESCE(settings_locked_at, %s) WHERE id=%s",
+                "settings_locked_at=COALESCE(settings_locked_at, %s) "
+                "WHERE id=%s AND status='draft'",
                 (now, now, pulse_id),
             )
+            if cursor.rowcount == 0:
+                # Atomic guard: another request already moved this pulse out of
+                # 'draft' (the pre-check above is check-then-act and races on a
+                # double-clicked Open). Bail before materializing/notifying so
+                # invitees aren't notified twice. rollback() in execute_many
+                # discards the no-op UPDATE.
+                raise PulseError("not_draft")
             if audience_user_ids is None:
                 # Default audience = every active user, materialized here —
                 # this is the real enrollment site, so ghosts are ALWAYS
