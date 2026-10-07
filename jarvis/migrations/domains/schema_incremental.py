@@ -2697,6 +2697,10 @@ def _create_schema_incremental_continued(conn, cursor):
     # hasn't received the Service migration (e.g. prod before JAR-1307).
     cursor.execute("ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS document_type VARCHAR(16) NOT NULL DEFAULT 'sales'")
     cursor.execute('ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS svc_total_eur NUMERIC(12,2)')
+    # Reschedule marker: set when a PLANNED (incl. late) or MISSED/Ratat session is
+    # moved to a new time (reviving a no-show to PLANNED). Drives the "Replanificat"
+    # badge + when tooltip in the Hub Driving Sessions list.
+    cursor.execute('ALTER TABLE foi_de_parcurs ADD COLUMN IF NOT EXISTS rescheduled_at TIMESTAMP WITH TIME ZONE')
     # Soft-supersede marker: set when an internal drive is absorbed by a gap
     # redistribution (its KM now covered by client/gap-fill km). Absorbed rows
     # stay in the DB (audit + Restaurează) but drop out of the foaie + KM totals.
