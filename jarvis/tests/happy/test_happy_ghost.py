@@ -44,6 +44,7 @@ def _fake_execute_many(cap, fetchone_value):
     inspected without a DB."""
     def _run(work):
         cur = MagicMock()
+        cur.rowcount = 1  # atomic draft->live UPDATE affected the pulse row
         cur.fetchone.return_value = fetchone_value
         result = work(cur)
         cap['calls'] = cur.execute.call_args_list
