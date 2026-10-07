@@ -304,6 +304,62 @@ class KpiRepository(BaseRepository):
             ORDER BY d.contract_date DESC
         ''', (project_id, project_kpi_id))
 
+    # ---- KPI ↔ Project Lead Sources ----
+
+    @staticmethod
+    def _lead_count_sql(project_id, source):
+        """Build (sql, params) to COUNT mkt_project_leads for a lead-source row.
+
+        Pure (no DB). Filters: status_filter (list of statuses), source_filter
+        (matched against source/utm_source/utm_campaign), date_from/date_to
+        (inclusive of the whole end day).
+        """
+        conditions = ['project_id = %s']
+        params = [project_id]
+        statuses = source.get('status_filter')
+        if statuses:
+            conditions.append('status = ANY(%s)')
+            params.append(list(statuses))
+        if source.get('source_filter'):
+            conditions.append('(source ILIKE %s OR utm_source ILIKE %s OR utm_campaign ILIKE %s)')
+            like = f"%{source['source_filter']}%"
+            params.extend([like, like, like])
+        if source.get('date_from'):
+            conditions.append('created_at >= %s')
+            params.append(source['date_from'])
+        if source.get('date_to'):
+            conditions.append("created_at < (%s::date + INTERVAL '1 day')")
+            params.append(source['date_to'])
+        return (f'SELECT COUNT(*) AS total FROM mkt_project_leads '
+                f'WHERE {" AND ".join(conditions)}', params)
+
+    def get_kpi_lead_sources(self, project_kpi_id):
+        """Lead sources linked to a KPI."""
+        return self.query_all(
+            'SELECT * FROM mkt_kpi_lead_sources WHERE project_kpi_id = %s ORDER BY id',
+            (project_kpi_id,))
+
+    def link_lead_source(self, project_kpi_id, role='input', metric='count',
+                         status_filter=None, source_filter=None,
+                         date_from=None, date_to=None):
+        """Link a project-leads source to a KPI. Returns the new id."""
+        row = self.execute('''
+            INSERT INTO mkt_kpi_lead_sources
+                (project_kpi_id, role, metric, status_filter, source_filter, date_from, date_to)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        ''', (project_kpi_id, role, metric,
+              list(status_filter) if status_filter else None,
+              source_filter or None, date_from or None, date_to or None),
+            returning=True)
+        return row['id'] if row else None
+
+    def unlink_lead_source(self, project_kpi_id, source_id):
+        """Remove a lead source from a KPI (scoped by KPI)."""
+        return self.execute(
+            'DELETE FROM mkt_kpi_lead_sources WHERE id = %s AND project_kpi_id = %s',
+            (source_id, project_kpi_id)) > 0
+
     # ---- Sync / Recalculate ----
 
     def sync_kpi(self, project_kpi_id):
@@ -351,6 +407,7 @@ class KpiRepository(BaseRepository):
 
             # Deal sources grouped by role — aggregate CRM deals from linked clients
             deal_by_role = {}
+            lead_by_role = {}
             cursor.execute(
                 'SELECT project_id FROM mkt_project_kpis WHERE id = %s',
                 (project_kpi_id,)
@@ -405,19 +462,34 @@ class KpiRepository(BaseRepository):
                             role = ds['role']
                             deal_by_role[role] = deal_by_role.get(role, 0) + val
 
+            # Lead sources grouped by role — count project leads matching filters.
+            if proj_row:
+                cursor.execute(
+                    'SELECT * FROM mkt_kpi_lead_sources WHERE project_kpi_id = %s',
+                    (project_kpi_id,)
+                )
+                for ls in cursor.fetchall():
+                    _sql, _params = self._lead_count_sql(proj_row['project_id'], ls)
+                    cursor.execute(_sql, tuple(_params))
+                    lead_by_role[ls['role']] = (
+                        lead_by_role.get(ls['role'], 0) + float(cursor.fetchone()['total'] or 0))
+
             # Individual deal links are handled by +1/-1 in link/unlink_kpi_deal,
             # NOT by sync. This preserves manually recorded values.
 
-            has_sources = bool(bl_by_role) or bool(dep_by_role) or bool(deal_by_role)
+            has_sources = (bool(bl_by_role) or bool(dep_by_role)
+                           or bool(deal_by_role) or bool(lead_by_role))
             if not has_sources:
                 return {'synced': False, 'reason': 'No linked sources'}
 
             # Merge variables from all sources (same variable name = summed)
             variables = {}
-            for role in set(bl_by_role.keys()) | set(dep_by_role.keys()) | set(deal_by_role.keys()):
+            for role in (set(bl_by_role.keys()) | set(dep_by_role.keys())
+                         | set(deal_by_role.keys()) | set(lead_by_role.keys())):
                 variables[role] = (bl_by_role.get(role, 0)
                                    + dep_by_role.get(role, 0)
-                                   + deal_by_role.get(role, 0))
+                                   + deal_by_role.get(role, 0)
+                                   + lead_by_role.get(role, 0))
 
             # Calculate
             if formula:

@@ -547,6 +547,18 @@ export interface MktKpiDealSource {
   created_at: string
 }
 
+export interface MktKpiLeadSource {
+  id: number
+  project_kpi_id: number
+  role: string
+  metric: string
+  status_filter: string[] | null
+  source_filter: string | null
+  date_from: string | null
+  date_to: string | null
+  created_at: string
+}
+
 export interface MktKpiDeal {
   id: number
   project_kpi_id: number
