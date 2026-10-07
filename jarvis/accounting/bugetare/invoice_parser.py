@@ -762,7 +762,10 @@ def parse_with_template(file_path: str, template: dict) -> dict:
             with open(file_path, 'rb') as f:
                 reader = PyPDF2.PdfReader(f)
                 for page in reader.pages:
-                    text += page.extract_text() or ''
+                    # Newline-join pages (see bulk_processor.extract_text_from_pdf):
+                    # PyPDF2 omits it, so page N's last line would glue onto page
+                    # N+1's first line and corrupt the first item of each new page.
+                    text += (page.extract_text() or '') + '\n'
         except Exception:
             pass
 
@@ -925,7 +928,10 @@ def extract_text_from_file(file_path: str) -> str:
             with open(file_path, 'rb') as f:
                 reader = PyPDF2.PdfReader(f)
                 for page in reader.pages:
-                    text += page.extract_text() or ''
+                    # Newline-join pages (see bulk_processor.extract_text_from_pdf):
+                    # PyPDF2 omits it, so page N's last line would glue onto page
+                    # N+1's first line and corrupt the first item of each new page.
+                    text += (page.extract_text() or '') + '\n'
         except Exception:
             pass
 
@@ -1119,7 +1125,10 @@ def generate_template_from_invoice(file_bytes: bytes, filename: str, api_key: Op
                 with open(tmp_path, 'rb') as f:
                     reader = PyPDF2.PdfReader(f)
                     for page in reader.pages:
-                        text += page.extract_text() or ''
+                        # Newline-join pages (see bulk_processor.extract_text_from_pdf):
+                        # PyPDF2 omits it, so page N's last line would glue onto page
+                        # N+1's first line and corrupt the first item of each new page.
+                        text += (page.extract_text() or '') + '\n'
             except Exception:
                 pass
 
