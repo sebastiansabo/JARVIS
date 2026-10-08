@@ -19,6 +19,7 @@ from buyback import lifecycle
 from buyback.repositories.record_repository import RecordRepository
 from buyback.repositories.offer_repository import OfferRepository
 from buyback.services.buyback_service import BuyBackService
+import buyback.services.notifications as nmod
 
 
 def _code(prefix='BB-SVC'):
@@ -89,6 +90,19 @@ def test_reopen_clears_closed_at(require_real_db):
     assert lost['closed_at'] is not None
     reopened = svc.transition(lost, lifecycle.PENDING_EVALUATION, actor=1)
     assert reopened['closed_at'] is None
+
+
+def test_transition_calls_notify_owner_with_event_and_status(require_real_db, monkeypatch):
+    calls = []
+    monkeypatch.setattr(nmod, 'notify_owner', lambda *a, **k: calls.append((a, k)))
+    svc = BuyBackService(notifier=None)
+    rec = _record(created_by=4242)
+    svc.transition(rec, lifecycle.CANCELLED, actor=999)
+    assert calls, 'transition must invoke notify_owner'
+    args, kwargs = calls[0]
+    assert args[1] == 'status_changed'          # event
+    assert args[2] == 999                         # actor passed through
+    assert kwargs.get('new_status') == lifecycle.CANCELLED
 
 
 def test_post_initial_offer_advances_and_blocks_second_pending(require_real_db):

@@ -86,6 +86,13 @@ class BuyBackService:
             record['id'], 'status_changed', actor,
             {'from': old_status, 'to': new_status, **(details or {})},
         )
+        # Notify the record's creator of the status change (config-driven,
+        # skip-self, best-effort — local import keeps buyback_service a leaf).
+        try:
+            from buyback.services.notifications import notify_owner
+            notify_owner(record, 'status_changed', actor, new_status=new_status)
+        except Exception:
+            pass
         return updated
 
     def post_offer(self, record, offer_type, payload, actor) -> dict:
