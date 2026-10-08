@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { BuybackRecord, BuybackOffer, BuybackPhoto, BuybackEvent } from '../types/buyback'
+import type { BuybackRecord, BuybackOffer, BuybackPhoto, BuybackEvent, BuybackConfig } from '../types/buyback'
 
 const BASE = '/api/buyback'
 
@@ -111,4 +111,11 @@ export const buybackApi = {
       error?: string
     }>(`${BASE}/documents/decode`, f)
   },
+
+  // Per-tenant notification config (admin Settings tab).
+  getConfig: (companyId: number) =>
+    api.get<{ config: BuybackConfig }>(`${BASE}/settings/config${qs({ company_id: companyId })}`),
+
+  updateConfig: (cfg: BuybackConfig) =>
+    api.put<{ config: BuybackConfig }>(`${BASE}/settings/config`, cfg),
 }
