@@ -4,6 +4,7 @@ Uses reportlab platypus (the renderer the rest of the app uses). Diacritics are
 stripped to ASCII via _ascii() because the base-14 reportlab fonts can't render
 Romanian glyphs (ș/ț/ă/â/î) — mirrors foi_parcurs/services/pdf_service.py::_ascii.
 """
+import html as _html
 import io
 import unicodedata
 
@@ -19,6 +20,14 @@ def _ascii(value) -> str:
     text = '' if value is None else str(value)
     nfkd = unicodedata.normalize('NFKD', text)
     return ''.join(c for c in nfkd if not unicodedata.combining(c))
+
+
+def _ptext(value) -> str:
+    """ASCII + HTML-escaped text safe to put inside a reportlab Paragraph.
+    Escaping is REQUIRED for user-controlled fields: reportlab parses a mini
+    markup, so a bare '<'/'&' crashes the parser and an <img src=...> tag would
+    trigger a fetch (SSRF). Escaping renders everything as literal text."""
+    return _html.escape(_ascii(value))
 
 
 def _yes_no(v) -> str:
@@ -40,10 +49,10 @@ def build_vehicle_sheet_pdf(record: dict) -> bytes:
     elems = []
 
     brand_model = f"{record.get('brand') or ''} {record.get('model') or ''}".strip()
-    elems.append(Paragraph(_ascii(f"Fisa vehicul — {brand_model}"), styles['Title']))
+    elems.append(Paragraph(_ptext(f"Fisa vehicul — {brand_model}"), styles['Title']))
     code = record.get('record_code') or record.get('id') or ''
     if code:
-        elems.append(Paragraph(_ascii(f"Cod solicitare: {code}"), styles['Normal']))
+        elems.append(Paragraph(_ptext(f"Cod solicitare: {code}"), styles['Normal']))
     elems.append(Spacer(1, 8 * mm))
 
     # (label, value) in display order; raw empty values are dropped, boolean
@@ -71,7 +80,7 @@ def build_vehicle_sheet_pdf(record: dict) -> bytes:
         rows.append(('Detalii daune', record.get('damage_details')))
 
     table_data = [
-        [_ascii(label), Paragraph(_ascii(val), styles['Normal'])]
+        [_ascii(label), Paragraph(_ptext(val), styles['Normal'])]
         for label, val in rows
         if val is not None and str(val).strip() != ''
     ]
