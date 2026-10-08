@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Lock, Megaphone, Users, MessageCircle, Search, X, Building2, GitBranch, Pin, Archive, ArchiveRestore, BellOff, MoreVertical } from 'lucide-react'
+import { Plus, Lock, Megaphone, Users, MessageCircle, MessageSquarePlus, Search, X, Building2, GitBranch, Pin, Archive, ArchiveRestore, BellOff, MoreVertical } from 'lucide-react'
 import { digestApi } from '@/api/digest'
 import { organizationApi } from '@/api/organization'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { cn } from '@/lib/utils'
 import type { DigestChannel } from '@/types/digest'
 import ChannelView from './ChannelView'
+import { filterChannels, channelTitle, channelInitials, nameInitials, type ChatFilter } from './digestHelpers'
 
 type AudienceMode = 'everyone' | 'levels' | 'manual'
 
@@ -35,18 +36,18 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
   const [invitedUsers, setInvitedUsers] = useState<{ id: number; name: string; email: string }[]>([])
 
   // Messenger conversation-list state
-  const [filter, setFilter] = useState<'all' | 'unread' | 'groups'>('all')
+  const [filter, setFilter] = useState<ChatFilter>('all')
   const [search, setSearch] = useState('')
   const [showArchived, setShowArchived] = useState(false)
+  const [showNewDm, setShowNewDm] = useState(false)
+  const [dmSearch, setDmSearch] = useState('')
 
   const { data: channelsRes, isLoading } = useQuery({
     queryKey: ['digest-channels', search, showArchived],
     queryFn: () => digestApi.getChannels({ q: search || undefined, archived: showArchived }),
     refetchInterval: 30_000,
   })
-  const channels = (channelsRes?.data ?? []).filter(ch =>
-    filter === 'unread' ? ch.unread_count > 0 : true,
-  )
+  const channels = filterChannels(channelsRes?.data ?? [], filter)
 
   const stateMutation = useMutation({
     mutationFn: ({ ch, action }: { ch: DigestChannel; action: 'pin' | 'archive' | 'mute' }) =>
@@ -78,6 +79,23 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
     enabled: inviteSearch.length >= 2,
   })
   const searchResults = (searchRes?.data ?? []).filter(u => !invitedUsers.some(iu => iu.id === u.id))
+
+  // New-DM person search + open-or-get
+  const { data: dmSearchRes } = useQuery({
+    queryKey: ['digest-dm-search', dmSearch],
+    queryFn: () => digestApi.searchUsers(dmSearch),
+    enabled: dmSearch.length >= 2,
+  })
+  const dmResults = dmSearchRes?.data ?? []
+  const openDmMutation = useMutation({
+    mutationFn: (userId: number) => digestApi.openDirect(userId),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['digest-channels'] })
+      setShowNewDm(false)
+      setDmSearch('')
+      setSelectedChannel(res.channel)
+    },
+  })
 
   // Build tree structure for level picker
   const companyTree = useMemo(() => {
@@ -151,8 +169,6 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
     return false
   }
 
-  const initials = (name: string) => name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
-
   const relativeTime = (iso: string | null) => {
     if (!iso) return ''
     const d = new Date(iso)
@@ -175,7 +191,8 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
   }
 
   const rowIcon = (ch: DigestChannel) =>
-    ch.is_private ? <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    ch.is_direct ? null
+    : ch.is_private ? <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       : ch.type === 'announcement' ? <Megaphone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         : <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 
@@ -197,6 +214,11 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
             </Button>
           )}
           {!readOnly && (
+            <Button variant="ghost" size="icon" title="Mesaj nou" onClick={() => setShowNewDm(true)}>
+              <MessageSquarePlus className="h-4 w-4" />
+            </Button>
+          )}
+          {!readOnly && (
             <Button onClick={() => setShowCreate(true)} size="sm"><Plus className="mr-1.5 h-4 w-4" /> Canal nou</Button>
           )}
         </div>
@@ -211,7 +233,7 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
       {/* Filters */}
       {!showArchived && (
         <div className="mb-3 flex gap-2">
-          {([['all', 'Toate'], ['unread', 'Necitite'], ['groups', 'Grupuri']] as const).map(([k, label]) => (
+          {([['all', 'Toate'], ['unread', 'Necitite'], ['direct', 'Direct'], ['groups', 'Grupuri']] as const).map(([k, label]) => (
             <button
               key={k}
               onClick={() => setFilter(k)}
@@ -246,7 +268,7 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
                     <img src={ch.avatar_url} alt="" className="h-11 w-11 rounded-full object-cover" />
                   ) : (
                     <div className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                      {initials(ch.name)}
+                      {channelInitials(ch)}
                     </div>
                   )}
                   {ch.pinned_at && (
@@ -256,7 +278,7 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     {rowIcon(ch)}
-                    <span className={cn('truncate', ch.unread_count > 0 ? 'font-semibold' : 'font-medium')}>{ch.name}</span>
+                    <span className={cn('truncate', ch.unread_count > 0 ? 'font-semibold' : 'font-medium')}>{channelTitle(ch)}</span>
                   </div>
                   <p className="truncate text-xs text-muted-foreground">{lastMessagePreview(ch)}</p>
                 </div>
@@ -480,7 +502,7 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
                         className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-accent text-sm"
                       >
                         <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-[10px] font-semibold text-primary shrink-0">
-                          {u.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                          {nameInitials(u.name)}
                         </div>
                         <div className="min-w-0">
                           <div className="font-medium truncate">{u.name}</div>
@@ -502,6 +524,50 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
               Create
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* New Direct Message Dialog */}
+      <Dialog open={showNewDm} onOpenChange={(v) => { setShowNewDm(v); if (!v) setDmSearch('') }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Mesaj nou</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={dmSearch}
+                onChange={(e) => setDmSearch(e.target.value)}
+                placeholder="Caută o persoană..."
+                className="pl-9"
+                autoFocus
+              />
+            </div>
+            {dmResults.length > 0 && (
+              <div className="max-h-72 overflow-y-auto rounded-lg border divide-y">
+                {dmResults.map(u => (
+                  <button
+                    key={u.id}
+                    disabled={openDmMutation.isPending}
+                    onClick={() => openDmMutation.mutate(u.id)}
+                    className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-accent text-sm disabled:opacity-50"
+                  >
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary shrink-0">
+                      {nameInitials(u.name)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{u.name}</div>
+                      <div className="text-[10px] text-muted-foreground truncate">{u.email}{u.department ? ` · ${u.department}` : ''}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            {dmSearch.length >= 2 && dmResults.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">Niciun utilizator găsit</p>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

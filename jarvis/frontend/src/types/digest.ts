@@ -24,6 +24,11 @@ export interface DigestChannel {
   last_message_type: string | null
   last_message_at: string | null
   last_message_author: string | null
+  // Direct message (1:1): is_direct marks a DM; counterpart is the OTHER
+  // participant, resolved per-viewer by the backend (null for group channels).
+  is_direct: boolean
+  counterpart_user_id: number | null
+  counterpart_name: string | null
   created_at: string
   updated_at: string
 }
