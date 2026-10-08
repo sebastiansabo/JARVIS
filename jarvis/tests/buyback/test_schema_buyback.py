@@ -41,3 +41,20 @@ def test_records_has_company_and_status_columns(require_real_db):
                 'carpark_vehicle_id', 'is_trade_in'}.issubset(cols)
     finally:
         release_db(conn)
+
+
+def test_buyback_company_config_table_exists(require_real_db):
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        create_schema_buyback(conn, cur)
+        conn.commit()
+        cur.execute("""SELECT column_name FROM information_schema.columns
+                       WHERE table_name='buyback_company_config'""")
+        cols = {r[0] if not isinstance(r, dict) else r['column_name'] for r in cur.fetchall()}
+        assert {'company_id', 'enabled', 'acquisition_emails', 'channel_email',
+                'channel_in_app', 'channel_push', 'notify_new_request',
+                'notify_milestones', 'notify_inspection', 'updated_by',
+                'updated_at', 'created_at'}.issubset(cols)
+    finally:
+        release_db(conn)

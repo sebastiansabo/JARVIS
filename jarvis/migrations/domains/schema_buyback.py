@@ -89,3 +89,21 @@ def create_schema_buyback(conn, cursor):
     cursor.execute(
         'CREATE INDEX IF NOT EXISTS idx_bb_events_record ON buyback_events (record_id, created_at DESC)'
     )
+
+    # ── Per-tenant notification config (one row per company) ──
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS buyback_company_config (
+            company_id BIGINT PRIMARY KEY,
+            enabled BOOLEAN NOT NULL DEFAULT TRUE,
+            acquisition_emails TEXT,
+            channel_email BOOLEAN NOT NULL DEFAULT TRUE,
+            channel_in_app BOOLEAN NOT NULL DEFAULT TRUE,
+            channel_push BOOLEAN NOT NULL DEFAULT TRUE,
+            notify_new_request BOOLEAN NOT NULL DEFAULT TRUE,
+            notify_milestones BOOLEAN NOT NULL DEFAULT TRUE,
+            notify_inspection BOOLEAN NOT NULL DEFAULT TRUE,
+            updated_by INTEGER,
+            updated_at TIMESTAMPTZ DEFAULT NOW(),
+            created_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    ''')
