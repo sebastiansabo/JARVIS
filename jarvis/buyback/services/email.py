@@ -76,16 +76,18 @@ def _company_name(company_id):
         return None
 
 
-def build_offer_email(record: dict, offer: dict, dealer: dict) -> tuple[str, str, str]:
+def build_offer_email(record: dict, offer: dict, dealer: dict, advisor: dict = None) -> tuple[str, str, str]:
     """Build (subject, text_body, html_body) for an offer-posted email to the
     seller.
 
-    All record/offer/dealer values are `html.escape`d before being
+    All record/offer/dealer/advisor values are `html.escape`d before being
     interpolated into the HTML. A row is omitted entirely when its backing
     value is missing/empty (e.g. no seller_name, no dealer phone) — per the
-    brief's "omit lines whose value is missing".
+    brief's "omit lines whose value is missing". `advisor` (optional) carries
+    the consilier's name/phone/email and is shown alongside the dealer block.
     """
     dealer = dealer or {}
+    advisor = advisor or {}
     brand = record.get('brand') or ''
     model = record.get('model') or ''
     vin = record.get('vin') or ''
@@ -119,6 +121,12 @@ def build_offer_email(record: dict, offer: dict, dealer: dict) -> tuple[str, str
         pairs.append(('Adresă dealer', dealer['address']))
     if dealer.get('email'):
         pairs.append(('Email dealer', dealer['email']))
+    if advisor.get('name'):
+        pairs.append(('Consilier', advisor['name']))
+    if advisor.get('phone'):
+        pairs.append(('Telefon consilier', advisor['phone']))
+    if advisor.get('email'):
+        pairs.append(('Email consilier', advisor['email']))
 
     rows_html = ''.join(
         f'<tr><td style="padding:8px;border:1px solid #ddd;font-weight:bold;">{_esc(label)}</td>'
@@ -181,6 +189,51 @@ def _resolve_internal_recipient(record: dict, env_var: str):
         except Exception:
             continue
     return None
+
+
+def _resolve_advisor_contact(record: dict) -> dict:
+    """Consilier contact for the offer email: name/phone/email. Name falls back
+    to the record's `advisor_name`; phone/email come from the advisor's user
+    account (`advisor_id`). Best-effort — returns whatever resolves, never
+    raises (no account / no DB -> just the name, or empty)."""
+    name = (record.get('advisor_name') or '').strip()
+    phone = ''
+    email = ''
+    uid = record.get('advisor_id')
+    if uid:
+        try:
+            from core.auth.repositories.user_repository import UserRepository
+            user = UserRepository().get_by_id(uid) or {}
+            name = name or (user.get('name') or '').strip()
+            phone = (user.get('phone') or '').strip()
+            email = (user.get('email') or '').strip()
+        except Exception:
+            logger.warning('buyback offer email: advisor lookup failed for %s', uid, exc_info=True)
+    return {'name': name, 'phone': phone, 'email': email}
+
+
+def _build_offer_attachments(record: dict) -> list:
+    """(filename, bytes) attachments for the offer email: the vehicle spec sheet
+    PDF (always) + the uploaded inspection report PDF if present. Each attachment
+    is best-effort — a failure is logged and skipped, never blocks the send."""
+    out = []
+    code = record.get('record_code') or record.get('id') or 'vehicul'
+    try:
+        from buyback.services.offer_pdf import build_vehicle_sheet_pdf
+        out.append((f'Fisa_vehicul_{code}.pdf', build_vehicle_sheet_pdf(record)))
+    except Exception:
+        logger.exception('buyback offer email: vehicle sheet PDF failed (record %s)', record.get('id'))
+
+    key = record.get('inspection_report_key')
+    if key:
+        try:
+            from core.services import spaces_service
+            data, _ct = spaces_service.fetch(key)
+            if data:
+                out.append((f'Raport_inspectie_{code}.pdf', data))
+        except Exception:
+            logger.exception('buyback offer email: inspection PDF fetch failed (record %s)', record.get('id'))
+    return out
 
 
 def _send_internal_notification(record: dict, env_var: str, label: str) -> None:
@@ -246,13 +299,16 @@ class Notifier:
             dealer = get_dealer_config(
                 _company_name(record.get('company_id')), record.get('brand')
             )
-            subject, text_body, html_body = build_offer_email(record, offer, dealer)
+            advisor = _resolve_advisor_contact(record)
+            subject, text_body, html_body = build_offer_email(record, offer, dealer, advisor=advisor)
+            attachments = _build_offer_attachments(record)
             success, error = send_email(
                 to_email=to_email,
                 subject=subject,
                 html_body=html_body,
                 text_body=text_body,
                 from_name=_SENDER_NAME,
+                attachments=attachments or None,
             )
             if not success:
                 logger.warning(

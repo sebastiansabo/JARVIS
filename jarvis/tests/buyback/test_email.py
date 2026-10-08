@@ -61,9 +61,47 @@ def test_offer_email_escapes_values():
     assert '&lt;script&gt;' in html
     assert '<b>BMW</b>' not in html
     assert '&lt;b&gt;BMW&lt;/b&gt;' in html
-    # subject itself is plain text (not HTML-rendered), but the HTML body's
-    # rendering of it must still be escaped
-    assert '&lt;b&gt;BMW&lt;/b&gt;' in html
+
+
+def test_offer_email_includes_advisor():
+    rec = {'brand': 'BMW', 'model': 'X5'}
+    off = {'amount_eur': 1000, 'offer_type': 'initial'}
+    advisor = {'name': 'Pop Ion', 'phone': '0721000000', 'email': 'ion@autoworld.ro'}
+    subject, text, html = build_offer_email(rec, off, {}, advisor=advisor)
+    assert 'Pop Ion' in html and '0721000000' in html and 'ion@autoworld.ro' in html
+    assert 'Consilier' in html
+    assert 'Pop Ion' in text
+
+
+def test_send_offer_email_attaches_vehicle_sheet_and_inspection(monkeypatch):
+    sent = {}
+    monkeypatch.setattr(email_module, 'send_email', lambda **k: sent.update(k) or (True, ''))
+    monkeypatch.setattr(email_module, '_company_name', lambda cid: None)
+    monkeypatch.setattr(email_module, '_resolve_advisor_contact',
+                        lambda rec: {'name': 'X', 'phone': '', 'email': ''})
+    import buyback.services.offer_pdf as opdf
+    monkeypatch.setattr(opdf, 'build_vehicle_sheet_pdf', lambda rec: b'%PDF-fake')
+    from core.services import spaces_service
+    monkeypatch.setattr(spaces_service, 'fetch', lambda key: (b'%PDF-insp', 'application/pdf'))
+    rec = {'seller_email': 's@x.ro', 'brand': 'BMW', 'model': 'X5', 'record_code': 'BB-9',
+           'inspection_report_key': 'private/buyback/9/r.pdf'}
+    Notifier().send_offer_email(rec, {'amount_eur': 1000, 'offer_type': 'final'})
+    names = [fn for fn, _ in (sent.get('attachments') or [])]
+    assert any('Fisa_vehicul' in n for n in names)
+    assert any('Raport_inspectie' in n for n in names)
+
+
+def test_send_offer_email_no_inspection_attachment_when_absent(monkeypatch):
+    sent = {}
+    monkeypatch.setattr(email_module, 'send_email', lambda **k: sent.update(k) or (True, ''))
+    monkeypatch.setattr(email_module, '_company_name', lambda cid: None)
+    import buyback.services.offer_pdf as opdf
+    monkeypatch.setattr(opdf, 'build_vehicle_sheet_pdf', lambda rec: b'%PDF-fake')
+    rec = {'seller_email': 's@x.ro', 'brand': 'BMW', 'model': 'X5', 'record_code': 'BB-10'}
+    Notifier().send_offer_email(rec, {'amount_eur': 1000, 'offer_type': 'initial'})
+    names = [fn for fn, _ in (sent.get('attachments') or [])]
+    assert any('Fisa_vehicul' in n for n in names)
+    assert not any('Raport_inspectie' in n for n in names)
 
 
 def test_offer_email_omits_missing_lines():
