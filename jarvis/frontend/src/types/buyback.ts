@@ -114,3 +114,15 @@ export interface BuybackOption {
   value: string
   label: string
 }
+
+export interface BuybackConfig {
+  company_id: number
+  enabled: boolean
+  acquisition_emails: string // comma-separated
+  channel_email: boolean
+  channel_in_app: boolean
+  channel_push: boolean
+  notify_new_request: boolean
+  notify_milestones: boolean
+  notify_inspection: boolean
+}
