@@ -81,6 +81,11 @@ export const digestApi = {
   searchUsers: (q: string) =>
     api.get<ApiResponse<DigestUserSearchResult[]>>(`/api/chat/users/search`, { q }),
 
+  // Direct messages — open-or-get the 1:1 channel with a user.
+  // Backend returns a bare { channel } envelope (not the usual { success, data }).
+  openDirect: (userId: number) =>
+    api.post<{ channel: DigestChannel }>('/api/chat/direct', { user_id: userId }),
+
   // Posts
   getPosts: (channelId: number, params?: { limit?: number; offset?: number; parent_id?: number }) => {
     const searchParams: Record<string, string> = {}

@@ -12,6 +12,7 @@ import PollCreator from './PollCreator'
 import EmojiPicker from './EmojiPicker'
 import ThreadView from './ThreadView'
 import ChannelSettings from './ChannelSettings'
+import { channelTitle } from './digestHelpers'
 
 interface Props {
   channel: DigestChannel
@@ -199,17 +200,21 @@ export default function ChannelView({ channel, onBack }: Props) {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="flex-1 min-w-0">
-          <h2 className="text-lg font-semibold truncate">{channel.name}</h2>
+          <h2 className="text-lg font-semibold truncate">{channelTitle(channel)}</h2>
           {channel.description && (
             <p className="text-xs text-muted-foreground truncate">{channel.description}</p>
           )}
         </div>
-        <Badge variant="outline" className="shrink-0">
-          <Users className="h-3 w-3 mr-1" /> {channel.member_count}
-        </Badge>
-        <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} title="Channel settings">
-          <Settings className="h-4 w-4" />
-        </Button>
+        {!channel.is_direct && (
+          <>
+            <Badge variant="outline" className="shrink-0">
+              <Users className="h-3 w-3 mr-1" /> {channel.member_count}
+            </Badge>
+            <Button variant="ghost" size="icon" onClick={() => setShowSettings(true)} title="Channel settings">
+              <Settings className="h-4 w-4" />
+            </Button>
+          </>
+        )}
       </div>
 
       {/* Posts */}
