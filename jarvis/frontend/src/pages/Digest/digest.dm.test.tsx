@@ -2,6 +2,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import Digest from './index'
+import ChannelView from './ChannelView'
 import { digestApi } from '@/api/digest'
 
 const DM_CHANNEL = {
@@ -71,5 +72,19 @@ describe('New Direct Message flow', () => {
     expect(await screen.findByTitle('Mesaj nou')).toBeInTheDocument()
     // Channel creation stays management-only (sidebar)
     expect(screen.queryByText('Canal nou')).not.toBeInTheDocument()
+  })
+
+  it('embedded ChannelView caps the scroll area so the composer stays on-screen', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const { container } = render(
+      <QueryClientProvider client={qc}>
+        <ChannelView channel={DM_CHANNEL as never} onBack={() => {}} embedded />
+      </QueryClientProvider>,
+    )
+    // Embedded drops the tall fixed sidebar height and caps the message scroll area
+    expect((container.firstElementChild as HTMLElement).className).not.toContain('100vh-8rem')
+    expect(container.innerHTML).toContain('max-h-[55dvh]')
+    // Composer is rendered (in normal flow right after the posts, so always visible)
+    expect(screen.getByPlaceholderText(/Scrie un mesaj/)).toBeInTheDocument()
   })
 })

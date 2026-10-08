@@ -197,7 +197,7 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
         : <Users className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
 
   if (selectedChannel) {
-    return <ChannelView channel={selectedChannel} onBack={() => setSelectedChannel(null)} />
+    return <ChannelView channel={selectedChannel} onBack={() => setSelectedChannel(null)} embedded={readOnly} />
   }
 
   return (
