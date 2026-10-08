@@ -125,15 +125,17 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   )
   const [inspectionNotes, setInspectionNotes] = useState(record.inspection_notes ?? '')
 
-  // The above initializers only run once; when the record refetches (e.g. after
-  // saving the inspection) resync the inputs to the fresh server values so they
-  // don't keep stale text. Keyed on id/updated_at, not on every render.
+  // Seed the inputs once per record (first mount / navigating to a different
+  // record). Deliberately NOT keyed on updated_at: an unrelated refetch that
+  // bumps updated_at (e.g. a photo upload, or another user's mutation) must not
+  // wipe the inspector's in-progress edits. Our own save reseeds these from the
+  // server response in saveInspectionMutation.onSuccess below.
   useEffect(() => {
     setRating(record.inspection_rating != null ? String(record.inspection_rating) : '')
     setReconditioningCost(record.reconditioning_cost_eur != null ? String(record.reconditioning_cost_eur) : '')
     setInspectionNotes(record.inspection_notes ?? '')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [record.id, record.updated_at])
+  }, [record.id])
 
   const saveInspectionMutation = useMutation({
     mutationFn: () =>
@@ -142,7 +144,16 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
         reconditioning_cost_eur: reconditioningCost ? Number(reconditioningCost) : undefined,
         inspection_notes: inspectionNotes || undefined,
       }),
-    onSuccess: () => {
+    onSuccess: (res) => {
+      // Reseed from the server's canonical values (coerced rating / decimals)
+      // so the inputs reflect what was persisted — the record.id-only effect
+      // above won't resync on the refetch this invalidate triggers.
+      const rec = (res as { record?: BuybackRecord }).record
+      if (rec) {
+        setRating(rec.inspection_rating != null ? String(rec.inspection_rating) : '')
+        setReconditioningCost(rec.reconditioning_cost_eur != null ? String(rec.reconditioning_cost_eur) : '')
+        setInspectionNotes(rec.inspection_notes ?? '')
+      }
       toast.success('Inspecția a fost salvată')
       invalidate()
     },

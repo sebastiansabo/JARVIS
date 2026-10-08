@@ -173,7 +173,8 @@ export default function HubBuybackPanel() {
         status: statuses.length ? statuses.join(',') : undefined,
         q: q.trim() || undefined,
         company_id: companyId && companyId > 0 ? companyId : undefined,
-        per_page: 200,
+        // Full set — the Hub panel groups/counts client-side. Backend caps at 1000.
+        per_page: 1000,
         sort_by: 'created_at',
         sort_dir: 'DESC',
       }),
