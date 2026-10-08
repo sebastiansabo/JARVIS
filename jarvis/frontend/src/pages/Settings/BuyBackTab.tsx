@@ -40,6 +40,10 @@ export default function BuyBackTab() {
     queryFn: () => buybackApi.getConfig(companyId as number),
     enabled: companyId != null,
   })
+  // Clear the form when switching companies so the previous company's values
+  // can't be shown or saved against the newly-selected company while its
+  // config is still loading.
+  useEffect(() => { setForm(null) }, [companyId])
   useEffect(() => { if (cfgData?.config) setForm(cfgData.config) }, [cfgData])
 
   const save = useMutation({
@@ -88,7 +92,12 @@ export default function BuyBackTab() {
                 />
               </div>
             ))}
-            <Button disabled={save.isPending} onClick={() => save.mutate()}>Salvează</Button>
+            <Button
+              disabled={save.isPending || form.company_id !== companyId}
+              onClick={() => save.mutate()}
+            >
+              Salvează
+            </Button>
           </CardContent>
         </Card>
       )}
