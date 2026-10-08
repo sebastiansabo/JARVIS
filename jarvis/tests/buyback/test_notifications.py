@@ -71,6 +71,25 @@ def test_owner_inspection_group_gate(monkeypatch):
     assert not (s['email'] or s['push'] or s['in_app'])
 
 
+def test_new_request_escapes_html_in_fields(monkeypatch):
+    s = _sink(); _patch(monkeypatch, _cfg(), s)
+    nmod.notify_new_request({'id': 1, 'company_id': 1, 'record_code': 'BB-1',
+                             'brand': 'BMW', 'model': 'X5',
+                             'seller_name': '<script>alert(1)</script>'})
+    body = s['email'][0]['html_body']
+    assert '<script>' not in body
+    assert '&lt;script&gt;' in body
+
+
+def test_owner_escapes_html_in_message(monkeypatch):
+    s = _sink(); _patch(monkeypatch, _cfg(channel_in_app=False, channel_push=False), s)
+    nmod.notify_owner({'id': 1, 'company_id': 1, 'created_by': 7,
+                       'brand': '<b>x</b>', 'model': ''}, 'status_changed', 99, new_status='BOUGHT')
+    body = s['email'][0]['html_body']
+    assert '<b>x</b>' not in body
+    assert '&lt;b&gt;' in body
+
+
 def test_owner_channel_failure_is_swallowed(monkeypatch):
     s = _sink(); _patch(monkeypatch, _cfg(), s)
     import core.notifications.push_service as ps

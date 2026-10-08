@@ -6,12 +6,19 @@ notify_owner(record, event, actor_id, ...)  -> form creator (in-app/push/email)
 Every path swallows its own exceptions: these run after the record/offer is
 already committed, so a send failure must never surface as a 500.
 """
+import html as _html
 import logging
 
 from buyback import lifecycle
 from buyback.services.config import get_config
 
 logger = logging.getLogger('jarvis.buyback.notifications')
+
+
+def _esc(value) -> str:
+    """html.escape a value for safe interpolation into an email HTML body
+    (record fields like seller_name/brand are user-controlled)."""
+    return _html.escape('' if value is None else str(value))
 
 _EVENT_GROUP = {
     'status_changed': 'notify_milestones',
@@ -35,15 +42,21 @@ def notify_new_request(record) -> None:
             return
         code = record.get('record_code') or record.get('id')
         vehicle = _vehicle(record)
+        seller = record.get('seller_name') or '—'
+        advisor = record.get('advisor_name') or '—'
         subject = f"[BuyBack] Solicitare nouă — {vehicle}".strip()
         text = (f"Solicitare nouă {code} ({vehicle}).\n"
-                f"Vânzător: {record.get('seller_name') or '—'}\n"
-                f"Consilier: {record.get('advisor_name') or '—'}")
-        html = f"<p>{text.replace(chr(10), '<br>')}</p>"
+                f"Vânzător: {seller}\n"
+                f"Consilier: {advisor}")
+        html_body = (
+            f"<p>Solicitare nouă {_esc(code)} ({_esc(vehicle)}).<br>"
+            f"Vânzător: {_esc(seller)}<br>"
+            f"Consilier: {_esc(advisor)}</p>"
+        )
         from core.services.notification_service import send_email
         for to in cfg['acquisition_emails']:
             try:
-                send_email(to_email=to, subject=subject, html_body=html,
+                send_email(to_email=to, subject=subject, html_body=html_body,
                            text_body=text, from_name='AUTOWORLD')
             except Exception:
                 logger.exception('buyback new-request email to %s failed', to)
@@ -94,7 +107,7 @@ def notify_owner(record, event, actor_id, new_status=None) -> None:
                 email = (user or {}).get('email')
                 if email:
                     send_email(to_email=email, subject=title,
-                               html_body=f"<p>{title}</p><p>{message or ''}</p>",
+                               html_body=f"<p>{_esc(title)}</p><p>{_esc(message or '')}</p>",
                                text_body=f"{title}\n{message or ''}", from_name='AUTOWORLD')
             except Exception:
                 logger.exception('buyback owner email failed (record %s)', rid)
