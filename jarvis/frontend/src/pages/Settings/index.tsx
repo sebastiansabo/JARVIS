@@ -23,6 +23,7 @@ import {
   PanelLeftOpen,
   Router,
   ScrollText,
+  ArrowLeftRight,
 } from 'lucide-react'
 import { Skeleton } from '@/components/ui/skeleton'
 import { PageHeader } from '@/components/shared/PageHeader'
@@ -52,6 +53,7 @@ const ShopifyTaxonomy = lazy(() => import('./ShopifyTaxonomy'))
 const ShopifySchema = lazy(() => import('./ShopifySchema'))
 const TelemetryTab = lazy(() => import('./TelemetryTab'))
 const ConsentsTab = lazy(() => import('./ConsentsTab'))
+const BuyBackTab = lazy(() => import('./BuyBackTab'))
 
 const baseTabs = [
   // Access
@@ -65,6 +67,7 @@ const baseTabs = [
   { path: 'employee-mapping', label: 'Employee Mapping', icon: Fingerprint },
   { path: 'pontaje', label: 'Pontaje', icon: Router },
   { path: 'documents', label: 'Documents', icon: FileText },
+  { path: 'buyback', label: 'BuyBack', icon: ArrowLeftRight },
   // Appearance
   { path: 'themes', label: 'Themes', icon: Palette },
   { path: 'menus', label: 'Menus', icon: Menu },
@@ -173,6 +176,7 @@ export default function Settings() {
               <Route path="employee-mapping" element={<EmployeeMappingTab />} />
               <Route path="pontaje" element={<PontajeTab />} />
               <Route path="documents" element={<DocumentsTab />} />
+              <Route path="buyback" element={<BuyBackTab />} />
               <Route path="approvals" element={<ApprovalsTab />} />
               <Route path="marketing" element={<MarketingTab />} />
               <Route path="connectors" element={<ConnectorsTab />} />
