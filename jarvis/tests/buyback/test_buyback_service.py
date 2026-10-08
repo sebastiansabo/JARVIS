@@ -63,6 +63,34 @@ def test_transition_updates_status_and_logs_event(require_real_db):
     assert RecordRepository().get_by_id(rec['id'])['status'] == lifecycle.CANCELLED
 
 
+def test_terminal_transition_stamps_closed_at(require_real_db):
+    """CANCELLED/LOST must get a real closed_at so the UI's resolved-window
+    (Active/Arhivă) logic has a resolution timestamp — set_status alone left it
+    NULL."""
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    assert rec['closed_at'] is None
+    updated = svc.transition(rec, lifecycle.CANCELLED, actor=1)
+    assert updated['closed_at'] is not None
+    assert RecordRepository().get_by_id(rec['id'])['closed_at'] is not None
+
+
+def test_reopen_clears_closed_at(require_real_db):
+    """Reopening a LOST record (→ PENDING_EVALUATION) clears closed_at so it is
+    treated as in-progress again."""
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    svc.post_offer(rec, 'initial', {'amount_eur': 1000}, actor=1)
+    rec = RecordRepository().get_by_id(rec['id'])
+    offer = OfferRepository().latest_for_record(rec['id'])
+    svc.record_decision(rec, offer['id'], 'declined', actor=1, decline_reason='x')
+    lost = RecordRepository().get_by_id(rec['id'])
+    assert lost['status'] == lifecycle.LOST
+    assert lost['closed_at'] is not None
+    reopened = svc.transition(lost, lifecycle.PENDING_EVALUATION, actor=1)
+    assert reopened['closed_at'] is None
+
+
 def test_post_initial_offer_advances_and_blocks_second_pending(require_real_db):
     svc = BuyBackService(notifier=None)
     rec = _record()

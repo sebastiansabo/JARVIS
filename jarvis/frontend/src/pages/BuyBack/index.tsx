@@ -72,7 +72,9 @@ export default function BuyBack() {
         acquisition_type: acquisitionType !== 'all' ? acquisitionType : undefined,
         q: q || undefined,
         company_id: effectiveCompanyId ?? undefined,
-        per_page: 500,
+        // Fetch the full set: the Active/Arhivă split, status chips and client
+        // paging below all count over `records`. Backend caps per_page at 1000.
+        per_page: 1000,
         sort_by: 'created_at',
         sort_dir: 'DESC',
       }),

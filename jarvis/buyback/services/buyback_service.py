@@ -31,6 +31,8 @@ the purchased vehicle) is deliberately NOT done here — record_decision()
 only moves the record to BOUGHT. That finalize step is a separate
 route/service (Task 14).
 """
+from datetime import datetime, timezone
+
 from buyback import lifecycle
 from buyback.repositories.record_repository import RecordRepository
 from buyback.repositories.offer_repository import OfferRepository
@@ -68,6 +70,18 @@ class BuyBackService:
                 f"for buyback record {record['id']}"
             )
         updated = self.records.set_status(record['id'], new_status, actor)
+        # Stamp (or clear) closed_at so the UI's resolved-window logic
+        # (Active/Arhivă 72h linger) has a real resolution timestamp for
+        # LOST/CANCELLED — set_status alone only touches status + updated_at,
+        # which left closed_at perpetually NULL. BOUGHT keeps bought_at (stamped
+        # at finalize) as its resolution time; reopening a LOST record clears
+        # closed_at again so it's treated as in-progress once more.
+        if new_status in (lifecycle.LOST, lifecycle.CANCELLED):
+            updated = self.records.update(
+                record['id'], {'closed_at': datetime.now(timezone.utc)}
+            )
+        elif new_status == lifecycle.PENDING_EVALUATION and old_status == lifecycle.LOST:
+            updated = self.records.update(record['id'], {'closed_at': None})
         self.events.log(
             record['id'], 'status_changed', actor,
             {'from': old_status, 'to': new_status, **(details or {})},

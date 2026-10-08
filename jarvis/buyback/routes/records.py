@@ -153,7 +153,12 @@ def _list_scoped_company_id():
 def list_records():
     try:
         page = max(1, int(request.args.get('page', 1)))
-        per_page = max(1, min(100, int(request.args.get('per_page', 25))))
+        # Cap raised to 1000: the web list + Hub panel fetch the whole set and
+        # do their Active/Arhivă split, per-status count chips and pagination
+        # client-side, so a 100-row cap silently hid records 101+ and skewed
+        # every count. (True server-side pagination + a counts endpoint is the
+        # longer-term fix once per-company volumes approach this ceiling.)
+        per_page = max(1, min(1000, int(request.args.get('per_page', 25))))
     except (ValueError, TypeError):
         page, per_page = 1, 25
 
