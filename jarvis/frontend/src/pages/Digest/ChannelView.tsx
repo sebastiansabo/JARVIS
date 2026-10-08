@@ -17,9 +17,12 @@ import { channelTitle } from './digestHelpers'
 interface Props {
   channel: DigestChannel
   onBack: () => void
+  /** Mounted inside the Hub (below its header + breadcrumb) — use a shorter
+   * height so the sticky composer stays within the viewport. */
+  embedded?: boolean
 }
 
-export default function ChannelView({ channel, onBack }: Props) {
+export default function ChannelView({ channel, onBack, embedded = false }: Props) {
   const queryClient = useQueryClient()
   const [content, setContent] = useState('')
   const [replyTo, setReplyTo] = useState<DigestPost | null>(null)
@@ -193,7 +196,7 @@ export default function ChannelView({ channel, onBack }: Props) {
   }
 
   return (
-    <div className="flex h-[calc(100dvh-7rem)] flex-col sm:h-[calc(100vh-8rem)]">
+    <div className={`flex flex-col min-h-0 ${embedded ? '' : 'h-[calc(100dvh-7rem)] sm:h-[calc(100vh-8rem)]'}`}>
       {/* Header */}
       <div className="flex items-center gap-3 border-b pb-3 mb-3">
         <Button variant="ghost" size="icon" onClick={onBack}>
@@ -217,14 +220,15 @@ export default function ChannelView({ channel, onBack }: Props) {
         )}
       </div>
 
-      {/* Posts */}
-      <div className="flex-1 overflow-y-auto space-y-1 pr-1">
+      {/* Posts — sidebar fills the fixed-height pane (flex-1); embedded in the
+          Hub, cap the scroll area so the composer below always stays on-screen. */}
+      <div className={embedded ? 'overflow-y-auto space-y-1 pr-1 min-h-[40dvh] max-h-[55dvh]' : 'flex-1 overflow-y-auto space-y-1 pr-1'}>
         {isLoading ? (
           <div className="space-y-3">
             {[1,2,3].map(i => <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />)}
           </div>
         ) : posts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
+          <div className="flex flex-col items-center justify-center h-full min-h-[40dvh] text-center text-muted-foreground">
             <p className="text-sm">Niciun mesaj încă. Începe conversația!</p>
           </div>
         ) : (
