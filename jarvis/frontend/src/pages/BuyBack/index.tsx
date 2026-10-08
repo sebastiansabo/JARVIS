@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { Plus, Car, List as ListIcon, LayoutGrid } from 'lucide-react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
+import { Plus, Car, List as ListIcon, LayoutGrid, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { buybackApi } from '@/api/buyback'
+import type { BuybackRecord } from '@/types/buyback'
 import { useAuth } from '@/hooks/useAuth'
 import { recordStatus, STATUS_FILTER_OPTIONS } from './recordStatus'
 import { usePermissions } from './usePermissions'
@@ -11,6 +13,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { SearchInput } from '@/components/shared/SearchInput'
@@ -41,6 +44,57 @@ function lingersOnActive(r: { status: string; closed_at: string | null; bought_a
   return t != null && now - t <= RESOLVED_ACTIVE_WINDOW_MS
 }
 
+// ── Sorting (client-side, over the loaded set) ──
+type SortKey =
+  | 'record_code' | 'vehicle' | 'vin' | 'seller_name'
+  | 'client_asking_price_eur' | 'purchase_price_eur' | 'status' | 'advisor_name' | 'created_at'
+
+// Lifecycle progression order so sorting by Status is meaningful, not alphabetical.
+const STATUS_ORDER: Record<string, number> = {
+  PENDING_EVALUATION: 0, INITIAL_OFFER: 1, INSPECTION: 2, FINAL_OFFER: 3, BOUGHT: 4, LOST: 5, CANCELLED: 6,
+}
+
+function sortValue(r: BuybackRecord, key: SortKey): string | number | null {
+  switch (key) {
+    case 'vehicle': return `${r.brand} ${r.model}`.trim()
+    case 'created_at': return new Date(r.created_at).getTime()
+    case 'status': return STATUS_ORDER[r.status] ?? 99
+    case 'client_asking_price_eur': return r.client_asking_price_eur
+    case 'purchase_price_eur': return r.purchase_price_eur
+    default: return r[key] as string | null
+  }
+}
+
+function compareRecords(a: BuybackRecord, b: BuybackRecord, key: SortKey, dir: 'asc' | 'desc'): number {
+  const av = sortValue(a, key)
+  const bv = sortValue(b, key)
+  const aEmpty = av === null || av === undefined || av === ''
+  const bEmpty = bv === null || bv === undefined || bv === ''
+  if (aEmpty && bEmpty) return 0
+  if (aEmpty) return 1 // empties always last, regardless of direction
+  if (bEmpty) return -1
+  let cmp: number
+  if (typeof av === 'number' && typeof bv === 'number') cmp = av - bv
+  else cmp = String(av).localeCompare(String(bv), 'ro')
+  return dir === 'asc' ? cmp : -cmp
+}
+
+// Statuses a record may be deleted in (mirrors the backend's _DELETABLE_STATUSES).
+const DELETABLE_STATUSES = ['PENDING_EVALUATION', 'LOST', 'CANCELLED']
+
+// List-view columns, in display order, each sortable by its key.
+const COLUMNS: { key: SortKey; label: string; align?: 'right' }[] = [
+  { key: 'record_code', label: 'Cod' },
+  { key: 'vehicle', label: 'Vehicul' },
+  { key: 'vin', label: 'VIN' },
+  { key: 'seller_name', label: 'Vânzător' },
+  { key: 'client_asking_price_eur', label: 'Preț cerut €', align: 'right' },
+  { key: 'purchase_price_eur', label: 'Preț achiziție €', align: 'right' },
+  { key: 'status', label: 'Status' },
+  { key: 'advisor_name', label: 'Consilier' },
+  { key: 'created_at', label: 'Creat' },
+]
+
 export default function BuyBack() {
   const navigate = useNavigate()
   const { user } = useAuth()
@@ -51,9 +105,14 @@ export default function BuyBack() {
   const [view, setView] = useState<'list' | 'kanban'>('list')
   const [tab, setTab] = useState<'active' | 'archive'>('active')
   const [page, setPage] = useState(1)
+  const [sortBy, setSortBy] = useState<SortKey>('created_at')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [deleteTarget, setDeleteTarget] = useState<BuybackRecord | null>(null)
 
   const { can } = usePermissions()
   const canCreate = can('buyback.record.create')
+  const canDelete = can('buyback.record.delete')
+  const queryClient = useQueryClient()
 
   // Tenant switcher: acting company (defaults to the user's own company).
   const effectiveCompanyId = companyId ?? user?.company_id ?? null
@@ -116,14 +175,37 @@ export default function BuyBack() {
       : !isResolved(o.value) || (recordsByStatus[o.value]?.length ?? 0) > 0,
   )
 
+  // Client-side sort of the list view (Kanban stays grouped by status).
+  const sortedVisible = useMemo(
+    () => [...visibleRecords].sort((a, b) => compareRecords(a, b, sortBy, sortDir)),
+    [visibleRecords, sortBy, sortDir],
+  )
+  const toggleSort = (key: SortKey) => {
+    if (sortBy === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    else { setSortBy(key); setSortDir('asc') }
+  }
+
   // Client-side pagination of the list view (Kanban renders all columns).
-  const pageCount = Math.max(1, Math.ceil(visibleRecords.length / PAGE_SIZE))
+  const pageCount = Math.max(1, Math.ceil(sortedVisible.length / PAGE_SIZE))
   const safePage = Math.min(page, pageCount)
   const pagedRecords = view === 'list'
-    ? visibleRecords.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
-    : visibleRecords
-  // Reset to page 1 whenever the filtered set changes.
-  useEffect(() => { setPage(1) }, [status, acquisitionType, q, effectiveCompanyId, tab, view])
+    ? sortedVisible.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
+    : sortedVisible
+  // Reset to page 1 whenever the filtered set or the sort changes.
+  useEffect(() => { setPage(1) }, [status, acquisitionType, q, effectiveCompanyId, tab, view, sortBy, sortDir])
+
+  const isDeletable = (r: BuybackRecord) =>
+    DELETABLE_STATUSES.includes(r.status) && r.carpark_vehicle_id == null
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => buybackApi.deleteRecord(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['buyback-records'] })
+      toast.success('Solicitarea a fost ștearsă')
+      setDeleteTarget(null)
+    },
+    onError: (e) => toast.error((e as { data?: { error?: string } })?.data?.error || 'Ștergerea a eșuat'),
+  })
 
   const goToRecord = (id: number) => navigate(`/app/buyback/${id}`)
   const onRecordKeyDown = (e: React.KeyboardEvent, id: number) => {
@@ -205,51 +287,53 @@ export default function BuyBack() {
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline">{visibleRecords.length} solicitări</Badge>
-        {/* Per-status chips only make sense with no status filter — a selected
-            status collapses them to one chip that just repeats the total. */}
-        {status === 'all' &&
-          tabStatusOptions.map((opt) => {
-            const count = recordsByStatus[opt.value]?.length ?? 0
-            if (!count) return null
-            return (
-              <Badge key={opt.value} className={recordStatus(opt.value).badgeClass}>
-                {count} {opt.label.toLowerCase()}
-              </Badge>
-            )
-          })}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="h-9 w-[180px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Toate stările</SelectItem>
-            {tabStatusOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={acquisitionType} onValueChange={setAcquisitionType}>
-          <SelectTrigger className="h-9 w-[160px]">
-            <SelectValue placeholder="Tip achiziție" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Toate tipurile</SelectItem>
-            {ACQUISITION_TYPE_OPTIONS.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <div className="min-w-[220px] max-w-xs flex-1">
-          <SearchInput value={q} onChange={setQ} placeholder="Caută cod, VIN, vânzător..." />
+      {/* Toolbar: count chips on the left, filters aligned right, all inline. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">{visibleRecords.length} solicitări</Badge>
+          {/* Per-status chips only make sense with no status filter — a selected
+              status collapses them to one chip that just repeats the total. */}
+          {status === 'all' &&
+            tabStatusOptions.map((opt) => {
+              const count = recordsByStatus[opt.value]?.length ?? 0
+              if (!count) return null
+              return (
+                <Badge key={opt.value} className={recordStatus(opt.value).badgeClass}>
+                  {count} {opt.label.toLowerCase()}
+                </Badge>
+              )
+            })}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:ml-auto">
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="h-9 w-[180px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toate stările</SelectItem>
+              {tabStatusOptions.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={acquisitionType} onValueChange={setAcquisitionType}>
+            <SelectTrigger className="h-9 w-[160px]">
+              <SelectValue placeholder="Tip achiziție" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Toate tipurile</SelectItem>
+              {ACQUISITION_TYPE_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="w-[200px] sm:w-[240px]">
+            <SearchInput value={q} onChange={setQ} placeholder="Caută cod, VIN, vânzător..." />
+          </div>
         </div>
       </div>
 
@@ -308,15 +392,23 @@ export default function BuyBack() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Cod</TableHead>
-                <TableHead>Vehicul</TableHead>
-                <TableHead>VIN</TableHead>
-                <TableHead>Vânzător</TableHead>
-                <TableHead className="text-right">Preț cerut €</TableHead>
-                <TableHead className="text-right">Preț achiziție €</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Consilier</TableHead>
-                <TableHead>Creat</TableHead>
+                {COLUMNS.map((col) => (
+                  <TableHead key={col.key} className={col.align === 'right' ? 'text-right' : undefined}>
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(col.key)}
+                      className="inline-flex items-center gap-1 whitespace-nowrap font-medium hover:text-foreground"
+                    >
+                      {col.label}
+                      {sortBy === col.key ? (
+                        sortDir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                      ) : (
+                        <ArrowUpDown className="h-3 w-3 opacity-30" />
+                      )}
+                    </button>
+                  </TableHead>
+                ))}
+                {canDelete && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -348,6 +440,22 @@ export default function BuyBack() {
                     <TableCell className="text-xs whitespace-nowrap text-muted-foreground">
                       {new Date(r.created_at).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' })}
                     </TableCell>
+                    {canDelete && (
+                      <TableCell className="w-10 text-right" onClick={(e) => e.stopPropagation()}>
+                        {isDeletable(r) && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => setDeleteTarget(r)}
+                            title="Șterge solicitarea"
+                            aria-label="Șterge solicitarea"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 )
               })}
@@ -373,6 +481,29 @@ export default function BuyBack() {
           </div>
         </div>
       )}
+
+      {/* Delete confirmation */}
+      <Dialog open={!!deleteTarget} onOpenChange={(o) => { if (!o) setDeleteTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Șterge solicitarea</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Sigur ștergi solicitarea <span className="font-mono">{deleteTarget?.record_code}</span>
+            {deleteTarget ? ` (${deleteTarget.brand} ${deleteTarget.model})` : ''}? Acțiunea este permanentă.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Renunță</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+            >
+              Șterge
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
