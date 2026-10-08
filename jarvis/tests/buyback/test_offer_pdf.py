@@ -15,3 +15,15 @@ def test_vehicle_sheet_pdf_is_valid_and_nonempty():
 def test_vehicle_sheet_pdf_handles_missing_fields():
     data = build_vehicle_sheet_pdf({'record_code': 'BB-2', 'brand': 'Audi', 'model': 'A4'})
     assert bytes(data[:4]) == b'%PDF'
+
+
+def test_vehicle_sheet_pdf_escapes_reportlab_markup():
+    # User-controlled fields must not be interpreted as reportlab Paragraph
+    # markup: bare '<'/'&' would crash the parser and <img src=...> could
+    # trigger a fetch (SSRF). Must render as literal text instead.
+    rec = {'record_code': 'BB-3', 'brand': '<b>BMW</b>', 'model': 'X5',
+           'has_damage': True,
+           'damage_details': 'lovit < 5cm & vopsit > ok <img src="http://169.254.169.254/x"/>'}
+    data = build_vehicle_sheet_pdf(rec)
+    assert bytes(data[:4]) == b'%PDF'
+    assert len(data) > 500
