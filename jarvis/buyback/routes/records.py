@@ -324,17 +324,16 @@ def create_record():
     # (overwrite; empty fields skipped). Best-effort — never fails the create.
     _sync_client_contact(create_data.get('client_id'), data)
 
-    # Heads-up to the acquisition team that a new record was submitted (now in
-    # PENDING_EVALUATION). Non-blocking: Notifier.notify_acquisition already
-    # wraps its body in try/except (logs + swallows send_email/dealer failures)
-    # and no-ops when no BUYBACK_ACQUISITION_EMAIL/advisor/creator recipient
-    # resolves, so the record + its 'created' event are already committed and
-    # this can never turn a successful create into a 500. The getattr guard is
-    # belt-and-suspenders: the service singleton always carries a Notifier now,
-    # but this keeps create working even if that ever changes to notifier=None.
-    notifier = getattr(_shared.service, 'notifier', None)
-    if notifier is not None:
-        notifier.notify_acquisition(record)
+    # Heads-up to the acquisition inbox that a new request was submitted (now in
+    # PENDING_EVALUATION). Config-driven per tenant (buyback.services.config);
+    # notify_new_request is itself best-effort (wraps + swallows), so the record
+    # + its 'created' event are already committed and this can never turn a
+    # successful create into a 500.
+    try:
+        from buyback.services.notifications import notify_new_request
+        notify_new_request(record)
+    except Exception:
+        logger.warning('buyback new-request notification failed', exc_info=True)
 
     response = {'success': True, 'record': _shared._serialize(record)}
     if vin_in_carpark:

@@ -145,6 +145,12 @@ def update_inspection(record_id):
         },
     )
 
+    try:
+        from buyback.services.notifications import notify_owner
+        notify_owner(record, 'inspection_updated', current_user.id)
+    except Exception:
+        pass
+
     return jsonify({'success': True, 'record': _shared._serialize(updated)})
 
 
@@ -197,6 +203,12 @@ def upload_inspection_report(record_id):
     _shared.events_repo.log(
         record_id, 'inspection_report_uploaded', current_user.id, {'key': key},
     )
+
+    try:
+        from buyback.services.notifications import notify_owner
+        notify_owner(record, 'inspection_report_uploaded', current_user.id)
+    except Exception:
+        pass
 
     return jsonify({
         'success': True,

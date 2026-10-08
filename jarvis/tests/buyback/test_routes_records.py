@@ -94,18 +94,16 @@ def test_create_response_includes_vin_in_carpark_flag(client, as_role):
     assert body.get('vin_in_carpark') in (None, False)
 
 
-# ── CREATE — acquisition-team notification (Task 13 fix round 1) ─────────
+# ── CREATE — acquisition-inbox notification (config-driven, Task 5) ──────
 
-def test_create_invokes_notify_acquisition_once(client, as_role, monkeypatch):
-    # The CREATE route must fire the acquisition heads-up exactly once, on the
-    # just-created record, via the service singleton's notifier — spy on the
-    # bound method (restored automatically by monkeypatch after the test).
-    from buyback.routes import _shared
+def test_create_invokes_notify_new_request_once(client, as_role, monkeypatch):
+    # The CREATE route must fire the acquisition-inbox notification exactly once,
+    # on the just-created record, via buyback.services.notifications. The route
+    # imports notify_new_request locally, so patching the module attribute is
+    # seen at call time.
+    import buyback.services.notifications as nmod
     calls = []
-    monkeypatch.setattr(
-        _shared.service.notifier, 'notify_acquisition',
-        lambda record: calls.append(record['id']),
-    )
+    monkeypatch.setattr(nmod, 'notify_new_request', lambda record: calls.append(record['id']))
     as_role('Admin', 1)
     r = client.post('/api/buyback/records', json=_payload())
     assert r.status_code == 201, r.get_json()
@@ -113,20 +111,16 @@ def test_create_invokes_notify_acquisition_once(client, as_role, monkeypatch):
     assert calls == [rid]  # called exactly once, with the created record
 
 
-def test_create_survives_raising_notify_acquisition(client, as_role, monkeypatch):
-    # The notification must never turn a successful create into a 500. The route
-    # has NO try/except of its own (per the fix-round-1 instruction) — it relies
-    # on Notifier.notify_acquisition swallowing its own send_email failures. So
-    # we drive the realistic failure mode: a resolvable recipient (env var) +
-    # a send_email that raises. The real Notifier must swallow it and the create
-    # must still return 201.
-    from buyback.services import email as email_module
-    monkeypatch.setenv('BUYBACK_ACQUISITION_EMAIL', 'acq@example.com')
+def test_create_survives_raising_notification(client, as_role, monkeypatch):
+    # The notification must never turn a successful create into a 500. Even if
+    # notify_new_request itself raises, the route swallows it (try/except) and
+    # the create still returns 201.
+    import buyback.services.notifications as nmod
 
-    def _raise(**kwargs):
-        raise RuntimeError('SMTP is on fire')
+    def _raise(record):
+        raise RuntimeError('notify is on fire')
 
-    monkeypatch.setattr(email_module, 'send_email', _raise)
+    monkeypatch.setattr(nmod, 'notify_new_request', _raise)
     as_role('Admin', 1)
     r = client.post('/api/buyback/records', json=_payload())
     assert r.status_code == 201, r.get_json()
