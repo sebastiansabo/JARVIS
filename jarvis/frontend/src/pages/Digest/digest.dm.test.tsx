@@ -63,4 +63,13 @@ describe('New Direct Message flow', () => {
     // The view switches to the DM; header shows the counterpart, not a channel name
     expect(await screen.findByRole('heading', { name: 'Dana Pop' })).toBeInTheDocument()
   })
+
+  it('offers new-DM from the Hub (readOnly) but hides group create', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={qc}><Digest readOnly /></QueryClientProvider>)
+    // DM creation must be reachable from the Hub (widely used surface)
+    expect(await screen.findByTitle('Mesaj nou')).toBeInTheDocument()
+    // Channel creation stays management-only (sidebar)
+    expect(screen.queryByText('Canal nou')).not.toBeInTheDocument()
+  })
 })

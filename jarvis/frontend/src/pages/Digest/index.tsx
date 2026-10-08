@@ -213,11 +213,11 @@ export default function Digest({ readOnly = false }: { readOnly?: boolean } = {}
               <Archive className="h-4 w-4" />
             </Button>
           )}
-          {!readOnly && (
-            <Button variant="ghost" size="icon" title="Mesaj nou" onClick={() => setShowNewDm(true)}>
-              <MessageSquarePlus className="h-4 w-4" />
-            </Button>
-          )}
+          {/* Starting a 1:1 DM is a user action available everywhere, incl. the
+              Hub (readOnly). Creating a channel stays management-only (sidebar). */}
+          <Button variant="ghost" size="icon" title="Mesaj nou" onClick={() => setShowNewDm(true)}>
+            <MessageSquarePlus className="h-4 w-4" />
+          </Button>
           {!readOnly && (
             <Button onClick={() => setShowCreate(true)} size="sm"><Plus className="mr-1.5 h-4 w-4" /> Canal nou</Button>
           )}
