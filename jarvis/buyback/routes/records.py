@@ -10,7 +10,7 @@ OfferRepository, BuyBackService).
 """
 import logging
 
-from flask import request, jsonify, g
+from flask import request, jsonify, g, Response
 from flask_login import login_required, current_user
 
 from buyback import buyback_bp
@@ -221,6 +221,51 @@ def get_record(record_id):
         'offers': _shared._serialize(offers),
         'photos': _shared.serialize_photos(photos),
         'events': _shared._serialize(events),
+    })
+
+
+# ═══════════════════════════════════════════════
+# EXPORT (PDF) — full record + photos
+# ═══════════════════════════════════════════════
+
+@buyback_bp.route('/records/<int:record_id>/export.pdf', methods=['GET'])
+@login_required
+@v2_permission_required('buyback', 'record', 'view')
+def export_record_pdf(record_id):
+    """Download the full record (all sections, offers, history and every
+    gallery photo) as a single PDF. Same view-scope + IDOR boundary as
+    get_record; photo resolution is best-effort so a missing/broken image can
+    never turn the export into a 500."""
+    record = _shared.records_repo.get_by_id(record_id)
+    if not record:
+        return jsonify({'success': False, 'error': 'Record not found'}), 404
+
+    err = _shared._guard_company(record)
+    if err:
+        return err
+
+    offers = _shared.offers_repo.list_for_record(record_id)
+    events = _shared.events_repo.list_for_record(record_id)
+    photo_rows = _shared.photos_repo.get_by_record(record_id)
+
+    from core.services import spaces_service
+    photos = []
+    for p in photo_rows:
+        try:
+            data = spaces_service.resolve_image_bytes(p.get('url'))
+            if data:
+                photos.append(data)
+        except Exception:
+            logger.warning('export pdf: photo %s resolve failed (record %s)',
+                           p.get('id'), record_id, exc_info=True)
+
+    from buyback.services.offer_pdf import build_record_export_pdf
+    pdf = build_record_export_pdf(record, offers=offers, events=events, photos=photos)
+
+    raw_code = str(record.get('record_code') or record_id)
+    safe_code = ''.join(c for c in raw_code if c.isalnum() or c in ('-', '_')) or str(record_id)
+    return Response(pdf, mimetype='application/pdf', headers={
+        'Content-Disposition': f'attachment; filename="BuyBack_{safe_code}.pdf"',
     })
 
 

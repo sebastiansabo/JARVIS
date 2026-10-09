@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, Car, User, Euro, Wrench, Clock, FileText, Camera, Pencil } from 'lucide-react'
+import { toast } from 'sonner'
+import { ArrowLeft, Car, User, Euro, Wrench, Clock, FileText, Camera, Pencil, FileDown, Loader2 } from 'lucide-react'
 import { buybackApi } from '@/api/buyback'
 import { VehicleCardEditor, SellerCardEditor } from './BuyBackCardEditors'
 import { mediaUrl } from '@/lib/media'
@@ -135,6 +136,7 @@ export default function BuyBackDetail() {
   const canEditPhotos = canEdit
   // Which card is in inline-edit mode (one at a time). Available at ANY status.
   const [editingCard, setEditingCard] = useState<null | 'vehicul' | 'seller'>(null)
+  const [exporting, setExporting] = useState(false)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['buyback-record', recordId],
@@ -172,6 +174,18 @@ export default function BuyBackDetail() {
   const rs = recordStatus(record.status)
   const offer = pickLatestOffer(offers)
 
+  async function handleExport() {
+    if (exporting) return
+    setExporting(true)
+    try {
+      await buybackApi.exportPdf(record.id)
+    } catch {
+      toast.error('Exportul PDF a eșuat')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   return (
     <div className="space-y-4 p-4 md:p-6">
       <div className="flex flex-wrap items-center gap-2">
@@ -181,16 +195,21 @@ export default function BuyBackDetail() {
         <h1 className="text-lg font-semibold">{`${record.brand} ${record.model}`}</h1>
         <Badge className={rs.badgeClass}>{rs.label}</Badge>
         <span className="font-mono text-xs text-muted-foreground">{record.record_code}</span>
-        {record.status === 'PENDING_EVALUATION' && can('buyback.record.edit') && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            onClick={() => navigate(`/app/buyback/${record.id}/edit`)}
-          >
-            <Pencil className="h-4 w-4 mr-1" />Corectează
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={handleExport} disabled={exporting}>
+            {exporting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <FileDown className="h-4 w-4 mr-1" />}
+            Export PDF
           </Button>
-        )}
+          {record.status === 'PENDING_EVALUATION' && can('buyback.record.edit') && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(`/app/buyback/${record.id}/edit`)}
+            >
+              <Pencil className="h-4 w-4 mr-1" />Corectează
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Primary workflow actions — kept at the top as the main action. */}

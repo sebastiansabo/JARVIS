@@ -33,6 +33,22 @@ export const buybackApi = {
       `${BASE}/records/${id}`
     ),
 
+  // Download the full record (all sections + embedded photos) as a PDF. Uses a
+  // raw blob fetch (same-origin cookie auth) so the browser saves the file.
+  exportPdf: async (id: number) => {
+    const res = await fetch(`${BASE}/records/${id}/export.pdf`, { credentials: 'same-origin' })
+    if (!res.ok) throw new Error(`Export failed (${res.status})`)
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = res.headers.get('content-disposition')?.match(/filename="?(.+?)"?$/)?.[1] || `BuyBack_${id}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  },
+
   createRecord: (data: Partial<BuybackRecord> & { vin: string; brand: string; model: string; images?: string[] }) =>
     api.post<{ success: boolean; record: BuybackRecord; vin_in_carpark?: boolean }>(`${BASE}/records`, data),
 

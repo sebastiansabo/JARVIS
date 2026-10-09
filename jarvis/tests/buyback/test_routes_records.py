@@ -235,6 +235,34 @@ def test_update_no_change_logs_no_event(client, as_role, monkeypatch):
     assert edited == []
 
 
+def test_export_pdf_returns_pdf(client, as_role, monkeypatch):
+    """GET /records/<id>/export.pdf returns a real PDF attachment."""
+    _mute_emails(monkeypatch)
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    r = client.get(f'/api/buyback/records/{rid}/export.pdf')
+    assert r.status_code == 200, r.data[:200]
+    assert r.mimetype == 'application/pdf'
+    assert r.data[:4] == b'%PDF'
+    assert 'attachment' in r.headers.get('Content-Disposition', '')
+
+
+def test_export_pdf_missing_404(client, as_role):
+    as_role('Admin', 1)
+    r = client.get('/api/buyback/records/999999999/export.pdf')
+    assert r.status_code == 404
+
+
+def test_export_pdf_cross_company_forbidden(client, as_role, monkeypatch):
+    """Export is bounded by the same company/IDOR guard as viewing."""
+    _mute_emails(monkeypatch)
+    as_role('Sales', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    as_role('Sales', 2)
+    r = client.get(f'/api/buyback/records/{rid}/export.pdf')
+    assert r.status_code == 403
+
+
 def test_update_company_id_in_body_is_ignored(client, as_role):
     """company_id must never be settable via the generic update whitelist —
     RecordRepository._UPDATABLE_COLUMNS already excludes it, this asserts
