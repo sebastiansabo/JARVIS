@@ -665,7 +665,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
       {/* ── Vânzător ── */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2"><User className="h-4 w-4" />Vânzător</CardTitle>
+          <CardTitle className="text-base flex items-center gap-2"><User className="h-4 w-4" />Solicitant (Client)</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {selectedClient && (
@@ -718,9 +718,10 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
                   ))}
                 </div>
               )}
-              <Button type="button" variant="outline" size="sm" className="border-dashed" onClick={() => setShowNewClient(true)}>
-                Client nou
-              </Button>
+              {/* "Client nou" button hidden — the seller fields below already
+                  capture a new client on submit, so the separate inline
+                  create-client flow (still wired up above via showNewClient)
+                  is redundant. */}
             </div>
           )}
 
@@ -765,7 +766,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
             <div className="space-y-1.5">
-              <Label className="text-xs">Nume vânzător</Label>
+              <Label className="text-xs">Nume</Label>
               <Input value={form.seller_name} onChange={(e) => set('seller_name', e.target.value)} placeholder="Nume și prenume" />
             </div>
             <div className="space-y-1.5">

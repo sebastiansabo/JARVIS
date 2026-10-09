@@ -312,13 +312,12 @@ export default function HubBuybackPanel() {
       )}
 
       {/* iOS-style modal sheet — full-screen on phones, a centered floating
-          card on desktop. Mirrors HubDrivingPanel's intake overlay. */}
+          card on desktop. Mirrors HubDrivingPanel's intake overlay. Clicking
+          the backdrop does NOT dismiss (intake forms are easy to lose by
+          accident); only the header X or the form's "Anulează" closes it. */}
       {overlay?.kind === 'new' && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-sm" onClick={closeOverlay}>
-          <div
-            className="mx-auto min-h-full w-full max-w-2xl bg-background shadow-2xl sm:my-8 sm:min-h-0 sm:rounded-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-sm">
+          <div className="mx-auto min-h-full w-full max-w-2xl bg-background shadow-2xl sm:my-8 sm:min-h-0 sm:rounded-2xl">
             <div className="sticky top-0 z-10 flex items-center justify-end border-b bg-background/95 p-2 backdrop-blur sm:rounded-t-2xl">
               <Button variant="ghost" size="icon" aria-label="Închide" onClick={closeOverlay}>
                 <X className="h-5 w-5" />

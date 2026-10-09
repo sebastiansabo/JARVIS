@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Plus, Car, List as ListIcon, LayoutGrid, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
 import { buybackApi } from '@/api/buyback'
@@ -95,13 +95,32 @@ const COLUMNS: { key: SortKey; label: string; align?: 'right' }[] = [
   { key: 'created_at', label: 'Creat' },
 ]
 
+// Tenant-switcher selection, persisted across refreshes. 'all' = every company
+// the caller may see; a numeric id = that one company; null = default (own).
+const COMPANY_STORAGE_KEY = 'buyback.companyFilter'
+const ALL_COMPANIES = 'all'
+
+function readStoredCompany(): typeof ALL_COMPANIES | number | null {
+  try {
+    const raw = localStorage.getItem(COMPANY_STORAGE_KEY)
+    if (raw === ALL_COMPANIES) return ALL_COMPANIES
+    if (raw) {
+      const n = Number(raw)
+      if (Number.isFinite(n)) return n
+    }
+  } catch {
+    /* localStorage unavailable — fall back to the default view */
+  }
+  return null
+}
+
 export default function BuyBack() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [status, setStatus] = useState('all')
   const [acquisitionType, setAcquisitionType] = useState('all')
   const [q, setQ] = useState('')
-  const [companyId, setCompanyId] = useState<number | null>(null)
+  const [companySel, setCompanySel] = useState<typeof ALL_COMPANIES | number | null>(readStoredCompany)
   const [view, setView] = useState<'list' | 'kanban'>('list')
   const [tab, setTab] = useState<'active' | 'archive'>('active')
   const [page, setPage] = useState(1)
@@ -112,35 +131,84 @@ export default function BuyBack() {
   const { can } = usePermissions()
   const canCreate = can('buyback.record.create')
   const canDelete = can('buyback.record.delete')
+  // Global admins may hard-delete ANY archived record (incl. BOUGHT /
+  // CarPark-linked) — mirrors the backend's can_access_settings exception.
+  const isAdmin = !!user?.can_access_settings
+  const canDeleteAny = canDelete || isAdmin
   const queryClient = useQueryClient()
 
-  // Tenant switcher: acting company (defaults to the user's own company).
-  const effectiveCompanyId = companyId ?? user?.company_id ?? null
+  // Tenant switcher: the companies the caller may see (own + org-responsable;
+  // a global admin sees all). The dropdown is shown only when there's >1.
   const { data: companiesData } = useQuery({
     queryKey: ['buyback-companies'],
     queryFn: () => buybackApi.getCompanies(),
     staleTime: 60_000,
   })
   const companies = companiesData?.companies ?? []
+  const ownCompanyId = user?.company_id ?? null
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['buyback-records', { status, acquisition_type: acquisitionType, q, company_id: effectiveCompanyId }],
-    queryFn: () =>
-      buybackApi.listRecords({
-        status: status !== 'all' ? status : undefined,
-        acquisition_type: acquisitionType !== 'all' ? acquisitionType : undefined,
-        q: q || undefined,
-        company_id: effectiveCompanyId ?? undefined,
-        // Fetch the full set: the Active/Arhivă split, status chips and client
-        // paging below all count over `records`. Backend caps per_page at 1000.
-        per_page: 1000,
-        sort_by: 'created_at',
-        sort_dir: 'DESC',
-      }),
-    staleTime: 30_000,
+  const selectCompany = (sel: typeof ALL_COMPANIES | number) => {
+    setCompanySel(sel)
+    try {
+      localStorage.setItem(COMPANY_STORAGE_KEY, String(sel))
+    } catch {
+      /* ignore — persistence is best-effort */
+    }
+  }
+
+  // Drop a persisted company id the caller can no longer see (access changed)
+  // once the list loads — fall back to the default (own-company) view.
+  useEffect(() => {
+    if (typeof companySel === 'number' && companies.length > 0 && !companies.some((c) => c.id === companySel)) {
+      setCompanySel(null)
+      try {
+        localStorage.removeItem(COMPANY_STORAGE_KEY)
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [companies, companySel])
+
+  // Companies to pull records for: 'all' → every permitted company (fan-out,
+  // merged client-side — the backend lists one company per call and each call
+  // is independently authorized); a specific pick → just that one; default →
+  // own. Falls back to own while the companies list is still loading.
+  const companyIds = useMemo<(number | null)[]>(() => {
+    if (companySel === ALL_COMPANIES) {
+      // Fan out once companies load; until then fall back to the default query.
+      return companies.length > 0 ? companies.map((c) => c.id) : [ownCompanyId]
+    }
+    // Default/specific: always one query. `null` → company_id omitted, letting
+    // the backend resolve scope (own company, or all for a global admin) —
+    // identical to the pre-fan-out single-query behavior.
+    return [companySel ?? ownCompanyId]
+  }, [companySel, companies, ownCompanyId])
+
+  // One query per target company (cached/reused across selection changes),
+  // combined into a single merged record set. Fetch the full set per company:
+  // the Active/Arhivă split, status chips and client paging below all count
+  // over `records`. Backend caps per_page at 1000.
+  const { records, isLoading, isError } = useQueries({
+    queries: companyIds.map((cid) => ({
+      queryKey: ['buyback-records', { status, acquisition_type: acquisitionType, q, company_id: cid }],
+      queryFn: () =>
+        buybackApi.listRecords({
+          status: status !== 'all' ? status : undefined,
+          acquisition_type: acquisitionType !== 'all' ? acquisitionType : undefined,
+          q: q || undefined,
+          company_id: cid ?? undefined,
+          per_page: 1000,
+          sort_by: 'created_at',
+          sort_dir: 'DESC',
+        }),
+      staleTime: 30_000,
+    })),
+    combine: (results) => ({
+      records: results.flatMap((r) => r.data?.records ?? []),
+      isLoading: results.some((r) => r.isLoading),
+      isError: results.some((r) => r.isError),
+    }),
   })
-
-  const records = data?.records ?? []
   // Active vs Arhivă split. Active = in-progress + resolved-within-72h; Arhivă =
   // all resolved (the permanent history).
   const activeCount = useMemo(() => {
@@ -192,10 +260,14 @@ export default function BuyBack() {
     ? sortedVisible.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE)
     : sortedVisible
   // Reset to page 1 whenever the filtered set or the sort changes.
-  useEffect(() => { setPage(1) }, [status, acquisitionType, q, effectiveCompanyId, tab, view, sortBy, sortDir])
+  useEffect(() => { setPage(1) }, [status, acquisitionType, q, companySel, tab, view, sortBy, sortDir])
 
   const isDeletable = (r: BuybackRecord) =>
     DELETABLE_STATUSES.includes(r.status) && r.carpark_vehicle_id == null
+  // A global admin may delete ANY record from the Archive (backend allows it
+  // for can_access_settings); everyone else keeps the status/CarPark gate.
+  const canDeleteRecord = (r: BuybackRecord) =>
+    isDeletable(r) || (isAdmin && tab === 'archive')
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => buybackApi.deleteRecord(id),
@@ -222,13 +294,14 @@ export default function BuyBack() {
         <div className="flex items-center gap-2">
           {companies.length > 1 && (
             <Select
-              value={effectiveCompanyId != null ? String(effectiveCompanyId) : ''}
-              onValueChange={(v) => setCompanyId(Number(v))}
+              value={companySel === ALL_COMPANIES ? ALL_COMPANIES : String(companySel ?? ownCompanyId ?? '')}
+              onValueChange={(v) => selectCompany(v === ALL_COMPANIES ? ALL_COMPANIES : Number(v))}
             >
               <SelectTrigger className="h-9 w-[200px]">
                 <SelectValue placeholder="Companie" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={ALL_COMPANIES}>Toate companiile</SelectItem>
                 {companies.map((c) => (
                   <SelectItem key={c.id} value={String(c.id)}>
                     {c.name}
@@ -408,7 +481,7 @@ export default function BuyBack() {
                     </button>
                   </TableHead>
                 ))}
-                {canDelete && <TableHead className="w-10" />}
+                {canDeleteAny && <TableHead className="w-10" />}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -440,9 +513,9 @@ export default function BuyBack() {
                     <TableCell className="text-xs whitespace-nowrap text-muted-foreground">
                       {new Date(r.created_at).toLocaleDateString('ro-RO', { day: '2-digit', month: 'short', year: 'numeric' })}
                     </TableCell>
-                    {canDelete && (
+                    {canDeleteAny && (
                       <TableCell className="w-10 text-right" onClick={(e) => e.stopPropagation()}>
-                        {isDeletable(r) && (
+                        {canDeleteRecord(r) && (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -492,6 +565,11 @@ export default function BuyBack() {
             Sigur ștergi solicitarea <span className="font-mono">{deleteTarget?.record_code}</span>
             {deleteTarget ? ` (${deleteTarget.brand} ${deleteTarget.model})` : ''}? Acțiunea este permanentă.
           </p>
+          {deleteTarget?.carpark_vehicle_id != null && (
+            <p className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+              Această solicitare a fost predată în CarPark. Se șterge doar înregistrarea BuyBack (ofertele, pozele și istoricul ei); vehiculul din CarPark rămâne neatins.
+            </p>
+          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>Renunță</Button>
             <Button
