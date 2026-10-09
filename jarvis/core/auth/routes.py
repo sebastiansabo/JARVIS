@@ -411,6 +411,13 @@ def api_current_user():
                 'can_access_chat':       _access('digest',     'can_access_digest'),
                 'can_access_field_sales': _access('field_sales', None),
                 'can_access_carpark':    _access('carpark',     'can_access_carpark'),
+                # Courtesy-car ("Mașini de curtoazie") Hub tile — its own matrix
+                # module. Its v2 grants are seeded to mirror each role's CarPark
+                # grant (see _seed_sidebar_permissions_v2), so no role loses the
+                # tile on deploy; admins can then toggle it independently. The
+                # can_access_carpark fallback here only covers the transient
+                # pre-migration window before that seed runs.
+                'can_access_courtesy':   _access('courtesy',    'can_access_carpark'),
                 'can_access_buyback':    _access('buyback',     'can_access_buyback'),
                 'can_access_service':    _access('service',     None),
                 'can_access_ticketing':  _access('ticketing',   None),
