@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowLeft, Car, User, Euro, Wrench, Clock, FileText, Camera, Pencil } from 'lucide-react'
 import { buybackApi } from '@/api/buyback'
+import { VehicleCardEditor, SellerCardEditor } from './BuyBackCardEditors'
 import { mediaUrl } from '@/lib/media'
 import { recordStatus } from './recordStatus'
 import { usePermissions } from './usePermissions'
@@ -59,8 +61,29 @@ const DECISION_LABEL: Record<string, string> = {
 const EVENT_ACTION_LABEL: Record<string, string> = {
   created: 'Solicitare creată',
   status_changed: 'Status schimbat',
+  record_edited: 'Detalii editate',
   inspection_updated: 'Inspecție actualizată',
   inspection_report_uploaded: 'Raport inspecție încărcat',
+}
+
+// RO labels for the intake fields an inline edit can touch (for the Istoric
+// "Detalii editate" from→to summary).
+const EDIT_FIELD_LABEL: Record<string, string> = {
+  brand: 'Marca', model: 'Model', variant: 'Varianta', equipment: 'Echipare', vin: 'VIN',
+  mileage_km: 'Rulaj', engine_capacity_cm3: 'Capacitate', fuel_type: 'Combustibil',
+  transmission: 'Transmisie', gearbox: 'Cutie', manufacture_date: 'Data fabricație',
+  first_registration_date: 'Prima înmatriculare', service_history_uptodate: 'Istoric service',
+  extra_wheels: 'Roți extra', keys_count: 'Nr. chei', general_condition: 'Condiție',
+  has_damage: 'Daune', damage_details: 'Detalii daune', client_type: 'Tip client',
+  vat_status: 'Status TVA', seller_name: 'Nume', seller_email: 'Email', seller_phone: 'Telefon',
+  seller_cui: 'CUI', is_trade_in: 'Trade-in', target_vehicle_text: 'Vehicul țintă',
+}
+
+function fmtChangeVal(v: unknown): string {
+  if (v === null || v === undefined || v === '') return '—'
+  if (v === true) return 'Da'
+  if (v === false) return 'Nu'
+  return String(v)
 }
 
 function eventLabel(ev: BuybackEvent): string {
@@ -74,6 +97,13 @@ function eventDetail(ev: BuybackEvent): string | null {
     const from = typeof details.from === 'string' ? recordStatus(details.from).label : String(details.from ?? '—')
     const to = typeof details.to === 'string' ? recordStatus(details.to).label : String(details.to ?? '—')
     return `${from} → ${to}`
+  }
+  if (ev.action === 'record_edited' && details.changes && typeof details.changes === 'object') {
+    const changes = details.changes as Record<string, { from?: unknown; to?: unknown }>
+    const parts = Object.entries(changes).map(
+      ([k, c]) => `${EDIT_FIELD_LABEL[k] ?? k}: ${fmtChangeVal(c?.from)} → ${fmtChangeVal(c?.to)}`,
+    )
+    return parts.length ? parts.join(' · ') : null
   }
   const entries = Object.entries(details).filter(([, v]) => v !== null && v !== undefined && v !== '')
   if (!entries.length) return null
@@ -101,7 +131,10 @@ export default function BuyBackDetail() {
   const { can } = usePermissions()
   const recordId = Number(id)
 
-  const canEditPhotos = can('buyback.record.edit')
+  const canEdit = can('buyback.record.edit')
+  const canEditPhotos = canEdit
+  // Which card is in inline-edit mode (one at a time). Available at ANY status.
+  const [editingCard, setEditingCard] = useState<null | 'vehicul' | 'seller'>(null)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['buyback-record', recordId],
@@ -166,53 +199,75 @@ export default function BuyBackDetail() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2"><Car className="h-4 w-4" />Vehicul</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-base flex items-center gap-2"><Car className="h-4 w-4" />Vehicul</CardTitle>
+              {canEdit && editingCard === null && (
+                <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setEditingCard('vehicul')}>
+                  <Pencil className="h-3.5 w-3.5 mr-1" />Editează
+                </Button>
+              )}
+            </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3">
-            <Field label="Marca" value={record.brand} />
-            <Field label="Model" value={record.model} />
-            <Field label="Varianta" value={record.variant} />
-            <Field label="Echipare" value={L.equipment(record.equipment)} />
-            <Field label="VIN" value={<span className="font-mono">{record.vin}</span>} />
-            <Field label="Rulaj (km)" value={record.mileage_km != null ? record.mileage_km.toLocaleString('ro-RO') : null} />
-            <Field label="Capacitate cilindrică (cm³)" value={record.engine_capacity_cm3} />
-            <Field label="Combustibil" value={L.fuel(record.fuel_type)} />
-            <Field label="Transmisie" value={L.transmission(record.transmission)} />
-            <Field label="Cutie de viteze" value={L.gearbox(record.gearbox)} />
-            <Field label="Data fabricație" value={fmtDate(record.manufacture_date)} />
-            <Field label="Data prima înmatriculare" value={fmtDate(record.first_registration_date)} />
-            <Field label="Istoric service la zi" value={yesNo(record.service_history_uptodate)} />
-            <Field label="Roți extra" value={yesNo(record.extra_wheels)} />
-            <Field label="Nr. chei" value={record.keys_count} />
-            <Field label="Condiție generală" value={record.general_condition != null ? `${record.general_condition}/5` : null} />
-            <Field label="Daune" value={yesNo(record.has_damage)} />
-            {record.has_damage && (
-              <div className="col-span-2">
-                <Field label="Detalii daune" value={record.damage_details} />
-              </div>
-            )}
-          </CardContent>
+          {editingCard === 'vehicul' ? (
+            <VehicleCardEditor record={record} opts={optsData} onClose={() => setEditingCard(null)} />
+          ) : (
+            <CardContent className="grid grid-cols-2 gap-3">
+              <Field label="Marca" value={record.brand} />
+              <Field label="Model" value={record.model} />
+              <Field label="Varianta" value={record.variant} />
+              <Field label="Echipare" value={L.equipment(record.equipment)} />
+              <Field label="VIN" value={<span className="font-mono">{record.vin}</span>} />
+              <Field label="Rulaj (km)" value={record.mileage_km != null ? record.mileage_km.toLocaleString('ro-RO') : null} />
+              <Field label="Capacitate cilindrică (cm³)" value={record.engine_capacity_cm3} />
+              <Field label="Combustibil" value={L.fuel(record.fuel_type)} />
+              <Field label="Transmisie" value={L.transmission(record.transmission)} />
+              <Field label="Cutie de viteze" value={L.gearbox(record.gearbox)} />
+              <Field label="Data fabricație" value={fmtDate(record.manufacture_date)} />
+              <Field label="Data prima înmatriculare" value={fmtDate(record.first_registration_date)} />
+              <Field label="Istoric service la zi" value={yesNo(record.service_history_uptodate)} />
+              <Field label="Roți extra" value={yesNo(record.extra_wheels)} />
+              <Field label="Nr. chei" value={record.keys_count} />
+              <Field label="Condiție generală" value={record.general_condition != null ? `${record.general_condition}/5` : null} />
+              <Field label="Daune" value={yesNo(record.has_damage)} />
+              {record.has_damage && (
+                <div className="col-span-2">
+                  <Field label="Detalii daune" value={record.damage_details} />
+                </div>
+              )}
+            </CardContent>
+          )}
         </Card>
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2"><User className="h-4 w-4" />Vânzător &amp; Trade-in</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-base flex items-center gap-2"><User className="h-4 w-4" />Vânzător &amp; Trade-in</CardTitle>
+              {canEdit && editingCard === null && (
+                <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setEditingCard('seller')}>
+                  <Pencil className="h-3.5 w-3.5 mr-1" />Editează
+                </Button>
+              )}
+            </div>
           </CardHeader>
-          <CardContent className="grid grid-cols-2 gap-3">
-            <Field label="Tip client" value={L.clientType(record.client_type)} />
-            <Field label="Status TVA" value={L.vat(record.vat_status)} />
-            <Field label="Nume vânzător" value={record.seller_name} />
-            <Field label="Email" value={record.seller_email} />
-            <Field label="Telefon" value={record.seller_phone} />
-            <Field label="CUI" value={record.seller_cui} />
-            <Field label="Trade-in" value={yesNo(record.is_trade_in)} />
-            {record.is_trade_in && (
-              <>
-                <Field label="Vehicul țintă" value={record.target_vehicle_text} />
-                <Field label="Vehicul CarPark (ID)" value={record.target_carpark_vehicle_id} />
-              </>
-            )}
-          </CardContent>
+          {editingCard === 'seller' ? (
+            <SellerCardEditor record={record} opts={optsData} onClose={() => setEditingCard(null)} />
+          ) : (
+            <CardContent className="grid grid-cols-2 gap-3">
+              <Field label="Tip client" value={L.clientType(record.client_type)} />
+              <Field label="Status TVA" value={L.vat(record.vat_status)} />
+              <Field label="Nume vânzător" value={record.seller_name} />
+              <Field label="Email" value={record.seller_email} />
+              <Field label="Telefon" value={record.seller_phone} />
+              <Field label="CUI" value={record.seller_cui} />
+              <Field label="Trade-in" value={yesNo(record.is_trade_in)} />
+              {record.is_trade_in && (
+                <>
+                  <Field label="Vehicul țintă" value={record.target_vehicle_text} />
+                  <Field label="Vehicul CarPark (ID)" value={record.target_carpark_vehicle_id} />
+                </>
+              )}
+            </CardContent>
+          )}
         </Card>
 
         <Card>

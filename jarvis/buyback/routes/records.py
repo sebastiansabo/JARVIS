@@ -357,13 +357,13 @@ def update_record(record_id):
     if err:
         return err
 
-    if record['status'] != lifecycle.PENDING_EVALUATION:
-        return jsonify({
-            'success': False,
-            'error': f"Cannot edit a record in status {record['status']!r} "
-                     f"(only {lifecycle.PENDING_EVALUATION!r} is editable)",
-        }), 409
-
+    # Intake-field edits are allowed at ANY status (inline per-card edit on the
+    # detail page — correcting vehicle/seller data anytime). This is safe
+    # because the `_CREATE_FIELDS` whitelist below still bounds what can change
+    # to intake-only fields; every finance/inspection/workflow field stays
+    # owned by its dedicated stage service and can never be set here. NOTE:
+    # editing vehicle identity (VIN/brand/model) after CarPark hand-off does not
+    # retro-propagate to the already-created CarPark vehicle.
     data = request.get_json(silent=True) or {}
 
     # Same type-validate/coerce pass as CREATE, BEFORE building update_data —
@@ -395,7 +395,32 @@ def update_record(record_id):
     # those fields on their own still-PENDING_EVALUATION record before any
     # offer/inspection ever happened.
     update_data = {k: data[k] for k in _CREATE_FIELDS if k in data}
+    if not update_data:
+        # Nothing editable was supplied — no-op (don't bump updated_at or log).
+        return jsonify({'success': True, 'record': _shared._serialize(record)})
+
+    # Stamp the editor (server-set, never from the client body). updated_at is
+    # bumped by RecordRepository.update itself.
+    update_data['updated_by'] = current_user.id
     updated = _shared.records_repo.update(record_id, update_data)
+
+    # History: log the fields that actually changed (old→new), compared via the
+    # serializer so dates/decimals/booleans normalize on both sides and a
+    # same-value resubmit isn't recorded as a change. Surfaces in the detail
+    # page's "Istoric" timeline. Best-effort — an audit-log failure must not
+    # fail a committed edit.
+    before = _shared._serialize(record)
+    after = _shared._serialize(updated)
+    changes = {
+        k: {'from': before.get(k), 'to': after.get(k)}
+        for k in update_data
+        if k != 'updated_by' and before.get(k) != after.get(k)
+    }
+    if changes:
+        try:
+            _shared.events_repo.log(record_id, 'record_edited', current_user.id, {'changes': changes})
+        except Exception:
+            logger.warning('buyback record_edited event log failed (record %s)', record_id, exc_info=True)
 
     # Mirror any edited seller contact details back onto the linked CRM client
     # (same overwrite policy as CREATE). Uses the record's effective client.
