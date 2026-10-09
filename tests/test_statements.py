@@ -628,6 +628,248 @@ class TestOcrInlineSummary:
         assert s['debit_total'] == 12299.55
 
 
+# ============== PyPDF2 POSITION-RECONSTRUCTED INLINE TESTS ==============
+# Some UniCredit statements DO have an embedded text layer, so PyPDF2 returns
+# text (no OCR). But PyPDF2's default extraction scrambles the table: it glues
+# each incoming-transfer's Valoare-column amount onto the following "Ref.:<num>"
+# line (e.g. "Ref.:5737670524.000,00 RON"), making the amount unrecoverable,
+# and leaves the signed Int.Appl amount unparsed. The fix reconstructs the page
+# by absolute text coordinates so every transaction's signed amount sits on its
+# date row again — producing the SAME inline layout the OCR parsers handle.
+# Fixture = reconstructed text of "Extras cont mk AW One 09.2026.pdf".
+
+PYPDF2_RECON_TEXT = """printat de CLAUDIA BRUSLEA
+Lista Tranzactii 09.10.2026 08:25:55
+Cont ales RO42 BACX 0000 0004 3006 3029 | CARD SABO | RON
+Titular de cont AUTOWORLD ONE S.R.L.
+CUI/CNP 15128629
+Adresa STR.Floresti NR.145 BL.- SC.- ET.- AP.-  CLUJ Istoric
+1 Ultimele zile
+De la Pana la Data inregistrarii
+01.09.2026 30.09.2026 Tip Toate
+Data valutei Detaliile tranzactiei Valoare Tranz. Valuta
+Data inregistrarii
+30.09.2026 30.09.2026 Int.Appl. to   30/09/26 0,01 RON
+30.09.2026 30.09.2026 -3.887,23 RON
++CMS CLT-3558651416 Card 5586-84XX-XXXX-3100
+2026.09.30 FACEBK *MVDW59S9J4 POS purchase Auth code 195639 3.887,23 RON
+30.09.2026 30.09.2026 4.000,00 RON
+AUTOWORLD ONE S.R.L., CUI/CNP:15128629,
+CONT:RO21BACX0000000430063310, LA:UNICREDIT
+BANK S.A., Nr op.:1409, Transfer disponibil, Ref.:573767052
+17.09.2026 17.09.2026 -697,63 RON
++CMS CLT-3551397511 Card 5586-84XX-XXXX-3100
+2026.09.16 AWESOME PROJECTS POS purchase Auth code 497372 697,63 RON
+14.09.2026 14.09.2026 -2.000,00 RON
++CMS CLT-3548725278 Card 5586-84XX-XXXX-3100
+2026.09.11 FACEBK *4E4627J9J4 POS purchase Auth code 889648 2.000,00 RON
+09.09.2026 09.09.2026 3.000,00 RON
+AUTOWORLD ONE S.R.L., CUI/CNP:15128629,
+CONT:RO21BACX0000000430063310, LA:UNICREDIT
+BANK S.A., Nr op.:1268, Transfer disponibil, Ref.:569083303
+07.09.2026 07.09.2026 -2.000,00 RON
++CMS CLT-3545309515 Card 5586-84XX-XXXX-3100
+2026.09.06 FACEBK *2LXDY5W9J4 POS purchase Auth code 071086 2.000,00 RON
+03.09.2026 03.09.2026 -1.039,98 RON
++CMS CLT-3543906971 Card 5586-84XX-XXXX-3100
+2026.09.03 GOOGLE *ADS1861622105 POS purchase Auth code 263040 1.039,98 RON
+03.09.2026 03.09.2026 3.000,00 RON
+AUTOWORLD ONE S.R.L., CUI/CNP:15128629,
+CONT:RO21BACX0000000430063310, LA:UNICREDIT
+BANK S.A., Nr op.:1221, Transfer disponibil, Ref.:567818945
+Sold deschidere 03.09.2026 430,18 RON
+Credit total pentru tranzactiile selectate (4) 10.000,01 RON
+Debit total pentru tranzactiile selectate (5) -9.624,84 RON
+Totalul tranzactiilor selectate (9) 375,17 RON
+Sold inchidere 30.09.2026 805,35 RON
+UniCredit Bank S.A. Pagina 1
+"""
+
+
+class TestPyPDF2ReconstructedTransactions:
+    """Reconstructed inline text must yield every real transaction with the
+    right sign, and must NOT emit a phantom row for the statement-period
+    header line ("01.09.2026 30.09.2026 Tip Toate ...") which has no amount."""
+
+    def _txns(self):
+        header = {'company_name': 'AUTOWORLD ONE S.R.L.', 'company_cui': '15128629',
+                  'account_number': 'RO42BACX0000000430063029'}
+        return ocr_parser._extract_transactions_ocr(PYPDF2_RECON_TEXT, header)
+
+    def test_exactly_nine_real_transactions(self):
+        # 9 real rows: 4 credits + 5 debits. The period-header line must be
+        # dropped (no amount -> not a transaction).
+        txns = self._txns()
+        assert len(txns) == 9, [(t['transaction_date'], t['amount']) for t in txns]
+
+    def test_no_null_amount_rows(self):
+        txns = self._txns()
+        assert all(t['amount'] is not None for t in txns), \
+            [(t['transaction_date'], t['description'][:30]) for t in txns if t['amount'] is None]
+
+    def test_incoming_transfers_are_positive_credits(self):
+        # The three "Transfer disponibil" rows and the interest row are credits.
+        txns = self._txns()
+        transfers = [t for t in txns if 'Transfer disponibil' in (t['description'] or '')]
+        assert len(transfers) == 3
+        assert all(t['amount'] > 0 for t in transfers), [t['amount'] for t in transfers]
+        assert sorted(t['amount'] for t in transfers) == [3000.0, 3000.0, 4000.0]
+
+    def test_card_purchases_are_negative_debits(self):
+        txns = self._txns()
+        debits = [t for t in txns if 'POS purchase' in (t['description'] or '')]
+        assert len(debits) == 5
+        assert all(t['amount'] < 0 for t in debits), [t['amount'] for t in debits]
+
+    def test_net_of_all_amounts_matches_statement_total(self):
+        txns = self._txns()
+        net = round(sum(t['amount'] for t in txns), 2)
+        assert net == 375.17
+
+
+class TestPyPDF2ReconstructedSummary:
+    """Summary must parse despite the debit total carrying a leading minus."""
+
+    def test_summary(self):
+        s = ocr_parser._extract_summary_ocr(PYPDF2_RECON_TEXT)
+        assert s['opening_balance'] == 430.18
+        assert s['closing_balance'] == 805.35
+        assert s['credit_count'] == 4
+        assert s['credit_total'] == 10000.01
+        assert s['debit_count'] == 5
+        assert s['debit_total'] == 9624.84
+
+
+class TestReconcileAgainstSummary:
+    """A statement carries its own authoritative credit/debit totals + counts.
+    If the parsed transactions don't reconcile to them, something was dropped
+    or mis-parsed — surface it (log) instead of silently storing wrong data."""
+
+    def test_warns_when_parsed_credits_fall_short_of_summary(self, caplog):
+        # Summary says 2 credits totalling 150; we only parsed 1 credit (50).
+        txns = [{'amount': -100.0}, {'amount': 50.0}]
+        summary = {'credit_count': 2, 'credit_total': 150.0,
+                   'debit_count': 1, 'debit_total': 100.0}
+        with caplog.at_level('WARNING'):
+            ocr_parser._reconcile_against_summary(txns, summary, 'stmt.pdf')
+        assert any('reconcile' in r.message.lower() for r in caplog.records), \
+            [r.message for r in caplog.records]
+
+    def test_silent_when_parsed_transactions_match_summary(self, caplog):
+        txns = [{'amount': -100.0}, {'amount': 50.0}, {'amount': 100.0}]
+        summary = {'credit_count': 2, 'credit_total': 150.0,
+                   'debit_count': 1, 'debit_total': 100.0}
+        with caplog.at_level('WARNING'):
+            ocr_parser._reconcile_against_summary(txns, summary, 'stmt.pdf')
+        assert caplog.records == []
+
+    def test_silent_when_summary_totals_absent(self, caplog):
+        # Nothing to reconcile against -> no false alarm.
+        txns = [{'amount': 50.0}]
+        summary = {'credit_count': 0, 'credit_total': None,
+                   'debit_count': 0, 'debit_total': None}
+        with caplog.at_level('WARNING'):
+            ocr_parser._reconcile_against_summary(txns, summary, 'stmt.pdf')
+        assert caplog.records == []
+
+
+class TestPyPDF2LayoutReconstruction:
+    """extract_text_from_pdf must rebuild each row from absolute text
+    coordinates, so a Valoare-column amount that PyPDF2 glues onto the
+    following "Ref.:<num>" line is restored to its own date row."""
+
+    @staticmethod
+    def _fake_reader(runs, glued_text):
+        """Build a PdfReader whose single page yields `runs` to a text
+        visitor and returns `glued_text` from plain extraction (mimicking
+        PyPDF2's column-scrambling default behaviour)."""
+        identity = (1, 0, 0, 1, 0, 0)
+
+        def extract_text(*args, visitor_text=None, **kwargs):
+            if visitor_text is not None:
+                for text, x, y in runs:
+                    tm = (1, 0, 0, 1, x, y)
+                    visitor_text(text, identity, tm, {}, 10)
+            return glued_text
+
+        page = MagicMock()
+        page.extract_text.side_effect = extract_text
+        reader = MagicMock()
+        reader.pages = [page]
+        return reader
+
+    def test_glued_amount_is_restored_to_its_date_row(self):
+        import re as _re
+        from accounting.statements.parser import extract_text_from_pdf
+        # Positioned runs: the 4.000,00 amount sits in the right-hand Valoare
+        # column (x=474) on the date row (y=533); the Ref.: line is lower (y=485).
+        runs = [
+            ('30.09.2026', 48.0, 533.0),
+            ('30.09.2026', 125.0, 533.0),
+            ('4.000,00', 474.0, 533.0),
+            ('RON', 516.0, 533.0),
+            ('AUTOWORLD ONE S.R.L., CUI/CNP:15128629,', 201.0, 497.0),
+            ('Ref.:573767052', 201.0, 485.0),
+        ]
+        glued = ('30.09.2026 30.09.2026 AUTOWORLD ONE S.R.L., CUI/CNP:15128629,\n'
+                 'Ref.:5737670524.000,00 RON\n')
+        with patch('accounting.statements.parser.PyPDF2.PdfReader',
+                   return_value=self._fake_reader(runs, glued)):
+            text, used_ocr = extract_text_from_pdf(b'fake')
+
+        assert used_ocr is False
+        # The amount is no longer glued onto the reference number.
+        assert '5737670524.000,00' not in text
+        # The signed amount is back on the transaction's date row.
+        assert _re.search(r'30\.09\.2026\s+30\.09\.2026\s+4\.000,00\s+RON', text), repr(text)
+        # The reference number survives intact on its own row.
+        assert 'Ref.:573767052' in text
+        # Clustering must keep rows SEPARATE: no single line may hold both the
+        # amount and the (lower) reference line, else a merge regression would
+        # re-glue them and this test would otherwise still pass.
+        amount_line = next(ln for ln in text.splitlines() if '4.000,00' in ln)
+        assert 'Ref.:573767052' not in amount_line, repr(amount_line)
+
+    def test_reconstructed_text_parses_end_to_end(self):
+        """Full pipeline: positioned runs -> reconstruction -> inline parser.
+        Guards against the reconstruction output drifting from the layout the
+        parsers assume (a mismatch a text-only fixture can't catch)."""
+        from accounting.statements.parser import extract_text_from_pdf
+        # A debit card-purchase (signed amount on its date row, POS copy below)
+        # and an incoming transfer credit (amount on date row, Ref below).
+        runs = [
+            ('Data valutei Detaliile tranzactiei Valoare Tranz. Valuta', 48.0, 620.0),
+            ('30.09.2026', 48.0, 600.0),
+            ('30.09.2026', 125.0, 600.0),
+            ('-3.887,23', 470.0, 600.0),
+            ('RON', 515.0, 600.0),
+            ('+CMS CLT-3558651416 Card 5586-84XX-XXXX-3100', 201.0, 588.0),
+            ('2026.09.30 FACEBK *MVDW59S9J4 POS purchase Auth code 195639 3.887,23 RON', 201.0, 576.0),
+            ('30.09.2026', 48.0, 540.0),
+            ('30.09.2026', 125.0, 540.0),
+            ('4.000,00', 474.0, 540.0),
+            ('RON', 515.0, 540.0),
+            ('AUTOWORLD ONE S.R.L., Transfer disponibil,', 201.0, 528.0),
+            ('Ref.:573767052', 201.0, 516.0),
+        ]
+        glued = ('Data valutei Detaliile tranzactiei Valoare Tranz. Valuta\n'
+                 '30.09.2026 30.09.2026 +CMS CLT-3558651416 Card 5586-84XX-XXXX-3100\n'
+                 '2026.09.30 FACEBK *MVDW59S9J4 POS purchase Auth code 195639 3.887,23 RON-3.887,23 RON\n'
+                 '30.09.2026 30.09.2026 AUTOWORLD ONE S.R.L., Transfer disponibil,\n'
+                 'Ref.:5737670524.000,00 RON\n')
+        with patch('accounting.statements.parser.PyPDF2.PdfReader',
+                   return_value=self._fake_reader(runs, glued)):
+            text, _ = extract_text_from_pdf(b'fake')
+
+        header = {'company_name': 'AUTOWORLD ONE S.R.L.', 'company_cui': '15128629',
+                  'account_number': 'RO42BACX0000000430063029'}
+        txns = ocr_parser._extract_transactions_ocr(text, header)
+        by_sign = sorted(t['amount'] for t in txns)
+        # Debit -3887.23 keeps its sign; the transfer credit is a clean +4000.00
+        # (NOT the glued 5.7-trillion value, and NOT dropped).
+        assert by_sign == [-3887.23, 4000.0], [(t['transaction_date'], t['amount']) for t in txns]
+
+
 class TestUpdateTransactionColumns:
     """update_transaction() must only touch the columns it is given, so linking
     an invoice or changing status never wipes vendor_name / matched_supplier."""
