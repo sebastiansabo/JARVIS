@@ -54,10 +54,30 @@ def notify_new_request(record) -> None:
             f"Consilier: {_esc(advisor)}</p>"
         )
         from core.services.notification_service import send_email
-        for to in cfg['acquisition_emails']:
+
+        # CC the submitter (the user who created the request) so they get a copy
+        # of their own new-request notification. Resolved once and attached to a
+        # single send (the first acquisition recipient) so they receive exactly
+        # one copy regardless of how many acquisition inboxes are configured;
+        # skipped when they're already an acquisition recipient (no duplicate).
+        submitter_cc = None
+        creator_id = record.get('created_by')
+        if creator_id is not None:
+            try:
+                from core.auth.repositories.user_repository import UserRepository
+                creator = UserRepository().get_by_id(creator_id)
+                email = (creator or {}).get('email')
+                if email and email not in cfg['acquisition_emails']:
+                    submitter_cc = email
+            except Exception:
+                logger.exception('buyback new-request submitter CC lookup failed (record %s)',
+                                 record.get('id'))
+
+        for idx, to in enumerate(cfg['acquisition_emails']):
             try:
                 send_email(to_email=to, subject=subject, html_body=html_body,
-                           text_body=text, from_name='AUTOWORLD')
+                           text_body=text, from_name='AUTOWORLD',
+                           department_cc=submitter_cc if idx == 0 else None)
             except Exception:
                 logger.exception('buyback new-request email to %s failed', to)
     except Exception:

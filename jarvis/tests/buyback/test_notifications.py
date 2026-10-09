@@ -34,6 +34,41 @@ def test_new_request_emails_acquisition(monkeypatch):
     assert [e['to_email'] for e in s['email']] == ['achizitii@autoworld.ro']
 
 
+def test_new_request_ccs_submitter(monkeypatch):
+    """The user who created the request is CC'd on the new-request email so they
+    get a copy of their own submission."""
+    s = _sink(); _patch(monkeypatch, _cfg(), s)
+    nmod.notify_new_request({'id': 1, 'company_id': 1, 'record_code': 'BB-1',
+                             'brand': 'BMW', 'model': 'X5', 'created_by': 7})
+    assert len(s['email']) == 1
+    assert s['email'][0]['department_cc'] == 'owner@x.ro'
+
+
+def test_new_request_no_cc_without_creator(monkeypatch):
+    """A record with no created_by (e.g. a non-authenticated intake) gets no
+    submitter CC."""
+    s = _sink(); _patch(monkeypatch, _cfg(), s)
+    nmod.notify_new_request({'id': 1, 'company_id': 1, 'brand': 'BMW', 'model': 'X5'})
+    assert s['email'][0].get('department_cc') is None
+
+
+def test_new_request_cc_skipped_when_submitter_is_acquisition(monkeypatch):
+    """No duplicate CC when the submitter's email IS the acquisition inbox."""
+    s = _sink(); _patch(monkeypatch, _cfg(acquisition_emails=['owner@x.ro']), s)
+    nmod.notify_new_request({'id': 1, 'company_id': 1, 'created_by': 7,
+                             'brand': 'BMW', 'model': 'X5'})
+    assert s['email'][0].get('department_cc') is None
+
+
+def test_new_request_ccs_submitter_once_across_multiple_inboxes(monkeypatch):
+    """With several acquisition inboxes the submitter is CC'd on the first send
+    only, so they receive exactly one copy."""
+    s = _sink(); _patch(monkeypatch, _cfg(acquisition_emails=['a@x.ro', 'b@x.ro']), s)
+    nmod.notify_new_request({'id': 1, 'company_id': 1, 'created_by': 7,
+                             'brand': 'BMW', 'model': 'X5'})
+    assert [e.get('department_cc') for e in s['email']] == ['owner@x.ro', None]
+
+
 def test_new_request_still_emails_when_channel_email_off(monkeypatch):
     s = _sink(); _patch(monkeypatch, _cfg(channel_email=False), s)
     nmod.notify_new_request({'id': 1, 'company_id': 1, 'brand': 'BMW', 'model': 'X5'})
