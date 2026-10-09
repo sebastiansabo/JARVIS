@@ -189,14 +189,50 @@ def test_update_whitelisted_field(client, as_role):
     assert r.get_json()['record']['mileage_km'] == 55555
 
 
-def test_update_rejects_when_not_pending_evaluation(client, as_role):
+def test_update_allowed_at_any_status(client, as_role, monkeypatch):
+    """Intake-field edits are now allowed at ANY status (inline per-card edit),
+    not only PENDING_EVALUATION — a cancelled record can still have its vehicle
+    data corrected. The intake-only whitelist still bounds what can change."""
+    _mute_emails(monkeypatch)
     as_role('Admin', 1)
     rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
     cancel = client.post(f'/api/buyback/records/{rid}/cancel', json={'reason': 'test'})
     assert cancel.status_code == 200, cancel.get_json()
 
     r = client.put(f'/api/buyback/records/{rid}', json={'mileage_km': 1})
-    assert r.status_code == 409
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()['record']['mileage_km'] == 1
+
+
+def test_update_logs_record_edited_event(client, as_role, monkeypatch):
+    """A successful intake edit appends a 'record_edited' audit event listing
+    the changed fields (old→new) — surfaced in the detail page's Istoric."""
+    _mute_emails(monkeypatch)
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload(mileage_km=10000)).get_json()['record']['id']
+    r = client.put(f'/api/buyback/records/{rid}', json={'mileage_km': 22222})
+    assert r.status_code == 200, r.get_json()
+
+    from buyback.routes._shared import events_repo
+    edited = [e for e in events_repo.list_for_record(rid) if e['action'] == 'record_edited']
+    assert len(edited) == 1, edited
+    changes = edited[0]['details']['changes']
+    assert 'mileage_km' in changes
+    assert changes['mileage_km']['to'] == 22222
+
+
+def test_update_no_change_logs_no_event(client, as_role, monkeypatch):
+    """Resubmitting the same value is a no-op for the audit log — the
+    serializer-normalized diff is empty, so no 'record_edited' event."""
+    _mute_emails(monkeypatch)
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload(mileage_km=10000)).get_json()['record']['id']
+    r = client.put(f'/api/buyback/records/{rid}', json={'mileage_km': 10000})
+    assert r.status_code == 200, r.get_json()
+
+    from buyback.routes._shared import events_repo
+    edited = [e for e in events_repo.list_for_record(rid) if e['action'] == 'record_edited']
+    assert edited == []
 
 
 def test_update_company_id_in_body_is_ignored(client, as_role):
