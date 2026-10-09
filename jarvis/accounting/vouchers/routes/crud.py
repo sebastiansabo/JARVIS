@@ -88,6 +88,17 @@ def create_voucher():
     }), 201
 
 
+@vouchers_bp.route('/api/vouchers/approver-candidates', methods=['GET'])
+@login_required
+@handle_api_errors
+def list_approver_candidates():
+    """Management of the current user's company (level + L0 responsables) —
+    populates the voucher 'Send for Approval to' picker. Login-gated only, like
+    the service-catalog/company endpoint the same form uses."""
+    rows = _repo.get_approver_candidates(current_user.company_id)
+    return jsonify(rows)
+
+
 @vouchers_bp.route('/api/vouchers', methods=['GET'])
 @login_required
 @handle_api_errors

@@ -19,7 +19,6 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { vouchersApi } from '@/api/vouchers'
-import { usersApi } from '@/api/users'
 import { crmApi } from '@/api/crm'
 import { organizationApi } from '@/api/organization'
 import { useAuthStore } from '@/stores/authStore'
@@ -150,9 +149,11 @@ export default function VoucherIssueForm({ onSuccess }: VoucherIssueFormProps) {
   const [approverSearch, setApproverSearch] = useState('')
   const approverInputRef = useRef<HTMLInputElement>(null)
 
+  // Approver options = management of the issuer's company (level + L0
+  // responsables), not every user.
   const { data: users = [] } = useQuery({
-    queryKey: ['users-list'],
-    queryFn: () => usersApi.getUsers(),
+    queryKey: ['voucher-approver-candidates'],
+    queryFn: () => vouchersApi.getApproverCandidates(),
     staleTime: 10 * 60_000,
   })
   const selectedApprover = users.find((u) => String(u.id) === approverUserId)

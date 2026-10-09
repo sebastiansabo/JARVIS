@@ -17,7 +17,6 @@ import {
 } from '@/components/ui/select'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { vouchersApi } from '@/api/vouchers'
-import { usersApi } from '@/api/users'
 import type { VoucherCreatePayload } from '@/types/vouchers'
 
 const VALIDITY_OPTIONS = [
@@ -53,9 +52,11 @@ export default function NewVoucher() {
   const [notes, setNotes] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
 
+  // Approver options = management of the issuer's company (level + L0
+  // responsables), not every user.
   const { data: users = [] } = useQuery({
-    queryKey: ['users-list'],
-    queryFn: () => usersApi.getUsers(),
+    queryKey: ['voucher-approver-candidates'],
+    queryFn: () => vouchersApi.getApproverCandidates(),
     staleTime: 10 * 60_000,
   })
 

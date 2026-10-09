@@ -94,3 +94,11 @@ export interface ServiceCatalogCompanyItem {
   category: string | null
   is_active: boolean
 }
+
+// Management of the issuer's company (level + L0 responsables) — the
+// "Send for Approval to" picker options.
+export interface ApproverCandidate {
+  id: number
+  name: string
+  email: string | null
+}

@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Voucher, VoucherCreatePayload, AccountingListResponse, ServiceCatalogItem, ServiceCatalogCompanyItem, ServicePricing } from '@/types/vouchers'
+import type { Voucher, VoucherCreatePayload, AccountingListResponse, ServiceCatalogItem, ServiceCatalogCompanyItem, ServicePricing, ApproverCandidate } from '@/types/vouchers'
 
 export const vouchersApi = {
   create: (data: VoucherCreatePayload) =>
@@ -56,6 +56,11 @@ export const vouchersApi = {
   // Company-filtered flat list (for voucher form)
   getServiceCatalogCompany: () =>
     api.get<ServiceCatalogCompanyItem[]>('/api/vouchers/service-catalog/company'),
+
+  // Management of the issuer's company (level + L0 responsables) for the
+  // "Send for Approval to" picker
+  getApproverCandidates: () =>
+    api.get<ApproverCandidate[]>('/api/vouchers/approver-candidates'),
 
   // Master service CRUD
   createService: (data: { name: string; category?: string; sort_order?: number }) =>

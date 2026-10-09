@@ -122,6 +122,38 @@ class VoucherRepository(BaseRepository):
             WHERE v.id = %s AND v.deleted_at IS NULL
         ''', (voucher_id,))
 
+    def get_approver_candidates(self, company_id: int) -> list[dict]:
+        """Management users of a company — populates the voucher "Send for
+        Approval to" picker.
+
+        "Management" = responsables of any structure node (levels L1-L5) in the
+        company (structure_node_members, role='responsable'), plus the company's
+        L0 responsables (company_responsables). Inactive and ghost users are
+        excluded; results are ordered by name. Leaving the picker on its default
+        ("Direct manager") instead omits an explicit approver so the service
+        resolves one server-side.
+        """
+        return self.query_all(
+            '''
+            SELECT u.id, u.name, u.email
+            FROM users u
+            WHERE COALESCE(u.is_active, TRUE) = TRUE
+              AND COALESCE(u.is_ghost, FALSE) = FALSE
+              AND u.id IN (
+                SELECT snm.user_id
+                FROM structure_node_members snm
+                JOIN structure_nodes sn ON sn.id = snm.node_id
+                WHERE snm.role = 'responsable' AND sn.company_id = %s
+                UNION
+                SELECT cr.user_id
+                FROM company_responsables cr
+                WHERE cr.company_id = %s
+              )
+            ORDER BY u.name
+            ''',
+            (company_id, company_id),
+        )
+
     def get_all(self, company_id=None, status=None, voucher_type=None,
                 issued_by_user_id=None, expiring_soon=False,
                 date_from=None, date_to=None, expiring_within_days=None,
