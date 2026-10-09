@@ -37,6 +37,11 @@ export default function ChannelView({ channel, onBack, embedded = false }: Props
   const imageInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const initedChannel = useRef<number | null>(null)
+  // Tracks whether the user was at the bottom BEFORE a new message rendered,
+  // so a tall/image message doesn't fool a post-render "near bottom" check.
+  const atBottomRef = useRef(true)
   const cursorPosRef = useRef(0)
 
   const { data: mentionResults } = useQuery({
@@ -92,6 +97,19 @@ export default function ChannelView({ channel, onBack, embedded = false }: Props
       const maxId = Math.max(...posts.map(p => p.id))
       digestApi.markRead(channel.id, maxId)
       queryClient.invalidateQueries({ queryKey: ['digest-channels'] })
+    }
+  }, [posts.length, channel.id])
+
+  // Auto-scroll to the newest message: always on first load of a channel, and
+  // on new incoming messages only when the user is already near the bottom (so
+  // scrolling up to read older history isn't yanked away). Fixes the feed not
+  // following new messages that arrive via the 10s poll.
+  useEffect(() => {
+    if (posts.length === 0) return
+    const firstLoad = initedChannel.current !== channel.id
+    if (firstLoad || atBottomRef.current) {
+      initedChannel.current = channel.id
+      requestAnimationFrame(() => bottomRef.current?.scrollIntoView({ block: 'end' }))
     }
   }, [posts.length, channel.id])
 
@@ -222,7 +240,14 @@ export default function ChannelView({ channel, onBack, embedded = false }: Props
 
       {/* Posts — sidebar fills the fixed-height pane (flex-1); embedded in the
           Hub, cap the scroll area so the composer below always stays on-screen. */}
-      <div className={embedded ? 'overflow-y-auto space-y-1 pr-1 min-h-[40dvh] max-h-[55dvh]' : 'flex-1 overflow-y-auto space-y-1 pr-1'}>
+      <div
+        ref={scrollRef}
+        onScroll={() => {
+          const el = scrollRef.current
+          if (el) atBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+        }}
+        className={embedded ? 'overflow-y-auto space-y-1 pr-1 min-h-[40dvh] max-h-[55dvh]' : 'flex-1 overflow-y-auto space-y-1 pr-1'}
+      >
         {isLoading ? (
           <div className="space-y-3">
             {[1,2,3].map(i => <div key={i} className="h-20 animate-pulse rounded-lg bg-muted" />)}
