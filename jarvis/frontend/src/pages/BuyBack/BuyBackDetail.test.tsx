@@ -3,8 +3,9 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 
-const { updateRecord } = vi.hoisted(() => ({
+const { updateRecord, exportPdf } = vi.hoisted(() => ({
   updateRecord: vi.fn(() => Promise.resolve({ success: true, record: {} })),
+  exportPdf: vi.fn(() => Promise.resolve()),
 }))
 
 vi.mock('@/api/buyback', () => ({
@@ -28,6 +29,7 @@ vi.mock('@/api/buyback', () => ({
       })
     ),
     updateRecord,
+    exportPdf,
     // ActionPanel mounts unconditionally and fires this on render regardless of status.
     getLookupOptions: vi.fn(() => Promise.resolve({})),
   },
@@ -75,5 +77,13 @@ describe('BuyBackDetail', () => {
     const [id, payload] = updateRecord.mock.calls[0] as unknown as [number, Record<string, unknown>]
     expect(id).toBe(5)
     expect(payload).toMatchObject({ brand: 'Audi', model: 'A4', vin: 'WAUZZZ8V9KA000111' })
+  })
+
+  it('exports the record to PDF from the header button', async () => {
+    exportPdf.mockClear()
+    wrap('/app/buyback/5')
+    await screen.findByText('Audi A4')
+    fireEvent.click(screen.getByText('Export PDF'))
+    await waitFor(() => expect(exportPdf).toHaveBeenCalledWith(5))
   })
 })
