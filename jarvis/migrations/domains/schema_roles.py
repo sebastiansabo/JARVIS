@@ -1348,6 +1348,7 @@ def _seed_sidebar_permissions_v2(cursor, conn):
         ('statements',  'Bank Statements', 'bi-bank',            'module', 'Statements Module',  'access', 'Access', 'Access Bank Statements module', False, 0),
         ('marketing',   'Marketing',       'bi-megaphone',       'module', 'Marketing Module',   'access', 'Access', 'Access Marketing module',       False, 0),
         ('carpark',     'CarPark',         'bi-car-front',       'module', 'CarPark Module',     'access', 'Access', 'Access CarPark module',         False, 0),
+        ('courtesy',    'Mașini de curtoazie', 'bi-key',         'module', 'Mașini de curtoazie Module', 'access', 'Access', 'Access Mașini de curtoazie (courtesy-car) module', False, 0),
         ('service',     'Service',         'bi-wrench',          'module', 'Service Module',     'access', 'Access', 'Access Service module',         False, 0),
         ('ticketing',   'Ticketing',       'bi-headset',         'module', 'Ticketing Module',   'access', 'Access', 'Access Ticketing module',       False, 0),
         ('controlling', 'Controlling',     'bi-bar-chart',       'module', 'Controlling Module', 'access', 'Access', 'Access Controlling module',     False, 0),
@@ -1432,6 +1433,10 @@ def _seed_sidebar_permissions_v2(cursor, conn):
         WHERE NOT EXISTS (
             SELECT 1 FROM role_permissions_v2 rp WHERE rp.permission_id = p.id
         )
+          -- courtesy.module.access is NOT seeded by the name heuristic below;
+          -- it is backfilled from each role's carpark grant (see next block)
+          -- so the courtesy tile mirrors the driving tile at deploy.
+          AND NOT (p.module_key = 'courtesy' AND p.entity_key = 'module' AND p.action_key = 'access')
     ''')
     new_perm_rows = cursor.fetchall()
 
@@ -1461,6 +1466,28 @@ def _seed_sidebar_permissions_v2(cursor, conn):
                 VALUES (%s, %s, %s, %s)
                 ON CONFLICT (role_id, permission_id) DO NOTHING
             ''', (role_id, perm_id, scope, granted))
+
+    # ── 6b. courtesy.module.access mirrors carpark.module.access per role ──
+    # The "Mașini de curtoazie" tile used to share the CarPark switch, so at
+    # introduction it must be visible for exactly the roles that see Driving
+    # today — copy each role's effective carpark grant onto courtesy. Runs AFTER
+    # the sweep above (so carpark grants exist for every role) and uses ON
+    # CONFLICT DO NOTHING, so this is a one-time seed: once a courtesy grant
+    # exists (here or via an admin toggle), later boots never overwrite it.
+    cursor.execute('''
+        INSERT INTO role_permissions_v2 (role_id, permission_id, scope, granted)
+        SELECT r.id, cp.id,
+               COALESCE(rp.scope, 'deny') AS scope,
+               (COALESCE(rp.scope, 'deny') <> 'deny') AS granted
+        FROM roles r
+        CROSS JOIN permissions_v2 cp
+        LEFT JOIN permissions_v2 pp
+               ON pp.module_key = 'carpark' AND pp.entity_key = 'module' AND pp.action_key = 'access'
+        LEFT JOIN role_permissions_v2 rp
+               ON rp.permission_id = pp.id AND rp.role_id = r.id
+        WHERE cp.module_key = 'courtesy' AND cp.entity_key = 'module' AND cp.action_key = 'access'
+        ON CONFLICT (role_id, permission_id) DO NOTHING
+    ''')
 
     conn.commit()
 

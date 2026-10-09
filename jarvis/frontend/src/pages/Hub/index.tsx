@@ -243,7 +243,7 @@ export default function Hub() {
     vouchers: Array.isArray(vouchersData) ? vouchersData.length : -1,
     forms: (formsCountData?.forms ?? []).length || -1,
     driving: -1, // always show when allowed
-    courtesy: -1, // always show when allowed (same gate as driving)
+    courtesy: -1, // always show when allowed (own permission: can_access_courtesy)
     field_sales: -1, // always show when allowed
     buyback: -1, // always show when allowed
   }
@@ -253,7 +253,7 @@ export default function Hub() {
     return appTiles.filter((t) => {
       if (t.key === 'vouchers' && !hasVouchersPerm) return false
       if (t.key === 'driving' && !authUser?.can_access_carpark) return false
-      if (t.key === 'courtesy' && !authUser?.can_access_carpark) return false
+      if (t.key === 'courtesy' && !authUser?.can_access_courtesy) return false
       if (t.key === 'field_sales' && !authUser?.can_access_field_sales) return false
       if (t.key === 'buyback' && !authUser?.can_access_buyback) return false
       // Vouchers stays visible even at 0 (permission-gated above) — like approvals;
@@ -261,7 +261,7 @@ export default function Hub() {
       if (t.key !== 'approvals' && t.key !== 'vouchers' && tileCounts[t.key] === 0) return false
       return true
     })
-  }, [hasVouchersPerm, tileCounts, authUser?.can_access_carpark, authUser?.can_access_field_sales, authUser?.can_access_buyback])
+  }, [hasVouchersPerm, tileCounts, authUser?.can_access_carpark, authUser?.can_access_courtesy, authUser?.can_access_field_sales, authUser?.can_access_buyback])
 
   return (
     <div className="space-y-6 pb-16 sm:pb-0">
