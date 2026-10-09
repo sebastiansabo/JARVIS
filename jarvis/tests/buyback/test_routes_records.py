@@ -572,10 +572,23 @@ def test_list_global_admin_lists_any_company_regression(client, as_role):
 
 # ── I2 — delete must not hard-delete financial/terminal records ─────────
 
-def test_delete_refuses_bought_record(client, as_role):
-    """A BOUGHT record's audit trail (and its CarPark vehicle back-link)
-    must never be destroyed by a delete — refuse with 409 and keep the
-    row."""
+def _mute_emails(monkeypatch):
+    """Silence the best-effort new-request/status-change notification emails a
+    record create/transition fires (they route through notifications.py's
+    function-level `from core.services.notification_service import send_email`,
+    so patching the source attribute suppresses the real SMTP send)."""
+    monkeypatch.setattr(
+        'core.services.notification_service.send_email',
+        lambda *a, **k: (True, None),
+    )
+
+
+def test_admin_deletes_bought_record(client, as_role, monkeypatch):
+    """New policy: a true global admin (can_access_settings) MAY hard-delete a
+    BOUGHT record from the Archive — the "delete everything" cleanup path.
+    Only the buyback row + its cascaded children go; the CarPark vehicle is a
+    separate row and is left intact."""
+    _mute_emails(monkeypatch)
     as_role('Admin', 1)
     rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
     from buyback.routes._shared import service, records_repo
@@ -586,23 +599,86 @@ def test_delete_refuses_bought_record(client, as_role):
     service.transition(rec, 'BOUGHT', actor=1)
 
     r = client.delete(f'/api/buyback/records/{rid}')
-    assert r.status_code == 409, r.get_json()
-    assert records_repo.get_by_id(rid) is not None
+    assert r.status_code == 200, r.get_json()
+    assert records_repo.get_by_id(rid) is None
 
 
-def test_delete_refuses_when_carpark_vehicle_linked_even_if_status_deletable(client, as_role):
-    """Belt-and-suspenders half of the guard: a carpark_vehicle_id link
-    blocks delete even for an otherwise-deletable status (PENDING_EVALUATION
-    here) — a record must never be deletable once it carries a CarPark
-    back-link, regardless of how it got one."""
+def test_admin_deletes_carpark_linked_record(client, as_role, monkeypatch):
+    """The CarPark back-link no longer blocks a global admin's delete of a
+    resolved record — only the buyback record is removed; the polymorphic
+    vehicle_links back-link is not a FK, so nothing on the CarPark side is
+    destroyed. (A real CarPark link only exists on a BOUGHT record, so drive it
+    to BOUGHT before attaching the link.)"""
+    _mute_emails(monkeypatch)
     as_role('Admin', 1)
     rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
-    from buyback.routes._shared import records_repo
+    from buyback.routes._shared import service, records_repo
+    rec = records_repo.get_by_id(rid)
+    rec = service.transition(rec, 'INITIAL_OFFER', actor=1)
+    rec = service.transition(rec, 'INSPECTION', actor=1)
+    rec = service.transition(rec, 'FINAL_OFFER', actor=1)
+    service.transition(rec, 'BOUGHT', actor=1)
     records_repo.update(rid, {'carpark_vehicle_id': 999999})
+
+    r = client.delete(f'/api/buyback/records/{rid}')
+    assert r.status_code == 200, r.get_json()
+    assert records_repo.get_by_id(rid) is None
+
+
+def test_admin_delete_refused_for_in_progress_record(client, as_role, monkeypatch):
+    """The admin "delete everything" exception is scoped to the Archive
+    (resolved statuses). An in-progress record (INITIAL_OFFER here) must stay
+    protected even for a global admin — its audit trail must survive; admins
+    have reopen/cancel for those instead."""
+    _mute_emails(monkeypatch)
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    from buyback.routes._shared import service, records_repo
+    rec = records_repo.get_by_id(rid)
+    service.transition(rec, 'INITIAL_OFFER', actor=1)
 
     r = client.delete(f'/api/buyback/records/{rid}')
     assert r.status_code == 409, r.get_json()
     assert records_repo.get_by_id(rid) is not None
+
+
+def test_delete_non_admin_still_refused_bought_record(client, as_role, monkeypatch):
+    """A non-admin with the delete permission (Manager — 'all' scope but NOT
+    can_access_settings) still CANNOT delete a BOUGHT record: the status/link
+    guard lifts only for a true global admin. (Manager's 'all' scope falls
+    through to get_actable_company_ids(), empty for the harness's fake uids, so
+    pin the permitted set to company 1 so _guard_company passes and we reach
+    the status gate rather than a spurious 403.)"""
+    _mute_emails(monkeypatch)
+    as_role('Manager', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    from buyback.routes import _shared
+    monkeypatch.setattr(_shared, '_permitted_company_ids', lambda: {1})
+    rec = _shared.records_repo.get_by_id(rid)
+    rec = _shared.service.transition(rec, 'INITIAL_OFFER', actor=1)
+    rec = _shared.service.transition(rec, 'INSPECTION', actor=1)
+    rec = _shared.service.transition(rec, 'FINAL_OFFER', actor=1)
+    _shared.service.transition(rec, 'BOUGHT', actor=1)
+
+    r = client.delete(f'/api/buyback/records/{rid}')
+    assert r.status_code == 409, r.get_json()
+    assert _shared.records_repo.get_by_id(rid) is not None
+
+
+def test_delete_non_admin_still_refused_carpark_linked(client, as_role, monkeypatch):
+    """Same non-admin guard for the CarPark-link half: a Manager cannot delete
+    an otherwise-deletable (PENDING_EVALUATION) record once it carries a
+    carpark_vehicle_id."""
+    _mute_emails(monkeypatch)
+    as_role('Manager', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    from buyback.routes import _shared
+    monkeypatch.setattr(_shared, '_permitted_company_ids', lambda: {1})
+    _shared.records_repo.update(rid, {'carpark_vehicle_id': 999999})
+
+    r = client.delete(f'/api/buyback/records/{rid}')
+    assert r.status_code == 409, r.get_json()
+    assert _shared.records_repo.get_by_id(rid) is not None
 
 
 def test_delete_allows_pending_evaluation_record(client, as_role):

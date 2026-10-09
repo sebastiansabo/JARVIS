@@ -486,10 +486,28 @@ def delete_record(record_id):
     # BOUGHT record is already excluded by status, but this also blocks the
     # pathological case of a non-BOUGHT status somehow carrying a
     # carpark_vehicle_id).
+    #
+    # EXCEPTION — a true global admin (can_access_settings) may additionally
+    # hard-delete any RESOLVED (archived) record, including BOUGHT and
+    # CarPark-linked ones: the Archive "delete everything" cleanup path for
+    # test/erroneous records. Only the buyback_records row and its cascaded
+    # children (offers/photos/events, all ON DELETE CASCADE) are removed; the
+    # CarPark vehicle is a separate row and is left intact, and its polymorphic
+    # vehicle_links back-link (not a FK) simply degrades to a "Buyback #<id>"
+    # label. In-progress records stay protected for EVERYONE — their audit
+    # trail must survive, and an admin has reopen/cancel for those instead.
+    # Mirrors the frontend, which shows the Archive delete only to
+    # can_access_settings users and only on the Archive (resolved) tab.
+    is_global_admin = getattr(current_user, 'can_access_settings', False)
     _DELETABLE_STATUSES = (
         lifecycle.PENDING_EVALUATION, lifecycle.LOST, lifecycle.CANCELLED,
     )
-    if record['status'] not in _DELETABLE_STATUSES or record.get('carpark_vehicle_id') is not None:
+    _RESOLVED_STATUSES = (lifecycle.BOUGHT, lifecycle.LOST, lifecycle.CANCELLED)
+    admin_archive_delete = is_global_admin and record['status'] in _RESOLVED_STATUSES
+    if not admin_archive_delete and (
+        record['status'] not in _DELETABLE_STATUSES
+        or record.get('carpark_vehicle_id') is not None
+    ):
         return jsonify({
             'success': False,
             'error': f"Cannot delete a record in status {record['status']!r} "
