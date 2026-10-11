@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { useAuth } from '@/hooks/useAuth'
 import { checkinApi } from '@/api/checkin'
+import { gpsUsable } from '@/lib/checkinGeofence'
 import type { CheckinStatus, PunchResult, CheckinLocation } from '@/types/checkin'
 
 // ── Haversine (client-side, for display only — server validates) ──
@@ -283,18 +284,6 @@ export default function MobileCheckin() {
   const showSuggestion = !suggestionDismissed && !lastResult && noPunchesToday
     && gps.position && !gps.loading && !punchMutation.isPending
 
-  // GPS punch
-  const handlePunch = () => {
-    setLastResult(null)
-    setSuggestionDismissed(true)
-    if (gps.position) {
-      punchMutation.mutate({ lat: gps.position.lat, lng: gps.position.lng })
-    } else {
-      // No GPS — try IP-only (send empty body, server checks IP)
-      punchMutation.mutate({})
-    }
-  }
-
   const nextDir = status?.next_direction || 'IN'
   const isCheckIn = nextDir === 'IN'
   const isPending = gps.loading || punchMutation.isPending
@@ -302,13 +291,38 @@ export default function MobileCheckin() {
   // Client-side distance to nearest location
   let nearestDist: number | null = null
   let nearestName: string | null = null
+  let nearestRadius: number | null = null
   if (gps.position && locations?.length) {
     for (const loc of locations) {
       const d = haversine(gps.position.lat, gps.position.lng, loc.latitude, loc.longitude)
       if (nearestDist === null || d < nearestDist) {
         nearestDist = d
         nearestName = loc.name
+        nearestRadius = loc.allowed_radius_meters
       }
+    }
+  }
+
+  // Is the current GPS fix good enough to punch with? Indoors it usually isn't
+  // (huge accuracy radius / point lands out of range) — then we steer to WiFi/QR.
+  const gpsIsUsable = gpsUsable(nearestDist, nearestRadius, gps.accuracy)
+  // A present-but-unusable fix: we have coordinates, but they can't prove on-site.
+  const gpsUnreliable = gps.position !== null && !gps.error && nearestDist !== null && !gpsIsUsable
+  // Why it's unusable — drives the nudge wording (out of range vs just imprecise).
+  const outOfRange = nearestDist !== null && nearestRadius !== null && nearestDist > nearestRadius
+
+  // Punch with GPS whenever we have a fix. The server itself falls back
+  // GPS → IP (office WiFi) → QR within one request, so an on-site user whose
+  // indoor GPS lands out of range still matches by office WiFi IP — and an
+  // in-range fix is recorded with its real distance. No fix → empty body
+  // (server checks office IP only).
+  const handlePunch = () => {
+    setLastResult(null)
+    setSuggestionDismissed(true)
+    if (gps.position) {
+      punchMutation.mutate({ lat: gps.position.lat, lng: gps.position.lng })
+    } else {
+      punchMutation.mutate({})
     }
   }
 
@@ -348,19 +362,20 @@ export default function MobileCheckin() {
         </Card>
       )}
 
-      {/* Distance indicator */}
+      {/* Distance indicator — green only when the fix is trustworthy enough to
+          punch with (in range AND accurate); otherwise WiFi/QR is the path. */}
       {nearestDist !== null && (
         <Card>
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-3">
-              <MapPin className={`h-5 w-5 shrink-0 ${nearestDist <= 50 ? 'text-green-500' : 'text-red-500'}`} />
+              <MapPin className={`h-5 w-5 shrink-0 ${gpsIsUsable ? 'text-green-500' : 'text-red-500'}`} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{nearestName}</p>
-                <p className={`text-lg font-bold ${nearestDist <= 50 ? 'text-green-600' : 'text-red-600'}`}>
+                <p className={`text-lg font-bold ${gpsIsUsable ? 'text-green-600' : 'text-red-600'}`}>
                   {Math.round(nearestDist)}m away
                 </p>
               </div>
-              {nearestDist <= 50 ? (
+              {gpsIsUsable ? (
                 <CheckCircle2 className="h-6 w-6 text-green-500 shrink-0" />
               ) : (
                 <XCircle className="h-6 w-6 text-red-500 shrink-0" />
@@ -371,7 +386,7 @@ export default function MobileCheckin() {
       )}
 
       {/* Auto-suggestion: you're at the office, no punch today */}
-      {showSuggestion && nearestDist !== null && nearestDist <= 50 && (
+      {showSuggestion && gpsIsUsable && (
         <Card className="border-green-500 bg-green-50 dark:bg-green-950/20 animate-in fade-in slide-in-from-top-2">
           <CardContent className="pt-4 pb-4">
             <div className="flex items-start gap-3">
@@ -421,6 +436,49 @@ export default function MobileCheckin() {
                     size="sm"
                     variant="outline"
                     onClick={handlePunch}
+                    disabled={punchMutation.isPending}
+                    className="gap-1"
+                  >
+                    <Wifi className="h-4 w-4" /> Use WiFi
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={qrScanner.startScanning}
+                    disabled={punchMutation.isPending || qrScanner.scanning}
+                    className="gap-1"
+                  >
+                    <QrCode className="h-4 w-4" /> Scan QR
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Weak/unreliable GPS (common indoors): we have a fix but it can't prove
+          you're on-site. Steer to WiFi/QR, which work indoors and can't be faked. */}
+      {gpsUnreliable && (
+        <Card className="border-amber-500 bg-amber-50 dark:bg-amber-950/20">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-start gap-3">
+              <XCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-semibold text-amber-700 dark:text-amber-400">
+                  Can't confirm your location by GPS
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {outOfRange
+                    ? `GPS puts you ${Math.round(nearestDist!)}m from ${nearestName} (max ${nearestRadius}m).`
+                    : `GPS here is too weak to confirm you're at ${nearestName}${gps.accuracy !== null ? ` (±${Math.round(gps.accuracy)}m)` : ''}.`}
+                  {' '}If you're on-site, punch in with WiFi or scan the QR.
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setLastResult(null); setSuggestionDismissed(true); punchMutation.mutate({}) }}
                     disabled={punchMutation.isPending}
                     className="gap-1"
                   >
