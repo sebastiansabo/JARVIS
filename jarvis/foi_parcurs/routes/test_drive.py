@@ -265,6 +265,13 @@ def api_submit_test_drive():
     # re-fetched only if that lookup raised.
     if _veh is None:
         _veh = _vehicle_repo.get_by_vin(data['vin'])
+    # An internal driving log (QuickSession) has no document of its own — it's
+    # just "who drove this car, when". So it inherits the selected vehicle's
+    # pool instead of defaulting to Sales: a courtesy (Service) car can be
+    # logged internally exactly like a Sales car, and the session lands in that
+    # car's parc for reporting. This also satisfies the gate below by design.
+    if is_internal:
+        document_type = _normalize_doctype((_veh or {}).get('document_type'))
     if not pools_match(document_type, (_veh or {}).get('document_type')):
         return jsonify({'success': False,
                         'error': 'Mașina selectată nu aparține parcului pentru acest tip de document.'}), 400
@@ -448,8 +455,11 @@ def api_submit_test_drive():
 
         # Rental-pricing snapshot — frozen at create so a later car-price change
         # never rewrites a signed contract. Only rental document types (is_rental)
-        # carry pricing; Sales and non-rental types never touch this.
-        if _dt_repo.is_rental(contract_data.get('company_id'), document_type):
+        # carry pricing; Sales and non-rental types never touch this. Internal
+        # driving logs never carry pricing either — a courtesy car logged
+        # internally ("Sesiune internă") is an unbilled errand, not a Rent-a-car
+        # rental — even though it now inherits the car's (possibly rental) pool.
+        if not is_internal and _dt_repo.is_rental(contract_data.get('company_id'), document_type):
             contract_data.update(_resolve_service_pricing(
                 _veh, contract_data.get('company_id'),
                 data.get('departure_datetime'), data.get('return_datetime'), data))

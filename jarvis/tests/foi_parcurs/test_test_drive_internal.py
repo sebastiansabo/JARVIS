@@ -80,6 +80,60 @@ def test_internal_create_succeeds_without_client_or_signature(client, monkeypatc
     assert row['km_start'] == 1000
 
 
+def test_internal_create_adopts_courtesy_service_pool(client, monkeypatch):
+    """An internal driving log must work for a courtesy (Service pool) car.
+    The internal session has no document of its own, so it inherits the selected
+    vehicle's pool instead of defaulting to Sales — otherwise the pool-isolation
+    gate rejects every courtesy car with "nu aparține parcului"."""
+    monkeypatch.setattr(td._vehicle_repo, 'get_by_vin',
+                        lambda vin: {'brand': 'Audi', 'document_type': 'service'})
+    monkeypatch.setattr(td._dt_repo, 'get', lambda cid, key: None, raising=False)
+    monkeypatch.setattr(td._dt_repo, 'is_rental', lambda cid, key: False, raising=False)
+    calls = []
+
+    def fake_create(data):
+        calls.append(data)
+        return {**data, 'id': 9}
+
+    monkeypatch.setattr(td._fp_repo, 'create_from_td_form', fake_create)
+
+    resp = client.post('/api/foi-parcurs/test-drive', json=_internal_payload())
+
+    assert resp.status_code == 200, resp.get_json()
+    assert len(calls) == 1
+    # The session is tagged into the car's own parc, not forced to Sales.
+    assert calls[0]['document_type'] == 'service'
+
+
+def test_internal_service_session_skips_rental_pricing(client, monkeypatch):
+    """An internal driving log on a courtesy (rental) car is an unbilled errand,
+    not a Rent-a-car rental — no pricing snapshot is taken even when the car's
+    pool is is_rental. Guards the side effect of inheriting the vehicle's pool."""
+    monkeypatch.setattr(td._vehicle_repo, 'get_by_vin',
+                        lambda vin: {'brand': 'Audi', 'document_type': 'service'})
+    monkeypatch.setattr(td._dt_repo, 'get', lambda cid, key: None, raising=False)
+    monkeypatch.setattr(td._dt_repo, 'is_rental', lambda cid, key: True, raising=False)
+    priced = []
+    monkeypatch.setattr(
+        td, '_resolve_service_pricing',
+        lambda *a, **k: (priced.append(True), {'svc_tariff_eur_day': 99})[1],
+        raising=False,
+    )
+    calls = []
+
+    def fake_create(data):
+        calls.append(data)
+        return {**data, 'id': 11}
+
+    monkeypatch.setattr(td._fp_repo, 'create_from_td_form', fake_create)
+
+    resp = client.post('/api/foi-parcurs/test-drive', json=_internal_payload())
+
+    assert resp.status_code == 200, resp.get_json()
+    assert priced == []  # pricing resolver never invoked for an internal session
+    assert 'svc_tariff_eur_day' not in calls[0]
+
+
 def test_internal_create_requires_vehicle_and_km(client):
     resp = client.post(
         '/api/foi-parcurs/test-drive',
