@@ -1,4 +1,5 @@
 import { api } from './client'
+import type { VehiclePhoto } from '../types/carpark'
 
 // CarBackground → AI photo background removal/enhancement connector (CarPark).
 // Admin config sets the API key + default background; the per-vehicle picker
@@ -53,11 +54,7 @@ export interface CbgEnhanceResponse {
 
 export interface CbgPublishResponse {
   success: boolean
-  published: boolean
-}
-
-export interface CbgDeleteEnhancedResponse {
-  success: boolean
+  photo: VehiclePhoto
 }
 
 const BASE = '/carbackground/api'
@@ -81,5 +78,5 @@ export const carbackgroundApi = {
     api.put<CbgPublishResponse>(`${BASE}/photos/${photoId}/publish`, { published }),
 
   deleteEnhanced: (photoId: number) =>
-    api.delete<CbgDeleteEnhancedResponse>(`${BASE}/photos/${photoId}/enhanced`),
+    api.delete<CbgPublishResponse>(`${BASE}/photos/${photoId}/enhanced`),
 }

@@ -2621,6 +2621,7 @@ export default function ConnectorsTab() {
       <AutofoxSection />
       <hr className="border-border" />
       <CarBackgroundSettings />
+      <hr className="border-border" />
       <ShopifySection />
       <hr className="border-border" />
       <PushNotificationSection />

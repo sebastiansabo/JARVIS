@@ -6,7 +6,8 @@ describe('carbackgroundApi', () => {
   it('getConfig calls GET /carbackground/api/config', async () => {
     const get = vi.spyOn(api, 'get').mockResolvedValue({
       success: true,
-      config: { configured: true, has_api_key: true, background_id: 'bg-1' },
+      configured: true,
+      connector: { has_api_key: true, background_id: 'studio-white', api_base_url: '' },
     } as any)
     await carbackgroundApi.getConfig()
     expect(get).toHaveBeenCalledWith('/carbackground/api/config')
@@ -31,7 +32,7 @@ describe('carbackgroundApi', () => {
   })
 
   it('credits calls GET /carbackground/api/credits', async () => {
-    const get = vi.spyOn(api, 'get').mockResolvedValue({ success: true, credits: 42 } as any)
+    const get = vi.spyOn(api, 'get').mockResolvedValue({ success: true, balance: 42 } as any)
     await carbackgroundApi.credits()
     expect(get).toHaveBeenCalledWith('/carbackground/api/credits')
   })

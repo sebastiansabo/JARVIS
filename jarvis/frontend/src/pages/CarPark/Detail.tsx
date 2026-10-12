@@ -1150,7 +1150,11 @@ export function PhotoGridOverlay({
     mutationFn: () => carbackgroundApi.enhance(vehicleId, Array.from(selected)),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] })
-      toast.success(`${res.created} poze studio generate${res.errors?.length ? ` (${res.errors.length} erori)` : ''}`)
+      if (res.created === 0 && res.errors?.length) {
+        toast.error(`Generare studio eșuată (${res.errors.length} erori)`)
+      } else {
+        toast.success(`${res.created} poze studio generate${res.errors?.length ? ` (${res.errors.length} erori)` : ''}`)
+      }
       setSelected(new Set())
     },
     onError: () => toast.error('Generarea studio a eșuat'),
