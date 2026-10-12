@@ -365,7 +365,7 @@ class TdBookingService:
         crm_client_id = self._find_or_create_crm_client(booking)
         try:
             # Public customer confirm: never block on an overlap -- soft-warn only.
-            fp_id = self._confirm_pending(booking, crm_client_id, enforce_availability=False)
+            fp_id = self._confirm_pending(booking, crm_client_id, enforce_availability=False)['fp_id']
         except TdBookingNotPending:
             # The booking was pending when we read it, but under the advisory lock the
             # FOR-UPDATE guard saw it is no longer pending -- a racing/duplicate confirm
@@ -391,8 +391,12 @@ class TdBookingService:
         if not bookings:
             return ServiceResult(False, 410, error='Link invalid or expired')
         now = datetime.now(timezone.utc)
-        confirmed = conflicts = 0
+        confirmed = conflicts = newly = 0
         crm_client_id = None
+        # Accumulate for ONE aggregated staff notification instead of one per slot.
+        page = sample_booking = None
+        advisor_ids = set()
+        any_warning = False
         for booking in bookings:
             if booking['status'] == 'confirmed':
                 confirmed += 1
@@ -404,8 +408,18 @@ class TdBookingService:
                 crm_client_id = self._find_or_create_crm_client(booking)
             try:
                 # Public customer confirm: never block on an overlap -- soft-warn only.
-                self._confirm_pending(booking, crm_client_id, enforce_availability=False)
+                # notify=False: the group sends a single aggregated staff alert below.
+                res = self._confirm_pending(booking, crm_client_id,
+                                            enforce_availability=False, notify=False)
                 confirmed += 1
+                newly += 1
+                sample_booking = sample_booking or booking
+                if res.get('advisor_id'):
+                    advisor_ids.add(res['advisor_id'])
+                if res.get('warning'):
+                    any_warning = True
+                if page is None:
+                    page = self.repo.get_page(booking['page_id'])
             except TdBookingNotPending:
                 # A racing/duplicate confirm already finished this one -- count it
                 # confirmed if so, never flip a good booking to 'conflict'.
@@ -417,6 +431,10 @@ class TdBookingService:
                 conflicts += 1
         if confirmed == 0 and conflicts == 0:
             return ServiceResult(False, 410, error='Booking expired or already handled')
+        # One staff notification for the whole group — only for slots confirmed in
+        # THIS call (re-clicked/already-confirmed bookings were notified before).
+        if newly > 0 and page is not None and sample_booking is not None:
+            self._notify_staff_group(page, sample_booking, advisor_ids, newly, warning=any_warning)
         return ServiceResult(True, 200, data={'confirmed': confirmed, 'conflicts': conflicts})
 
     def _find_or_create_crm_client(self, booking):
@@ -456,15 +474,19 @@ class TdBookingService:
                                crm_client_id, exc_info=True)
         return crm_client_id
 
-    def _confirm_pending(self, booking, crm_client_id, enforce_availability=True):
+    def _confirm_pending(self, booking, crm_client_id, enforce_availability=True, notify=True):
         """Confirm ONE pending booking into a PLANNED fișă via the race-safe
-        atomic confirm, then persist the CRM link + advisor and notify staff.
-        Returns the new fp_id; propagates TdConflict / TdBookingNotPending to the
-        caller (single vs group each handle them differently).
+        atomic confirm, then persist the CRM link + advisor and (optionally)
+        notify staff. Returns {fp_id, advisor_id, warning}; propagates
+        TdConflict / TdBookingNotPending to the caller (single vs group each
+        handle them differently).
 
         `enforce_availability` is False for the PUBLIC customer confirm (an overlap
         never blocks, just flags the staff notification) and True for staff/admin
-        confirms, which keep the hard availability gate."""
+        confirms, which keep the hard availability gate.
+
+        `notify` is False for the group path, which sends ONE aggregated staff
+        notification after confirming every slot instead of one push per slot."""
         page = self.repo.get_page(booking['page_id'])
         car = self.repo.get_car(booking['car_id'])
         slot = self.repo.query_one('SELECT * FROM mkt_td_slots WHERE id=%s', (booking['slot_id'],))
@@ -478,8 +500,10 @@ class TdBookingService:
         # confirm_booking_atomic already flipped status + foi_de_parcurs_id; this
         # persists the CRM link + advisor that the atomic step doesn't know about.
         self.repo.mark_confirmed(booking['id'], crm_client_id, res['fp_id'], advisor_id)
-        self._notify_staff(page, booking, advisor_id, warning=res.get('soft_conflict'))
-        return res['fp_id']
+        warning = res.get('soft_conflict')
+        if notify:
+            self._notify_staff(page, booking, advisor_id, warning=warning)
+        return {'fp_id': res['fp_id'], 'advisor_id': advisor_id, 'warning': warning}
 
     # ---- cancel ----
     def cancel_booking(self, token):
@@ -689,6 +713,28 @@ class TdBookingService:
                 notify_with_push(
                     ids, 'Programare test drive nouă',
                     message=message,
-                    category='system')
+                    category='test_drive')
         except Exception:
             logger.warning('staff notify failed for booking %s', booking['id'], exc_info=True)
+
+    def _notify_staff_group(self, page, booking, advisor_ids, count, warning=False):
+        """One staff notification for a whole group confirm — recipients are the
+        page's notify list plus every car's advisor, so a single push covers an
+        N-slot group instead of firing N identical alerts to the same people."""
+        try:
+            from core.notifications.notify import notify_with_push
+            ids = list(page.get('notify_user_ids') or [])
+            ids.extend(advisor_ids)
+            ids = list({i for i in ids if i})
+            if ids:
+                unit = 'mașină' if count == 1 else 'mașini'
+                message = f"{booking['customer_name']} · {booking['customer_phone_e164']} — {count} {unit}"
+                if warning:
+                    message += '  ⚠ posibilă suprapunere — verificați disponibilitatea mașinilor'
+                notify_with_push(
+                    ids, 'Programare test drive nouă',
+                    message=message,
+                    category='test_drive')
+        except Exception:
+            logger.warning('group staff notify failed for group booking %s',
+                           booking.get('id'), exc_info=True)

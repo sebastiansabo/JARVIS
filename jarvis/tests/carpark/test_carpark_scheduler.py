@@ -17,6 +17,7 @@ import os
 
 os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')
 
+from contextlib import contextmanager
 from datetime import date, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -164,12 +165,21 @@ def test_expire_reservations_one_bad_row_does_not_abort_batch():
 # carpark_aging_alerts
 # ─────────────────────────────────────────────────────────────────────────
 
+@contextmanager
 def _patched_aging(dispo_repo, notify_fn):
-    return (
-        patch('carpark.repositories.dispo_repository.DispoRepository',
-              return_value=dispo_repo),
-        patch('core.notifications.notify.notify_user', notify_fn),
-    )
+    """Patch the aging job's collaborators. The job now also opens a DB cursor
+    for the 7-day per-vehicle cooldown, so a fake cursor whose `fetchone`
+    returns None (never in cooldown) is supplied — every aged vehicle alerts,
+    preserving these tests' original behavior."""
+    cursor = MagicMock()
+    cursor.fetchone.return_value = None
+    with patch('carpark.repositories.dispo_repository.DispoRepository',
+               return_value=dispo_repo), \
+         patch('core.notifications.notify.notify_user', notify_fn), \
+         patch('database.get_db', return_value=MagicMock()), \
+         patch('database.get_cursor', return_value=cursor), \
+         patch('database.release_db'):
+        yield
 
 
 def test_carpark_aging_alerts_no_aged_vehicles_is_a_noop():
@@ -177,8 +187,7 @@ def test_carpark_aging_alerts_no_aged_vehicles_is_a_noop():
     dispo_repo.aged_unsold.return_value = []
     notify_fn = MagicMock()
 
-    p1, p2 = _patched_aging(dispo_repo, notify_fn)
-    with p1, p2:
+    with _patched_aging(dispo_repo, notify_fn):
         job.carpark_aging_alerts()
 
     dispo_repo.aged_unsold.assert_called_once_with(60)
@@ -193,8 +202,7 @@ def test_carpark_aging_alerts_notifies_salesperson():
     ]
     notify_fn = MagicMock()
 
-    p1, p2 = _patched_aging(dispo_repo, notify_fn)
-    with p1, p2:
+    with _patched_aging(dispo_repo, notify_fn):
         job.carpark_aging_alerts()
 
     notify_fn.assert_called_once()
@@ -209,8 +217,7 @@ def test_carpark_aging_alerts_falls_back_to_acquisition_manager():
     ]
     notify_fn = MagicMock()
 
-    p1, p2 = _patched_aging(dispo_repo, notify_fn)
-    with p1, p2:
+    with _patched_aging(dispo_repo, notify_fn):
         job.carpark_aging_alerts()
 
     notify_fn.assert_called_once()
@@ -225,8 +232,7 @@ def test_carpark_aging_alerts_skips_vehicle_with_no_target_user():
     ]
     notify_fn = MagicMock()
 
-    p1, p2 = _patched_aging(dispo_repo, notify_fn)
-    with p1, p2:
+    with _patched_aging(dispo_repo, notify_fn):
         job.carpark_aging_alerts()
 
     notify_fn.assert_not_called()
@@ -243,8 +249,7 @@ def test_carpark_aging_alerts_one_bad_vehicle_does_not_abort_batch():
     notify_fn = MagicMock()
     notify_fn.side_effect = [RuntimeError('boom'), None]
 
-    p1, p2 = _patched_aging(dispo_repo, notify_fn)
-    with p1, p2:
+    with _patched_aging(dispo_repo, notify_fn):
         job.carpark_aging_alerts()
 
     assert notify_fn.call_count == 2

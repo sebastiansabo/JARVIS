@@ -264,6 +264,7 @@ def generate_and_send():
         message=digest_text,
         link='/app/dashboard',
         type='info',
+        category='digest',
     )
 
     logger.info(f"Daily digest sent to {len(recipient_ids)} users")

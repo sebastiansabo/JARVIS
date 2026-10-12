@@ -66,6 +66,7 @@ def api_add_member(project_id):
             entity_type='mkt_project',
             entity_id=project_id,
             type='info',
+            category='marketing',
         )
 
         return jsonify({'success': True, 'id': member_id}), 201

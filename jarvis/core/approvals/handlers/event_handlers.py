@@ -44,6 +44,7 @@ def _on_submitted(payload):
             type='approval',
             push_data={'type': 'approval', 'request_id': str(request_id),
                        'entity_type': entity_type, 'link': link},
+            category='approvals',
         )
         # Email approvers. Leave permits get a rich, actionable email (full summary
         # + one-tap Aprobă/Respinge); everything else keeps the generic notice.
@@ -99,6 +100,7 @@ def _on_approved(payload):
             entity_type=entity_type,
             entity_id=entity_id,
             type='approval',
+            category='approvals',
         )
         name, email = _get_user_email(requester_id)
         if email:
@@ -253,7 +255,8 @@ def _maybe_notify_leave_scheduler(request_id, submission_id, ctx):
         title = 'Învoire aprobată — actualizează programul'
         link = '/app/hub?module=hr&hrtab=leave-permits'
         notify_user(manager_id, title, message=msg, link=link,
-                    entity_type='form_submission', entity_id=submission_id, type='info')
+                    entity_type='form_submission', entity_id=submission_id, type='info',
+                    category='approvals')
         _, email = _get_user_email(manager_id)
         if email:
             _send_approval_email(email, title,
@@ -283,6 +286,7 @@ def _on_rejected(payload):
             entity_type=entity_type,
             entity_id=entity_id,
             type='approval',
+            category='approvals',
         )
         name, email = _get_user_email(requester_id)
         if email:
@@ -360,6 +364,7 @@ def _on_returned(payload):
             entity_type=entity_type,
             entity_id=entity_id,
             type='approval',
+            category='approvals',
         )
         name, email = _get_user_email(requester_id)
         if email:
@@ -408,6 +413,7 @@ def _on_step_advanced(payload):
             entity_type=entity_type,
             entity_id=entity_id,
             type='approval',
+            category='approvals',
         )
         link = _entity_link(entity_type, entity_id)
         for name, email in _get_users_email(approver_ids):
@@ -450,6 +456,7 @@ def _on_reminder(payload):
             entity_type=entity_type,
             entity_id=entity_id,
             type='approval',
+            category='approvals',
         )
         for name, email in _get_users_email(approver_ids):
             body = f"""
