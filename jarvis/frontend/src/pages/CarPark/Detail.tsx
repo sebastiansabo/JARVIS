@@ -1875,7 +1875,7 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
                 <div key={category}>
                   <h4 className="text-xs font-medium text-muted-foreground mb-1">{category}</h4>
                   <ul className="space-y-0.5">
-                    {items.map((item, i) => (
+                    {(Array.isArray(items) ? items : []).map((item, i) => (
                       <li key={i} className="text-sm">{item}</li>
                     ))}
                   </ul>
