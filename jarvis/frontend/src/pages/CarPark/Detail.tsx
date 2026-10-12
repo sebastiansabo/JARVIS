@@ -980,6 +980,7 @@ function SortablePhotoTile({
   photo,
   index,
   onSelect,
+  canEdit,
   showOriginal,
   onTogglePreview,
   onTogglePublish,
@@ -988,6 +989,7 @@ function SortablePhotoTile({
   photo: VehiclePhoto
   index: number
   onSelect: (index: number) => void
+  canEdit: boolean
   showOriginal: boolean
   onTogglePreview: () => void
   onTogglePublish: (v: boolean) => void
@@ -1042,7 +1044,7 @@ function SortablePhotoTile({
       </div>
       <EnhancedControls
         photo={photo}
-        canEdit
+        canEdit={canEdit}
         showOriginal={showOriginal}
         onTogglePreview={onTogglePreview}
         onTogglePublish={onTogglePublish}
@@ -1262,6 +1264,7 @@ export function PhotoGridOverlay({
                   photo={p}
                   index={i}
                   onSelect={setPreview}
+                  canEdit={canEdit}
                   showOriginal={showOriginal.has(p.id)}
                   onTogglePreview={() => togglePreview(p.id)}
                   onTogglePublish={(v) => pubMut.mutate({ id: p.id, published: v })}
