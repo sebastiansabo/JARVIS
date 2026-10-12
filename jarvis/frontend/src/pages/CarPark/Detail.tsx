@@ -1149,7 +1149,6 @@ export function PhotoGridOverlay({
   const enhanceMut = useMutation({
     mutationFn: () => carbackgroundApi.enhance(vehicleId, Array.from(selected)),
     onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] })
       if (res.created === 0 && res.errors?.length) {
         toast.error(`Generare studio eșuată (${res.errors.length} erori)`)
       } else {
@@ -1158,16 +1157,20 @@ export function PhotoGridOverlay({
       setSelected(new Set())
     },
     onError: () => toast.error('Generarea studio a eșuat'),
+    // Refetch after EVERY attempt, not just success: the enhance call is slow
+    // (synchronous, seconds/photo) and can hit a gateway timeout while the
+    // variant is still written server-side — so the gallery must refresh even
+    // when the browser saw an error, otherwise the badge/publish toggle only
+    // appear after a manual reload.
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] }),
   })
 
   // Publish/unpublish the studio variant for a single photo.
   const pubMut = useMutation({
     mutationFn: ({ id, published }: { id: number; published: boolean }) =>
       carbackgroundApi.setPublished(id, published),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] })
-    },
     onError: () => toast.error('Actualizarea publicării a eșuat'),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] }),
   })
 
   const togglePreview = (photoId: number) => setShowOriginal((prev) => {
