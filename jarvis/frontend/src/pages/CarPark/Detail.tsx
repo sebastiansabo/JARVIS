@@ -34,6 +34,7 @@ import {
   AlertTriangle,
   Loader2,
   GripVertical,
+  Sparkles,
 } from 'lucide-react'
 import {
   DndContext,
@@ -88,9 +89,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Switch } from '@/components/ui/switch'
 import { useAuthStore } from '@/stores/authStore'
 import { useCarParkStore } from '@/stores/carParkStore'
 import { carparkApi } from '@/api/carpark'
+import { carbackgroundApi } from '@/api/carbackground'
 import { autovitApi } from '@/api/autovit'
 import type { AutovitAccount } from '@/api/autovit'
 import { toast } from 'sonner'
@@ -914,6 +917,61 @@ function PhotoGallery({
   )
 }
 
+// Which src to show for a tile: the studio variant by default once one
+// exists, falling back to the original — `showOriginal` lets the user peek
+// at the before/after.
+function tileImageSrc(photo: VehiclePhoto, showOriginal: boolean): string {
+  if (!showOriginal && photo.enhanced_url) {
+    return mediaUrl(photo.enhanced_thumbnail_url || photo.enhanced_url)
+  }
+  return mediaUrl(photo.thumbnail_url || photo.url)
+}
+
+// ── Enhanced-photo controls (footer under a tile) ───────────
+// Renders nothing unless the photo has a carbackground.ai studio variant.
+// Mirrors the AutoFox-style compact action row: an original↔studio preview
+// switch plus a publish toggle (editors only).
+function EnhancedControls({
+  photo,
+  canEdit,
+  showOriginal,
+  onTogglePreview,
+  onTogglePublish,
+  publishPending,
+}: {
+  photo: VehiclePhoto
+  canEdit: boolean
+  showOriginal: boolean
+  onTogglePreview: () => void
+  onTogglePublish: (v: boolean) => void
+  publishPending: boolean
+}) {
+  if (!photo.enhanced_url) return null
+  return (
+    <div className="flex items-center justify-between gap-1 border-t bg-muted/60 px-1.5 py-1">
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onTogglePreview() }}
+        className="flex items-center gap-1 rounded px-1 py-0.5 text-[11px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+      >
+        <Eye className="h-3 w-3" /> {showOriginal ? 'Original' : 'Studio'}
+      </button>
+      {canEdit && (
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground" onClick={(e) => e.stopPropagation()}>
+          <span className="hidden sm:inline">Publică</span>
+          <Switch
+            size="sm"
+            checked={!!photo.enhanced_published}
+            disabled={publishPending}
+            onCheckedChange={onTogglePublish}
+            aria-label="Publică varianta studio"
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Sortable Photo Tile ─────────────────────────────────────
 // One draggable tile in the "Toate pozele" grid. Tap the image to open the
 // lightbox; drag the grip handle (top-right) to reorder. A separate handle
@@ -922,10 +980,20 @@ function SortablePhotoTile({
   photo,
   index,
   onSelect,
+  canEdit,
+  showOriginal,
+  onTogglePreview,
+  onTogglePublish,
+  publishPending,
 }: {
   photo: VehiclePhoto
   index: number
   onSelect: (index: number) => void
+  canEdit: boolean
+  showOriginal: boolean
+  onTogglePreview: () => void
+  onTogglePublish: (v: boolean) => void
+  publishPending: boolean
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: photo.id,
@@ -936,37 +1004,52 @@ function SortablePhotoTile({
     <div
       ref={setNodeRef}
       style={style}
-      className={`group relative aspect-[3/2] overflow-hidden rounded-lg border bg-muted ${
+      className={`group relative overflow-hidden rounded-lg border bg-muted ${
         isDragging ? 'z-10 opacity-80 shadow-xl ring-2 ring-primary' : ''
       }`}
     >
-      <button
-        type="button"
-        onClick={() => onSelect(index)}
-        className="block h-full w-full"
-        aria-label={`Deschide poza ${index + 1}`}
-      >
-        <img
-          src={mediaUrl(photo.thumbnail_url || photo.url)}
-          alt={`Photo ${index + 1}`}
-          draggable={false}
-          className="h-full w-full object-cover transition group-hover:scale-105"
-        />
-      </button>
-      {/* Position badge — makes the first → last order visible (1 = cover) */}
-      <div className="pointer-events-none absolute left-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-white backdrop-blur">
-        {index + 1}
+      <div className="relative aspect-[3/2]">
+        <button
+          type="button"
+          onClick={() => onSelect(index)}
+          className="block h-full w-full"
+          aria-label={`Deschide poza ${index + 1}`}
+        >
+          <img
+            src={tileImageSrc(photo, showOriginal)}
+            alt={`Photo ${index + 1}`}
+            draggable={false}
+            className="h-full w-full object-cover transition group-hover:scale-105"
+          />
+        </button>
+        {/* Position badge — makes the first → last order visible (1 = cover) */}
+        <div className="pointer-events-none absolute left-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-white backdrop-blur">
+          {index + 1}
+        </div>
+        {/* Drag handle */}
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label="Trage pentru a reordona"
+          className="absolute right-1.5 top-1.5 flex touch-none cursor-grab items-center justify-center rounded-md bg-black/60 p-1.5 text-white opacity-0 backdrop-blur transition hover:bg-black/80 focus:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+        {photo.enhanced_url && (
+          <span className="pointer-events-none absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-full bg-violet-600/90 px-1.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur">
+            <Sparkles className="h-3 w-3" /> Enhanced
+          </span>
+        )}
       </div>
-      {/* Drag handle */}
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        aria-label="Trage pentru a reordona"
-        className="absolute right-1.5 top-1.5 flex touch-none cursor-grab items-center justify-center rounded-md bg-black/60 p-1.5 text-white opacity-0 backdrop-blur transition hover:bg-black/80 focus:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
-      >
-        <GripVertical className="h-4 w-4" />
-      </button>
+      <EnhancedControls
+        photo={photo}
+        canEdit={canEdit}
+        showOriginal={showOriginal}
+        onTogglePreview={onTogglePreview}
+        onTogglePublish={onTogglePublish}
+        publishPending={publishPending}
+      />
     </div>
   )
 }
@@ -974,7 +1057,9 @@ function SortablePhotoTile({
 // ── Photo Grid Overlay ("Toate pozele") ────────────────────
 // Fullscreen photo grid. For editors it becomes drag-and-drop sortable: drop
 // auto-saves the new order via the existing reorder endpoint (optimistic).
-function PhotoGridOverlay({
+// Exported so Detail's photo-studio-enhance flow (select → "Generează
+// studio" → publish toggle → preview) can be exercised in isolation by tests.
+export function PhotoGridOverlay({
   photos,
   vehicleId,
   canEdit,
@@ -989,6 +1074,9 @@ function PhotoGridOverlay({
   const [selectMode, setSelectMode] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [confirming, setConfirming] = useState(false)
+  // Which enhanced photos are currently showing their ORIGINAL (pre-studio)
+  // image instead of the default studio variant.
+  const [showOriginal, setShowOriginal] = useState<Set<number>>(new Set())
   // Clicking a photo opens a simple single-photo preview (not the full lightbox).
   const [preview, setPreview] = useState<number | null>(null)
   const previewRef = useRef<number | null>(null)
@@ -1056,6 +1144,39 @@ function PhotoGridOverlay({
     onError: () => toast.error('Ștergerea pozelor a eșuat'),
   })
 
+  // "Generează studio" — sends the selected photos through carbackground.ai;
+  // created variants land on the vehicle query (enhanced_url etc) via invalidate.
+  const enhanceMut = useMutation({
+    mutationFn: () => carbackgroundApi.enhance(vehicleId, Array.from(selected)),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] })
+      if (res.created === 0 && res.errors?.length) {
+        toast.error(`Generare studio eșuată (${res.errors.length} erori)`)
+      } else {
+        toast.success(`${res.created} poze studio generate${res.errors?.length ? ` (${res.errors.length} erori)` : ''}`)
+      }
+      setSelected(new Set())
+    },
+    onError: () => toast.error('Generarea studio a eșuat'),
+  })
+
+  // Publish/unpublish the studio variant for a single photo.
+  const pubMut = useMutation({
+    mutationFn: ({ id, published }: { id: number; published: boolean }) =>
+      carbackgroundApi.setPublished(id, published),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] })
+    },
+    onError: () => toast.error('Actualizarea publicării a eșuat'),
+  })
+
+  const togglePreview = (photoId: number) => setShowOriginal((prev) => {
+    const n = new Set(prev)
+    if (n.has(photoId)) n.delete(photoId)
+    else n.add(photoId)
+    return n
+  })
+
   const allSelected = photos.length > 0 && selected.size === photos.length
   const toggle = (photoId: number) => setSelected((prev) => {
     const n = new Set(prev)
@@ -1091,6 +1212,21 @@ function PhotoGridOverlay({
               <Button size="sm" variant="ghost" onClick={toggleAll} disabled={deleteMut.isPending || photos.length === 0}>
                 {allSelected ? 'Deselectează tot' : 'Selectează tot'}
               </Button>
+              {selected.size > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => enhanceMut.mutate()}
+                  disabled={enhanceMut.isPending}
+                >
+                  {enhanceMut.isPending ? (
+                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="mr-1 h-3.5 w-3.5" />
+                  )}
+                  Generează studio ({selected.size})
+                </Button>
+              )}
               {confirming ? (
                 <Button size="sm" variant="destructive" onClick={() => deleteMut.mutate()}
                         disabled={deleteMut.isPending || selected.size === 0}>
@@ -1127,7 +1263,17 @@ function PhotoGridOverlay({
           <SortableContext items={photos.map((p) => p.id)} strategy={rectSortingStrategy}>
             <div className="mx-auto grid max-w-5xl grid-cols-2 gap-2 p-6 sm:grid-cols-3">
               {photos.map((p, i) => (
-                <SortablePhotoTile key={p.id} photo={p} index={i} onSelect={setPreview} />
+                <SortablePhotoTile
+                  key={p.id}
+                  photo={p}
+                  index={i}
+                  onSelect={setPreview}
+                  canEdit={canEdit}
+                  showOriginal={showOriginal.has(p.id)}
+                  onTogglePreview={() => togglePreview(p.id)}
+                  onTogglePublish={(v) => pubMut.mutate({ id: p.id, published: v })}
+                  publishPending={pubMut.isPending && pubMut.variables?.id === p.id}
+                />
               ))}
             </div>
           </SortableContext>
@@ -1136,24 +1282,45 @@ function PhotoGridOverlay({
         <div className="mx-auto grid max-w-5xl grid-cols-2 gap-2 p-6 sm:grid-cols-3">
           {photos.map((p, i) => {
             const sel = selected.has(p.id)
+            const showOrig = showOriginal.has(p.id)
             return (
-              <button
-                type="button"
+              <div
                 key={p.id}
-                onClick={() => (selectMode ? toggle(p.id) : setPreview(i))}
-                className={`group relative aspect-[3/2] overflow-hidden rounded-lg border-2 bg-muted ${sel ? 'border-primary' : 'border-transparent'}`}
+                className={`group relative overflow-hidden rounded-lg border-2 bg-muted ${sel ? 'border-primary' : 'border-transparent'}`}
               >
-                <img
-                  src={mediaUrl(p.thumbnail_url || p.url)}
-                  alt={`Photo ${i + 1}`}
-                  className="h-full w-full object-cover transition group-hover:scale-105"
-                />
-                {selectMode && (
-                  <span className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 ${sel ? 'border-primary bg-primary text-primary-foreground' : 'border-white/80 bg-black/30'}`}>
-                    {sel && <Check className="h-4 w-4" />}
-                  </span>
+                <button
+                  type="button"
+                  onClick={() => (selectMode ? toggle(p.id) : setPreview(i))}
+                  className="relative block aspect-[3/2] w-full"
+                  aria-label={selectMode ? `Selectează poza ${p.id}` : `Deschide poza ${i + 1}`}
+                >
+                  <img
+                    src={tileImageSrc(p, showOrig)}
+                    alt={`Photo ${i + 1}`}
+                    className="h-full w-full object-cover transition group-hover:scale-105"
+                  />
+                  {selectMode && (
+                    <span className={`absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 ${sel ? 'border-primary bg-primary text-primary-foreground' : 'border-white/80 bg-black/30'}`}>
+                      {sel && <Check className="h-4 w-4" />}
+                    </span>
+                  )}
+                  {!selectMode && p.enhanced_url && (
+                    <span className="pointer-events-none absolute bottom-1.5 left-1.5 flex items-center gap-1 rounded-full bg-violet-600/90 px-1.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur">
+                      <Sparkles className="h-3 w-3" /> Enhanced
+                    </span>
+                  )}
+                </button>
+                {!selectMode && (
+                  <EnhancedControls
+                    photo={p}
+                    canEdit={canEdit}
+                    showOriginal={showOrig}
+                    onTogglePreview={() => togglePreview(p.id)}
+                    onTogglePublish={(v) => pubMut.mutate({ id: p.id, published: v })}
+                    publishPending={pubMut.isPending && pubMut.variables?.id === p.id}
+                  />
                 )}
-              </button>
+              </div>
             )
           })}
         </div>
