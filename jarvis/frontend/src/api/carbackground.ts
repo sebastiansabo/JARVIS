@@ -10,15 +10,19 @@ export interface CbgBackground {
   preview_url?: string
 }
 
-export interface CbgConfig {
-  configured: boolean
+export interface CbgConnector {
+  id: number
+  status: string
   has_api_key: boolean
   background_id: string | null
+  api_base_url: string
+  last_error: string | null
 }
 
 export interface CbgConfigResponse {
   success: boolean
-  config: CbgConfig
+  configured: boolean
+  connector?: CbgConnector
 }
 
 export interface CbgSaveConfigPayload {
@@ -28,7 +32,7 @@ export interface CbgSaveConfigPayload {
 
 export interface CbgSaveConfigResponse {
   success: boolean
-  config: CbgConfig
+  connector: CbgConnector
 }
 
 export interface CbgBackgroundsResponse {
@@ -38,7 +42,7 @@ export interface CbgBackgroundsResponse {
 
 export interface CbgCreditsResponse {
   success: boolean
-  credits: number
+  balance: number
 }
 
 export interface CbgEnhanceResponse {

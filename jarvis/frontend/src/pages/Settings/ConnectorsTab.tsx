@@ -64,6 +64,7 @@ import { autovitApi } from '@/api/autovit'
 import { shopifyApi } from '@/api/shopify'
 import { connecteamApi } from '@/api/connecteam'
 import { autofoxApi, type AutofoxSavePayload, type AutofoxLog } from '@/api/autofox'
+import { CarBackgroundSettings } from '@/pages/CarPark/CarBackgroundSettings'
 import type { AutovitAccount } from '@/api/autovit'
 import type { ShopifyAccount } from '@/api/shopify'
 import type { SincronSyncRun } from '@/api/sincron'
@@ -2618,6 +2619,8 @@ export default function ConnectorsTab() {
       <AutovitSection />
       <hr className="border-border" />
       <AutofoxSection />
+      <hr className="border-border" />
+      <CarBackgroundSettings />
       <ShopifySection />
       <hr className="border-border" />
       <PushNotificationSection />
