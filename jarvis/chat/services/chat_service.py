@@ -215,6 +215,7 @@ class ChatService:
                     link=f'/app/digest?channel={channel_id}',
                     entity_type='digest_post', entity_id=post['id'],
                     push_data=push_data,
+                    category='chat',
                 )
                 notified_ids.update(targets)
 
@@ -230,6 +231,7 @@ class ChatService:
                     link=f'/app/digest?channel={channel_id}',
                     entity_type='digest_poll', entity_id=post['id'],
                     push_data=push_data,
+                    category='chat',
                 )
                 notified_ids.update(targets)
 
@@ -246,6 +248,7 @@ class ChatService:
                     link=f'/app/digest?channel={channel_id}',
                     entity_type='digest_mention', entity_id=post['id'],
                     push_data=push_data,
+                    category='chat',
                 )
                 notified_ids.update(targets)
 
@@ -260,6 +263,7 @@ class ChatService:
                     link=f'/app/digest?channel={channel_id}',
                     entity_type='digest_post', entity_id=post['id'],
                     push_data=push_data,
+                    category='chat',
                 )
                 notified_ids.update(targets)
 
@@ -277,6 +281,7 @@ class ChatService:
                         link=f'/app/digest?channel={channel_id}&parent={parent_id}',
                         entity_type='digest_reply', entity_id=post['id'],
                         push_data=push_data,
+                        category='chat',
                     )
 
     @staticmethod

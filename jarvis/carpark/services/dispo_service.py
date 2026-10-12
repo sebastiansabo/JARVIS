@@ -140,7 +140,8 @@ class DispoService:
             return
         try:
             self._notify(salesperson_id, title, message=message,
-                          entity_type='carpark_vehicle', entity_id=vehicle.get('id'))
+                          entity_type='carpark_vehicle', entity_id=vehicle.get('id'),
+                          category='carpark')
         except Exception as e:  # notification failures must never break a transition
             logger.error(f'Dispo notify failed for vehicle {vehicle.get("id")}: {e}')
 
@@ -546,7 +547,8 @@ class DispoService:
             for uid in self._transfer_repo.company_editor_user_ids(to_company_id):
                 self._notify(uid, 'Vehicul transferat',
                               message=f"{label} a fost transferat în compania dvs.".strip(),
-                              entity_type='carpark_vehicle', entity_id=source_vehicle.get('id'))
+                              entity_type='carpark_vehicle', entity_id=source_vehicle.get('id'),
+                              category='carpark')
         except Exception as e:
             logger.error(f'Transfer notify: dest company users failed: {e}')
 

@@ -74,7 +74,8 @@ def expire_reservations():
                     notify_user(
                         user_id, 'Rezervare expirată',
                         message=f'Rezervarea pentru {label or vehicle.get("vin")} a expirat.',
-                        entity_type='carpark_vehicle', entity_id=vehicle_id)
+                        entity_type='carpark_vehicle', entity_id=vehicle_id,
+                        category='carpark')
 
                 expired_count += 1
             except Exception:
@@ -132,15 +133,17 @@ def carpark_aging_alerts():
     Note: the domain has no dedicated "sales manager" role/table, so this
     maps to the same salesperson/acquisition-manager target DispoService
     uses for every other lifecycle notification (see
-    DispoService._notify_vehicle_contacts). No per-vehicle cooldown (unlike
-    foi_parcurs' 7-day smart_notification_state cooldown) — this fires once
-    per vehicle every day it stays aged, which is acceptable for an initial
-    daily digest-style alert; a cooldown table would be a follow-up if this
-    proves too noisy in practice.
+    DispoService._notify_vehicle_contacts).
+
+    A 7-day per-vehicle cooldown (via smart_notification_state, the same
+    mechanism foi_parcurs vehicle-expiry uses) keeps an aged car from
+    re-alerting every single day — it nudges roughly once a week until the
+    car sells.
     """
     try:
         from carpark.repositories.dispo_repository import DispoRepository
         from core.notifications.notify import notify_user
+        from database import get_db, get_cursor, release_db
 
         repo = DispoRepository()
         aged = repo.aged_unsold(60)
@@ -148,26 +151,52 @@ def carpark_aging_alerts():
             logger.debug('No vehicles aged over 60 days in stock')
             return
 
-        notified = 0
-        for vehicle in aged:
-            vehicle_id = vehicle.get('id')
-            try:
-                target_user_id = (vehicle.get('salesperson_user_id')
-                                   or vehicle.get('acquisition_manager_id'))
-                if not target_user_id:
-                    continue
+        conn = get_db()
+        try:
+            cursor = get_cursor(conn)
+            notified = 0
+            for vehicle in aged:
+                vehicle_id = vehicle.get('id')
+                try:
+                    target_user_id = (vehicle.get('salesperson_user_id')
+                                       or vehicle.get('acquisition_manager_id'))
+                    if not target_user_id:
+                        continue
 
-                label = f"{vehicle.get('brand', '')} {vehicle.get('model', '')}".strip() \
-                    or vehicle.get('vin')
-                notify_user(
-                    target_user_id, 'Vehicul cu vechime mare în stoc',
-                    message=(f'{label} ({vehicle.get("vin")}) este în stoc de '
-                             f'{vehicle.get("days_in_stock")} zile.'),
-                    entity_type='carpark_vehicle', entity_id=vehicle_id)
-                notified += 1
-            except Exception:
-                logger.warning('Aging alert failed for vehicle %s', vehicle_id, exc_info=True)
+                    # 7-day cooldown per vehicle so a long-unsold car nudges
+                    # ~weekly instead of every daily run.
+                    cursor.execute(
+                        "SELECT 1 FROM smart_notification_state "
+                        "WHERE alert_type='carpark_aging' AND entity_type='carpark_vehicle' "
+                        "AND entity_id=%s "
+                        "AND last_alerted_at > CURRENT_TIMESTAMP - INTERVAL '7 days'",
+                        (vehicle_id,))
+                    if cursor.fetchone():
+                        continue
 
-        logger.info(f'Sent {notified} of {len(aged)} aging alert(s)')
+                    label = f"{vehicle.get('brand', '')} {vehicle.get('model', '')}".strip() \
+                        or vehicle.get('vin')
+                    notify_user(
+                        target_user_id, 'Vehicul cu vechime mare în stoc',
+                        message=(f'{label} ({vehicle.get("vin")}) este în stoc de '
+                                 f'{vehicle.get("days_in_stock")} zile.'),
+                        entity_type='carpark_vehicle', entity_id=vehicle_id,
+                        category='carpark')
+
+                    cursor.execute(
+                        "INSERT INTO smart_notification_state "
+                        "(alert_type, entity_type, entity_id, last_alerted_at) "
+                        "VALUES ('carpark_aging', 'carpark_vehicle', %s, CURRENT_TIMESTAMP) "
+                        "ON CONFLICT (alert_type, entity_type, entity_id) "
+                        "DO UPDATE SET last_alerted_at = CURRENT_TIMESTAMP",
+                        (vehicle_id,))
+                    notified += 1
+                except Exception:
+                    logger.warning('Aging alert failed for vehicle %s', vehicle_id, exc_info=True)
+
+            conn.commit()
+            logger.info(f'Sent {notified} of {len(aged)} aging alert(s)')
+        finally:
+            release_db(conn)
     except Exception as e:
         logger.error(f'Carpark aging alert job failed: {e}', exc_info=True)

@@ -411,6 +411,7 @@ class ProjectService:
                 entity_type='mkt_project',
                 entity_id=project_id,
                 type='info',
+                category='marketing',
             )
         except Exception:
             pass

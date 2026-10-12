@@ -558,6 +558,7 @@ def notify_allocation(invoice_data: dict, allocation: dict) -> list[dict]:
                 entity_type='invoice',
                 entity_id=invoice_id,
                 type='info',
+                category='accounting',
             )
         except Exception as e:
             logger.warning(f'In-app notification failed for user {responsable_id}: {e}')
