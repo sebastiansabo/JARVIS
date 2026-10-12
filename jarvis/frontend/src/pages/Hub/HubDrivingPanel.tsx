@@ -324,8 +324,8 @@ export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { on
       {overlay && overlay.kind !== 'choose' && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-sm">
           <div className="mx-auto min-h-full w-full max-w-2xl bg-background shadow-2xl sm:my-8 sm:min-h-0 sm:rounded-2xl">
-            <div className="sticky top-0 z-10 flex items-center justify-end border-b bg-background/95 p-2 backdrop-blur sm:rounded-t-2xl">
-              <Button variant="ghost" size="icon" onClick={closeOverlay}><X className="h-5 w-5" /></Button>
+            <div className="sticky top-0 z-10 flex items-center justify-end border-b bg-background/95 p-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur sm:rounded-t-2xl sm:pt-2">
+              <Button variant="ghost" size="icon" className="h-11 w-11" onClick={closeOverlay}><X className="h-5 w-5" /></Button>
             </div>
             {overlay.kind === 'new' && (
               <TestDriveForm

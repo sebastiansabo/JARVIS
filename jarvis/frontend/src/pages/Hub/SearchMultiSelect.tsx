@@ -54,7 +54,7 @@ export default function SearchMultiSelect({ options, value, onChange, allLabel, 
           <div className="border-b p-2">
             <div className="flex h-9 items-center gap-2 rounded-lg border border-input bg-background px-2">
               <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
-              <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder} className="w-full bg-transparent text-sm outline-none" />
+              <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder} className="w-full bg-transparent text-base outline-none md:text-sm" />
             </div>
           </div>
           <div className="max-h-72 overflow-y-auto p-1">

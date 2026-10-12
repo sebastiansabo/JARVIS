@@ -297,7 +297,7 @@ export default function InternalSessionForm({
   }
 
   return (
-    <div className="max-w-lg mx-auto space-y-6 pb-12">
+    <div className={cn('max-w-lg mx-auto space-y-6 pb-12', embedded && 'px-3 sm:px-0')}>
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" aria-label="Înapoi" onClick={handleBack}>
           <ArrowLeft className="h-5 w-5" />
@@ -434,7 +434,7 @@ export default function InternalSessionForm({
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Data plecării *</Label>
               <Input

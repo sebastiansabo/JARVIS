@@ -1135,9 +1135,9 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
   const invalidRingFull = (bad: boolean) => cn(errFull(bad) && 'ring-2 ring-destructive')
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 pb-12">
+    <div className={cn('max-w-2xl mx-auto space-y-6 pb-12', embedded && 'px-3 sm:px-0')}>
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" aria-label="Înapoi" onClick={handleBack}>
+        <Button variant="ghost" size="icon" aria-label="Înapoi" className="h-11 w-11 shrink-0" onClick={handleBack}>
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
@@ -1170,7 +1170,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
               value={companyId ? String(companyId) : ''}
               onValueChange={(v) => { setCompanyId(Number(v)); setBrandFilter(''); setVehicleId(null); setSelectedVehicle(null) }}
             >
-              <SelectTrigger className={invalidRing(missing.company)}><SelectValue placeholder="Selectează compania" /></SelectTrigger>
+              <SelectTrigger className={cn('w-full', invalidRing(missing.company))}><SelectValue placeholder="Selectează compania" /></SelectTrigger>
               <SelectContent>
                 {companies.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>)}
               </SelectContent>
@@ -1183,7 +1183,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
                 value={brandFilter || 'all'}
                 onValueChange={(v) => { setBrandFilter(v === 'all' ? '' : v); setVehicleId(null); setSelectedVehicle(null) }}
               >
-                <SelectTrigger><SelectValue placeholder="Toate mărcile" /></SelectTrigger>
+                <SelectTrigger className="w-full"><SelectValue placeholder="Toate mărcile" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Toate mărcile</SelectItem>
                   {brands.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
@@ -1194,7 +1194,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
           <div className="space-y-1.5">
             <Label className="text-xs">Vehicul *</Label>
             <Select value={vehicleId ? String(vehicleId) : ''} onValueChange={handleVehicleChange} disabled={!companyId}>
-              <SelectTrigger className={invalidRing(missing.vehicle)}>
+              <SelectTrigger className={cn('w-full', invalidRing(missing.vehicle))}>
                 <SelectValue placeholder={companyId ? 'Selectează vehiculul' : 'Selectează întâi compania'} />
               </SelectTrigger>
               <SelectContent>
@@ -1246,7 +1246,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
               onChange={(e) => setGeneralObservation(e.target.value)}
               placeholder="Observații despre sesiune (stare mașină, mențiuni, etc.)"
               rows={3}
-              className="text-sm"
+              className="text-base md:text-sm"
             />
           </div>
         </CardContent>
@@ -1353,7 +1353,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
                         value={driverContact ? String(driverContact.id) : ''}
                         onValueChange={(v) => setDriverContact(contactOptions.find((c) => String(c.id) === v) ?? null)}
                       >
-                        <SelectTrigger>
+                        <SelectTrigger className="w-full">
                           <SelectValue placeholder="Alege persoana de contact" />
                         </SelectTrigger>
                         <SelectContent>
@@ -1393,7 +1393,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
                               aria-label="Editează persoana de contact"
                               title="Editează persoana de contact"
                               onClick={() => { setShowAddContact(false); setEditingContact(true) }}
-                              className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                              className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
                             >
                               <Pencil className="h-4 w-4" />
                             </button>
@@ -1407,7 +1407,7 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
                                   deleteContactMutation.mutate(Number(driverContact.id))
                                 }
                               }}
-                              className="rounded-md p-1.5 text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                              className="flex h-9 w-9 items-center justify-center rounded-md text-destructive hover:bg-destructive/10 disabled:opacity-50"
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -2069,7 +2069,7 @@ function ClientEditForm({
   const field = (label: string, value: string, setter: (v: string) => void, placeholder = '') => (
     <div className="space-y-1">
       <Label className="text-xs">{label}</Label>
-      <Input value={value} onChange={(e) => setter(e.target.value)} placeholder={placeholder} className="h-8 text-sm" />
+      <Input value={value} onChange={(e) => setter(e.target.value)} placeholder={placeholder} />
     </div>
   )
 
