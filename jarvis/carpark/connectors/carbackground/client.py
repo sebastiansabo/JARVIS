@@ -86,10 +86,17 @@ class CarBackgroundClient:
         return self._download(url)
 
     def _download(self, url):
+        # NOTE: do NOT send the Authorization bearer here. `current` is seeded
+        # from the API's image_url (a presigned storage URL on a *different*
+        # host than api_base_url) and rewritable by any redirect Location.
+        # _validate_url only blocks private/metadata IPs, not arbitrary public
+        # hosts, so sending the key here would leak it off-host. Presigned URLs
+        # need no bearer — only the Cloudflare UA guard.
+        dl_headers = {'User-Agent': BROWSER_UA}
         current, r = url, None
         for _hop in range(5):
             service._validate_url(current)  # re-validated on every redirect hop; module-qualified so tests can mock it
-            r = self._session.get(current, headers=self._headers(), stream=True,
+            r = self._session.get(current, headers=dl_headers, stream=True,
                                   timeout=DOWNLOAD_TIMEOUT, allow_redirects=False)
             if r.is_redirect or 300 <= r.status_code < 400:
                 loc = r.headers.get('Location')

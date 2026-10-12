@@ -15,7 +15,7 @@ def test_generate_sends_browser_ua_and_returns_bytes():
     dl_resp = MagicMock(status_code=200, is_redirect=False, headers={})
     dl_resp.iter_content.return_value = [b'\xff\xd8\xff', b'rest']
     with patch.object(c._session, 'post', return_value=gen_resp) as post, \
-         patch.object(c._session, 'get', return_value=dl_resp), \
+         patch.object(c._session, 'get', return_value=dl_resp) as get, \
          patch('carpark.connectors.carbackground.service._validate_url', return_value=None):
         out = c.generate(b'origbytes', 'studio-white')
     assert out == b'\xff\xd8\xffrest'
@@ -24,6 +24,12 @@ def test_generate_sends_browser_ua_and_returns_bytes():
     body = post.call_args.kwargs['json']
     assert body['background_id'] == 'studio-white'
     assert base64.b64decode(body['image_base64']) == b'origbytes'
+    # Download must carry ONLY the Cloudflare UA guard — never the API key
+    # (the image URL is an off-host presigned URL; sending the bearer there
+    # would leak the credential).
+    dl_headers = get.call_args.kwargs['headers']
+    assert dl_headers == {'User-Agent': BROWSER_UA}
+    assert 'Authorization' not in dl_headers
 
 def test_generate_no_credits_raises_402():
     c = _client()
