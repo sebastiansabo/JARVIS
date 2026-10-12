@@ -129,3 +129,25 @@ class PhotoRepository(BaseRepository):
         return self.query_one(
             'SELECT * FROM carpark_vehicle_photos WHERE id = %s', (photo_id,)
         )
+
+    def set_enhanced(self, photo_id: int, enhanced_url: str,
+                      enhanced_thumbnail_url: str,
+                      enhanced_background_id: str) -> Dict[str, Any]:
+        """Store a studio-enhanced variant for a photo (unpublished by default)."""
+        return self.execute(
+            "UPDATE carpark_vehicle_photos SET enhanced_url=%s, enhanced_thumbnail_url=%s, "
+            "enhanced_background_id=%s, enhanced_created_at=now() WHERE id=%s RETURNING *",
+            (enhanced_url, enhanced_thumbnail_url, enhanced_background_id, photo_id), returning=True)
+
+    def set_enhanced_published(self, photo_id: int, published: bool) -> Dict[str, Any]:
+        """Toggle whether the enhanced variant is published (shown) for a photo."""
+        return self.execute(
+            "UPDATE carpark_vehicle_photos SET enhanced_published=%s WHERE id=%s RETURNING *",
+            (bool(published), photo_id), returning=True)
+
+    def clear_enhanced(self, photo_id: int) -> Dict[str, Any]:
+        """Remove the enhanced variant, resetting the photo to its original."""
+        return self.execute(
+            "UPDATE carpark_vehicle_photos SET enhanced_url=NULL, enhanced_thumbnail_url=NULL, "
+            "enhanced_background_id=NULL, enhanced_published=FALSE, enhanced_created_at=NULL "
+            "WHERE id=%s RETURNING *", (photo_id,), returning=True)

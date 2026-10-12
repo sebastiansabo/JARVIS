@@ -266,6 +266,16 @@ def create_schema_carpark(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcp_deleted ON carpark_vehicle_photos(deleted_at)')
 
+    # Enhanced studio-background columns: url, thumbnail, background_id, published flag, timestamp
+    cursor.execute('''
+        ALTER TABLE carpark_vehicle_photos
+            ADD COLUMN IF NOT EXISTS enhanced_url TEXT,
+            ADD COLUMN IF NOT EXISTS enhanced_thumbnail_url TEXT,
+            ADD COLUMN IF NOT EXISTS enhanced_background_id VARCHAR(64),
+            ADD COLUMN IF NOT EXISTS enhanced_published BOOLEAN NOT NULL DEFAULT FALSE,
+            ADD COLUMN IF NOT EXISTS enhanced_created_at TIMESTAMP
+    ''')
+
     # ── Cost Lines (parent grouping for costs) ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS carpark_vehicle_cost_lines (
