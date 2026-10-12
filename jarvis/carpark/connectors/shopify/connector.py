@@ -17,6 +17,14 @@ PLATFORM_TYPE = 'shopify'
 PHOTO_PRESIGN_TTL = 24 * 3600
 
 
+def _effective_key(p):
+    """Published studio variant wins over the original; fall back to the original
+    if the variant is missing (never emit a null originalSource)."""
+    if p.get('enhanced_published') and p.get('enhanced_url'):
+        return p['enhanced_url']
+    return p.get('url')
+
+
 def _photo_source(url: str) -> str:
     """Resolve a stored photo reference into a Shopify-fetchable image URL.
 
@@ -93,7 +101,7 @@ class ShopifyConnector(BaseConnector):
             return {'success': False, 'error': reason}
 
         existing = self.pub.get_listing_by_vehicle_platform(vehicle['id'], self.platform_id)
-        resolved_photos = [{**p, 'url': _photo_source(p.get('url'))} for p in photos]
+        resolved_photos = [{**p, 'url': _photo_source(_effective_key(p))} for p in photos]
         product_input, warnings = mapper.vehicle_to_product(vehicle, resolved_photos, field_map, value_map, config)
         if existing and existing.get('external_listing_id'):
             product_input['id'] = existing['external_listing_id']
