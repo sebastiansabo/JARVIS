@@ -380,7 +380,7 @@ export function CreateClientPanel({
       <div className="space-y-1">
         <Label className="text-xs">Țară</Label>
         <Select value={country} onValueChange={setCountry}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
+          <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
           <SelectContent>
             {COUNTRIES.map((c) => (
               <SelectItem key={c} value={c}>{c}</SelectItem>
