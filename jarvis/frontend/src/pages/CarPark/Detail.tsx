@@ -129,7 +129,7 @@ import {
   type LinkedEntityType,
   ENTITY_TYPE_LABELS,
 } from '@/types/carpark'
-import { VEHICLE_SOURCES, AUTOVIT_EQUIPMENT } from '@/data/autovitData'
+import { VEHICLE_SOURCES, equipmentLabel, humanizeSlug } from '@/data/autovitData'
 
 // ── Status colors (shared with catalog) ────────────────────
 const STATUS_COLORS: Record<string, string> = {
@@ -216,12 +216,6 @@ function sourceLabel(source: string | null): string | null {
   if (!source) return null
   return VEHICLE_SOURCES.find((s) => s.value === source)?.label ?? source
 }
-
-// Flat value→label lookup for equipment_options (AUTOVIT_EQUIPMENT is grouped
-// by category; we only need the label for a stored value slug).
-const EQUIPMENT_LABEL_BY_VALUE: Record<string, string> = Object.fromEntries(
-  AUTOVIT_EQUIPMENT.flatMap((cat) => cat.options.map((o) => [o.value, o.label])),
-)
 
 // ── Detail Field ───────────────────────────────────────────
 function Field({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
@@ -1857,34 +1851,56 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
       )}
 
       {/* Equipment */}
-      {((v.equipment && Object.keys(v.equipment).length > 0) || (v.equipment_options && v.equipment_options.length > 0)) && (
-        <Card className="p-4 md:col-span-2">
-          <h3 className="text-sm font-semibold mb-3">Dotări</h3>
-          {v.equipment_options && v.equipment_options.length > 0 && (
-            <div className="mb-4 flex flex-wrap gap-1.5">
-              {v.equipment_options.map((val) => (
-                <Badge key={val} variant="secondary" className="text-[11px]">
-                  {EQUIPMENT_LABEL_BY_VALUE[val] ?? val}
-                </Badge>
-              ))}
-            </div>
-          )}
-          {v.equipment && Object.keys(v.equipment).length > 0 && (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {Object.entries(v.equipment).map(([category, items]) => (
-                <div key={category}>
-                  <h4 className="text-xs font-medium text-muted-foreground mb-1">{category}</h4>
-                  <ul className="space-y-0.5">
-                    {(Array.isArray(items) ? items : []).map((item, i) => (
-                      <li key={i} className="text-sm">{item}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      )}
+      {(() => {
+        // Two equipment sources, shown as one deduplicated set of labelled chips:
+        //  • equipment_options (TEXT[]) — the hyphen slugs picked in the form.
+        //  • equipment (JSONB) — the importer writes a flat {slug: true} map of
+        //    raw Autovit API flags; show only the TRUE (present) ones. A legacy
+        //    grouped {category: [labels]} shape is still rendered under headings.
+        const optionSlugs = Array.isArray(v.equipment_options) ? v.equipment_options : []
+        const flagKeys: string[] = []
+        const grouped: Array<[string, string[]]> = []
+        if (v.equipment && typeof v.equipment === 'object') {
+          for (const [k, val] of Object.entries(v.equipment)) {
+            if (Array.isArray(val)) grouped.push([k, val.filter(Boolean).map(String)])
+            else if (val) flagKeys.push(k)
+          }
+        }
+        const seen = new Set<string>()
+        const chips: string[] = []
+        for (const key of [...optionSlugs, ...flagKeys]) {
+          const label = equipmentLabel(String(key))
+          const norm = label.toLowerCase()
+          if (label && !seen.has(norm)) { seen.add(norm); chips.push(label) }
+        }
+        if (chips.length === 0 && grouped.length === 0) return null
+        return (
+          <Card className="p-4 md:col-span-2">
+            <h3 className="text-sm font-semibold mb-3">Dotări</h3>
+            {chips.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {chips.map((label) => (
+                  <Badge key={label} variant="secondary" className="text-[11px]">{label}</Badge>
+                ))}
+              </div>
+            )}
+            {grouped.length > 0 && (
+              <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {grouped.map(([category, items]) => (
+                  <div key={category}>
+                    <h4 className="text-xs font-medium text-muted-foreground mb-1">{humanizeSlug(category)}</h4>
+                    <ul className="space-y-0.5">
+                      {items.map((item, i) => (
+                        <li key={i} className="text-sm">{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )
+      })()}
 
       {/* Announcement / listing */}
       {(canEdit || v.listing_title || v.listing_description) && (
@@ -2930,6 +2946,108 @@ function HistoryTab({ history }: { history: Array<{ id: number; old_status: stri
 }
 
 // ── Modifications Tab ──────────────────────────────────────
+// DB column name → Romanian label for the audit log. Unmapped fields fall back
+// to humanizeSlug ("Snake Case"), so only the commonly-edited ones are listed.
+const MODIFICATION_FIELD_LABELS: Record<string, string> = {
+  listing_title: 'Titlu anunț',
+  listing_description: 'Descriere anunț',
+  equipment_options: 'Dotări',
+  equipment: 'Dotări (import)',
+  optional_packages: 'Pachete opționale',
+  cost_lines: 'Linii de cost',
+  pricing_sheets: 'Fișe de preț',
+  other_costs: 'Alte costuri',
+  transport_cost: 'Cost transport',
+  purchase_price_net: 'Preț achiziție (net)',
+  acquisition_price: 'Preț achiziție (brut)',
+  total_cost: 'Cost total',
+  minimum_price: 'Preț minim',
+  current_price: 'Preț curent',
+  list_price: 'Preț de listă',
+  promo_price: 'Preț promoțional',
+  sale_price: 'Preț vânzare',
+  vat_deductible: 'TVA deductibil',
+  status: 'Status',
+  state: 'Stare',
+  brand: 'Marcă',
+  model: 'Model',
+  variant: 'Variantă',
+  generation: 'Generație',
+  equipment_level: 'Nivel echipare',
+  vin: 'VIN',
+  nr_stoc: 'Nr. stoc',
+  registration_number: 'Nr. înmatriculare',
+  mileage_km: 'Kilometraj',
+  year_of_manufacture: 'An fabricație',
+  first_registration_date: 'Primă înmatriculare',
+  color_exterior: 'Culoare exterior',
+  color_interior: 'Culoare interior',
+  fuel_type: 'Combustibil',
+  transmission: 'Transmisie',
+  drive_type: 'Tracțiune',
+  body_type: 'Caroserie',
+  engine_power_hp: 'Putere (CP)',
+  engine_displacement_cc: 'Capacitate cilindrică',
+  location_id: 'Locație',
+  notes: 'Note',
+  internal_notes: 'Note interne',
+}
+
+function modificationFieldLabel(field: string): string {
+  return MODIFICATION_FIELD_LABELS[field] ?? humanizeSlug(field)
+}
+
+// Structured (JSON/JSONB) columns whose stored value should be summarised rather
+// than printed raw. Free-text fields are deliberately excluded so a note that
+// happens to start with "[" or "{" is never mistaken for JSON.
+const JSON_AUDIT_FIELDS = new Set(['cost_lines', 'pricing_sheets', 'equipment'])
+
+// Pull the quoted tokens out of a stored list repr — handles both the Python
+// str() form "['a', 'b']" and JSON '["a","b"]'.
+function extractQuotedTokens(raw: string): string[] {
+  const out: string[] = []
+  const re = /['"]([^'"]+)['"]/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(raw)) !== null) out.push(m[1])
+  return out
+}
+
+// Render a stored audit value for display. old/new are str()-ified in the DB,
+// so this unwraps the common shapes instead of dumping raw slugs / JSON blobs.
+function formatModificationValue(field: string, raw: string | null): string {
+  if (raw == null || raw === '' || raw === 'None' || raw === 'null' || raw === '[]' || raw === '{}') {
+    return '—'
+  }
+  if (field === 'equipment_options' || field === 'optional_packages') {
+    const slugs = extractQuotedTokens(raw)
+    if (slugs.length) return slugs.map(equipmentLabel).join(', ')
+  }
+  // Only summarise the known structured (JSON/JSONB) columns — never sniff on a
+  // leading "["/"{" for free-text fields (notes, titles…), which could legitimately
+  // start that way and would otherwise be dropped to "(modificat)".
+  const t = raw.trim()
+  if (JSON_AUDIT_FIELDS.has(field) && (t.startsWith('[') || t.startsWith('{'))) {
+    try {
+      const parsed = JSON.parse(t)
+      const list = Array.isArray(parsed) ? parsed : [parsed]
+      if (field === 'cost_lines' || field === 'pricing_sheets') {
+        const parts = list
+          .map((l) => {
+            const name = l?.description || l?.type || l?.name
+            const eur = l?.eur ?? l?.amount ?? l?.price
+            return [name, eur != null ? `${eur} EUR` : null].filter(Boolean).join(' – ')
+          })
+          .filter(Boolean)
+        if (parts.length) return parts.join('; ')
+      }
+      return list.length === 1 ? '1 intrare' : `${list.length} intrări`
+    } catch {
+      return '(modificat)' // not valid JSON (e.g. a Python dict repr)
+    }
+  }
+  return raw
+}
+
 function ModificationsTab({ modifications }: { modifications: Array<{ id: number; field_name: string; old_value: string | null; new_value: string | null; user_name: string | null; created_at: string }> }) {
   if (modifications.length === 0) {
     return <EmptyState title="Fără istoric de modificări" icon={<FileText className="h-8 w-8" />} />
@@ -2944,11 +3062,11 @@ function ModificationsTab({ modifications }: { modifications: Array<{ id: number
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-sm">
-              <span className="font-medium">{entry.field_name}</span>
+              <span className="font-medium">{modificationFieldLabel(entry.field_name)}</span>
               {': '}
-              <span className="text-muted-foreground line-through">{entry.old_value ?? 'null'}</span>
+              <span className="text-muted-foreground line-through">{formatModificationValue(entry.field_name, entry.old_value)}</span>
               {' → '}
-              <span>{entry.new_value ?? 'null'}</span>
+              <span>{formatModificationValue(entry.field_name, entry.new_value)}</span>
             </div>
           </div>
           <div className="text-right shrink-0">
