@@ -8,7 +8,6 @@ Session-authenticated admin config + read-only lookups:
     GET  /carbackground/api/logs         recent sync-log entries
 """
 import json
-import logging
 
 from flask import request, jsonify
 
@@ -18,8 +17,6 @@ from .client import CarBackgroundClient
 from core.connectors.repositories.connector_repository import ConnectorRepository
 from core.utils.api_helpers import admin_required
 from carpark.routes.vehicles import carpark_required
-
-logger = logging.getLogger('jarvis.carbackground.routes')
 
 _repo = ConnectorRepository()
 _client = CarBackgroundClient()
@@ -103,5 +100,8 @@ def api_logs():
     c = _repo.get_by_type(CONNECTOR_TYPE)
     if not c:
         return jsonify({'success': True, 'logs': []})
-    limit = min(int(request.args.get('limit', 20)), 100)
+    try:
+        limit = min(int(request.args.get('limit', 20)), 100)
+    except (TypeError, ValueError):
+        limit = 20
     return jsonify({'success': True, 'logs': _repo.get_sync_logs(c['id'], limit)})

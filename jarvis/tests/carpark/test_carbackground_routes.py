@@ -135,6 +135,7 @@ def test_config_post_allows_admin_creates_connector(client, monkeypatch):
     assert body['success'] is True
     assert body['connector']['has_api_key'] is True
     assert body['connector']['background_id'] == 'bg-2'
+    assert 'new-key' not in str(body), 'api key leaked in POST /api/config response'
 
 
 # ── GET /api/backgrounds, /api/credits, /api/logs require CarPark access ──
@@ -179,3 +180,20 @@ def test_logs_empty_without_connector(client, monkeypatch):
     r = client.get('/carbackground/api/logs')
     assert r.status_code == 200
     assert r.get_json()['logs'] == []
+
+
+def test_logs_bad_limit_does_not_500(client, monkeypatch):
+    # A non-integer ?limit must not raise ValueError -> 500; it falls back to 20.
+    _set_user(monkeypatch, NoSettingsUser())
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: {'id': 9})
+    captured = {}
+
+    def _fake_logs(cid, limit):
+        captured['limit'] = limit
+        return []
+
+    monkeypatch.setattr(routes_mod._repo, 'get_sync_logs', _fake_logs)
+    r = client.get('/carbackground/api/logs?limit=abc')
+    assert r.status_code == 200
+    assert r.get_json()['logs'] == []
+    assert captured['limit'] == 20
