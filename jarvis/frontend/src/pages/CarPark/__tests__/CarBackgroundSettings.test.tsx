@@ -57,6 +57,26 @@ describe('CarBackgroundSettings', () => {
     )
   })
 
+  it('reflects a changed selection away from the initialized saved value', async () => {
+    renderPanel()
+    await screen.findByText(/Studio White/i)
+
+    const select = screen.getByLabelText(/fundal/i) as HTMLSelectElement
+    // Initialized to the saved connector.background_id.
+    expect(select.value).toBe('studio-white')
+
+    // Switch to a DIFFERENT valid id — must stick (not snap back to saved).
+    fireEvent.change(select, { target: { value: 'grey-concrete' } })
+    expect(select.value).toBe('grey-concrete')
+
+    fireEvent.click(screen.getByRole('button', { name: /salvează/i }))
+    await waitFor(() =>
+      expect(carbackgroundApi.saveConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ background_id: 'grey-concrete' }),
+      ),
+    )
+  })
+
   it('never sends api_key when the field is left blank', async () => {
     renderPanel()
     await screen.findByText(/Studio White/i)

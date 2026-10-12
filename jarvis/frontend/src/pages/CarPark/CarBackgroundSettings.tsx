@@ -15,7 +15,8 @@ import { toast } from 'sonner'
 export function CarBackgroundSettings() {
   const qc = useQueryClient()
   const [apiKey, setApiKey] = useState('')
-  const [backgroundId, setBackgroundId] = useState('')
+  // null = untouched (fall back to the saved value); any string = user's choice.
+  const [backgroundId, setBackgroundId] = useState<string | null>(null)
 
   const { data: cfg, isLoading } = useQuery({
     queryKey: ['carbackground', 'config'],
@@ -37,14 +38,16 @@ export function CarBackgroundSettings() {
     refetchInterval: configured ? 60_000 : false,
   })
 
-  // Local select override falls back to the saved background_id once loaded.
-  const selectedBackgroundId = backgroundId || connector?.background_id || ''
+  // null (untouched) → fall back to the saved value. Use ?? so a user picking
+  // the empty placeholder isn't conflated with "untouched".
+  const selectedBackgroundId = backgroundId ?? connector?.background_id ?? ''
 
   const saveMut = useMutation({
     mutationFn: () =>
       carbackgroundApi.saveConfig({
         ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
-        background_id: selectedBackgroundId,
+        // House backdrop is required — never wipe it with an empty string.
+        ...(selectedBackgroundId ? { background_id: selectedBackgroundId } : {}),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['carbackground'] })
