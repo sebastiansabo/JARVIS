@@ -789,6 +789,17 @@ export default function CarParkDetail() {
 // 600px wide (GALLERY_MAX_WIDTH); "show all" grid overlay + fullscreen lightbox on click.
 const GALLERY_MAX_WIDTH = 600 // px — the whole gallery block never exceeds this width
 
+// In the product gallery a PUBLISHED studio variant replaces its original
+// (the same "effective publish URL" rule the Shopify push uses), so the in-app
+// gallery matches the live listing. Unpublished variants are NOT shown here —
+// they stay previewable only in the "Toate pozele" grid.
+export function publishedGallerySrc(photo: VehiclePhoto, preferThumb: boolean): string {
+  if (photo.enhanced_published && photo.enhanced_url) {
+    return mediaUrl((preferThumb ? photo.enhanced_thumbnail_url : null) || photo.enhanced_url)
+  }
+  return mediaUrl((preferThumb ? photo.thumbnail_url : null) || photo.url)
+}
+
 function PhotoGallery({
   photos,
   onPhotoClick,
@@ -831,7 +842,7 @@ function PhotoGallery({
         onClick={() => onPhotoClick(idx)}
       >
         <img
-          src={mediaUrl(photos[idx].url)}
+          src={publishedGallerySrc(photos[idx], false)}
           alt={`Photo ${idx + 1}`}
           className="h-full w-full object-cover"
         />
@@ -895,7 +906,7 @@ function PhotoGallery({
               }`}
             >
               <img
-                src={mediaUrl(p.thumbnail_url || p.url)}
+                src={publishedGallerySrc(p, true)}
                 alt={`Thumbnail ${i + 1}`}
                 draggable={false}
                 className="h-full w-full object-cover"
@@ -1457,7 +1468,7 @@ function PhotoLightbox({
           </button>
         )}
         <img
-          src={mediaUrl(photos[index].url)}
+          src={publishedGallerySrc(photos[index], false)}
           alt={`Photo ${index + 1}`}
           onClick={(e) => {
             e.stopPropagation()
@@ -1504,7 +1515,7 @@ function PhotoLightbox({
                 i === index ? 'border-white opacity-100' : 'border-transparent opacity-50 hover:opacity-100'
               }`}
             >
-              <img src={mediaUrl(p.thumbnail_url || p.url)} alt="" draggable={false} className="h-full w-full object-cover" />
+              <img src={publishedGallerySrc(p, true)} alt="" draggable={false} className="h-full w-full object-cover" />
             </button>
           ))}
         </div>
