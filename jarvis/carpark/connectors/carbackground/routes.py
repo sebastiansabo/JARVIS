@@ -140,9 +140,13 @@ def api_enhance(vid):
         return err
 
     data = request.get_json(silent=True) or {}
-    ids = [int(i) for i in (data.get('photo_ids') or [])]
-    if not ids:
+    raw = data.get('photo_ids') or []
+    if not raw:
         return jsonify({'success': False, 'error': 'photo_ids is required'}), 400
+    try:
+        ids = [int(i) for i in raw]
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'photo_ids must be integers'}), 400
 
     created, errors = 0, []
     for pid in ids:

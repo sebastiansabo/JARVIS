@@ -95,6 +95,16 @@ def test_enhance_requires_photo_ids(client, monkeypatch):
     assert r.status_code == 400
 
 
+def test_enhance_non_integer_photo_ids_returns_400_not_500(client, monkeypatch):
+    """A non-integer element in photo_ids must be a clean 400, not an
+    unguarded int() -> ValueError -> Flask 500 (mirrors reorder_photos)."""
+    _set_user(monkeypatch, EditUser())
+    _own_vehicle(monkeypatch, 9)
+    r = client.post('/carbackground/api/vehicles/9/enhance', json={'photo_ids': [1, 'abc']})
+    assert r.status_code == 400
+    assert 'integer' in r.get_json()['error'].lower()
+
+
 def test_enhance_vehicle_not_found_propagates_404(client, monkeypatch):
     _set_user(monkeypatch, EditUser())
     monkeypatch.setattr(routes_mod, '_verify_vehicle_ownership',
