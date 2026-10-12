@@ -31,11 +31,65 @@ def _view(view_func):
     return getattr(view_func, '__wrapped__', view_func)
 
 
+def _as_admin(monkeypatch, can_access=True):
+    """Make `_require_admin()` see an admin (or not).
+
+    The view is called undecorated so there's no login context; patch the
+    `current_user` proxy the route reads to a stub with the needed flag.
+    """
+    monkeypatch.setattr(routes, 'current_user',
+                        MagicMock(can_access_settings=can_access))
+
+
 @pytest.fixture
 def app():
     app = Flask(__name__)
     app.config['TESTING'] = True
     return app
+
+
+def test_non_admin_cannot_read_settings(app, monkeypatch):
+    """GET exposes smtp_password etc., so a non-admin must get 403 and the
+    settings are never read."""
+    get_mock = MagicMock(return_value={'smtp_password': 'secret'})
+    monkeypatch.setattr(routes._notif_repo, 'get_settings', get_mock)
+    _as_admin(monkeypatch, can_access=False)
+
+    with app.test_request_context('/api/notification-settings', method='GET'):
+        resp = _view(routes.api_get_notification_settings)()
+
+    status = resp[1] if isinstance(resp, tuple) else resp.status_code
+    assert status == 403
+    get_mock.assert_not_called()
+
+
+def test_admin_can_read_settings(app, monkeypatch):
+    """An admin reads settings normally."""
+    get_mock = MagicMock(return_value={'from_email': 'x@y.ro'})
+    monkeypatch.setattr(routes._notif_repo, 'get_settings', get_mock)
+    _as_admin(monkeypatch)
+
+    with app.test_request_context('/api/notification-settings', method='GET'):
+        resp = _view(routes.api_get_notification_settings)()
+
+    assert resp.get_json() == {'from_email': 'x@y.ro'}
+    get_mock.assert_called_once()
+
+
+def test_non_admin_cannot_save_settings(app, monkeypatch):
+    """A non-admin (no settings access) is rejected with 403 and the write
+    never reaches save_settings_bulk."""
+    save_mock = MagicMock(return_value=True)
+    monkeypatch.setattr(routes._notif_repo, 'save_settings_bulk', save_mock)
+    _as_admin(monkeypatch, can_access=False)
+
+    payload = {'pontaje_digest_enabled': 'true'}
+    with app.test_request_context('/api/notification-settings', method='POST', json=payload):
+        resp = _view(routes.api_save_notification_settings)()
+
+    status = resp[1] if isinstance(resp, tuple) else resp.status_code
+    assert status == 403
+    save_mock.assert_not_called()
 
 
 def test_ghost_admin_ids_key_stripped_before_save(app, monkeypatch):
@@ -44,6 +98,7 @@ def test_ghost_admin_ids_key_stripped_before_save(app, monkeypatch):
     still gets through untouched."""
     save_mock = MagicMock(return_value=True)
     monkeypatch.setattr(routes._notif_repo, 'save_settings_bulk', save_mock)
+    _as_admin(monkeypatch)
 
     payload = {
         'ghost_visible_admin_ids': '2',
@@ -64,6 +119,7 @@ def test_payload_without_ghost_key_is_unaffected(app, monkeypatch):
     forwards as-is (regression guard: the strip must be a no-op otherwise)."""
     save_mock = MagicMock(return_value=True)
     monkeypatch.setattr(routes._notif_repo, 'save_settings_bulk', save_mock)
+    _as_admin(monkeypatch)
 
     payload = {'pontaje_digest_enabled': 'true', 'commit_digest_daily_enabled': 'false'}
     with app.test_request_context('/api/notification-settings', method='POST', json=payload):
@@ -79,6 +135,7 @@ def test_ghost_admin_ids_alone_in_payload_saves_nothing(app, monkeypatch):
     ghost value is silently dropped, not stored anywhere."""
     save_mock = MagicMock(return_value=True)
     monkeypatch.setattr(routes._notif_repo, 'save_settings_bulk', save_mock)
+    _as_admin(monkeypatch)
 
     payload = {'ghost_visible_admin_ids': '2,3,4'}
     with app.test_request_context('/api/notification-settings', method='POST', json=payload):

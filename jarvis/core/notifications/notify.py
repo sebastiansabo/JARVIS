@@ -48,8 +48,13 @@ def notify_user(user_id, title, message=None, link=None,
 
 def notify_users(user_ids, title, message=None, link=None,
                  entity_type=None, entity_id=None, type='info',
-                 category='system'):
-    """Send the same in-app notification + push to multiple users."""
+                 category='system', send_push=True):
+    """Send the same in-app notification to multiple users.
+
+    By default also fires an FCM push. Callers that send their own push
+    afterwards (e.g. ``notify_with_push``, which attaches a data payload)
+    pass ``send_push=False`` so the user doesn't receive two pushes.
+    """
     if not user_ids:
         return []
     try:
@@ -62,12 +67,13 @@ def notify_users(user_ids, title, message=None, link=None,
         logger.error(f'Failed to create notifications for {len(user_ids)} users: {e}')
         results = []
 
-    # Also send push notification
-    try:
-        from .push_service import send_push_to_users
-        send_push_to_users(list(user_ids), title, message or title, category=category)
-    except Exception as e:
-        logger.debug(f'Push notifications skipped for {len(user_ids)} users: {e}')
+    # Also send push notification (unless the caller sends its own)
+    if send_push:
+        try:
+            from .push_service import send_push_to_users
+            send_push_to_users(list(user_ids), title, message or title, category=category)
+        except Exception as e:
+            logger.debug(f'Push notifications skipped for {len(user_ids)} users: {e}')
 
     return results
 
@@ -85,9 +91,10 @@ def notify_with_push(user_ids, title, message=None, link=None,
     if not user_ids:
         return []
 
-    # In-app notifications
+    # In-app notifications — suppress its push; we send our own below with
+    # the data payload attached (avoids a duplicate FCM push per call).
     results = notify_users(user_ids, title, message, link, entity_type, entity_id, type,
-                           category=category)
+                           category=category, send_push=False)
 
     # Push notifications (fire-and-forget, never block the request)
     try:
