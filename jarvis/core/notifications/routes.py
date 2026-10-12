@@ -24,7 +24,12 @@ _rate_repo = PushRateLimitRepository()
 @notifications_bp.route('/api/notification-settings', methods=['GET'])
 @login_required
 def api_get_notification_settings():
-    """Get all notification settings."""
+    """Get all notification settings. Admin-only — the payload includes
+    sensitive config (smtp_password, SMTP host/username), so reads require
+    settings access, matching the write gate below."""
+    err = _require_admin()
+    if err:
+        return err
     settings = _notif_repo.get_settings()
     return jsonify(settings)
 
@@ -32,15 +37,18 @@ def api_get_notification_settings():
 @notifications_bp.route('/api/notification-settings', methods=['POST'])
 @login_required
 def api_save_notification_settings():
-    """Save notification settings."""
+    """Save notification settings. Admin-only — writes global config."""
+    # SECURITY: these are global settings (SMTP, digest, smart-alert flags),
+    # so writes require settings access, not just authentication.
+    err = _require_admin()
+    if err:
+        return err
     data = request.get_json()
-    # SECURITY: this endpoint is @login_required only — ANY authenticated
-    # user can POST here, and there is no per-key permission whitelist.
-    # `ghost_visible_admin_ids` (the ghost-visibility super-admin allowlist,
-    # see core.organization.ghost) is a security control and must never be
-    # settable through this generic, unauthenticated-by-role endpoint —
-    # otherwise any user could grant themselves ghost-visibility via
-    # `POST {"ghost_visible_admin_ids": "<own id>"}`. It may only be set
+    # Defense in depth: `ghost_visible_admin_ids` (the ghost-visibility
+    # super-admin allowlist, see core.organization.ghost) is a security
+    # control and must never be settable through this generic endpoint —
+    # otherwise anyone who reached it could grant themselves ghost-visibility
+    # via `POST {"ghost_visible_admin_ids": "<own id>"}`. It may only be set
     # internally (DB/seed/script) via `save_notification_setting()` /
     # `NotificationRepository.save_setting()` directly. Strip it here before
     # it ever reaches the bulk save, and do not add it back anywhere else.
