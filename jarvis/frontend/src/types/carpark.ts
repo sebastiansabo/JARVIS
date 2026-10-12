@@ -189,6 +189,13 @@ export interface VehiclePhoto {
   caption: string | null
   file_size: number | null
   created_at: string
+  // CarBackground AI enhancement (background removal/replacement) — set once
+  // a photo has been sent through carbackground/api/vehicles/:id/enhance.
+  enhanced_url?: string | null
+  enhanced_thumbnail_url?: string | null
+  enhanced_background_id?: string | null
+  enhanced_published?: boolean
+  enhanced_created_at?: string | null
 }
 
 export interface Location {
