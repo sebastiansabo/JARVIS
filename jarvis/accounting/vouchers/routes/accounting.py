@@ -91,6 +91,9 @@ def redeem_voucher(voucher_id):
 @handle_api_errors
 def lookup_voucher_by_code(code):
     """Look up a voucher by its code (for scan/redeem flow)."""
+    limited = _check_redeem_rate_limit(code)
+    if limited:
+        return limited
     voucher = _repo.query_one('''
         SELECT v.*,
                u_issued.name AS issued_by_name,
@@ -103,6 +106,7 @@ def lookup_voucher_by_code(code):
         WHERE v.voucher_code = %s AND v.deleted_at IS NULL
     ''', (code.upper(),))
     if not voucher:
+        _record_redeem_attempt(code, 'fail')
         return error_response('Voucher not found', 404)
     return jsonify(voucher)
 
@@ -122,10 +126,15 @@ def redeem_by_code():
     if not code:
         return jsonify({'success': False, 'error': 'voucher_code is required'}), 400
 
+    limited = _check_redeem_rate_limit(code)
+    if limited:
+        return limited
+
     voucher = _repo.query_one(
         'SELECT id, status FROM vouchers WHERE voucher_code = %s AND deleted_at IS NULL', (code,)
     )
     if not voucher:
+        _record_redeem_attempt(code, 'fail')
         return jsonify({'success': False, 'error': f'Voucher {code} not found'}), 404
 
     try:
@@ -135,9 +144,11 @@ def redeem_by_code():
             notes=notes,
         )
     except ValueError as e:
+        _record_redeem_attempt(code, 'fail')
         return jsonify({'success': False, 'error': str(e)}), 400
 
     if not result:
+        _record_redeem_attempt(code, 'fail')
         return error_response('Voucher cannot be redeemed', 400)
 
     return jsonify({'success': True, 'voucher': result})
@@ -148,6 +159,9 @@ def redeem_by_code():
 @handle_api_errors
 def public_lookup_voucher(code):
     """Public: look up a voucher by code (no auth). Returns limited info."""
+    limited = _check_redeem_rate_limit(code)
+    if limited:
+        return limited
     voucher = _repo.query_one('''
         SELECT v.voucher_code, v.client_name, v.contract_number, v.car_vin,
                v.voucher_type, v.value_lei, v.discount_code, v.discount_percentage,
@@ -161,6 +175,7 @@ def public_lookup_voucher(code):
         WHERE v.voucher_code = %s AND v.deleted_at IS NULL
     ''', (code.strip().upper(),))
     if not voucher:
+        _record_redeem_attempt(code, 'fail')
         return error_response('Voucher not found', 404)
     return jsonify(voucher)
 
@@ -182,12 +197,18 @@ def public_redeem_voucher():
     if not signature:
         return jsonify({'success': False, 'error': 'Signature is required'}), 400
 
+    limited = _check_redeem_rate_limit(code)
+    if limited:
+        return limited
+
     voucher = _repo.query_one(
         'SELECT id, status, expires_at FROM vouchers WHERE voucher_code = %s AND deleted_at IS NULL', (code,)
     )
     if not voucher:
+        _record_redeem_attempt(code, 'fail')
         return jsonify({'success': False, 'error': f'Voucher {code} not found'}), 404
     if voucher['status'] != 'active':
+        _record_redeem_attempt(code, 'fail')
         return jsonify({'success': False, 'error': f"Voucher status is '{voucher['status']}', cannot redeem"}), 400
 
     from datetime import date
@@ -196,6 +217,7 @@ def public_redeem_voucher():
         if isinstance(expires, str):
             expires = date.fromisoformat(expires)
         if expires < date.today():
+            _record_redeem_attempt(code, 'fail')
             return jsonify({'success': False, 'error': 'Voucher has expired'}), 400
 
     _repo.execute('''

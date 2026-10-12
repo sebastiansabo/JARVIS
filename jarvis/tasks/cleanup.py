@@ -627,6 +627,16 @@ def start_scheduler():
         except Exception:
             logger.exception('Failed to run voucher expiry warning job')
 
+    def _cleanup_voucher_attempts():
+        """Daily: prune voucher redeem/lookup rate-limit log older than 7 days."""
+        try:
+            from accounting.vouchers.repositories import VoucherAttemptRepository
+            count = VoucherAttemptRepository().cleanup_old(days=7)
+            if count:
+                logger.info('Cleanup: deleted %d old voucher attempt log row(s)', count)
+        except Exception:
+            logger.exception('Failed to run voucher attempt cleanup job')
+
     def _voucher_monthly_digest():
         """1st business day: send monthly voucher digest."""
         from datetime import date as _date
@@ -681,6 +691,16 @@ def start_scheduler():
         id='voucher_monthly_digest',
         replace_existing=True,
         misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    scheduler.add_job(
+        _cleanup_voucher_attempts,
+        'cron',
+        hour=2, minute=15,
+        id='cleanup_voucher_attempts',
+        replace_existing=True,
+        misfire_grace_time=300,
         coalesce=True,
     )
 

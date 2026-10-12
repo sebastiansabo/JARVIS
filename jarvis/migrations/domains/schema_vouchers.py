@@ -317,6 +317,25 @@ def create_schema_vouchers(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_voucher_audit_voucher ON voucher_audit_log(voucher_id)')
 
+    # ── Redeem rate-limiting (brute-force / enumeration protection) ──
+    # Append-only log of code lookup/redeem *attempts*. The API throttles the
+    # code-based endpoints by IP, by authenticated user and per voucher code.
+    # Only FAILED attempts are recorded, so a legitimate redemption never
+    # counts toward a limit. Pruned after 7 days by a scheduled cleanup job.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS voucher_redeem_attempts (
+            id SERIAL PRIMARY KEY,
+            ip VARCHAR(64),
+            user_id INT,
+            voucher_code VARCHAR(32),
+            outcome VARCHAR(16) NOT NULL DEFAULT 'fail',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vra_ip_time ON voucher_redeem_attempts(ip, created_at)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vra_user_time ON voucher_redeem_attempts(user_id, created_at)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vra_code_time ON voucher_redeem_attempts(voucher_code, created_at)')
+
     # ── V2 Permissions ──────────────────────────────────
     cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'vouchers'")
     if cursor.fetchone()['cnt'] == 0:
