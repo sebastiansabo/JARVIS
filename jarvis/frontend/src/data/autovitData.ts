@@ -327,3 +327,119 @@ export const AUTOVIT_EQUIPMENT: { category: string; options: { value: string; la
     ],
   },
 ] as const
+
+// ── Equipment labels & slug humanization ───────────────────
+// Flat value→label lookup over the structured equipment taxonomy above.
+// `equipment_options` (the form picker) stores these hyphen slugs.
+export const EQUIPMENT_LABEL_BY_VALUE: Record<string, string> = Object.fromEntries(
+  AUTOVIT_EQUIPMENT.flatMap((cat) => cat.options.map((o) => [o.value, o.label])),
+)
+
+// Raw Autovit / mobile.de API equipment param names (underscore snake_case)
+// harvested into the `equipment` JSONB blob by the importer. These are a
+// DIFFERENT namespace from the hyphen taxonomy above (e.g. `apple_carplay`
+// here vs `carplay` there), so they carry their own RO labels. Anything not
+// listed falls back to humanizeSlug(), so this only needs the common ones.
+export const RAW_EQUIPMENT_LABEL_RO: Record<string, string> = {
+  android_auto: 'Android Auto',
+  antilock_brake_system: 'ABS',
+  apple_carplay: 'Apple CarPlay',
+  armrest_front: 'Cotieră față',
+  armrest_rear: 'Cotieră spate',
+  bluetooth_interface: 'Bluetooth',
+  child_seat_fixation: 'Fixare scaun copil (ISOFIX)',
+  digital_key: 'Cheie digitală',
+  esp: 'ESP',
+  leather_gearshifterswitch: 'Schimbător de viteze din piele',
+  leather_steering_wheel: 'Volan din piele',
+  lumbar_adjust_driver_electric: 'Reglaj lombar electric șofer',
+  lumbar_adjust_passenger_electric: 'Reglaj lombar electric pasager',
+  multi_functional_steering_wheel: 'Volan multifuncțional',
+  navigation_system: 'Sistem de navigație',
+  power_windows_front: 'Geamuri electrice față',
+  power_windows_rear: 'Geamuri electrice spate',
+  radio: 'Radio',
+  rain_sensor: 'Senzor de ploaie',
+  soundsystem: 'Sistem audio',
+  steering_wheel_with_radio_operation: 'Comenzi audio pe volan',
+  tinted_rear_windows: 'Geamuri spate fumurii',
+  usb_in: 'USB',
+  voice_control_for_vehicle_functions: 'Control vocal',
+  windscreenwiper_other: 'Ștergătoare parbriz',
+  // Common extras seen on other imported cars
+  cruise_control: 'Tempomat',
+  air_conditioning: 'Aer condiționat',
+  automatic_climatisation: 'Climatronic',
+  manual_climatisation: 'Aer condiționat',
+  start_stop_system: 'Sistem Start/Stop',
+  parking_assistance: 'Senzori parcare',
+  park_distance_control: 'Senzori parcare',
+  rear_view_camera: 'Cameră marșarier',
+  sunroof: 'Trapă / Panoramic',
+  panorama_roof: 'Acoperiș panoramic',
+  alloy_wheels: 'Jante din aliaj',
+  light_alloy_wheels: 'Jante din aliaj',
+  led_headlights: 'Faruri LED',
+  xenon_headlights: 'Faruri Xenon',
+  bi_xenon_headlights: 'Faruri Bi-Xenon',
+  daytime_running_lights: 'Lumini de zi',
+  keyless_entry: 'Acces fără cheie',
+  heated_seats: 'Scaune încălzite',
+  electric_seats: 'Scaune electrice',
+  lane_departure_warning: 'Avertizare părăsire bandă',
+  blind_spot_monitor: 'Monitorizare unghi mort',
+  traffic_sign_recognition: 'Recunoaștere semne de circulație',
+  adaptive_cruise_control: 'Tempomat adaptiv',
+  trailer_coupling: 'Cârlig de remorcare',
+  electric_tailgate: 'Haion electric',
+  head_up_display: 'Head-up display',
+  tyre_pressure_monitoring: 'Senzori presiune anvelope',
+  isofix: 'ISOFIX',
+}
+
+// Automotive acronyms / designations that should stay uppercase when a slug is
+// humanized (rather than title-cased into "Abs", "Awd", …).
+const EQUIPMENT_ACRONYMS: Record<string, string> = {
+  abs: 'ABS', esp: 'ESP', esc: 'ESC', asr: 'ASR', ebd: 'EBD', tpms: 'TPMS',
+  led: 'LED', drl: 'DRL', hud: 'HUD', aeb: 'AEB', acc: 'ACC', usb: 'USB',
+  gps: 'GPS', dab: 'DAB', ac: 'AC', awd: 'AWD', fwd: 'FWD', rwd: 'RWD',
+  '4wd': '4WD', '4x4': '4x4', suv: 'SUV', isofix: 'ISOFIX', tdi: 'TDI',
+  tsi: 'TSI', tfsi: 'TFSI', gti: 'GTI', gtd: 'GTD', cng: 'CNG', lpg: 'LPG',
+}
+
+// Turn a slug ("ver-t5-awd-inscription", "antilock_brake_system") into readable
+// text ("T5 AWD Inscription", "Antilock Brake System"). Best-effort: used as the
+// equipment-label fallback and for the auto-composed listing title. Already
+// mixed-case tokens (e.g. "sDrive18d") are preserved as-is.
+export function humanizeSlug(
+  slug: string | null | undefined,
+  opts: { stripVersionPrefix?: boolean } = {},
+): string {
+  if (!slug) return ''
+  let s = String(slug).trim()
+  if (opts.stripVersionPrefix) s = s.replace(/^(ver|gen)[-_\s]+/i, '')
+  return s
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((tok) => {
+      const low = tok.toLowerCase()
+      if (EQUIPMENT_ACRONYMS[low]) return EQUIPMENT_ACRONYMS[low]
+      if (/[A-Z]/.test(tok) && /[a-z]/.test(tok)) return tok // keep "sDrive18d", "iDrive"
+      if (/^\d+$/.test(tok)) return tok // 2017
+      if (/^[a-z]{1,2}\d{1,3}[a-z]?$/i.test(tok)) return tok.toUpperCase() // t5, d4, e220
+      if (/^(ii|iii|iv|v|vi|vii|viii|ix|x)$/i.test(tok)) return tok.toUpperCase() // roman gen
+      return low.charAt(0).toUpperCase() + low.slice(1)
+    })
+    .join(' ')
+}
+
+// Resolve an equipment key from either namespace to a human RO label.
+export function equipmentLabel(key: string): string {
+  if (!key) return ''
+  return (
+    EQUIPMENT_LABEL_BY_VALUE[key] ??
+    RAW_EQUIPMENT_LABEL_RO[key] ??
+    EQUIPMENT_LABEL_BY_VALUE[key.replace(/_/g, '-')] ?? // android_auto → android-auto
+    humanizeSlug(key)
+  )
+}

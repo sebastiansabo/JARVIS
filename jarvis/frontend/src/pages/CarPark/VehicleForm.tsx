@@ -52,6 +52,7 @@ import {
   AUTOVIT_DOORS,
   AUTOVIT_SEATS,
   VEHICLE_SOURCES,
+  humanizeSlug,
 } from '@/data/autovitData'
 
 type FormData = Record<string, string | number | boolean | null | string[]>
@@ -233,8 +234,14 @@ function buildListingTitle(f: FormData): string {
     opts.find((o) => o.value === v)?.label ?? ''
   const cc = f.engine_displacement_cc
   const liters = typeof cc === 'number' && cc > 0 ? `${(cc / 1000).toFixed(1)}l` : ''
+  // variant/generation/equipment_level come from Autovit as raw slugs
+  // ("ver-t5-awd-inscription", "gen-ii-2017") — humanize them. brand/model are
+  // already stored as labels (and hyphens are meaningful, e.g. "Mercedes-Benz").
   return [
-    f.brand, f.model, f.variant, f.generation, f.equipment_level,
+    f.brand, f.model,
+    humanizeSlug(f.variant as string, { stripVersionPrefix: true }),
+    humanizeSlug(f.generation as string, { stripVersionPrefix: true }),
+    humanizeSlug(f.equipment_level as string),
     liters,
     label(AUTOVIT_FUEL_TYPES, f.fuel_type),
     label(AUTOVIT_GEARBOX_TYPES, f.transmission),

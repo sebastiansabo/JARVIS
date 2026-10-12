@@ -92,7 +92,9 @@ export interface Vehicle extends VehicleCatalogItem {
   seats: number | null
   tire_type: string | null
   fuel_consumption: string | null
-  equipment: Record<string, string[]>
+  // Importer writes a flat {slug: boolean} flag map; a legacy grouped
+  // {category: string[]} shape may also exist on older rows.
+  equipment: Record<string, boolean | string[]>
   optional_packages: string[]
   has_manufacturer_warranty: boolean
   manufacturer_warranty_date: string | null
