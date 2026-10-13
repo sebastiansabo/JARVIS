@@ -12,12 +12,15 @@ def test_valid_transitions():
     assert L.is_valid_transition('INSPECTION', 'FINAL_OFFER')
     assert L.is_valid_transition('FINAL_OFFER', 'BOUGHT')
     assert L.is_valid_transition('LOST', 'PENDING_EVALUATION')  # reopen
+    assert L.is_valid_transition('CANCELLED', 'PENDING_EVALUATION')  # reopen
 
 
 def test_illegal_transitions_rejected():
     assert not L.is_valid_transition('PENDING_EVALUATION', 'BOUGHT')
     assert not L.is_valid_transition('BOUGHT', 'LOST')
     assert not L.is_valid_transition('CANCELLED', 'INITIAL_OFFER')
+    # BOUGHT stays fully terminal — only an admin force-override can leave it.
+    assert not L.is_valid_transition('BOUGHT', 'PENDING_EVALUATION')
 
 
 def test_every_status_has_label():

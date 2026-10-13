@@ -2,12 +2,20 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Plus, Car, List as ListIcon, LayoutGrid, Trash2, ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react'
+import { Plus, Car, List as ListIcon, LayoutGrid, Trash2, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown } from 'lucide-react'
 import { buybackApi } from '@/api/buyback'
 import type { BuybackRecord } from '@/types/buyback'
 import { useAuth } from '@/hooks/useAuth'
 import { recordStatus, STATUS_FILTER_OPTIONS } from './recordStatus'
 import { usePermissions } from './usePermissions'
+import StatusChangeDialog from './StatusChangeDialog'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -127,8 +135,10 @@ export default function BuyBack() {
   const [sortBy, setSortBy] = useState<SortKey>('created_at')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [deleteTarget, setDeleteTarget] = useState<BuybackRecord | null>(null)
+  // Record whose status is being overridden via the inline row menu (null = closed).
+  const [overrideRecord, setOverrideRecord] = useState<BuybackRecord | null>(null)
 
-  const { can } = usePermissions()
+  const { can, isAdminOrManager } = usePermissions()
   const canCreate = can('buyback.record.create')
   const canDelete = can('buyback.record.delete')
   // Global admins may hard-delete ANY archived record (incl. BOUGHT /
@@ -278,6 +288,22 @@ export default function BuyBack() {
     },
     onError: (e) => toast.error((e as { data?: { error?: string } })?.data?.error || 'Ștergerea a eșuat'),
   })
+
+  // Inline "Redeschide" from the row menu — reopens a LOST/CANCELLED record to
+  // PENDING_EVALUATION via the sanctioned reopen path (clean, non-forced audit).
+  const reopenMutation = useMutation({
+    mutationFn: (id: number) => buybackApi.reopenRecord(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['buyback-records'] })
+      toast.success('Solicitarea a fost redeschisă')
+    },
+    onError: (e) => toast.error((e as { data?: { error?: string } })?.data?.error || 'Redeschiderea a eșuat'),
+  })
+
+  // The row's Status cell is an interactive menu only for admins/managers
+  // (reopen resolved records + free override); everyone else sees a static badge.
+  const canChangeStatus = isAdminOrManager
+  const isReopenable = (s: string) => s === 'LOST' || s === 'CANCELLED'
 
   const goToRecord = (id: number) => navigate(`/app/buyback/${id}`)
   const onRecordKeyDown = (e: React.KeyboardEvent, id: number) => {
@@ -506,8 +532,42 @@ export default function BuyBack() {
                     <TableCell className="text-right text-sm whitespace-nowrap">
                       {r.purchase_price_eur != null ? r.purchase_price_eur.toLocaleString('ro-RO') : '—'}
                     </TableCell>
-                    <TableCell>
-                      <Badge className={rs.badgeClass}>{rs.label}</Badge>
+                    <TableCell
+                      onClick={(e) => { if (canChangeStatus) e.stopPropagation() }}
+                      onKeyDown={(e) => { if (canChangeStatus) e.stopPropagation() }}
+                    >
+                      {canChangeStatus ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              title="Schimbă statusul"
+                            >
+                              <Badge className={rs.badgeClass}>{rs.label}</Badge>
+                              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            {isReopenable(r.status) && (
+                              <>
+                                <DropdownMenuItem
+                                  disabled={reopenMutation.isPending}
+                                  onClick={() => reopenMutation.mutate(r.id)}
+                                >
+                                  Redeschide (În evaluare)
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                              </>
+                            )}
+                            <DropdownMenuItem onClick={() => setOverrideRecord(r)}>
+                              Schimbă status…
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        <Badge className={rs.badgeClass}>{rs.label}</Badge>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm">{r.advisor_name || '—'}</TableCell>
                     <TableCell className="text-xs whitespace-nowrap text-muted-foreground">
@@ -582,6 +642,15 @@ export default function BuyBack() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Inline status override (admin/manager) — opened from a row's Status menu. */}
+      {overrideRecord && (
+        <StatusChangeDialog
+          record={overrideRecord}
+          open={!!overrideRecord}
+          onOpenChange={(o) => { if (!o) setOverrideRecord(null) }}
+        />
+      )}
     </div>
   )
 }

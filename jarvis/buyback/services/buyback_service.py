@@ -80,7 +80,9 @@ class BuyBackService:
             updated = self.records.update(
                 record['id'], {'closed_at': datetime.now(timezone.utc)}
             )
-        elif new_status == lifecycle.PENDING_EVALUATION and old_status == lifecycle.LOST:
+        elif new_status == lifecycle.PENDING_EVALUATION and old_status in (
+            lifecycle.LOST, lifecycle.CANCELLED
+        ):
             updated = self.records.update(record['id'], {'closed_at': None})
         self.events.log(
             record['id'], 'status_changed', actor,
@@ -88,6 +90,64 @@ class BuyBackService:
         )
         # Notify the record's creator of the status change (config-driven,
         # skip-self, best-effort — local import keeps buyback_service a leaf).
+        try:
+            from buyback.services.notifications import notify_owner
+            notify_owner(record, 'status_changed', actor, new_status=new_status)
+        except Exception:
+            pass
+        return updated
+
+    def force_status(self, record, new_status, actor, note=None) -> dict:
+        """Admin/Manager escape hatch: set `record`'s status to ANY valid
+        status, DELIBERATELY bypassing the lifecycle state machine (unlike
+        transition(), which rejects illegal moves).
+
+        This only ever touches the buyback_records row — it NEVER creates,
+        links, deletes or mutates a CarPark vehicle or an offer. In particular
+        forcing BOUGHT does NOT perform the CarPark hand-off (that stays the
+        finalize route's job); it only stamps bought_at so the Arhivă
+        resolution-window logic has a timestamp. A record already handed off
+        (carpark_vehicle_id set) keeps that link and its CarPark vehicle
+        untouched regardless of the forced status.
+
+        Bookkeeping mirrors transition():
+          - LOST/CANCELLED      → stamp closed_at (resolution time).
+          - any other status    → clear closed_at (back to in-progress).
+          - BOUGHT (and no prior bought_at) → stamp bought_at.
+
+        Logs a `status_changed` audit event flagged `forced: True` (+ the
+        optional free-text `note`) so the override is distinguishable from a
+        normal lifecycle transition in the Istoric timeline, and notifies the
+        record's creator. Raises ValueError on an unknown target status or a
+        no-op (new == current)."""
+        old_status = record['status']
+        if new_status not in lifecycle.STATUS_LABELS:
+            raise ValueError(f"Unknown status {new_status!r}")
+        if new_status == old_status:
+            raise ValueError(
+                f"Record {record['id']} is already in status {new_status!r}"
+            )
+
+        updated = self.records.set_status(record['id'], new_status, actor)
+
+        now = datetime.now(timezone.utc)
+        changes = {}
+        if new_status in (lifecycle.LOST, lifecycle.CANCELLED):
+            changes['closed_at'] = now
+        else:
+            # Any active status (incl. BOUGHT, whose resolution time is
+            # bought_at, not closed_at) is no longer "closed".
+            changes['closed_at'] = None
+        if new_status == lifecycle.BOUGHT and record.get('bought_at') is None:
+            changes['bought_at'] = now
+        updated = self.records.update(record['id'], changes)
+
+        details = {'from': old_status, 'to': new_status, 'forced': True}
+        note = (note or '').strip()
+        if note:
+            details['note'] = note[:1000]
+        self.events.log(record['id'], 'status_changed', actor, details)
+
         try:
             from buyback.services.notifications import notify_owner
             notify_owner(record, 'status_changed', actor, new_status=new_status)

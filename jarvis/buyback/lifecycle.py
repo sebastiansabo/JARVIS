@@ -17,8 +17,8 @@ TRANSITIONS = {
     INSPECTION: {FINAL_OFFER, CANCELLED},
     FINAL_OFFER: {BOUGHT, LOST, CANCELLED},
     BOUGHT: set(),
-    LOST: {PENDING_EVALUATION},   # manager reopen
-    CANCELLED: set(),
+    LOST: {PENDING_EVALUATION},        # manager reopen
+    CANCELLED: {PENDING_EVALUATION},   # manager reopen (same as LOST)
 }
 
 STATUS_LABELS = {
