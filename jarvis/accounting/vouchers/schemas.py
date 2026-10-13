@@ -8,6 +8,11 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+# Upper bound for a single voucher's value (LEI). Prevents negative/zero and
+# absurd amounts; well within the vouchers.value_lei NUMERIC(12,2) column.
+# Raise this if a legitimately higher-value voucher is ever needed.
+VALUE_LEI_MAX = 1_000_000
+
 
 class VoucherCreate(BaseModel):
     client_name: str
@@ -63,9 +68,23 @@ class VoucherCreate(BaseModel):
     @field_validator('voucher_type')
     @classmethod
     def validate_type(cls, v: str) -> str:
-        allowed = ('value', 'accessory_discount_code', 'accessory_percentage', 'service_items')
+        # 'accessory_percentage' is intentionally absent — the Percentage type
+        # is retired for new issuance. Legacy percentage vouchers still read,
+        # redeem and display (DB CHECK + display logic keep the value).
+        allowed = ('value', 'accessory_discount_code', 'service_items')
         if v not in allowed:
             raise ValueError(f'voucher_type must be one of {allowed}')
+        return v
+
+    @field_validator('value_lei')
+    @classmethod
+    def validate_value_lei(cls, v: Optional[Decimal]) -> Optional[Decimal]:
+        if v is None:
+            return None
+        if v <= 0:
+            raise ValueError('value_lei must be greater than 0')
+        if v > VALUE_LEI_MAX:
+            raise ValueError(f'value_lei must not exceed {VALUE_LEI_MAX}')
         return v
 
     @field_validator('discount_percentage')

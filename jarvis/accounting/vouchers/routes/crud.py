@@ -138,9 +138,9 @@ def my_vouchers():
 @login_required
 @handle_api_errors
 def get_voucher(voucher_id):
-    """Get a single voucher by ID."""
+    """Get a single voucher by ID (own company only; admins cross-company)."""
     voucher = _repo.get_by_id(voucher_id)
-    if not voucher:
+    if not voucher or not _voucher_company_ok(voucher):
         return error_response('Voucher not found', 404)
     return jsonify(voucher)
 
@@ -151,7 +151,7 @@ def get_voucher(voucher_id):
 def voucher_pdf(voucher_id):
     """Generate and return a printable voucher PDF."""
     voucher = _repo.get_by_id(voucher_id)
-    if not voucher:
+    if not voucher or not _voucher_company_ok(voucher):
         return error_response('Voucher not found', 404)
 
     from accounting.vouchers.pdf_generator import generate_voucher_pdf
@@ -171,7 +171,7 @@ def voucher_pdf(voucher_id):
 def send_voucher_to_client(voucher_id):
     """Send voucher PDF to client via email."""
     voucher = _repo.get_by_id(voucher_id)
-    if not voucher:
+    if not voucher or not _voucher_company_ok(voucher):
         return error_response('Voucher not found', 404)
 
     data = request.get_json(silent=True) or {}
@@ -187,12 +187,13 @@ def send_voucher_to_client(voucher_id):
     from html import escape
     notes_text = (voucher.get('notes') or '').strip()
     notes_html = f"\n            <li><strong>Notes:</strong> {escape(notes_text)}</li>" if notes_text else ''
+    client_name_html = escape(str(voucher.get('client_name') or 'Client'))
 
     success, err = send_email(
         to_email=to_email,
         subject=f"Your Voucher {voucher['voucher_code']} — AUTOWORLD",
         html_body=f"""
-        <p>Dear {voucher.get('client_name', 'Client')},</p>
+        <p>Dear {client_name_html},</p>
         <p>Please find attached your voucher <strong>{voucher['voucher_code']}</strong>.</p>
         <ul>
             <li><strong>Type:</strong> {voucher.get('voucher_type', '').replace('_', ' ').title()}</li>
@@ -512,4 +513,110 @@ def delete_service_pricing(pricing_id):
         return error_response('Pricing not found', 404)
 
     _base.execute('DELETE FROM service_catalog_pricing WHERE id = %s', (pricing_id,))
+    return jsonify({'success': True})
+
+
+# ── Voucher Motives (issue-reason list, admin-configurable) ─────────
+
+@vouchers_bp.route('/api/vouchers/motives', methods=['GET'])
+@login_required
+@handle_api_errors
+def list_voucher_motives():
+    """List voucher motives. Active-only by default (for the issue form);
+    ``?include_inactive=true`` returns all but requires the accounting role
+    (used by the settings management section)."""
+    include_inactive = request.args.get('include_inactive') in ('1', 'true')
+    if include_inactive and _check_accounting_role():
+        rows = _base.query_all(
+            'SELECT id, label, sort_order, is_active FROM voucher_motives ORDER BY sort_order, label'
+        )
+    else:
+        rows = _base.query_all(
+            'SELECT id, label, sort_order, is_active FROM voucher_motives WHERE is_active = TRUE ORDER BY sort_order, label'
+        )
+    return jsonify(rows)
+
+
+@vouchers_bp.route('/api/vouchers/motives', methods=['POST'])
+@login_required
+@handle_api_errors
+def create_voucher_motive():
+    """Create a motive (accounting role required)."""
+    if not _check_accounting_role():
+        return error_response('Forbidden', 403)
+    data = request.get_json(silent=True) or {}
+    label = (data.get('label') or '').strip()
+    if not label:
+        return jsonify({'success': False, 'error': 'Label is required'}), 400
+    existing = _base.query_one(
+        'SELECT id FROM voucher_motives WHERE LOWER(label) = LOWER(%s)', (label,)
+    )
+    if existing:
+        return jsonify({'success': False, 'error': 'A motive with this label already exists'}), 400
+    row = _base.execute(
+        '''INSERT INTO voucher_motives (label, sort_order)
+           VALUES (%s, %s)
+           RETURNING id, label, sort_order, is_active''',
+        (label, int(data.get('sort_order', 0))),
+        returning=True,
+    )
+    return jsonify({'success': True, 'item': row}), 201
+
+
+@vouchers_bp.route('/api/vouchers/motives/<int:motive_id>', methods=['PUT'])
+@login_required
+@handle_api_errors
+def update_voucher_motive(motive_id):
+    """Update a motive's label / order / active flag (accounting role required)."""
+    if not _check_accounting_role():
+        return error_response('Forbidden', 403)
+    existing = _base.query_one('SELECT id FROM voucher_motives WHERE id = %s', (motive_id,))
+    if not existing:
+        return error_response('Motive not found', 404)
+    data = request.get_json(silent=True) or {}
+    sets, params = [], []
+    if 'label' in data:
+        new_label = (data['label'] or '').strip()
+        if not new_label:
+            return jsonify({'success': False, 'error': 'Label cannot be empty'}), 400
+        dup = _base.query_one(
+            'SELECT id FROM voucher_motives WHERE LOWER(label) = LOWER(%s) AND id != %s',
+            (new_label, motive_id),
+        )
+        if dup:
+            return jsonify({'success': False, 'error': 'A motive with this label already exists'}), 400
+        sets.append('label = %s')
+        params.append(new_label)
+    if 'sort_order' in data:
+        sets.append('sort_order = %s')
+        params.append(int(data['sort_order']))
+    if 'is_active' in data:
+        sets.append('is_active = %s')
+        params.append(bool(data['is_active']))
+    if not sets:
+        return jsonify({'success': False, 'error': 'No fields to update'}), 400
+    sets.append('updated_at = CURRENT_TIMESTAMP')
+    params.append(motive_id)
+    _base.execute(f"UPDATE voucher_motives SET {', '.join(sets)} WHERE id = %s", tuple(params))
+    updated = _base.query_one(
+        'SELECT id, label, sort_order, is_active FROM voucher_motives WHERE id = %s', (motive_id,)
+    )
+    return jsonify({'success': True, 'item': updated})
+
+
+@vouchers_bp.route('/api/vouchers/motives/<int:motive_id>', methods=['DELETE'])
+@login_required
+@handle_api_errors
+def delete_voucher_motive(motive_id):
+    """Soft-delete a motive (set is_active=false). Already-issued vouchers keep
+    their stored notes text — motives only feed the picker."""
+    if not _check_accounting_role():
+        return error_response('Forbidden', 403)
+    existing = _base.query_one('SELECT id FROM voucher_motives WHERE id = %s', (motive_id,))
+    if not existing:
+        return error_response('Motive not found', 404)
+    _base.execute(
+        'UPDATE voucher_motives SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = %s',
+        (motive_id,),
+    )
     return jsonify({'success': True})

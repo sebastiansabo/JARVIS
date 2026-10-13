@@ -60,8 +60,8 @@ def accounting_list():
 @login_required
 @handle_api_errors
 def redeem_voucher(voucher_id):
-    """Mark a voucher as redeemed (accounting/admin only)."""
-    if not _check_accounting_role():
+    """Mark a voucher as redeemed (requires the redeem permission)."""
+    if not _check_redeem_perm():
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json(silent=True) or {}
@@ -70,6 +70,11 @@ def redeem_voucher(voucher_id):
         validated = VoucherRedeem(**data)
     except ValidationError as e:
         return jsonify({'success': False, 'errors': e.errors()}), 400
+
+    # Company gate: non-admins may only redeem their own company's vouchers.
+    existing = _repo.get_by_id(voucher_id)
+    if not existing or not _voucher_company_ok(existing):
+        return error_response('Voucher not found or cannot be redeemed', 404)
 
     try:
         result = _service.redeem_voucher(
@@ -105,7 +110,8 @@ def lookup_voucher_by_code(code):
         LEFT JOIN users u_redeemed ON u_redeemed.id = v.redeemed_by_user_id
         WHERE v.voucher_code = %s AND v.deleted_at IS NULL
     ''', (code.upper(),))
-    if not voucher:
+    if not voucher or not _voucher_company_ok(voucher):
+        # 404 (not 403) on cross-company so existence isn't disclosed.
         _record_redeem_attempt(code, 'fail')
         return error_response('Voucher not found', 404)
     return jsonify(voucher)
@@ -116,7 +122,7 @@ def lookup_voucher_by_code(code):
 @handle_api_errors
 def redeem_by_code():
     """Redeem a voucher by its code (from QR scan)."""
-    if not _check_accounting_role():
+    if not _check_redeem_perm():
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     data = request.get_json(silent=True) or {}
@@ -131,9 +137,9 @@ def redeem_by_code():
         return limited
 
     voucher = _repo.query_one(
-        'SELECT id, status FROM vouchers WHERE voucher_code = %s AND deleted_at IS NULL', (code,)
+        'SELECT id, status, company_id FROM vouchers WHERE voucher_code = %s AND deleted_at IS NULL', (code,)
     )
-    if not voucher:
+    if not voucher or not _voucher_company_ok(voucher):
         _record_redeem_attempt(code, 'fail')
         return jsonify({'success': False, 'error': f'Voucher {code} not found'}), 404
 
@@ -163,7 +169,7 @@ def public_lookup_voucher(code):
     if limited:
         return limited
     voucher = _repo.query_one('''
-        SELECT v.voucher_code, v.client_name, v.contract_number, v.car_vin,
+        SELECT v.company_id, v.voucher_code, v.client_name, v.contract_number, v.car_vin,
                v.voucher_type, v.value_lei, v.discount_code, v.discount_percentage,
                v.service_items, v.validity_months, v.status,
                v.issued_at, v.expires_at,
@@ -174,7 +180,7 @@ def public_lookup_voucher(code):
         LEFT JOIN companies c ON c.id = v.company_id
         WHERE v.voucher_code = %s AND v.deleted_at IS NULL
     ''', (code.strip().upper(),))
-    if not voucher:
+    if not voucher or not _voucher_company_ok(voucher):
         _record_redeem_attempt(code, 'fail')
         return error_response('Voucher not found', 404)
     return jsonify(voucher)
@@ -197,14 +203,19 @@ def public_redeem_voucher():
     if not signature:
         return jsonify({'success': False, 'error': 'Signature is required'}), 400
 
+    # Requires the redeem permission — same as the other redeem routes.
+    # (This endpoint is login-gated; it is NOT an anonymous public path.)
+    if not _check_redeem_perm():
+        return jsonify({'success': False, 'error': 'Permission denied'}), 403
+
     limited = _check_redeem_rate_limit(code)
     if limited:
         return limited
 
     voucher = _repo.query_one(
-        'SELECT id, status, expires_at FROM vouchers WHERE voucher_code = %s AND deleted_at IS NULL', (code,)
+        'SELECT id, status, expires_at, company_id FROM vouchers WHERE voucher_code = %s AND deleted_at IS NULL', (code,)
     )
-    if not voucher:
+    if not voucher or not _voucher_company_ok(voucher):
         _record_redeem_attempt(code, 'fail')
         return jsonify({'success': False, 'error': f'Voucher {code} not found'}), 404
     if voucher['status'] != 'active':
@@ -220,18 +231,24 @@ def public_redeem_voucher():
             _record_redeem_attempt(code, 'fail')
             return jsonify({'success': False, 'error': 'Voucher has expired'}), 400
 
-    _repo.execute('''
+    # Guard on status = 'active' and honour the affected rowcount: if a
+    # concurrent redeem already flipped it, this matches 0 rows and we must
+    # NOT report success.
+    affected = _repo.execute('''
         UPDATE vouchers
         SET status = 'redeemed', redeemed_at = CURRENT_TIMESTAMP,
             redemption_notes = %s, redeemer_signature = %s, updated_at = CURRENT_TIMESTAMP
-        WHERE id = %s AND status = 'active'
+        WHERE id = %s AND status = 'active' AND deleted_at IS NULL
     ''', (f'Redeemed by: {redeemer_name}', signature, voucher['id']))
+    if not affected:
+        _record_redeem_attempt(code, 'fail')
+        return jsonify({'success': False, 'error': 'Voucher could not be redeemed (already redeemed or inactive)'}), 409
 
-    # Notify issuer
+    # Notify issuer — attribute to the actual redeemer's typed name.
     try:
         updated = _repo.get_by_id(voucher['id'])
         if updated:
-            _service._notify_issuer_redeemed(updated, updated.get('issued_by_user_id', 0))
+            _service._notify_issuer_redeemed(updated, None, redeemer_name=redeemer_name)
     except Exception:
         pass
 
@@ -308,7 +325,7 @@ def edit_voucher(voucher_id):
 
     data = request.get_json(force=True, silent=True) or {}
     voucher = _repo.get_by_id(voucher_id)
-    if not voucher:
+    if not voucher or not _voucher_company_ok(voucher):
         return error_response('Voucher not found', 404)
 
     is_admin = getattr(current_user, 'role_name', '').lower() in ('admin', 'superadmin')
@@ -356,7 +373,7 @@ def reissue_voucher(voucher_id):
         return jsonify({'success': False, 'error': 'Permission denied'}), 403
 
     original = _repo.get_by_id(voucher_id)
-    if not original:
+    if not original or not _voucher_company_ok(original):
         return error_response('Voucher not found', 404)
 
     if original['status'] not in ('archived', 'expired', 'rejected', 'redeemed'):

@@ -62,7 +62,11 @@ def _to_decimal(v):
 def _coerce_benefit(field: str, value):
     """Coerce a benefit payload value to its DB representation."""
     if field == 'value_lei':
-        return _to_decimal(value)
+        from accounting.vouchers.schemas import VALUE_LEI_MAX
+        d = _to_decimal(value)
+        if d is not None and (d <= 0 or d > VALUE_LEI_MAX):
+            raise ValueError(f'value_lei must be between 0 and {VALUE_LEI_MAX}')
+        return d
     if field == 'discount_percentage':
         d = _to_decimal(value)
         if d is not None and (d < 0 or d > 100):

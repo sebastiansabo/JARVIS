@@ -33,8 +33,9 @@ export default function VouchersPanel() {
   const user = useAuthStore((s) => s.user)
   const queryClient = useQueryClient()
   const perms = user?.permissions || {}
-  void (!user?.permissions || (perms['vouchers.form.view'] ?? true))
-  void (!user?.permissions || (perms['vouchers.accounting.redeem'] ?? true))
+  const isAdmin = !user?.permissions || ['admin', 'superadmin'].includes(user?.role_name?.toLowerCase() || '')
+  const canIssue = isAdmin || !!perms['vouchers.form.view']
+  const canRedeem = isAdmin || !!perms['vouchers.accounting.redeem']
 
   const { data: vouchers = [], isLoading } = useQuery({
     queryKey: ['my-vouchers'],
@@ -67,11 +68,13 @@ export default function VouchersPanel() {
 
   return (
     <>
-      <div className="mb-3 flex justify-end">
-        <Button size="sm" onClick={() => setShowIssue(true)}>
-          <Plus className="mr-1 h-4 w-4" />Issue Voucher
-        </Button>
-      </div>
+      {canIssue && (
+        <div className="mb-3 flex justify-end">
+          <Button size="sm" onClick={() => setShowIssue(true)}>
+            <Plus className="mr-1 h-4 w-4" />Issue Voucher
+          </Button>
+        </div>
+      )}
 
       {vouchers.length === 0 ? (
         <div className="py-8 text-center text-muted-foreground">No vouchers issued yet.</div>
@@ -111,7 +114,7 @@ export default function VouchersPanel() {
                     </div>
                     {v.notes && <p className="text-xs text-muted-foreground">{v.notes}</p>}
                     <div className="flex gap-2">
-                      {v.status === 'approved' && (
+                      {canRedeem && v.status === 'active' && (
                         <Button
                           size="sm"
                           className="h-9 bg-emerald-600 hover:bg-emerald-700 text-white"

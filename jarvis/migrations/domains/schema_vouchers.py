@@ -92,6 +92,13 @@ def create_schema_vouchers(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_status ON vouchers(status)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_issued_by ON vouchers(issued_by_user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_expires_at ON vouchers(expires_at)')
+    # Indexes for the common filters/sorts: type filter, the default list sort
+    # (created_at DESC), the approver lookup in get_by_user, and redeemed_at
+    # (archive job + monthly summaries).
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_voucher_type ON vouchers(voucher_type)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_created_at ON vouchers(created_at)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_approver ON vouchers(approver_user_id)')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_vouchers_redeemed_at ON vouchers(redeemed_at)')
 
     # Link voucher to the form submission that created it
     cursor.execute('''
@@ -129,6 +136,16 @@ def create_schema_vouchers(conn, cursor):
     cursor.execute('''
         DO $$ BEGIN
             ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS client_email VARCHAR(255);
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
+    ''')
+
+    # redeemer_signature: captured by the public (QR) redeem flow. Was added
+    # out-of-band on staging/local; declare it here so a fresh DB has it and
+    # public redeem doesn't 500 with "column does not exist".
+    cursor.execute('''
+        DO $$ BEGIN
+            ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS redeemer_signature TEXT;
         EXCEPTION WHEN others THEN NULL;
         END $$;
     ''')
@@ -230,6 +247,14 @@ def create_schema_vouchers(conn, cursor):
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(service_id, company_id)
         )
+    ''')
+    # department: used across the service-catalog pricing CRUD/queries. Was
+    # added out-of-band; declare it here so those endpoints work on a fresh DB.
+    cursor.execute('''
+        DO $$ BEGIN
+            ALTER TABLE service_catalog_pricing ADD COLUMN IF NOT EXISTS department VARCHAR(100);
+        EXCEPTION WHEN others THEN NULL;
+        END $$;
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_scp_service ON service_catalog_pricing(service_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_scp_company ON service_catalog_pricing(company_id, is_active)')
@@ -335,6 +360,29 @@ def create_schema_vouchers(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vra_ip_time ON voucher_redeem_attempts(ip, created_at)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vra_user_time ON voucher_redeem_attempts(user_id, created_at)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vra_code_time ON voucher_redeem_attempts(voucher_code, created_at)')
+
+    # ── Voucher issue motives (admin-configurable) ──────
+    # A global, admin-managed list of reasons shown in the issue form's Notes
+    # picker. The chosen label (or free text via "Other") is stored in
+    # vouchers.notes as before — no voucher-row schema change.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS voucher_motives (
+            id SERIAL PRIMARY KEY,
+            label VARCHAR(120) NOT NULL UNIQUE,
+            sort_order INT DEFAULT 0,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_voucher_motives_active ON voucher_motives(is_active, sort_order)')
+    cursor.execute('SELECT COUNT(*) AS cnt FROM voucher_motives')
+    if cursor.fetchone()['cnt'] == 0:
+        for i, label in enumerate(['Fidelizare client', 'Compensare', 'Promoție', 'Cadou']):
+            cursor.execute(
+                'INSERT INTO voucher_motives (label, sort_order) VALUES (%s, %s) ON CONFLICT (label) DO NOTHING',
+                (label, i),
+            )
 
     # ── V2 Permissions ──────────────────────────────────
     cursor.execute("SELECT COUNT(*) as cnt FROM permissions_v2 WHERE module_key = 'vouchers'")

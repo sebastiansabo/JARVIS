@@ -94,7 +94,7 @@ export default function VoucherPortal() {
                 />
                 {submitMutation.isError && (
                   <p className="text-sm text-destructive text-center">
-                    {(submitMutation.error as any)?.error || 'Failed to submit. Please try again.'}
+                    {(submitMutation.error instanceof Error && submitMutation.error.message) || 'Failed to submit. Please try again.'}
                   </p>
                 )}
               </>
