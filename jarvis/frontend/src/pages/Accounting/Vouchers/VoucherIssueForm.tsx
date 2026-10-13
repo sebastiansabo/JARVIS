@@ -37,9 +37,11 @@ const VALIDITY_OPTIONS = [
 const TYPE_OPTIONS = [
   { value: 'value', label: 'Value (LEI)' },
   { value: 'accessory_discount_code', label: 'Discount Code' },
-  { value: 'accessory_percentage', label: 'Percentage' },
   { value: 'service_items', label: 'Service Items' },
 ]
+
+// Sentinel for the "Other" item in the motive picker → reveals a free-text box.
+const OTHER_MOTIVE = '__other__'
 
 interface SelectedService {
   id: number
@@ -119,7 +121,6 @@ export default function VoucherIssueForm({ onSuccess }: VoucherIssueFormProps) {
   const [voucherType, setVoucherType] = useState('value')
   const [valueLei, setValueLei] = useState('')
   const [discountCode, setDiscountCode] = useState('')
-  const [discountPercentage, setDiscountPercentage] = useState('')
   const [selectedServices, setSelectedServices] = useState<SelectedService[]>([])
 
   const { data: serviceCatalog = [] } = useQuery({
@@ -129,7 +130,13 @@ export default function VoucherIssueForm({ onSuccess }: VoucherIssueFormProps) {
     staleTime: 60_000,
   })
   const selectedServiceIds = new Set(selectedServices.map((s) => s.id))
-  const servicesTotal = selectedServices.reduce((sum, s) => sum + s.price, 0)
+  // Sum per currency — services can be priced in LEI or EUR, so a single
+  // hardcoded-LEI total would be wrong when currencies are mixed.
+  const servicesTotalByCurrency = selectedServices.reduce<Record<string, number>>((acc, s) => {
+    const cur = (s.currency || 'LEI').toUpperCase()
+    acc[cur] = (acc[cur] || 0) + s.price
+    return acc
+  }, {})
 
   const toggleService = (svc: ServiceCatalogCompanyItem, checked: boolean) => {
     if (checked) {
@@ -139,9 +146,16 @@ export default function VoucherIssueForm({ onSuccess }: VoucherIssueFormProps) {
     }
   }
 
-  // ── Notes / start date ──
+  // ── Notes (motive picker + "Other" free text) / start date ──
+  const [motive, setMotive] = useState('')
   const [notes, setNotes] = useState('')
   const [startDate, setStartDate] = useState(todayIso())
+
+  const { data: motives = [] } = useQuery({
+    queryKey: ['voucher-motives'],
+    queryFn: () => vouchersApi.listMotives(),
+    staleTime: 5 * 60_000,
+  })
 
   // ── Approver (searchable) ──
   const [approverUserId, setApproverUserId] = useState('')
@@ -173,8 +187,8 @@ export default function VoucherIssueForm({ onSuccess }: VoucherIssueFormProps) {
     setVoucherType('value')
     setValueLei('')
     setDiscountCode('')
-    setDiscountPercentage('')
     setSelectedServices([])
+    setMotive('')
     setNotes('')
     setStartDate(todayIso())
     setApproverUserId('')
@@ -209,11 +223,6 @@ export default function VoucherIssueForm({ onSuccess }: VoucherIssueFormProps) {
       errs.valueLei = 'Value must be greater than 0'
     if (voucherType === 'accessory_discount_code' && !discountCode.trim())
       errs.discountCode = 'Discount code is required'
-    if (voucherType === 'accessory_percentage') {
-      const pct = parseFloat(discountPercentage)
-      if (isNaN(pct) || pct <= 0 || pct > 100)
-        errs.discountPercentage = 'Must be between 0 and 100'
-    }
     if (voucherType === 'service_items' && selectedServices.length === 0)
       errs.serviceItems = 'At least one service item is required'
 
@@ -234,8 +243,6 @@ export default function VoucherIssueForm({ onSuccess }: VoucherIssueFormProps) {
 
     if (voucherType === 'value') payload.value_lei = parseFloat(valueLei)
     if (voucherType === 'accessory_discount_code') payload.discount_code = discountCode.trim()
-    if (voucherType === 'accessory_percentage')
-      payload.discount_percentage = parseFloat(discountPercentage)
     if (voucherType === 'service_items')
       payload.service_items = selectedServices.map((s) => s.name)
 
@@ -243,7 +250,9 @@ export default function VoucherIssueForm({ onSuccess }: VoucherIssueFormProps) {
     if (clientEmail.trim()) payload.client_email = clientEmail.trim()
     if (startDate) payload.start_date = startDate
     if (approverUserId) payload.approver_user_id = parseInt(approverUserId)
-    if (notes.trim()) payload.notes = notes.trim()
+    // Notes: a predefined motive label, or the free text typed under "Other".
+    const resolvedNotes = motive === OTHER_MOTIVE ? notes.trim() : motive
+    if (resolvedNotes) payload.notes = resolvedNotes
 
     submitMutation.mutate(payload)
   }
@@ -442,23 +451,6 @@ export default function VoucherIssueForm({ onSuccess }: VoucherIssueFormProps) {
         </div>
       )}
 
-      {voucherType === 'accessory_percentage' && (
-        <div className="grid gap-1.5">
-          <Label htmlFor="discountPercentage">Discount Percentage *</Label>
-          <Input
-            id="discountPercentage"
-            type="number"
-            min="0"
-            max="100"
-            step="0.01"
-            value={discountPercentage}
-            onChange={(e) => setDiscountPercentage(e.target.value)}
-            placeholder="0 - 100"
-          />
-          {errors.discountPercentage && <p className="text-sm text-red-500">{errors.discountPercentage}</p>}
-        </div>
-      )}
-
       {voucherType === 'service_items' && (
         <div className="grid gap-1.5">
           <Label>Service Items *</Label>
@@ -482,7 +474,11 @@ export default function VoucherIssueForm({ onSuccess }: VoucherIssueFormProps) {
             {selectedServices.length > 0 && (
               <div className="pt-2 border-t flex justify-between font-medium text-sm">
                 <span>Total</span>
-                <span>{servicesTotal.toLocaleString('ro-RO')} LEI</span>
+                <span>
+                  {Object.entries(servicesTotalByCurrency)
+                    .map(([cur, sum]) => `${sum.toLocaleString('ro-RO')} ${cur}`)
+                    .join(' + ')}
+                </span>
               </div>
             )}
           </div>
@@ -490,15 +486,28 @@ export default function VoucherIssueForm({ onSuccess }: VoucherIssueFormProps) {
         </div>
       )}
 
-      {/* Notes */}
+      {/* Notes — pick a predefined motive, or "Other" for free text */}
       <div className="grid gap-1.5">
-        <Label htmlFor="notes">Notes</Label>
-        <Textarea
-          id="notes"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder="Optional notes"
-        />
+        <Label>Notes / Motive</Label>
+        <Select value={motive} onValueChange={setMotive}>
+          <SelectTrigger>
+            <SelectValue placeholder="Select a motive (optional)..." />
+          </SelectTrigger>
+          <SelectContent>
+            {motives.map((m) => (
+              <SelectItem key={m.id} value={m.label}>{m.label}</SelectItem>
+            ))}
+            <SelectItem value={OTHER_MOTIVE}>Other (free text)</SelectItem>
+          </SelectContent>
+        </Select>
+        {motive === OTHER_MOTIVE && (
+          <Textarea
+            id="notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="Enter note"
+          />
+        )}
       </div>
 
       {/* Starting Date */}

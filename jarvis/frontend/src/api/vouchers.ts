@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { Voucher, VoucherCreatePayload, AccountingListResponse, ServiceCatalogItem, ServiceCatalogCompanyItem, ServicePricing, ApproverCandidate } from '@/types/vouchers'
+import type { Voucher, VoucherCreatePayload, AccountingListResponse, ServiceCatalogItem, ServiceCatalogCompanyItem, ServicePricing, ApproverCandidate, VoucherMotive } from '@/types/vouchers'
 
 export const vouchersApi = {
   create: (data: VoucherCreatePayload) =>
@@ -81,4 +81,17 @@ export const vouchersApi = {
 
   deletePricing: (pricingId: number) =>
     api.delete<{ success: boolean }>(`/api/vouchers/service-catalog/pricing/${pricingId}`),
+
+  // Voucher motives (issue-reason picker list)
+  listMotives: (includeInactive = false) =>
+    api.get<VoucherMotive[]>('/api/vouchers/motives', includeInactive ? { include_inactive: 'true' } : undefined),
+
+  createMotive: (data: { label: string; sort_order?: number }) =>
+    api.post<{ success: boolean; item: VoucherMotive }>('/api/vouchers/motives', data),
+
+  updateMotive: (id: number, data: { label?: string; sort_order?: number; is_active?: boolean }) =>
+    api.put<{ success: boolean; item: VoucherMotive }>(`/api/vouchers/motives/${id}`, data),
+
+  deleteMotive: (id: number) =>
+    api.delete<{ success: boolean }>(`/api/vouchers/motives/${id}`),
 }

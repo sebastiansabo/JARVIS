@@ -323,6 +323,7 @@ class VoucherRepository(BaseRepository):
                 redemption_notes = %s,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = %s AND status = 'active' AND expires_at >= CURRENT_DATE
+              AND deleted_at IS NULL
             RETURNING *
         ''', (redeemed_by_user_id, redemption_notes, voucher_id), returning=True)
 

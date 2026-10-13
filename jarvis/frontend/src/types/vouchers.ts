@@ -102,3 +102,11 @@ export interface ApproverCandidate {
   name: string
   email: string | null
 }
+
+// Admin-configurable issue reason shown in the Notes picker.
+export interface VoucherMotive {
+  id: number
+  label: string
+  sort_order: number
+  is_active: boolean
+}

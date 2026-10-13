@@ -6,21 +6,26 @@ interface ApiOptions extends RequestInit {
   params?: Record<string, string>
 }
 
+function extractMsg(data: unknown): string {
+  if (data && typeof data === 'object' && 'error' in data) {
+    const e = (data as { error: unknown }).error
+    if (e) return String(e)
+  }
+  return 'Unknown error'
+}
+
 class ApiError extends Error {
   constructor(
     public status: number,
     public data: unknown,
   ) {
-    super(`API Error ${status}`)
+    // Surface the backend's error message (envelope `.error`) as the Error's
+    // message so callers that show `error.message` display the real reason
+    // instead of a generic "API Error 400".
+    const backendMsg = extractMsg(data)
+    super(backendMsg !== 'Unknown error' ? backendMsg : `API Error ${status}`)
     this.name = 'ApiError'
   }
-}
-
-function extractMsg(data: unknown): string {
-  if (data && typeof data === 'object' && 'error' in data) {
-    return String((data as { error: unknown }).error)
-  }
-  return 'Unknown error'
 }
 
 async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {

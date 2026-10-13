@@ -111,3 +111,24 @@ def test_date_field_accepts_iso_string():
 def test_empty_string_email_normalized_to_none():
     updates, _ = build_admin_voucher_edit(_voucher(client_email='x@y.z'), {'client_email': ''})
     assert updates['client_email'] is None
+
+
+def test_value_lei_negative_rejected():
+    with pytest.raises(ValueError):
+        build_admin_voucher_edit(_voucher(), {'value_lei': -5})
+
+
+def test_value_lei_zero_rejected():
+    with pytest.raises(ValueError):
+        build_admin_voucher_edit(_voucher(), {'value_lei': 0})
+
+
+def test_value_lei_above_cap_rejected():
+    from accounting.vouchers.schemas import VALUE_LEI_MAX
+    with pytest.raises(ValueError):
+        build_admin_voucher_edit(_voucher(), {'value_lei': VALUE_LEI_MAX + 1})
+
+
+def test_value_lei_within_bounds_ok():
+    updates, _ = build_admin_voucher_edit(_voucher(), {'value_lei': 1234})
+    assert updates['value_lei'] == Decimal('1234')

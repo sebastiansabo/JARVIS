@@ -608,6 +608,7 @@ def start_scheduler():
         """Daily: send 7-day expiry warnings to voucher issuers."""
         try:
             from datetime import date as _date, timedelta
+            from html import escape
             from accounting.vouchers.repositories import VoucherRepository
             from core.services.notification_service import send_email
 
@@ -615,10 +616,11 @@ def start_scheduler():
             vouchers = VoucherRepository().get_expiring_on(target)
             for v in vouchers:
                 try:
+                    client_html = escape(str(v.get('client_name') or ''))
                     send_email(
                         to_email=v['issued_by_email'],
                         subject=f"Voucher {v['voucher_code']} expires in 7 days",
-                        html_body=f"<p>Your voucher <strong>{v['voucher_code']}</strong> for client {v['client_name']} expires on {v['expires_at']}.</p>",
+                        html_body=f"<p>Your voucher <strong>{v['voucher_code']}</strong> for client {client_html} expires on {v['expires_at']}.</p>",
                     )
                 except Exception:
                     logger.exception('Failed to send expiry warning for %s', v['voucher_code'])

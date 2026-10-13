@@ -18,9 +18,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { settingsApi } from '@/api/settings'
+import { vouchersApi } from '@/api/vouchers'
 import { toast } from 'sonner'
 import type { VatRate, DropdownOption } from '@/types/settings'
 import type { ArchiveSettings } from '@/types/invoices'
+import type { VoucherMotive } from '@/types/vouchers'
 
 export default function AccountingTab() {
   return (
@@ -29,7 +31,182 @@ export default function AccountingTab() {
       <VatRatesSection />
       <DropdownSection type="invoice_status" title="Invoice Status Options" />
       <DropdownSection type="payment_status" title="Payment Status Options" />
+      <VoucherMotivesSection />
     </div>
+  )
+}
+
+function VoucherMotivesSection() {
+  const queryClient = useQueryClient()
+  const [showAdd, setShowAdd] = useState(false)
+  const [editMotive, setEditMotive] = useState<VoucherMotive | null>(null)
+  const [deleteId, setDeleteId] = useState<number | null>(null)
+
+  const { data: motives = [], isLoading } = useQuery({
+    queryKey: ['voucher-motives', 'all'],
+    queryFn: () => vouchersApi.listMotives(true),
+    staleTime: 5 * 60_000,
+  })
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['voucher-motives', 'all'] })
+    queryClient.invalidateQueries({ queryKey: ['voucher-motives'] })
+  }
+
+  const createMutation = useMutation({
+    mutationFn: (data: { label: string; sort_order?: number }) => vouchersApi.createMotive(data),
+    onSuccess: () => { invalidate(); setShowAdd(false); toast.success('Motive added') },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to add motive'),
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: { label?: string; sort_order?: number; is_active?: boolean } }) => vouchersApi.updateMotive(id, data),
+    onSuccess: () => { invalidate(); setEditMotive(null); toast.success('Motive updated') },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to update motive'),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => vouchersApi.deleteMotive(id),
+    onSuccess: () => { invalidate(); setDeleteId(null); toast.success('Motive deactivated') },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to deactivate motive'),
+  })
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Voucher Motives</CardTitle>
+            <CardDescription>Reasons shown in the voucher issue form's Notes picker (plus a free-text "Other").</CardDescription>
+          </div>
+          <Button size="sm" onClick={() => setShowAdd(true)}>
+            <Plus className="mr-1.5 h-4 w-4" />
+            Add Motive
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-10 animate-pulse rounded bg-muted" />
+            ))}
+          </div>
+        ) : motives.length === 0 ? (
+          <EmptyState title="No motives" description="Add your first motive." />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Label</TableHead>
+                <TableHead>Order</TableHead>
+                <TableHead>Active</TableHead>
+                <TableHead className="w-24">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {motives.map((m) => (
+                <TableRow key={m.id}>
+                  <TableCell className="font-medium">{m.label}</TableCell>
+                  <TableCell>{m.sort_order}</TableCell>
+                  <TableCell>{m.is_active ? 'Yes' : 'No'}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => setEditMotive(m)}>
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleteId(m.id)} disabled={!m.is_active}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+
+      <MotiveFormDialog
+        open={showAdd || !!editMotive}
+        motive={editMotive}
+        motiveCount={motives.length}
+        onClose={() => { setShowAdd(false); setEditMotive(null) }}
+        onSave={(data) => {
+          if (editMotive) {
+            updateMutation.mutate({ id: editMotive.id, data })
+          } else {
+            createMutation.mutate({ label: data.label as string, sort_order: data.sort_order })
+          }
+        }}
+        isPending={createMutation.isPending || updateMutation.isPending}
+      />
+
+      <ConfirmDialog
+        open={!!deleteId}
+        onOpenChange={() => setDeleteId(null)}
+        title="Deactivate Motive"
+        description="It will be hidden from the issue form. Already-issued vouchers keep their note."
+        onConfirm={() => deleteId && deleteMutation.mutate(deleteId)}
+        destructive
+      />
+    </Card>
+  )
+}
+
+function MotiveFormDialog({ open, motive, motiveCount, onClose, onSave, isPending }: {
+  open: boolean; motive: VoucherMotive | null; motiveCount: number
+  onClose: () => void; onSave: (data: { label?: string; sort_order?: number; is_active?: boolean }) => void; isPending: boolean
+}) {
+  const [label, setLabel] = useState('')
+  const [sortOrder, setSortOrder] = useState('0')
+  const [isActive, setIsActive] = useState(true)
+
+  const resetForm = () => {
+    if (motive) {
+      setLabel(motive.label); setSortOrder(String(motive.sort_order)); setIsActive(motive.is_active)
+    } else {
+      setLabel(''); setSortOrder(String(motiveCount)); setIsActive(true)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); else resetForm() }}>
+      <DialogContent className="sm:max-w-sm" onOpenAutoFocus={resetForm}>
+        <DialogHeader>
+          <DialogTitle>{motive ? 'Edit Motive' : 'Add Motive'}</DialogTitle>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <Label>Label</Label>
+            <Input value={label} onChange={(e) => setLabel(e.target.value)} />
+          </div>
+          <div className="grid gap-2">
+            <Label>Order</Label>
+            <Input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} />
+          </div>
+          {motive && (
+            <div className="flex items-center gap-2">
+              <Switch checked={isActive} onCheckedChange={setIsActive} />
+              <Label>Active</Label>
+            </div>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button
+            disabled={!label.trim() || isPending}
+            onClick={() => onSave(
+              motive
+                ? { label: label.trim(), sort_order: Number(sortOrder), is_active: isActive }
+                : { label: label.trim(), sort_order: Number(sortOrder) }
+            )}
+          >
+            {isPending ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

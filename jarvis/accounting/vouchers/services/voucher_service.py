@@ -18,18 +18,27 @@ class VoucherService:
                          explicit_approver_id: int = None) -> dict | None:
         """Resolve the approver for a voucher.
 
-        If explicit_approver_id is given, return that user.
+        If explicit_approver_id is given, it is validated server-side: it must
+        be a management candidate of the issuer's company (the same set the
+        picker shows) and must not be the issuer. This closes the hole where
+        the management-only picker was UI-only — a crafted request could name
+        any user (or oneself) as approver and route approval to an accomplice.
+
         Otherwise, look up the user's manager from org structure:
           1. Find user's org_unit_id -> parent structure_node -> responsable
           2. Fallback to company_responsables (L0)
 
         Returns dict with 'id', 'name', 'email' or None if not found.
+        Raises ValueError if an explicit approver is invalid.
         """
         if explicit_approver_id:
-            return self._base.query_one(
-                'SELECT id, name, email FROM users WHERE id = %s',
-                (explicit_approver_id,)
-            )
+            if explicit_approver_id == user_id:
+                raise ValueError('Nu vă puteți desemna ca aprobator al propriului voucher')
+            candidates = self.repo.get_approver_candidates(company_id)
+            match = next((c for c in candidates if c['id'] == explicit_approver_id), None)
+            if not match:
+                raise ValueError('Aprobatorul selectat nu este un manager valid al companiei')
+            return match
 
         # Try structure_nodes: find user's node, then parent's responsable
         user_row = self._base.query_one(
@@ -224,17 +233,27 @@ class VoucherService:
     # event. Redemption is NOT an approval event, so `_notify_issuer_redeemed`
     # stays here as the sole owner of that notification.
 
-    def _notify_issuer_redeemed(self, voucher: dict, redeemed_by_user_id: int):
+    def _notify_issuer_redeemed(self, voucher: dict, redeemed_by_user_id: int,
+                                redeemer_name: str = None):
+        """Email the issuer that their voucher was redeemed.
+
+        ``redeemer_name`` may be passed directly (public redemption, where the
+        redeemer is a client who typed their name, not a JARVIS user); when
+        omitted it is looked up from ``redeemed_by_user_id``.
+        """
         try:
             from core.services.notification_service import send_email
+            from html import escape
             issuer = self._base.query_one(
                 'SELECT email FROM users WHERE id = %s', (voucher['issued_by_user_id'],)
             )
-            redeemer = self._base.query_one(
-                'SELECT name FROM users WHERE id = %s', (redeemed_by_user_id,)
-            )
-            if issuer:
+            if redeemer_name is None:
+                redeemer = self._base.query_one(
+                    'SELECT name FROM users WHERE id = %s', (redeemed_by_user_id,)
+                )
                 redeemer_name = redeemer['name'] if redeemer else 'accounting'
+            if issuer:
+                redeemer_name = escape(str(redeemer_name))
                 send_email(
                     to_email=issuer['email'],
                     subject=f"Voucher {voucher['voucher_code']} was redeemed",

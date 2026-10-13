@@ -17,8 +17,9 @@ __all__ = [
     'VoucherCreate', 'VoucherRead', 'VoucherListItem', 'VoucherRedeem',
     'error_response', 'handle_api_errors', 'PermissionRepository',
     'logger', '_repo', '_service', '_perm_repo', '_attempt_repo',
-    '_check_accounting_role', '_check_voucher_perm',
+    '_check_accounting_role', '_check_redeem_perm', '_check_voucher_perm',
     '_check_redeem_rate_limit', '_record_redeem_attempt', '_get_client_ip',
+    '_is_voucher_admin', '_voucher_company_ok',
 ]
 
 logger = logging.getLogger('jarvis.vouchers.routes')
@@ -46,8 +47,38 @@ def _check_voucher_perm(entity: str, action: str) -> bool:
 
 
 def _check_accounting_role() -> bool:
-    """Check if current user has accounting voucher access."""
+    """Check if current user has accounting voucher access (read)."""
     return _check_voucher_perm('accounting', 'view')
+
+
+def _check_redeem_perm() -> bool:
+    """Check the dedicated redeem write-permission (vouchers.accounting.redeem).
+
+    Redemption is a state-changing action, so it is gated on the redeem perm
+    rather than the read 'view' perm — and this matches the key the frontend
+    redeem button checks.
+    """
+    return _check_voucher_perm('accounting', 'redeem')
+
+
+def _is_voucher_admin() -> bool:
+    """Admins/superadmins may act across companies (no tenant restriction)."""
+    return getattr(current_user, 'role_name', '').lower() in ('admin', 'superadmin')
+
+
+def _voucher_company_ok(voucher) -> bool:
+    """True if the current user may access this voucher's tenant.
+
+    Admins are cross-company; everyone else is confined to their own
+    ``company_id``. Callers that fail this should 404 (not 403) so a voucher's
+    existence is never disclosed across tenants. ``voucher`` is a row dict (or
+    None → treated as not-ok).
+    """
+    if not voucher:
+        return False
+    if _is_voucher_admin():
+        return True
+    return voucher.get('company_id') == getattr(current_user, 'company_id', None)
 
 
 def _get_client_ip() -> str:
