@@ -425,6 +425,7 @@ export function humanizeSlug(
       const low = tok.toLowerCase()
       if (EQUIPMENT_ACRONYMS[low]) return EQUIPMENT_ACRONYMS[low]
       if (/[A-Z]/.test(tok) && /[a-z]/.test(tok)) return tok // keep "sDrive18d", "iDrive"
+      if (/[A-Z]/.test(tok) && !/[a-z]/.test(tok)) return tok // keep all-caps "AMG","GLE","RS","M"
       if (/^\d+$/.test(tok)) return tok // 2017
       if (/^[a-z]{1,2}\d{1,3}[a-z]?$/i.test(tok)) return tok.toUpperCase() // t5, d4, e220
       if (/^(ii|iii|iv|v|vi|vii|viii|ix|x)$/i.test(tok)) return tok.toUpperCase() // roman gen

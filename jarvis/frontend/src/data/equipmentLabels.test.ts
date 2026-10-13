@@ -26,6 +26,13 @@ describe('humanizeSlug', () => {
     expect(humanizeSlug('sDrive18d')).toBe('sDrive18d')
   })
 
+  test('preserves all-caps trim/model designations', () => {
+    expect(humanizeSlug('AMG Line')).toBe('AMG Line')
+    expect(humanizeSlug('GLE')).toBe('GLE')
+    expect(humanizeSlug('M Sport')).toBe('M Sport')
+    expect(humanizeSlug('RS Q8')).toBe('RS Q8')
+  })
+
   test('leaves clean manual input intact', () => {
     expect(humanizeSlug('T5 AWD Inscription')).toBe('T5 AWD Inscription')
   })
