@@ -1602,10 +1602,10 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           <dl className="grid grid-cols-2 gap-3">
             <Field label="Marcă" value={v.brand} />
             <Field label="Model" value={v.model} />
-            <Field label="Versiune" value={v.variant} />
+            <Field label="Versiune" value={humanizeSlug(v.variant, { stripVersionPrefix: true })} />
             <Field label="Stare" value={v.state} />
-            <Field label="Generație" value={v.generation} />
-            <Field label="Nivel echipare" value={v.equipment_level} />
+            <Field label="Generație" value={humanizeSlug(v.generation, { stripVersionPrefix: true })} />
+            <Field label="Nivel echipare" value={humanizeSlug(v.equipment_level)} />
             <Field label="Tip stoc" value={CATEGORY_LABELS[v.category] ?? v.category} />
             <Field label="VIN" value={v.vin} />
             <Field label="Nr. stoc" value={v.nr_stoc} />

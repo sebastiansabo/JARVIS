@@ -3,6 +3,7 @@ Shopify schema translations: RO value mappings, body-type vocabulary, and defaul
 Consumed by Task 5 (mapper) and seeded into DB.
 """
 
+import re
 from typing import Dict, List, Optional
 
 
@@ -300,6 +301,137 @@ AUTOVIT_EQUIPMENT_RO: Dict[str, str] = {
     "roof-rails": "Bare portbagaj",
     "tinted-windows": "Geamuri fumurii",
 }
+
+
+# Raw Autovit / mobile.de API equipment param names (underscore snake_case) that
+# the importer harvests into the `equipment` JSONB blob as a flat {slug: bool}
+# map. These are a DIFFERENT namespace from the hyphen taxonomy in
+# AUTOVIT_EQUIPMENT_RO above (e.g. `apple_carplay` here vs `carplay` there), so
+# they carry their own RO labels. Mirrors RAW_EQUIPMENT_LABEL_RO in the frontend
+# jarvis/frontend/src/data/autovitData.ts — keep the two in sync.
+RAW_EQUIPMENT_LABEL_RO: Dict[str, str] = {
+    "android_auto": "Android Auto",
+    "antilock_brake_system": "ABS",
+    "apple_carplay": "Apple CarPlay",
+    "armrest_front": "Cotieră față",
+    "armrest_rear": "Cotieră spate",
+    "bluetooth_interface": "Bluetooth",
+    "child_seat_fixation": "Fixare scaun copil (ISOFIX)",
+    "digital_key": "Cheie digitală",
+    "esp": "ESP",
+    "leather_gearshifterswitch": "Schimbător de viteze din piele",
+    "leather_steering_wheel": "Volan din piele",
+    "lumbar_adjust_driver_electric": "Reglaj lombar electric șofer",
+    "lumbar_adjust_passenger_electric": "Reglaj lombar electric pasager",
+    "multi_functional_steering_wheel": "Volan multifuncțional",
+    "navigation_system": "Sistem de navigație",
+    "power_windows_front": "Geamuri electrice față",
+    "power_windows_rear": "Geamuri electrice spate",
+    "radio": "Radio",
+    "rain_sensor": "Senzor de ploaie",
+    "soundsystem": "Sistem audio",
+    "steering_wheel_with_radio_operation": "Comenzi audio pe volan",
+    "tinted_rear_windows": "Geamuri spate fumurii",
+    "usb_in": "USB",
+    "voice_control_for_vehicle_functions": "Control vocal",
+    "windscreenwiper_other": "Ștergătoare parbriz",
+    # Common extras seen on other imported cars
+    "cruise_control": "Tempomat",
+    "air_conditioning": "Aer condiționat",
+    "automatic_climatisation": "Climatronic",
+    "manual_climatisation": "Aer condiționat",
+    "start_stop_system": "Sistem Start/Stop",
+    "parking_assistance": "Senzori parcare",
+    "park_distance_control": "Senzori parcare",
+    "rear_view_camera": "Cameră marșarier",
+    "sunroof": "Trapă / Panoramic",
+    "panorama_roof": "Acoperiș panoramic",
+    "alloy_wheels": "Jante din aliaj",
+    "light_alloy_wheels": "Jante din aliaj",
+    "led_headlights": "Faruri LED",
+    "xenon_headlights": "Faruri Xenon",
+    "bi_xenon_headlights": "Faruri Bi-Xenon",
+    "daytime_running_lights": "Lumini de zi",
+    "keyless_entry": "Acces fără cheie",
+    "heated_seats": "Scaune încălzite",
+    "electric_seats": "Scaune electrice",
+    "lane_departure_warning": "Avertizare părăsire bandă",
+    "blind_spot_monitor": "Monitorizare unghi mort",
+    "traffic_sign_recognition": "Recunoaștere semne de circulație",
+    "adaptive_cruise_control": "Tempomat adaptiv",
+    "trailer_coupling": "Cârlig de remorcare",
+    "electric_tailgate": "Haion electric",
+    "head_up_display": "Head-up display",
+    "tyre_pressure_monitoring": "Senzori presiune anvelope",
+    "isofix": "ISOFIX",
+}
+
+# Automotive acronyms that stay uppercase when a slug is humanized.
+_EQUIPMENT_ACRONYMS: Dict[str, str] = {
+    "abs": "ABS", "esp": "ESP", "esc": "ESC", "asr": "ASR", "ebd": "EBD",
+    "tpms": "TPMS", "led": "LED", "drl": "DRL", "hud": "HUD", "aeb": "AEB",
+    "acc": "ACC", "usb": "USB", "gps": "GPS", "dab": "DAB", "ac": "AC",
+    "awd": "AWD", "fwd": "FWD", "rwd": "RWD", "4wd": "4WD", "4x4": "4x4",
+    "suv": "SUV", "isofix": "ISOFIX", "tdi": "TDI", "tsi": "TSI",
+    "tfsi": "TFSI", "gti": "GTI", "gtd": "GTD", "cng": "CNG", "lpg": "LPG",
+}
+
+_ENGINE_CODE_RE = re.compile(r"^[a-z]{1,2}\d{1,3}[a-z]?$")
+_SLUG_RE = re.compile(r"^[a-z0-9]+([_-][a-z0-9]+)*$")
+_ROMAN_RE = re.compile(r"^(ii|iii|iv|v|vi|vii|viii|ix|x)$")
+
+
+def humanize_slug(slug) -> str:
+    """Turn a slug ("antilock_brake_system") into readable text ("Antilock Brake
+    System"). Mirrors humanizeSlug() in the frontend autovitData.ts. Best-effort
+    fallback only — curated labels are preferred by equipment_label_ro()."""
+    if not slug:
+        return ""
+    out: List[str] = []
+    for tok in re.split(r"[-_\s]+", str(slug).strip()):
+        if not tok:
+            continue
+        low = tok.lower()
+        if low in _EQUIPMENT_ACRONYMS:
+            out.append(_EQUIPMENT_ACRONYMS[low])
+        elif any(c.isupper() for c in tok) and any(c.islower() for c in tok):
+            out.append(tok)  # already mixed-case (e.g. "sDrive18d")
+        elif any(c.isupper() for c in tok) and not any(c.islower() for c in tok):
+            out.append(tok)  # all-caps designation (e.g. "AMG", "GLE", "RS")
+        elif tok.isdigit():
+            out.append(tok)
+        elif _ENGINE_CODE_RE.match(low):
+            out.append(tok.upper())  # t5, d4, e220
+        elif _ROMAN_RE.match(low):
+            out.append(tok.upper())  # roman numerals
+        else:
+            out.append(low[:1].upper() + low[1:])
+    return " ".join(out)
+
+
+def equipment_label_ro(value_map: Dict[str, Dict[str, str]], raw) -> str:
+    """Resolve an equipment value (either slug namespace, or already-RO text) to a
+    display label. Precedence: admin value-map override > hyphen taxonomy
+    (AUTOVIT_EQUIPMENT_RO) > raw underscore namespace (RAW_EQUIPMENT_LABEL_RO) >
+    underscore→hyphen normalized taxonomy > humanized slug. Human-readable strings
+    (anything that isn't a pure lowercase slug) pass through untouched, so manual
+    package names and already-RO labels are never mangled."""
+    s = str(raw).strip()
+    if not s:
+        return s
+    override = value_map.get("equipment", {}).get(s)
+    if override:
+        return override
+    if s in AUTOVIT_EQUIPMENT_RO:
+        return AUTOVIT_EQUIPMENT_RO[s]
+    if s in RAW_EQUIPMENT_LABEL_RO:
+        return RAW_EQUIPMENT_LABEL_RO[s]
+    hy = s.replace("_", "-")
+    if hy in AUTOVIT_EQUIPMENT_RO:
+        return AUTOVIT_EQUIPMENT_RO[hy]
+    if _SLUG_RE.match(s):
+        return humanize_slug(s)
+    return s  # already human-readable (spaces/caps) — leave as-is
 
 
 # RO body-type product type vocabulary.

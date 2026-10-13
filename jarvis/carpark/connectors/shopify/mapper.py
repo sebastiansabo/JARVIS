@@ -14,7 +14,7 @@ import re
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from .translations import AUTOVIT_EQUIPMENT_RO, BODY_TYPE_RO, ro
+from .translations import BODY_TYPE_RO, ro, equipment_label_ro
 
 ELIGIBLE_STATUSES = {'READY_FOR_SALE', 'LISTED', 'PRICE_REDUCED', 'AUCTION_CANDIDATE'}
 
@@ -81,29 +81,23 @@ def _coerce_list(value: Any) -> List[str]:
     return [s] if s else []
 
 
-def _equipment_label(value_map: Dict[str, Dict[str, str]], slug: str) -> str:
-    """Translate an equipment_options Autovit slug to a display label.
-
-    Precedence: admin value-map override ('equipment' dimension) > Autovit RO
-    taxonomy > the slug itself (identity fallback, so nothing is ever dropped).
-    """
-    s = str(slug).strip()
-    override = value_map.get('equipment', {}).get(s)
-    return override or AUTOVIT_EQUIPMENT_RO.get(s, s)
-
-
 def _dotari_items(vehicle: Dict[str, Any], value_map: Dict[str, Dict[str, str]]) -> List[str]:
     """Flat, de-duplicated equipment list drawn from every column that holds it.
 
-    - equipment_options (TEXT[]): Autovit slugs saved by the current vehicle form
-      -> translated via the Autovit taxonomy / value-map override.
-    - equipment (JSONB) + optional_packages: already human-readable strings (or an
-      Autovit flag/category dict) -> passed through the value-map ('equipment').
+    Every item is routed through equipment_label_ro(), which resolves BOTH Autovit
+    slug namespaces (hyphen taxonomy from equipment_options, and the raw underscore
+    API param names in the `equipment` JSONB flag dict) plus value-map overrides,
+    and humanizes any leftover slug. Already human-readable strings (manual package
+    names, already-RO labels) pass through untouched.
+
+    - equipment_options (TEXT[]): Autovit slugs saved by the current vehicle form.
+    - equipment (JSONB) + optional_packages: an Autovit flag/category dict or a
+      list of human-readable strings.
     """
-    items = [_equipment_label(value_map, slug)
-             for slug in _coerce_list(vehicle.get('equipment_options'))]
-    items += [ro(value_map, 'equipment', item)
-              for item in _coerce_list(vehicle.get('equipment')) + _coerce_list(vehicle.get('optional_packages'))]
+    items = [equipment_label_ro(value_map, item)
+             for item in (_coerce_list(vehicle.get('equipment_options'))
+                          + _coerce_list(vehicle.get('equipment'))
+                          + _coerce_list(vehicle.get('optional_packages')))]
     seen: set = set()
     out: List[str] = []
     for item in items:

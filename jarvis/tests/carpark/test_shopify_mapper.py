@@ -200,6 +200,51 @@ def test_dotari_autovit_flag_dict_keeps_truthy_flags():
     assert mf[('custom', 'dotari')]['value'] == 'Navigație'
 
 
+def test_dotari_raw_underscore_api_keys_translated_to_ro():
+    # Importer writes the `equipment` JSONB as a flat {raw_api_param: True} map
+    # (underscore snake_case) — these must resolve to RO labels, not raw slugs.
+    vehicle = {**BASE, 'optional_packages': [],
+               'equipment': {'apple_carplay': True, 'antilock_brake_system': True,
+                             'navigation_system': True, 'armrest_front': False}}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG)
+    mf = _mf(prod)
+    # armrest_front is False → dropped; the rest translated via RAW_EQUIPMENT_LABEL_RO
+    assert mf[('custom', 'dotari')]['value'] == 'Apple CarPlay\nABS\nSistem de navigație'
+
+
+def test_dotari_unmapped_underscore_slug_is_humanized_not_raw():
+    vehicle = {**BASE, 'optional_packages': [],
+               'equipment': {'some_unmapped_feature': True}}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG)
+    mf = _mf(prod)
+    assert mf[('custom', 'dotari')]['value'] == 'Some Unmapped Feature'
+
+
+def test_dotari_equipment_options_hyphen_slugs_translated():
+    vehicle = {**BASE, 'equipment': [], 'optional_packages': [],
+               'equipment_options': ['heated-seats-front', 'android-auto']}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG)
+    mf = _mf(prod)
+    assert mf[('custom', 'dotari')]['value'] == 'Scaune încălzite față\nAndroid Auto'
+
+
+def test_dotari_human_readable_strings_pass_through_unchanged():
+    # Manual free-text package names / already-RO labels must NOT be humanized.
+    vehicle = {**BASE, 'equipment': ['Apple Carplay', 'Navigație'],
+               'optional_packages': ['Pachet M Sport']}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG)
+    mf = _mf(prod)
+    assert mf[('custom', 'dotari')]['value'] == 'Apple Carplay\nNavigație\nPachet M Sport'
+
+
+def test_dotari_value_map_override_wins_over_taxonomy():
+    vmap = {**VALUE_MAP, 'equipment': {'apple_carplay': 'CarPlay (custom)'}}
+    vehicle = {**BASE, 'optional_packages': [], 'equipment': {'apple_carplay': True}}
+    prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, vmap, CONFIG)
+    mf = _mf(prod)
+    assert mf[('custom', 'dotari')]['value'] == 'CarPlay (custom)'
+
+
 YEAR_FIELD_MAP = FIELD_MAP + [
     {'source_expr': 'first_registration_date', 'target_namespace': 'custom',
      'target_key': 'data_livrarii', 'target_type': 'single_line_text_field',
@@ -269,11 +314,13 @@ def test_dotari_equipment_options_value_map_override_wins():
     assert _mf(prod)[('custom', 'dotari')]['value'] == 'CarPlay (custom)'
 
 
-def test_dotari_equipment_options_unknown_slug_falls_back_identity():
+def test_dotari_equipment_options_unknown_slug_is_humanized():
+    # An unmapped slug is humanized rather than shown raw — nothing is dropped,
+    # but no raw snake/kebab-case ever reaches the customer-facing dotari field.
     vehicle = {**BASE, 'equipment': {}, 'optional_packages': [],
                'equipment_options': ['zzz-unmapped-slug']}
     prod, _warnings = mapper.vehicle_to_product(vehicle, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG)
-    assert _mf(prod)[('custom', 'dotari')]['value'] == 'zzz-unmapped-slug'
+    assert _mf(prod)[('custom', 'dotari')]['value'] == 'Zzz Unmapped Slug'
 
 
 def test_dotari_merges_and_dedups_across_sources():
