@@ -7,7 +7,7 @@ invoice state machine can reuse them without importing the routes module (which
 imports the state machine — a circular dependency). ``routes_orders`` re-imports
 these names, so ``routes_orders._per_car_advance_eur`` etc. still resolve.
 """
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, ROUND_FLOOR
 
 WHOLE_EUR = Decimal("1")
 CENTS = Decimal("0.01")
@@ -98,6 +98,86 @@ def _per_car_advance_eur(inv_total, selling, covered_selling, split_mode, n_line
         return _car_slice_eur(selling, _snap_pct(inv_total, covered_selling),
                               prior_fractions or [], quant)
     return _round_half_up(inv_total / max(n_lines, 1), quant)
+
+
+def _hamilton(target: Decimal, weights, quant: Decimal):
+    """Apportion `target` across items proportional to `weights`, rounded to
+    `quant`, so the rounded slices sum to `target` EXACTLY (largest-remainder /
+    Hamilton's method).
+
+    Each item gets ``floor(target * weight / Σweight)`` to the quant, then the
+    leftover whole quants are handed one each to the items with the largest
+    fractional remainder. This reconciles the slices to the document total
+    instead of rounding each car independently (which overshoots: 2 × 5.613,60
+    rounded up = 11.228 vs the stored 11.226).
+    """
+    if not weights:
+        return []
+    target = Decimal(str(target))
+    W = sum(Decimal(str(w)) for w in weights) or Decimal("1")
+    ideals = [target * Decimal(str(w)) / W for w in weights]
+    floors = [(i / quant).to_integral_value(rounding=ROUND_FLOOR) * quant for i in ideals]
+    units = int(((target - sum(floors)) / quant).to_integral_value(rounding=ROUND_HALF_UP))
+    alloc = list(floors)
+    order = sorted(range(len(weights)), key=lambda i: ideals[i] - floors[i], reverse=True)
+    for k in range(max(units, 0)):
+        alloc[order[k % len(order)]] += quant
+    return [int(a) if quant == WHOLE_EUR else float(a) for a in alloc]
+
+
+def allocate_car_advances(inv_total, lines, split_mode: str, quant: Decimal = WHOLE_EUR,
+                          priors_by_line=None):
+    """Per-car EUR for one document's covered cars, reconciled to its stored total.
+
+    Returns ``{line_id: eur}`` where the slices sum to ``round(inv_total)`` — the
+    document's own stored/collected total — instead of each car rounding
+    independently. CTR-790: a 2-car proportional advance collected at 11.226 €
+    now books 5.613 + 5.613, not 5.614 + 5.614 = 11.228.
+
+    A car that *closes* its cumulative coverage (prior same-track fractions plus
+    this document's fraction reach ~100%) still books the residual
+    ``selling − advances_already_booked`` via :func:`_car_slice_eur`, so advance
+    + rest reconcile to the car's whole price (the CTR-945 invariant). Only the
+    remaining, non-closing cars share the document total via `_hamilton`.
+
+    Args:
+        inv_total: the document's stored ``total_amount_eur``.
+        lines: ordered list of dicts with ``id`` and ``selling_price_eur``.
+        split_mode: ``"proportional"`` (price-weighted) or ``"equal"`` (per-car).
+        quant: WHOLE_EUR or CENTS (zecimale) per the invoice's round_decimals.
+        priors_by_line: ``{line_id: [snapped fractions booked earlier on this
+            car by same-track invoices]}`` — enables the closing residual.
+    """
+    priors_by_line = priors_by_line or {}
+    quant = Decimal(quant)
+    if not lines:
+        return {}
+
+    result = {}
+    nonclosing = []            # (line_id, weight) sharing the remaining total
+    closing_sum = Decimal("0")
+
+    if split_mode == "proportional":
+        covered_selling = sum(float(l["selling_price_eur"]) for l in lines) or 1.0
+        this_fraction = _snap_pct(float(inv_total), covered_selling)
+        for l in lines:
+            selling = float(l["selling_price_eur"])
+            priors = priors_by_line.get(l["id"], [])
+            if abs(sum(priors) + this_fraction - 1.0) < _PCT_CLOSE_TOL:
+                share = _car_slice_eur(selling, this_fraction, priors, quant)
+                result[l["id"]] = share
+                closing_sum += Decimal(str(share))
+            else:
+                nonclosing.append((l["id"], selling))
+    else:  # equal split — weight every car the same
+        for l in lines:
+            nonclosing.append((l["id"], 1))
+
+    target = Decimal(str(_round_half_up(inv_total, quant))) - closing_sum
+    shares = _hamilton(target, [w for _, w in nonclosing], quant)
+    for (lid, _), amt in zip(nonclosing, shares):
+        result[lid] = amt
+    return result
 
 
 def partial_advance_total(proforma_total: Decimal, split_mode: str, quant: Decimal,
