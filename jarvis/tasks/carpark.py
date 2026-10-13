@@ -74,6 +74,7 @@ def expire_reservations():
                     notify_user(
                         user_id, 'Rezervare expirată',
                         message=f'Rezervarea pentru {label or vehicle.get("vin")} a expirat.',
+                        link=f'/app/carpark/{vehicle_id}',
                         entity_type='carpark_vehicle', entity_id=vehicle_id,
                         category='carpark')
 
@@ -180,6 +181,7 @@ def carpark_aging_alerts():
                         target_user_id, 'Vehicul cu vechime mare în stoc',
                         message=(f'{label} ({vehicle.get("vin")}) este în stoc de '
                                  f'{vehicle.get("days_in_stock")} zile.'),
+                        link=f'/app/carpark/{vehicle_id}',
                         entity_type='carpark_vehicle', entity_id=vehicle_id,
                         category='carpark')
 

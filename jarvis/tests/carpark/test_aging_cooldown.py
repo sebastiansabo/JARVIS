@@ -62,5 +62,7 @@ def test_vehicle_past_cooldown_is_notified_and_recorded():
     notify.assert_called_once()
     # the alert carries the carpark category (so it is mutable in push-manager)
     assert notify.call_args.kwargs.get('category') == 'carpark'
+    # ...and a click-through link to the vehicle
+    assert notify.call_args.kwargs.get('link') == '/app/carpark/501'
     # and the 7-day state is upserted so the next daily run is suppressed
     assert any('INSERT INTO smart_notification_state' in sql for sql, _ in cursor.executed)

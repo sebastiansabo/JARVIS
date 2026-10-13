@@ -473,3 +473,20 @@ class PermissionRepository(BaseRepository):
             'SELECT module_key, entity_key, action_key FROM permissions_v2 WHERE id = %s',
             (permission_id,)
         )
+
+    def get_user_ids_with_permission(self, module: str, entity: str, action: str) -> list[int]:
+        """Active user IDs whose role grants a specific v2 permission.
+
+        Grant logic mirrors check_permission_v2 (scope != 'deny' OR granted).
+        Used to fan a notification out to everyone who can act on something —
+        e.g. alert IT staff (ticketing/ticket/manage) when a ticket is opened."""
+        rows = self.query_all('''
+            SELECT DISTINCT u.id
+            FROM users u
+            JOIN role_permissions_v2 rp ON rp.role_id = u.role_id
+            JOIN permissions_v2 p ON p.id = rp.permission_id
+            WHERE u.is_active = TRUE
+              AND p.module_key = %s AND p.entity_key = %s AND p.action_key = %s
+              AND (rp.scope <> 'deny' OR rp.granted)
+        ''', (module, entity, action))
+        return [r['id'] for r in rows]

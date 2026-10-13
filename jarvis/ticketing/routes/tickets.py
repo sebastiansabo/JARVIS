@@ -7,7 +7,7 @@ from ticketing import ticketing_bp
 from ticketing.repositories.ticket_repository import TicketRepository, TicketCommentRepository
 from core.utils.api_helpers import error_response, safe_error_response, get_json_or_error
 from core.roles.decorators import v2_permission_required
-from core.notifications.notify import notify_user
+from core.notifications.notify import notify_user, notify_users
 
 logger = logging.getLogger('jarvis.ticketing.routes')
 
@@ -103,6 +103,26 @@ def api_create_ticket():
             created_by=current_user.id,
         )
 
+        # Alert IT staff (anyone who can manage tickets) that a new ticket opened,
+        # so they don't have to poll the queue. Exclude the creator if they're IT.
+        try:
+            from core.roles.repositories import PermissionRepository
+            it_ids = [uid for uid in
+                      PermissionRepository().get_user_ids_with_permission('ticketing', 'ticket', 'manage')
+                      if uid != current_user.id]
+            if it_ids:
+                notify_users(
+                    it_ids,
+                    f'New ticket #{ticket["id"]}: {title}',
+                    message=f'{priority.capitalize()} · {category}',
+                    link=f'/app/ticketing/{ticket["id"]}',
+                    entity_type='ticket', entity_id=ticket['id'],
+                    type='info', category='ticketing',
+                )
+        except Exception:
+            # Notification is best-effort — never fail ticket creation over it.
+            pass
+
         return jsonify({'success': True, 'id': ticket['id'], 'ticket': ticket})
     except Exception as e:
         return safe_error_response(e)
@@ -184,7 +204,9 @@ def api_update_ticket(ticket_id):
                 type='info', category='ticketing',
             )
 
-        if new_status and new_status != old_status:
+        # Don't notify the creator about a status change they made themselves
+        # (e.g. IT staff who both own and work their own ticket).
+        if new_status and new_status != old_status and ticket['created_by'] != current_user.id:
             notify_user(
                 ticket['created_by'],
                 f'Ticket #{ticket_id} is now {new_status.replace("_", " ")}',

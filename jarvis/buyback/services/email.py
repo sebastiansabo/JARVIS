@@ -2,15 +2,13 @@
 
 Two email flows fire when BuyBackService.post_offer() opens a new offer round
 (Task 8's optional `notifier` hook, duck-typed: `send_offer_email(record,
-offer)` + `notify_sales(record)`; `notify_acquisition(record)` is exposed too
-for callers that want it, though post_offer() itself only calls the first
-two — see buyback/services/buyback_service.py's Ruling R2 docstring):
+offer)` + `notify_sales(record)` — see buyback/services/buyback_service.py's
+Ruling R2 docstring):
 
   - send_offer_email: to the seller, built by build_offer_email() and sent
     via core.services.notification_service.send_email.
-  - notify_sales / notify_acquisition: short internal heads-up emails to a
-    configured department address (BUYBACK_SALES_EMAIL /
-    BUYBACK_ACQUISITION_EMAIL env vars), falling back to the record's
+  - notify_sales: a short internal heads-up email to a configured department
+    address (BUYBACK_SALES_EMAIL env var), falling back to the record's
     advisor/creator email if resolvable — see _resolve_internal_recipient().
 
 Reuse, not reinvention (per the task brief): this module owns ZERO SMTP/MIME
@@ -237,7 +235,8 @@ def _build_offer_attachments(record: dict) -> list:
 
 
 def _send_internal_notification(record: dict, env_var: str, label: str) -> None:
-    """Shared body for notify_sales/notify_acquisition. Deliberately minimal
+    """Shared body for internal heads-up notifications (notify_sales).
+    Deliberately minimal
     (per the brief): a one-line status heads-up, no per-department CC lookup
     (buyback records carry no `department` field matching the legacy
     department_structure table get_department_cc_email keys off, so there is
@@ -278,8 +277,7 @@ def _send_internal_notification(record: dict, env_var: str, label: str) -> None:
 class Notifier:
     """Fires BuyBackService.post_offer()'s notification hooks (Ruling R2:
     injected via `BuyBackService(notifier=...)`, duck-typed to
-    `send_offer_email` + `notify_sales`; `notify_acquisition` is available
-    too, for callers that want it).
+    `send_offer_email` + `notify_sales`).
 
     Every method below swallows its own exceptions (logs and returns) — see
     module docstring for why: post_offer() has already committed the offer +
@@ -327,14 +325,5 @@ class Notifier:
         except Exception:
             logger.exception(
                 f"buyback record {record.get('id')}: sales notification "
-                "raised — swallowed so post_offer() is unaffected"
-            )
-
-    def notify_acquisition(self, record: dict) -> None:
-        try:
-            _send_internal_notification(record, 'BUYBACK_ACQUISITION_EMAIL', 'Acquisition')
-        except Exception:
-            logger.exception(
-                f"buyback record {record.get('id')}: acquisition notification "
                 "raised — swallowed so post_offer() is unaffected"
             )

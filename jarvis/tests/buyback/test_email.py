@@ -5,7 +5,7 @@
     Step-1 test from the task brief, plus an escaping regression test.
 
 (b) test_send_offer_email_swallows_raising_send_email /
-    test_notify_sales_and_notify_acquisition_swallow_raising_send_email:
+    test_notify_sales_swallows_raising_send_email:
     prove Notifier's methods never propagate an exception raised by
     send_email — the CRITICAL non-fatal-to-post_offer requirement from the
     Task 8 review. No DB: the fake records below carry no company_id, so
@@ -139,19 +139,17 @@ def test_send_offer_email_noop_without_seller_email(monkeypatch):
     assert calls == []  # send_email never called — no-op, no crash
 
 
-def test_notify_sales_and_notify_acquisition_swallow_raising_send_email(monkeypatch):
+def test_notify_sales_swallows_raising_send_email(monkeypatch):
     def _raise(**kwargs):
         raise RuntimeError('SMTP is on fire')
 
     monkeypatch.setattr(email_module, 'send_email', _raise)
     monkeypatch.setenv('BUYBACK_SALES_EMAIL', 'sales@example.com')
-    monkeypatch.setenv('BUYBACK_ACQUISITION_EMAIL', 'acquisition@example.com')
 
     rec = {'id': 1, 'brand': 'BMW', 'model': '320d', 'status': 'initial_offer', 'record_code': 'BB-1'}
 
-    # Neither call may raise, despite send_email raising internally.
+    # The call must not raise, despite send_email raising internally.
     Notifier().notify_sales(rec)
-    Notifier().notify_acquisition(rec)
 
 
 def test_notify_sales_noop_without_configured_recipient(monkeypatch):

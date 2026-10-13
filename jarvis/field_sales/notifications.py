@@ -54,10 +54,12 @@ def _get_user_name(user_id):
 # ═══════════════════════════════════════════════════════
 
 def notify_visit_planned(visit, kam_name=None):
-    """Notify KAM's manager when a visit is planned."""
+    """Notify KAM's manager when a visit is planned.
+
+    In-app + push always fire; the email arm is sent only when SMTP is
+    configured. (Previously an unconfigured-SMTP early-return silently dropped
+    the in-app/push too.)"""
     try:
-        if not is_smtp_configured():
-            return
         kam_id = visit.get('kam_id')
         kam_name = kam_name or _get_user_name(kam_id)
         client_name = visit.get('client_name', 'Client')
@@ -67,11 +69,13 @@ def notify_visit_planned(visit, kam_name=None):
         goals = visit.get('goals') or 'Nespecificate'
 
         manager_emails, manager_ids = _get_manager_emails_for_user(kam_id)
-        if not manager_emails:
+        if not manager_emails and not manager_ids:
             return
 
-        subject = f'[JARVIS] Vizită planificată — {client_name} · {planned_date}'
-        body = f"""{kam_name} a planificat o vizită:
+        # Email arm — only when SMTP is configured.
+        if manager_emails and is_smtp_configured():
+            subject = f'[JARVIS] Vizită planificată — {client_name} · {planned_date}'
+            body = f"""{kam_name} a planificat o vizită:
 
 Client: {client_name}
 Data: {planned_date} {planned_time or ''}
@@ -80,10 +84,10 @@ Obiective: {goals}
 
 Vezi detalii în JARVIS Field Sales."""
 
-        for email in manager_emails:
-            send_email(email, subject, f'<pre>{body}</pre>', text_body=body, skip_global_cc=True)
+            for email in manager_emails:
+                send_email(email, subject, f'<pre>{body}</pre>', text_body=body, skip_global_cc=True)
 
-        # In-app notification for managers
+        # In-app + push notification for managers (always)
         if manager_ids:
             notify_users(
                 manager_ids,
