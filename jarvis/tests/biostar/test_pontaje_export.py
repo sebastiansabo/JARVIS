@@ -19,7 +19,7 @@ def test_present_uses_contract_lunch_and_net_duration():
     sched = {(10, 5, dt.date(2026,7,1)): {'schedule_start':'09:00','schedule_end':'12:00','lunch_break_minutes':3}}
     out = pes.build_rows(pr, sched, {})
     r = out[0]
-    assert r[pes.HEADERS.index('Checked In')] == ''      # no adjustment -> blank
+    assert r[pes.HEADERS.index('Checked In')] == '08:03'  # effective = raw punch (no adjustment)
     assert r[pes.HEADERS.index('Actual In')] == '08:03'  # raw punch
     assert r[pes.HEADERS.index('Lunch')] == '3 min'
     assert r[pes.HEADERS.index('Schedule')] == '09:00–12:00'
@@ -48,12 +48,15 @@ def test_adjustment_only_day_actual_absent_adjusted_present():
     assert r[pes.HEADERS.index('Actual Status')] == 'Absent'    # physically absent
     assert r[pes.HEADERS.index('Status')] == 'Present'  # corrected present
 
-def test_checked_columns_blank_without_adjustment():
+def test_checked_columns_fall_back_to_raw_without_adjustment():
+    # No manual adjustment: Checked In/Out now show the effective (raw) punch,
+    # mirroring Actual In/Out, so HR doesn't have to copy the real time across by
+    # hand on an OK day that didn't need correcting.
     pr = [row(first_punch=_dt(1,'08:00'), last_punch=_dt(1,'16:00'), total_punches=2,
               duration_seconds=8*3600)]
     r = pes.build_rows(pr, {}, {})[0]
-    assert r[pes.HEADERS.index('Checked In')] == ''
-    assert r[pes.HEADERS.index('Checked Out')] == ''
+    assert r[pes.HEADERS.index('Checked In')] == '08:00'
+    assert r[pes.HEADERS.index('Checked Out')] == '16:00'
     assert r[pes.HEADERS.index('Actual In')] == '08:00'
     assert r[pes.HEADERS.index('Actual Out')] == '16:00'
 
@@ -201,6 +204,34 @@ def test_leave_code_overrides_present_status_and_blanks_duration():
     assert r[pes.HEADERS.index('Actual In')] == '06:57'      # raw punch preserved
     assert r[pes.HEADERS.index('Sincron')] == 'CO'
 
+def test_leave_code_blanks_checked_columns_on_stale_fillin():
+    # A CO leave day that still carries a stale absent-day auto fill-in adjustment
+    # (no raw punch) must NOT show a corrected interval in Checked In/Out — the
+    # leave is authoritative, matching the platform UI.
+    pr = [row(first_punch=None, last_punch=None, total_punches=0,
+              adjusted_first_punch=_dt(1,'08:32'), adjusted_last_punch=_dt(1,'17:02'))]
+    codes = {(10, 5, dt.date(2026,7,1)): 'CO'}
+    r = pes.build_rows(pr, {}, codes, leave_codes={'CO'})[0]
+    assert r[pes.HEADERS.index('Checked In')] == ''        # no phantom correction on leave
+    assert r[pes.HEADERS.index('Checked Out')] == ''
+    assert r[pes.HEADERS.index('Status')] == 'CO'
+    assert r[pes.HEADERS.index('Actual Status')] == 'Absent'
+    assert r[pes.HEADERS.index('Duration')] == ''
+
+def test_leave_code_blanks_checked_but_keeps_raw_badge_in_actual():
+    # On leave with a stray badge AND a manual adjustment: Checked In/Out stay
+    # blank (leave authoritative), but the raw badge still surfaces in Actual In
+    # so a badge-vs-leave discrepancy remains visible for audit.
+    pr = [row(first_punch=_dt(1,'06:57'), last_punch=_dt(1,'08:05'), total_punches=2,
+              duration_seconds=3600,
+              adjusted_first_punch=_dt(1,'09:00'), adjusted_last_punch=_dt(1,'17:00'))]
+    codes = {(10, 5, dt.date(2026,7,1)): 'CO'}
+    r = pes.build_rows(pr, {}, codes, leave_codes={'CO'})[0]
+    assert r[pes.HEADERS.index('Checked In')] == ''
+    assert r[pes.HEADERS.index('Checked Out')] == ''
+    assert r[pes.HEADERS.index('Actual In')] == '06:57'    # raw badge preserved
+    assert r[pes.HEADERS.index('Status')] == 'CO'
+
 def test_leave_code_shows_as_status_without_punch():
     # No punch + leave code -> Status shows the code (not the generic 'Absent').
     pr = [row()]  # 2026-07-01 (Wed), no punches
@@ -247,7 +278,7 @@ def test_build_rows_accepts_iso_string_inputs_present():
     row_out = out[0]
     assert row_out[pes.HEADERS.index('Date')] == '2026-07-01'
     assert row_out[pes.HEADERS.index('Weekday')] == 'Wed'
-    assert row_out[pes.HEADERS.index('Checked In')] == ''       # no adjustment -> blank
+    assert row_out[pes.HEADERS.index('Checked In')] == '08:03'  # effective = raw punch (no adjustment)
     assert row_out[pes.HEADERS.index('Actual In')] == '08:03'   # raw punch
     assert row_out[pes.HEADERS.index('Duration')] == '8:39'
 
