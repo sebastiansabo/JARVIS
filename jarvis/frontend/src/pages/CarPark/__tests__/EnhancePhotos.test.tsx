@@ -12,6 +12,27 @@ vi.mock('@/api/carbackground', () => ({
     enhance: vi.fn(() => Promise.resolve({ success: true, created: 1, errors: [] })),
     setPublished: vi.fn(() => Promise.resolve({ success: true, published: true })),
     deleteEnhanced: vi.fn(() => Promise.resolve({ success: true })),
+    getConfig: vi.fn(() =>
+      Promise.resolve({
+        success: true,
+        configured: true,
+        connector: {
+          id: 1, status: 'connected', has_api_key: true,
+          background_id: 'studio-white',
+          preferred_background_ids: ['studio-white', 'grey-concrete'],
+          api_base_url: '', last_error: null,
+        },
+      }),
+    ),
+    listBackgrounds: vi.fn(() =>
+      Promise.resolve({
+        success: true,
+        backgrounds: [
+          { id: 'studio-white', name: 'Studio White' },
+          { id: 'grey-concrete', name: 'Grey Concrete' },
+        ],
+      }),
+    ),
   },
 }))
 
@@ -54,7 +75,35 @@ describe('PhotoGridOverlay — studio enhance', () => {
     fireEvent.click(screen.getByLabelText(/selectează poza 5/i))
     fireEvent.click(screen.getByRole('button', { name: /generează studio/i }))
 
-    await waitFor(() => expect(carbackgroundApi.enhance).toHaveBeenCalledWith(9, [5]))
+    await waitFor(() => expect(carbackgroundApi.enhance).toHaveBeenCalled())
+    const [vid, ids] = (carbackgroundApi.enhance as ReturnType<typeof vi.fn>).mock.calls[0]
+    expect(vid).toBe(9)
+    expect(ids).toEqual([5])
+  })
+
+  it('passes the chosen preferred background to enhance', async () => {
+    const photos = [photo({ id: 5, url: 'k5.jpg' })]
+    renderOverlay(photos)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Selectează' }))
+    fireEvent.click(screen.getByLabelText(/selectează poza 5/i))
+    // Picker is populated from the preferred list; switch off the default.
+    fireEvent.change(await screen.findByLabelText(/fundal studio/i), { target: { value: 'grey-concrete' } })
+    fireEvent.click(screen.getByRole('button', { name: /generează studio/i }))
+
+    await waitFor(() =>
+      expect(carbackgroundApi.enhance).toHaveBeenCalledWith(9, [5], 'grey-concrete'),
+    )
+  })
+
+  it('defaults the picker to the starred default background', async () => {
+    const photos = [photo({ id: 5, url: 'k5.jpg' })]
+    renderOverlay(photos)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Selectează' }))
+    fireEvent.click(screen.getByLabelText(/selectează poza 5/i))
+    const picker = (await screen.findByLabelText(/fundal studio/i)) as HTMLSelectElement
+    expect(picker.value).toBe('studio-white') // connector.background_id
   })
 
   it('does not show the enhance action with nothing selected', () => {

@@ -1092,6 +1092,26 @@ export function PhotoGridOverlay({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
+  // Preferred studio backgrounds for the "Generează studio" picker (editors
+  // only). The picker lists the curated preferred set; the starred default is
+  // pre-selected. null = untouched → fall back to that default.
+  const { data: cbgConfig } = useQuery({
+    queryKey: ['carbackground', 'config'],
+    queryFn: carbackgroundApi.getConfig,
+    enabled: canEdit,
+  })
+  const { data: cbgBackgrounds } = useQuery({
+    queryKey: ['carbackground', 'backgrounds'],
+    queryFn: carbackgroundApi.listBackgrounds,
+    enabled: canEdit,
+  })
+  const preferredIds = cbgConfig?.connector?.preferred_background_ids ?? []
+  const bgNames = new Map((cbgBackgrounds?.backgrounds ?? []).map((b) => [b.id, b.name]))
+  const preferredOptions = preferredIds.map((id) => ({ id, name: bgNames.get(id) ?? id }))
+  const defaultBgId = cbgConfig?.connector?.background_id || preferredIds[0] || ''
+  const [bgChoice, setBgChoice] = useState<string | null>(null)
+  const chosenBg = bgChoice ?? defaultBgId
+
   const reorderMutation = useMutation({
     mutationFn: (orderedIds: number[]) => carparkApi.reorderPhotos(vehicleId, orderedIds),
     onSuccess: () => {
@@ -1152,7 +1172,7 @@ export function PhotoGridOverlay({
   // "Generează studio" — sends the selected photos through carbackground.ai;
   // created variants land on the vehicle query (enhanced_url etc) via invalidate.
   const enhanceMut = useMutation({
-    mutationFn: () => carbackgroundApi.enhance(vehicleId, Array.from(selected)),
+    mutationFn: () => carbackgroundApi.enhance(vehicleId, Array.from(selected), chosenBg || undefined),
     onSuccess: (res) => {
       if (res.created === 0 && res.errors?.length) {
         toast.error(`Generare studio eșuată (${res.errors.length} erori)`)
@@ -1221,19 +1241,34 @@ export function PhotoGridOverlay({
                 {allSelected ? 'Deselectează tot' : 'Selectează tot'}
               </Button>
               {selected.size > 0 && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => enhanceMut.mutate()}
-                  disabled={enhanceMut.isPending}
-                >
-                  {enhanceMut.isPending ? (
-                    <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <Sparkles className="mr-1 h-3.5 w-3.5" />
+                <>
+                  {preferredOptions.length > 0 && (
+                    <select
+                      aria-label="Fundal studio"
+                      value={chosenBg}
+                      onChange={(e) => setBgChoice(e.target.value)}
+                      disabled={enhanceMut.isPending}
+                      className="h-8 rounded-md border bg-background px-2 text-sm"
+                    >
+                      {preferredOptions.map((o) => (
+                        <option key={o.id} value={o.id}>{o.name}</option>
+                      ))}
+                    </select>
                   )}
-                  Generează studio ({selected.size})
-                </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => enhanceMut.mutate()}
+                    disabled={enhanceMut.isPending}
+                  >
+                    {enhanceMut.isPending ? (
+                      <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-1 h-3.5 w-3.5" />
+                    )}
+                    Generează studio ({selected.size})
+                  </Button>
+                </>
               )}
               {confirming ? (
                 <Button size="sm" variant="destructive" onClick={() => deleteMut.mutate()}
