@@ -533,6 +533,54 @@ def reopen_record(record_id):
 
 
 # ═══════════════════════════════════════════════
+# STATUS OVERRIDE (admin/manager escape hatch)
+# ═══════════════════════════════════════════════
+
+@buyback_bp.route('/records/<int:record_id>/status', methods=['POST'])
+@login_required
+@v2_permission_required('buyback', 'record', 'edit')
+def set_record_status(record_id):
+    """Force a record to ANY status, bypassing the lifecycle state machine.
+    Admin/Manager only (same role-capability gate as reopen) — this is the
+    deliberate escape hatch for corrections the normal workflow can't express
+    (e.g. un-cancelling into mid-flow, or reclassifying a resolved record).
+
+    Only ever touches the buyback record (status + closed_at/bought_at
+    bookkeeping + a `forced` audit event); never the linked CarPark vehicle or
+    offers — see BuyBackService.force_status. The tenant/IDOR boundary
+    (_guard_company) still applies, so a company-A manager can't override a
+    company-B record it can't even see."""
+    if not _shared._is_admin():
+        return jsonify({'success': False, 'error': 'Admin/Manager permission required'}), 403
+
+    record = _shared.records_repo.get_by_id(record_id)
+    if not record:
+        return jsonify({'success': False, 'error': 'Record not found'}), 404
+
+    err = _shared._guard_company(record)
+    if err:
+        return err
+
+    data = request.get_json(silent=True) or {}
+    raw_status = data.get('status')
+    new_status = raw_status.strip() if isinstance(raw_status, str) else ''
+    if new_status not in lifecycle.STATUS_LABELS:
+        return jsonify({'success': False, 'error': 'Invalid status'}), 400
+
+    note = data.get('note')
+    if note is not None and not isinstance(note, str):
+        return jsonify({'success': False, 'error': 'note must be a string'}), 400
+
+    try:
+        updated = _shared.service.force_status(
+            record, new_status, current_user.id, note=note,
+        )
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    return jsonify({'success': True, 'record': _shared._serialize(updated)})
+
+
+# ═══════════════════════════════════════════════
 # DELETE
 # ═══════════════════════════════════════════════
 

@@ -18,6 +18,7 @@ import os
 from buyback import lifecycle
 from buyback.repositories.record_repository import RecordRepository
 from buyback.repositories.offer_repository import OfferRepository
+from buyback.repositories.event_repository import EventRepository
 from buyback.services.buyback_service import BuyBackService
 import buyback.services.notifications as nmod
 
@@ -314,3 +315,90 @@ def test_no_notifier_does_not_raise(require_real_db):
     rec = _record()
     # must not raise despite notifier being None
     svc.post_offer(rec, 'initial', {'amount_eur': 1000, 'vat_status': 'no_vat'}, actor=1)
+
+
+# ── Reopen from CANCELLED + force_status (admin override) ──────────────────
+
+def test_reopen_from_cancelled_clears_closed_at(require_real_db):
+    """CANCELLED is now reopenable (→ PENDING_EVALUATION) just like LOST; the
+    transition must clear closed_at so the record returns to Active."""
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    cancelled = svc.transition(rec, lifecycle.CANCELLED, actor=1)
+    assert cancelled['status'] == lifecycle.CANCELLED
+    assert cancelled['closed_at'] is not None
+    reopened = svc.transition(cancelled, lifecycle.PENDING_EVALUATION, actor=1)
+    assert reopened['status'] == lifecycle.PENDING_EVALUATION
+    assert reopened['closed_at'] is None
+
+
+def test_force_status_sets_arbitrary_status_and_logs_forced_event(require_real_db, monkeypatch):
+    """force_status bypasses the state machine: CANCELLED -> FINAL_OFFER is an
+    illegal lifecycle transition, but the admin override allows it, clears
+    closed_at (active target), and logs a status_changed event flagged forced."""
+    monkeypatch.setattr(nmod, 'notify_owner', lambda *a, **k: None)
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    cancelled = svc.transition(rec, lifecycle.CANCELLED, actor=1)
+    assert cancelled['closed_at'] is not None
+    # Illegal via the normal path.
+    assert not lifecycle.is_valid_transition(lifecycle.CANCELLED, lifecycle.FINAL_OFFER)
+
+    forced = svc.force_status(cancelled, lifecycle.FINAL_OFFER, actor=7, note='manual fix')
+    assert forced['status'] == lifecycle.FINAL_OFFER
+    assert forced['closed_at'] is None
+
+    events = EventRepository().list_for_record(rec['id'])
+    status_events = [e for e in events if e['action'] == 'status_changed']
+    forced_evt = status_events[0]  # newest first (ORDER BY created_at DESC)
+    assert forced_evt['details']['forced'] is True
+    assert forced_evt['details']['to'] == lifecycle.FINAL_OFFER
+    assert forced_evt['details']['from'] == lifecycle.CANCELLED
+    assert forced_evt['details']['note'] == 'manual fix'
+
+
+def test_force_status_to_bought_stamps_bought_at_without_carpark(require_real_db, monkeypatch):
+    """Forcing BOUGHT stamps bought_at (so Arhivă resolution time exists) but
+    does NOT create/link a CarPark vehicle — that stays the finalize route."""
+    monkeypatch.setattr(nmod, 'notify_owner', lambda *a, **k: None)
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    assert rec['bought_at'] is None
+    forced = svc.force_status(rec, lifecycle.BOUGHT, actor=1)
+    assert forced['status'] == lifecycle.BOUGHT
+    assert forced['bought_at'] is not None
+    assert forced['closed_at'] is None
+    assert forced.get('carpark_vehicle_id') is None
+
+
+def test_force_status_rejects_unknown_status(require_real_db):
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    try:
+        svc.force_status(rec, 'NONSENSE', actor=1)
+        assert False, 'expected ValueError for unknown status'
+    except ValueError:
+        pass
+
+
+def test_force_status_rejects_noop(require_real_db):
+    svc = BuyBackService(notifier=None)
+    rec = _record()  # starts PENDING_EVALUATION
+    try:
+        svc.force_status(rec, lifecycle.PENDING_EVALUATION, actor=1)
+        assert False, 'expected ValueError for no-op status change'
+    except ValueError:
+        pass
+
+
+def test_force_status_notifies_owner(require_real_db, monkeypatch):
+    calls = []
+    monkeypatch.setattr(nmod, 'notify_owner', lambda *a, **k: calls.append((a, k)))
+    svc = BuyBackService(notifier=None)
+    rec = _record(created_by=555)
+    svc.force_status(rec, lifecycle.LOST, actor=321)
+    assert calls, 'force_status must invoke notify_owner'
+    args, kwargs = calls[0]
+    assert args[1] == 'status_changed'
+    assert args[2] == 321
+    assert kwargs.get('new_status') == lifecycle.LOST

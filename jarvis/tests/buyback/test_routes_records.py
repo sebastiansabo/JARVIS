@@ -324,8 +324,8 @@ def test_reopen_requires_admin_or_manager(client, as_role):
     as_role('Sales', 1)
     rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
     client.post(f'/api/buyback/records/{rid}/cancel', json={'reason': 'x'})
-    # cancelled has no valid transition back to PENDING_EVALUATION anyway,
-    # but a non-admin/manager must be blocked before that's even checked.
+    # A non-admin/manager must be blocked by the role gate regardless of whether
+    # the transition itself is legal (CANCELLED → PENDING_EVALUATION now is).
     r = client.post(f'/api/buyback/records/{rid}/reopen')
     assert r.status_code == 403
 
@@ -942,3 +942,77 @@ def test_create_oversized_images_is_exactly_413(client, as_role, monkeypatch):
     data_url = 'data:image/jpeg;base64,' + base64.b64encode(raw).decode()
     r = client.post('/api/buyback/records', json=_payload(images=[data_url]))
     assert r.status_code == 413, r.get_json()
+
+
+# ── REOPEN from CANCELLED + STATUS OVERRIDE (admin escape hatch) ───────────
+
+def test_reopen_from_cancelled_by_admin(client, as_role, monkeypatch):
+    """CANCELLED is now reopenable to PENDING_EVALUATION (parity with LOST) —
+    the exact in-app path that replaces a manual DB edit."""
+    _mute_emails(monkeypatch)
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    client.post(f'/api/buyback/records/{rid}/cancel', json={'reason': 'x'})
+    r = client.post(f'/api/buyback/records/{rid}/reopen')
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()['record']['status'] == 'PENDING_EVALUATION'
+
+
+def test_set_status_requires_admin_or_manager(client, as_role, monkeypatch):
+    _mute_emails(monkeypatch)
+    as_role('Sales', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    r = client.post(f'/api/buyback/records/{rid}/status', json={'status': 'LOST'})
+    assert r.status_code == 403
+
+
+def test_set_status_override_bypasses_state_machine(client, as_role, monkeypatch):
+    """Admin override may jump to ANY status, even an illegal lifecycle move
+    (CANCELLED -> INSPECTION), and the audit event is flagged forced."""
+    _mute_emails(monkeypatch)
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    client.post(f'/api/buyback/records/{rid}/cancel', json={'reason': 'x'})
+
+    r = client.post(f'/api/buyback/records/{rid}/status',
+                    json={'status': 'INSPECTION', 'note': 'escalated manually'})
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()['record']['status'] == 'INSPECTION'
+
+    body = client.get(f'/api/buyback/records/{rid}').get_json()
+    forced = [e for e in body['events']
+              if e['action'] == 'status_changed' and e['details'].get('forced')]
+    assert forced, 'override must log a forced status_changed event'
+    assert forced[0]['details']['note'] == 'escalated manually'
+
+
+def test_set_status_invalid_status_is_400(client, as_role, monkeypatch):
+    _mute_emails(monkeypatch)
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    r = client.post(f'/api/buyback/records/{rid}/status', json={'status': 'NONSENSE'})
+    assert r.status_code == 400
+
+
+def test_set_status_noop_is_400(client, as_role, monkeypatch):
+    _mute_emails(monkeypatch)
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    # Record starts PENDING_EVALUATION — forcing the same status is a no-op.
+    r = client.post(f'/api/buyback/records/{rid}/status', json={'status': 'PENDING_EVALUATION'})
+    assert r.status_code == 400
+
+
+def test_set_status_not_found_is_404(client, as_role):
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records/99999999/status', json={'status': 'LOST'})
+    assert r.status_code == 404
+
+
+def test_set_status_non_string_status_is_400_not_500(client, as_role, monkeypatch):
+    """A non-string status must be a clean 400, not an uncaught .strip() 500."""
+    _mute_emails(monkeypatch)
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    r = client.post(f'/api/buyback/records/{rid}/status', json={'status': 123})
+    assert r.status_code == 400

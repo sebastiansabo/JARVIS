@@ -20,6 +20,7 @@ import type { BuybackRecord } from '@/types/buyback'
 import { useAuth } from '@/hooks/useAuth'
 import { cn, useDebounce } from '@/lib/utils'
 import { fileToCompressedDataUrl } from '@/lib/imageCompress'
+import { loadDraft, saveDraft, clearDraft, isDraftDirty } from './buybackDraft'
 import { AUTOVIT_EQUIPMENT, AUTOVIT_BRANDS, AUTOVIT_MODELS } from '@/data/autovitData'
 import { Autocomplete, norm } from '@/components/shared/Autocomplete'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -378,6 +379,50 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
     }
   }, [user, isEdit]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Local autosave draft (CREATE flow only; web + Hub share this form) ──
+  // A previously-saved draft is offered for restore (banner) rather than
+  // silently applied, so a clean start isn't clobbered. Photos are never part
+  // of a draft (see buybackDraft.ts).
+  const [draftAvailable, setDraftAvailable] = useState<Partial<BuyBackFormState> | null>(null)
+  const [draftSaved, setDraftSaved] = useState(false)
+  const draftCheckedRef = useRef(false)
+
+  // Probe for an existing draft once, after auth resolves (the key is per-user,
+  // so we must wait for `user` to read the same key it was saved under).
+  useEffect(() => {
+    if (isEdit || !user || draftCheckedRef.current) return
+    draftCheckedRef.current = true
+    const d = loadDraft<Partial<BuyBackFormState>>(user.id)
+    if (d) setDraftAvailable(d)
+  }, [isEdit, user])
+
+  // Debounced autosave. Only persists once the user has entered real content
+  // (isDraftDirty ignores the auto-filled advisor); starting to type also
+  // retires the restore banner so a later Restaurează can't overwrite fresh
+  // input. Never clears here — discard/submit own that.
+  const debouncedForm = useDebounce(form, 800)
+  useEffect(() => {
+    if (isEdit || !user) return
+    if (isDraftDirty(debouncedForm, emptyForm)) {
+      saveDraft(user.id, debouncedForm)
+      setDraftSaved(true)
+      setDraftAvailable(null)
+    }
+  }, [debouncedForm, isEdit, user])
+
+  const restoreDraft = () => {
+    if (!draftAvailable) return
+    // Draft excludes images + advisor; keep the current auto-filled advisor.
+    setForm((f) => ({ ...emptyForm, ...draftAvailable, images: [], advisor_id: f.advisor_id, advisor_name: f.advisor_name }))
+    setDraftAvailable(null)
+  }
+
+  const discardDraft = () => {
+    clearDraft(user?.id)
+    setDraftAvailable(null)
+    setDraftSaved(false)
+  }
+
   const { data: opts } = useQuery({
     queryKey: ['buyback-options'],
     queryFn: () => buybackApi.getLookupOptions(),
@@ -553,6 +598,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
     mutationFn: () => buybackApi.createRecord(buildCreatePayload(form)),
     onSuccess: (data) => {
       setSubmitError(null)
+      clearDraft(user?.id) // intake submitted — the draft is done
       queryClient.invalidateQueries({ queryKey: ['buyback-records'] })
       if (embedded) onDone?.(data.record)
       else navigate(`/app/buyback/${data.record.id}`)
@@ -601,6 +647,25 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
           {submitError}
         </div>
+      )}
+
+      {/* Restore offer for a previously-autosaved draft (create only). */}
+      {!isEdit && draftAvailable && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 p-3 text-sm">
+          <span className="flex items-center gap-2 text-blue-700 dark:text-blue-400">
+            <FileText className="h-4 w-4 shrink-0" />
+            Ai o schiță nesalvată. O restaurezi? (Pozele nu sunt păstrate în schiță.)
+          </span>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={discardDraft}>Renunță la schiță</Button>
+            <Button size="sm" onClick={restoreDraft}>Restaurează</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Subtle autosave indicator. */}
+      {!isEdit && draftSaved && !draftAvailable && (
+        <p className="-mt-2 text-right text-xs text-muted-foreground">Schiță salvată automat</p>
       )}
 
       {/* ── Header ── */}

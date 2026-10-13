@@ -61,6 +61,12 @@ export const buybackApi = {
   reopenRecord: (id: number) =>
     api.post(`${BASE}/records/${id}/reopen`, {}),
 
+  // Admin/Manager status override — set ANY status, bypassing the lifecycle
+  // state machine. Only touches the buyback record (status + bookkeeping +
+  // forced audit event); never the linked CarPark vehicle or offers.
+  setStatus: (id: number, data: { status: string; note?: string }) =>
+    api.post<{ record: BuybackRecord }>(`${BASE}/records/${id}/status`, data),
+
   deleteRecord: (id: number) =>
     api.delete(`${BASE}/records/${id}`),
 

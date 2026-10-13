@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { buybackApi } from '@/api/buyback'
 import { usePermissions } from './usePermissions'
+import StatusChangeDialog from './StatusChangeDialog'
 import { pickLatestOffer } from './offerUtils'
 import type { BuybackRecord, BuybackOffer } from '@/types/buyback'
 import { Button } from '@/components/ui/button'
@@ -48,7 +49,12 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   const showFinalize = status === 'BOUGHT' && !record.carpark_vehicle_id && can('buyback.record.finalize')
   const showCarparkLabel = status === 'BOUGHT' && !!record.carpark_vehicle_id
   const showCancel = can('buyback.record.edit') && !TERMINAL_STATUSES.includes(status)
-  const showReopen = status === 'LOST' && isAdminOrManager
+  // Reopen (→ PENDING_EVALUATION) for the two "didn't buy" outcomes. CANCELLED
+  // joins LOST now that the lifecycle allows CANCELLED → PENDING_EVALUATION.
+  const showReopen = (status === 'LOST' || status === 'CANCELLED') && isAdminOrManager
+  // Free status override (any → any, bypassing the state machine) — the
+  // admin/manager escape hatch, always available to them regardless of status.
+  const showOverride = isAdminOrManager
 
   const nothingToShow =
     !showInitialOffer &&
@@ -58,7 +64,8 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     !showFinalize &&
     !showCarparkLabel &&
     !showCancel &&
-    !showReopen
+    !showReopen &&
+    !showOverride
 
   // ── offer dialog (shared by "initial" + "final") ──
   const [offerDialogType, setOfferDialogType] = useState<'initial' | 'final' | null>(null)
@@ -196,6 +203,9 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     },
     onError: (e) => toast.error(errMsg(e, 'Reîncercarea transferului a eșuat')),
   })
+
+  // ── status override (admin/manager escape hatch) ──
+  const [overrideOpen, setOverrideOpen] = useState(false)
 
   // ── cancel ──
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
@@ -351,7 +361,15 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
             Anulează
           </Button>
         )}
+
+        {showOverride && (
+          <Button size="sm" variant="outline" onClick={() => setOverrideOpen(true)}>
+            Schimbă status
+          </Button>
+        )}
       </CardContent>
+
+      <StatusChangeDialog record={record} open={overrideOpen} onOpenChange={setOverrideOpen} />
 
       {/* Offer dialog (initial or final, shares the same fields) */}
       <Dialog
