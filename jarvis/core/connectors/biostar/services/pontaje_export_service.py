@@ -151,15 +151,22 @@ def build_rows(punch_rows, sched_map, code_map, holidays=None, permit_map=None,
         eff_out = adj_last or raw_last
         checked_out = eff_out if (eff_out and eff_out != eff_in) else None
 
-        # "Checked In/Out" columns show ONLY manual adjustments (blank when none);
-        # the raw punch lives in the "Actual In/Out" columns.
-        checked_in_disp = _fmt_time(adj_first) if adj_first else ''
-        checked_out_disp = _fmt_time(adj_last) if (adj_last and adj_last != adj_first) else ''
-
         code = code_map.get((juid, company_id, raw_day), '')
-        # A motivated full-day leave code is authoritative: it overrides a
+        # A motivated full-day leave code (CO/CM/…) is authoritative: it overrides a
         # punch-driven "Present" status and zeroes the worked duration.
         leave_code = code if code in leave_codes else ''
+
+        # "Checked In/Out" show the EFFECTIVE worked interval — the manual
+        # adjustment if present, otherwise the raw punch — so an uncorrected OK day
+        # still shows its real times here, not only in "Actual *". On an
+        # authoritative leave day no worked interval is shown (the official pontaj
+        # is the leave; a stale/auto adjustment must not surface as a phantom
+        # correction); any raw badge still surfaces in the "Actual *" columns.
+        if leave_code:
+            checked_in_disp = checked_out_disp = ''
+        else:
+            checked_in_disp = _fmt_time(eff_in) if eff_in else ''
+            checked_out_disp = _fmt_time(eff_out) if (eff_out and eff_out != eff_in) else ''
         permit = permit_map.get((juid, d.isoformat()))
         has_permit = bool(permit)
         wd = _WEEKDAYS[d.weekday()]
