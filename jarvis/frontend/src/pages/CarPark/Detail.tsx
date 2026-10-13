@@ -3089,7 +3089,9 @@ function ModificationsTab({ modifications }: { modifications: Array<{ id: number
 // gross for that car. Acquisition and the extra cost lines are SEPARATE cards
 // (no double-counting):
 //   Achiziție      = grossAcqEur (acquisition_price, GROSS EUR paid)
-//   Costuri totale = Σ cost_lines.eur  (extra costs only, NOT the buy price)
+//   Costuri totale = Σ cost_lines.eur (Costuri achiziție) + data.total_costs
+//                    (recorded Costuri from carpark_vehicle_costs) — both extra
+//                    costs, NOT the buy price
 //   Profit/Loss    = total_revenues − netAcqEur (cost basis) − Costuri totale, via the econ engine
 // The net/gross/econ-input derivation is a pure, unit-tested helper —
 // acquisitionProfitInputs() in profitInputs.ts.
@@ -3100,13 +3102,22 @@ function ProfitabilitySummary({ data, vehicle }: { data: Profitability; vehicle:
   // lives in a pure, unit-tested helper — see profitInputs.ts.
   const { regime, vatRate, grossAcqEur, costLinesEur, landedCostEur, purchaseGrossEur, inputVatEur } =
     acquisitionProfitInputs(vehicle)
-  const totalCosts = costLinesEur
+  // Recorded operational costs (carpark_vehicle_costs — the "Costuri" tab's
+  // Cheltuit / Înregistrează cost), summed by the profitability endpoint as
+  // data.total_costs. These are SEPARATE from the acquisition cost_lines
+  // (Costuri achiziție), so Costuri totale = BOTH, and both are subtracted in the
+  // margin. Taken as EUR to match the exact figure the Costuri tab, dispo and
+  // analytics already surface (raw SUM(amount), no FX re-convert — avoids a
+  // card-vs-tab mismatch; the module treats these amounts as the base currency).
+  const recordedCostsEur = Number(data.total_costs) || 0
+  const totalCosts = costLinesEur + recordedCostsEur
+  const landedTotalEur = landedCostEur + recordedCostsEur
   const totalRevenues = data.total_revenues
   const sellPrice = Number(vehicle.promotional_price ?? vehicle.list_price) || 0
   const income = totalRevenues > 0 ? totalRevenues : sellPrice
   // Marjă = VAT-adjusted profit net, via the same engine as the Fișă de preț.
-  const engineParams: EngineParams = { regime, vatRate, landedCostEur, purchaseGrossEur, inputVatEur }
-  const e = income > 0 && landedCostEur > 0 ? econ(income, engineParams) : null
+  const engineParams: EngineParams = { regime, vatRate, landedCostEur: landedTotalEur, purchaseGrossEur, inputVatEur }
+  const e = income > 0 && landedTotalEur > 0 ? econ(income, engineParams) : null
   const margin = e ? e.profitNet : null
   const marginPct = e ? e.marginNet * 100 : null
   const isProfit = (margin ?? 0) >= 0

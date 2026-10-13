@@ -28,6 +28,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { carparkApi } from '@/api/carpark'
 import { carparkDispoApi } from '@/api/carparkDispo'
 import type { DispoRow, DispoReservation, Vehicle, VehicleStatus } from '@/types/carpark'
+import { acquisitionProfitInputs } from '../profitInputs'
 import { ReserveDialog } from '../Dispo/ReserveDialog'
 import { SellDialog } from '../Dispo/SellDialog'
 import { DeliverDialog } from '../Dispo/DeliverDialog'
@@ -297,16 +298,25 @@ function ReservationCard({ vehicleId }: { vehicleId: number }) {
 }
 
 // ── Profitability mini-panel ────────────────────────────────
-function ProfitabilityPanel({ vehicleId, currency }: { vehicleId: number; currency: string }) {
+function ProfitabilityPanel({ vehicle, currency }: { vehicle: Vehicle; currency: string }) {
   const { data, isLoading } = useQuery({
-    queryKey: ['carpark', 'profitability', vehicleId],
-    queryFn: () => carparkApi.getProfitability(vehicleId),
-    enabled: !!vehicleId,
+    queryKey: ['carpark', 'profitability', vehicle.id],
+    queryFn: () => carparkApi.getProfitability(vehicle.id),
+    enabled: !!vehicle.id,
   })
 
   if (isLoading || !data) return null
 
-  const isProfit = data.profit >= 0
+  // The endpoint sums only the recorded costs (carpark_vehicle_costs). The
+  // acquisition cost_lines (Costuri achiziție) live on the vehicle and are
+  // SEPARATE, so fold them in — keeping Costuri totale equal to the profile's
+  // top card (cost_lines + recorded) and this panel internally consistent
+  // (invested +, profit −). Treated as EUR, matching that card.
+  const costLinesEur = acquisitionProfitInputs(vehicle).costLinesEur
+  const totalCosts = (Number(data.total_costs) || 0) + costLinesEur
+  const totalInvested = (Number(data.total_invested) || 0) + costLinesEur
+  const profit = (Number(data.profit) || 0) - costLinesEur
+  const isProfit = profit >= 0
 
   return (
     <Card className="p-4">
@@ -316,13 +326,13 @@ function ProfitabilityPanel({ vehicleId, currency }: { vehicleId: number; curren
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div>
           <div className="text-xs text-muted-foreground">Total investit</div>
-          <CurrencyDisplay value={data.total_invested} currency={currency} className="text-base font-semibold" />
+          <CurrencyDisplay value={totalInvested} currency={currency} className="text-base font-semibold" />
         </div>
         <div>
           <div className="text-xs text-muted-foreground flex items-center gap-1">
             <TrendingDown className="h-3 w-3" /> Costuri totale
           </div>
-          <CurrencyDisplay value={data.total_costs} currency={currency} className="text-base font-semibold text-red-600 dark:text-red-400" />
+          <CurrencyDisplay value={totalCosts} currency={currency} className="text-base font-semibold text-red-600 dark:text-red-400" />
         </div>
         <div>
           <div className="text-xs text-muted-foreground flex items-center gap-1">
@@ -335,7 +345,7 @@ function ProfitabilityPanel({ vehicleId, currency }: { vehicleId: number; curren
             <DollarSign className="h-3 w-3" /> Profit
           </div>
           <CurrencyDisplay
-            value={data.profit}
+            value={profit}
             currency={currency}
             showSign
             className={`text-base font-bold ${isProfit ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}
@@ -421,7 +431,7 @@ export function VanzareTab({ vehicle, onChanged }: { vehicle: Vehicle; onChanged
         onBuyerUpdated={handleActionSuccess}
       />
       <ReservationCard vehicleId={vehicle.id} />
-      {canViewFinance && <ProfitabilityPanel vehicleId={vehicle.id} currency={vehicle.price_currency || 'RON'} />}
+      {canViewFinance && <ProfitabilityPanel vehicle={vehicle} currency={vehicle.price_currency || 'RON'} />}
 
       {dialog === 'reserve' && (
         <ReserveDialog row={row} onClose={() => setDialog(null)} onSuccess={handleActionSuccess} />
