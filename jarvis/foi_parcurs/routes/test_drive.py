@@ -88,6 +88,31 @@ def _ensure_event_project(event_id, company_id, user_id):
     return project_id
 
 
+def _notify_event_reservation_override(reservations, contract, actor_name=None):
+    """Tell the reserving Event TD page owners that a classic driving session
+    was booked over one of their reserved windows (the allow_event_reserved
+    override). Best-effort — a notification failure must never fail the submit.
+    Recipients are the deduped notify_user_ids across every reserving page."""
+    try:
+        if not reservations:
+            return
+        from core.notifications.notify import notify_with_push
+        page_ids = list({r['page_id'] for r in reservations if r.get('page_id')})
+        recipients = _fp_repo.get_event_notify_recipients(page_ids)
+        if not recipients:
+            return
+        label = reservations[0].get('title') or reservations[0].get('slug') or 'eveniment'
+        plate = (contract or {}).get('registration_number') or (contract or {}).get('vin') or ''
+        message = f'{plate} · sesiune creată peste rezervarea evenimentului „{label}”'.strip(' ·')
+        if actor_name:
+            message += f' · {actor_name}'
+        notify_with_push(
+            recipients, 'Rezervare eveniment suprascrisă',
+            message=message, category='test_drive')
+    except Exception:
+        logger.warning('event-reservation override notify failed', exc_info=True)
+
+
 def _company_gdpr_text(company_id) -> str:
     """The company's configured GDPR text ('' when unset/missing)."""
     try:
@@ -212,16 +237,20 @@ def api_submit_test_drive():
             msg = 'Mașină blocată în parcul auto' + (f' ({_cat})' if _cat else '') + (f': {_note}' if _note else '')
             return jsonify({'success': False, 'error': msg, 'locked_out': True}), 409
 
-    # Reserve cars committed to an Event TD: a classic session (TD or internal)
-    # may not book a car during one of its event's availability windows. The
+    # Event-TD reservation: a car committed to an active Event TD page is
+    # reserved for that event's availability windows. This is a SOFT confirm —
+    # the advisor is warned and may proceed (allow_event_reserved) after
+    # confirming, in which case the event's owners are notified post-create that
+    # a classic session was booked over their window (see below). The
     # reservation is date-bounded (only the window times match), so the car
-    # stays available in classic forms outside the event. Not overridable — the
-    # event has an exclusive claim on the car for those windows.
+    # stays free in classic forms outside the event. `_event_resv` is kept so
+    # the override path knows which pages to notify.
     _dep = data.get('departure_datetime')
+    _event_resv = []
     if _dep:
-        _resv = _fp_repo.find_event_reservation(data['vin'], _dep, data.get('return_datetime') or _dep)
-        if _resv:
-            _label = _resv[0].get('title') or _resv[0].get('slug')
+        _event_resv = _fp_repo.find_event_reservation(data['vin'], _dep, data.get('return_datetime') or _dep)
+        if _event_resv and not data.get('allow_event_reserved'):
+            _label = _event_resv[0].get('title') or _event_resv[0].get('slug')
             msg = f'Mașină rezervată pentru evenimentul Test Drive „{_label}” în acest interval'
             return jsonify({'success': False, 'error': msg, 'event_reserved': True}), 409
 
@@ -525,6 +554,13 @@ def api_submit_test_drive():
                 _autosend_contract(contract['id'], simple=True)
             except Exception:
                 logger.warning('Start-of-session email failed for contract %s', contract.get('id'), exc_info=True)
+
+        # Overrode an Event TD reservation (allow_event_reserved) — tell the
+        # event's owners their car was booked over a reserved window so they can
+        # react (the public page now hides those slots). Best-effort.
+        if _event_resv and data.get('allow_event_reserved'):
+            _notify_event_reservation_override(
+                _event_resv, contract, getattr(current_user, 'name', None))
 
         return jsonify({'success': True, 'contract': contract})
 

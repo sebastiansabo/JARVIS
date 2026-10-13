@@ -90,6 +90,22 @@ def test_draft_event_reserves(event):
     assert rows and rows[0]['slug'] == _SLUG
 
 
+def test_get_event_notify_recipients_dedupes(event):
+    """The route notifies the reserving pages' owners when a session overrides
+    the reservation — the helper returns their deduped notify_user_ids."""
+    p, _c = event
+    td.execute("UPDATE mkt_td_booking_pages SET notify_user_ids=%s WHERE id=%s", ([1, 2, 1], p['id']))
+    assert sorted(fp.get_event_notify_recipients([p['id']])) == [1, 2]
+
+
+def test_get_event_notify_recipients_empty(event):
+    p, _c = event
+    assert fp.get_event_notify_recipients([]) == []
+    # A page with no notify list yields no recipients.
+    td.execute("UPDATE mkt_td_booking_pages SET notify_user_ids=NULL WHERE id=%s", (p['id'],))
+    assert fp.get_event_notify_recipients([p['id']]) == []
+
+
 def test_calendar_events_return_naive_local_window_bounds(event):
     """The calendar overlay must get NAIVE local wall-clock bounds (no tz shift):
     a 10:00-13:00 window stays 10:00-13:00, so the calendar's naiveDate renders

@@ -171,4 +171,34 @@ describe('InternalSessionForm embedded mode', () => {
 
     expect(await screen.findByText('Mașină blocată în parcul auto')).toBeInTheDocument()
   })
+
+  it('event_reserved 409 opens a soft-confirm dialog; "Continuă oricum" resubmits with allow_event_reserved', async () => {
+    const { ApiError } = await import('@/api/client')
+    submitInternalSession.mockClear()
+    submitInternalSession
+      .mockRejectedValueOnce(new ApiError(409, {
+        error: 'Mașină rezervată pentru evenimentul Test Drive „Caravana Volvo” în acest interval',
+        event_reserved: true,
+      }))
+      .mockResolvedValueOnce({ success: true, contract: { id: 7, contract_id: 'INT-EV' } })
+    const onDone = vi.fn()
+    wrap(<InternalSessionForm embedded onCancel={vi.fn()} onDone={onDone} />)
+    await screen.findByTestId('internal-vehicle')
+
+    fireEvent.click(screen.getByTestId('internal-vehicle'))
+    fireEvent.click(await screen.findByText(/Dacia Duster/))
+    fireEvent.change(screen.getByTestId('internal-departure'), { target: { value: '2026-08-19T09:00' } })
+    fireEvent.change(screen.getByTestId('internal-return'), { target: { value: '2026-08-19T10:00' } })
+    fireEvent.click(screen.getByRole('button', { name: /creează sesiunea/i }))
+
+    // The reservation surfaces as a confirm dialog (not the inline error banner).
+    expect(await screen.findByText('Mașină rezervată pentru eveniment')).toBeInTheDocument()
+    expect(screen.getByText(/Caravana Volvo/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /continuă oricum/i }))
+
+    await waitFor(() => expect(submitInternalSession).toHaveBeenCalledTimes(2))
+    expect(submitInternalSession.mock.calls[1][0]).toMatchObject({ allow_event_reserved: true, vin: 'VF1AAA' })
+    await waitFor(() => expect(onDone).toHaveBeenCalledWith({ id: 7, contract_id: 'INT-EV' }))
+  })
 })

@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Car, ArrowLeft, CalendarPlus, Loader2, CheckCircle2, Plus, Search, X } from 'lucide-react'
+import { Car, ArrowLeft, CalendarPlus, Loader2, CheckCircle2, Plus, Search, X, AlertTriangle } from 'lucide-react'
 
 // ── datetime-local helper (local time, no tz suffix) — mirrors TestDriveForm ──
 function localDatetimeValue(d: Date): string {
@@ -209,11 +209,25 @@ export default function InternalSessionForm({
   const validationError = quickSessionError({ vin, driver, departure, ret, kmStart }, { planning })
   const fieldErr = (key: string) => attempted && validationError === key
 
+  // Event-TD reservation soft gate: the backend 409s a session over a car's
+  // reserved event window; the advisor confirms to proceed (allow_event_reserved,
+  // which notifies the event owners) or cancels to pick another car/time.
+  const [eventBlock, setEventBlock] = useState<{ message: string; retry: () => void } | null>(null)
+
   const submitMutation = useMutation({
     mutationFn: (payload: InternalSessionPayload) => foiParcursApi.submitInternalSession(payload),
     onSuccess: (data) => {
       if (embedded) onDone?.(data.contract)
       else setSubmittedContract(data.contract)
+    },
+    onError: (err: unknown, variables) => {
+      const data = err instanceof ApiError ? (err.data as { event_reserved?: boolean; error?: string } | null) : null
+      if (data?.event_reserved) {
+        setEventBlock({
+          message: data.error ?? 'Mașină rezervată pentru un eveniment Test Drive în acest interval',
+          retry: () => { setEventBlock(null); submitMutation.mutate({ ...variables, allow_event_reserved: true }) },
+        })
+      }
     },
   })
 
@@ -489,7 +503,7 @@ export default function InternalSessionForm({
         </CardContent>
       </Card>
 
-      {apiErrorMessage && (
+      {apiErrorMessage && !eventBlock && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           {apiErrorMessage}
         </div>
@@ -503,6 +517,23 @@ export default function InternalSessionForm({
           ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se creează...</>
           : <><CalendarPlus className="h-4 w-4 mr-2" />{planning ? 'Planifică sesiunea' : 'Creează sesiunea'}</>}
       </Button>
+
+      {/* Event-TD reservation soft gate — confirm to proceed over the event window. */}
+      {eventBlock && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => { setEventBlock(null); submitMutation.reset() }}>
+          <div className="w-full max-w-sm rounded-2xl bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-5 w-5" />
+              <h3 className="text-base font-semibold">Mașină rezervată pentru eveniment</h3>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{eventBlock.message}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setEventBlock(null); submitMutation.reset() }}>Anulează</Button>
+              <Button size="sm" onClick={() => eventBlock.retry()}>Continuă oricum</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

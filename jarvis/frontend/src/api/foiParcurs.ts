@@ -15,6 +15,7 @@ import type {
   ActivateTestDrivePayload,
   ReturnTestDrivePayload,
   VehicleConflict,
+  EventReservation,
   CrmClient,
   CreateCrmClientPayload,
   DriverLicenseOcrData,
@@ -590,7 +591,7 @@ export const foiParcursApi = {
   // ── Overlapping PLANNED/live sessions for a VIN in [from, to] — soft-block
   //    double-booking a car (never hard-blocks) ──
   getVehicleConflicts: (vin: string, params: { from: string; to: string; exclude_id?: number }) =>
-    api.get<{ success: boolean; conflicts: VehicleConflict[] }>(`${BASE}/vehicles/${vin}/conflicts${qs(params)}`),
+    api.get<{ success: boolean; conflicts: VehicleConflict[]; event_reservations?: EventReservation[] }>(`${BASE}/vehicles/${vin}/conflicts${qs(params)}`),
 
   // ── CRM clients (Test Drive: search + inline create) — login-gated search so
   //    consilieri without full CRM access can find existing clients ──

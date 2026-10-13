@@ -910,6 +910,20 @@ class FoiParcursRepository(BaseRepository):
             "ORDER BY fp.departure_datetime",
             (vin, page_id))
 
+    def get_event_notify_recipients(self, page_ids: list) -> list:
+        """Deduped notify_user_ids for the given Event TD pages — the staff to
+        alert when a classic session is booked over their reserved window (the
+        override path of find_event_reservation). Empty when no page carries a
+        notify list."""
+        if not page_ids:
+            return []
+        rows = self.query_all(
+            "SELECT DISTINCT unnest(notify_user_ids) AS uid "
+            "FROM mkt_td_booking_pages "
+            "WHERE id = ANY(%s) AND notify_user_ids IS NOT NULL",
+            (list(page_ids),))
+        return [r['uid'] for r in rows if r.get('uid')]
+
     def get_open_session(self, vin: str, exclude_id: int | None = None) -> dict | None:
         """The earliest genuinely-OUT live session for a car: a live Test Drive
         (source='td_form') that's been handed over (status='FILLED') and not yet

@@ -21,6 +21,7 @@ import {
   type PlanTestDrivePayload,
   type ActivateTestDrivePayload,
   type VehicleConflict,
+  type EventReservation,
   type FoiContract,
   type MktProject,
 } from '@/types/foiParcurs'
@@ -143,6 +144,10 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
   // Odometer-overlap soft gate: the backend 409s a km plecare below the car's
   // real floor; the advisor confirms (legit back-date) or cancels to fix a typo.
   const [overlapBlock, setOverlapBlock] = useState<{ message: string; retry: () => void } | null>(null)
+  // Event-TD reservation soft gate: the backend 409s a session over a car's
+  // reserved event window; the advisor confirms to proceed (allow_event_reserved,
+  // which notifies the event owners) or cancels.
+  const [eventBlock, setEventBlock] = useState<{ message: string; retry: () => void } | null>(null)
 
   // ── Activation mode — reopens this form pre-filled from a PLANNED draft ──
   const [searchParams] = useSearchParams()
@@ -871,12 +876,19 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
         setOpenBlock({ message: err.data.error, retry: () => { setOpenBlock(null); submitMutation.mutate({ ...variables, allow_open_session: true }) } })
       } else if (err?.data?.odometer_overlap) {
         setOverlapBlock({ message: err.data.error, retry: () => { setOverlapBlock(null); submitMutation.mutate({ ...variables, allow_overlap: true }) } })
+      } else if (err?.data?.event_reserved) {
+        setEventBlock({ message: err.data.error, retry: () => { setEventBlock(null); submitMutation.mutate({ ...variables, allow_event_reserved: true }) } })
       }
     },
   })
   const planMutation = useMutation({
     mutationFn: (payload: PlanTestDrivePayload) => foiParcursApi.planTestDrive(payload),
     onSuccess: (data) => { if (embedded) onDone?.(data.contract); else setSubmittedContract(data.contract) },
+    onError: (err: any, variables) => {
+      if (err?.data?.event_reserved) {
+        setEventBlock({ message: err.data.error, retry: () => { setEventBlock(null); planMutation.mutate({ ...variables, allow_event_reserved: true }) } })
+      }
+    },
   })
 
   // ── VIN-conflict soft-block (shared by Trimite + Planifică) ──
@@ -884,6 +896,20 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
   const [conflictList, setConflictList] = useState<VehicleConflict[]>([])
   const [showConflicts, setShowConflicts] = useState(false)
   const [pendingRun, setPendingRun] = useState<(() => void) | null>(null)
+
+  // Reactive up-front warning: flag when the chosen car + dates fall inside an
+  // active Event TD reservation window, so the advisor sees it while filling the
+  // form — not only when the 409 bounces the submit. Reuses the conflicts
+  // endpoint, which now also returns event_reservations.
+  const eventReservationsQuery = useQuery({
+    queryKey: ['td-event-reservations', selectedVehicle?.vin, departureDatetime, returnDatetime],
+    enabled: !!selectedVehicle?.vin && !!departureDatetime,
+    queryFn: () =>
+      foiParcursApi
+        .getVehicleConflicts(selectedVehicle!.vin, { from: departureDatetime, to: returnDatetime || departureDatetime })
+        .then((r) => r.event_reservations ?? []),
+  })
+  const eventReservations: EventReservation[] = eventReservationsQuery.data ?? []
 
   /** Runs the VIN-conflict check for the chosen window; if clear, calls
    *  `run()` immediately, else stashes it and opens the soft-block dialog. */
@@ -1880,8 +1906,28 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
         </CardContent>
       </Card>
 
+      {/* Up-front Event-TD reservation warning (non-blocking) — the car is
+          committed to an event during this interval; the advisor may still
+          proceed and will confirm at submit. */}
+      {eventReservations.length > 0 && (
+        <div className="rounded-md border border-amber-400/60 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertTriangle className="h-4 w-4" />
+            Mașina e rezervată pentru un eveniment Test Drive în acest interval
+          </div>
+          <ul className="mt-1 list-disc pl-5 text-xs">
+            {eventReservations.map((r) => (
+              <li key={`${r.page_id}-${r.window_date}-${r.start_time}`}>
+                „{r.title || r.slug}” · {r.window_date} {r.start_time?.slice(0, 5)}–{r.end_time?.slice(0, 5)}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-xs">Poți continua — vei confirma la trimitere, iar organizatorii vor fi notificați.</p>
+        </div>
+      )}
+
       {/* ── Submit ── */}
-      {(submitMutation.isError || planMutation.isError || activateMutation.isError) && !openBlock && !overlapBlock && (
+      {(submitMutation.isError || planMutation.isError || activateMutation.isError) && !openBlock && !overlapBlock && !eventBlock && (
         <div className="rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
           {((activateMutation.error || submitMutation.error || planMutation.error) as { data?: { error?: string } } | null)?.data?.error
             || 'Eroare la trimitere. Vă rugăm încercați din nou.'}
@@ -1958,6 +2004,24 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => { setOverlapBlock(null); submitMutation.reset() }}>Corectează</Button>
               <Button size="sm" onClick={() => overlapBlock.retry()}>Salvează oricum</Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Event-TD reservation soft gate — the car is committed to an event in
+          this interval. Confirming proceeds (allow_event_reserved) and notifies
+          the event owners; cancelling lets the advisor pick another car/time. */}
+      {eventBlock && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => { setEventBlock(null); submitMutation.reset(); planMutation.reset() }}>
+          <div className="w-full max-w-sm rounded-2xl bg-background p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-5 w-5" />
+              <h3 className="text-base font-semibold">Mașină rezervată pentru eveniment</h3>
+            </div>
+            <p className="mt-2 text-sm text-muted-foreground">{eventBlock.message}</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => { setEventBlock(null); submitMutation.reset(); planMutation.reset() }}>Anulează</Button>
+              <Button size="sm" onClick={() => eventBlock.retry()}>Continuă oricum</Button>
             </div>
           </div>
         </div>

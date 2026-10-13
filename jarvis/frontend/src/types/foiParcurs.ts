@@ -539,6 +539,9 @@ export interface TestDriveFormPayload {
   /** Confirm a km plecare below the car's odometer floor (back-dated drive),
    *  set after the user accepts the overlap warning. */
   allow_overlap?: boolean
+  /** Proceed over an Event TD reservation window, set after the user confirms
+   *  the soft-block dialog; the event's owners are then notified. */
+  allow_event_reserved?: boolean
   /** Service context (Task 13): which flow this session belongs to
    *  ('sales' | 'service'); service_order_ref is Service-only. */
   document_type?: string
@@ -579,6 +582,8 @@ export interface InternalSessionPayload {
   /** Override the driving-park lockout block, set after the user confirms. */
   allow_locked?: boolean
   allow_open_session?: boolean
+  /** Proceed over an Event TD reservation window, set after the user confirms. */
+  allow_event_reserved?: boolean
 }
 
 // ── Start a PLANNED internal draft — PUT /test-drive/{id}/start. The internal
@@ -677,6 +682,19 @@ export interface VehicleConflict {
   return_datetime: string | null
   client_name: string | null
   advisor_name: string
+}
+
+// ── Event TD reservation window — also returned by GET /vehicles/{vin}/conflicts
+// (as `event_reservations`). A car committed to an active Event TD page is
+// reserved for that page's windows; a classic session over one is a soft-block
+// the advisor can confirm. Mirrors FoiParcursRepository.find_event_reservation. ──
+export interface EventReservation {
+  page_id: number
+  slug: string
+  title: string | null
+  window_date: string
+  start_time: string
+  end_time: string
 }
 
 // One row of a session's audit trail (foi_parcurs_session_events), shown in the
