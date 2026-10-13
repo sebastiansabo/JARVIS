@@ -174,6 +174,55 @@ def test_enhance_unexpected_exception_is_caught_not_500(client, monkeypatch):
     assert 'boom' in body['errors'][0]
 
 
+def test_enhance_passes_background_override_to_service(client, monkeypatch):
+    """A background_id in the request body is forwarded to the service for
+    every photo in the batch."""
+    _set_user(monkeypatch, EditUser())
+    _own_vehicle(monkeypatch, 9)
+    monkeypatch.setattr(routes_mod, '_photos', _FakePhotos({
+        1: {'id': 1, 'vehicle_id': 9},
+        2: {'id': 2, 'vehicle_id': 9},
+    }))
+    svc = _FakeService(results=[{'id': 1}, {'id': 2}], valid_backgrounds={'grey-concrete', 'studio-white'})
+    monkeypatch.setattr(routes_mod, '_service', svc)
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: None)
+
+    r = client.post('/carbackground/api/vehicles/9/enhance',
+                    json={'photo_ids': [1, 2], 'background_id': 'grey-concrete'})
+    assert r.status_code == 200
+    assert r.get_json()['created'] == 2
+    assert svc.bg_calls == ['grey-concrete', 'grey-concrete']
+
+
+def test_enhance_without_background_passes_none(client, monkeypatch):
+    """Omitting background_id leaves the service to fall back to the house default."""
+    _set_user(monkeypatch, EditUser())
+    _own_vehicle(monkeypatch, 9)
+    monkeypatch.setattr(routes_mod, '_photos', _FakePhotos({1: {'id': 1, 'vehicle_id': 9}}))
+    svc = _FakeService(results=[{'id': 1}])
+    monkeypatch.setattr(routes_mod, '_service', svc)
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: None)
+
+    r = client.post('/carbackground/api/vehicles/9/enhance', json={'photo_ids': [1]})
+    assert r.status_code == 200
+    assert svc.bg_calls == [None]
+
+
+def test_enhance_rejects_off_list_background_400(client, monkeypatch):
+    """A background_id that isn't preferred fails the whole batch with a 400
+    before any photo is enhanced."""
+    _set_user(monkeypatch, EditUser())
+    _own_vehicle(monkeypatch, 9)
+    monkeypatch.setattr(routes_mod, '_photos', _FakePhotos({1: {'id': 1, 'vehicle_id': 9}}))
+    svc = _FakeService(results=[{'id': 1}], valid_backgrounds={'grey-concrete'})
+    monkeypatch.setattr(routes_mod, '_service', svc)
+
+    r = client.post('/carbackground/api/vehicles/9/enhance',
+                    json={'photo_ids': [1], 'background_id': 'alpine-lot'})
+    assert r.status_code == 400
+    assert svc.calls == []  # nothing enhanced
+
+
 # ── PUT /api/photos/<pid>/publish ──
 
 def test_publish_404_when_photo_missing(client, monkeypatch):
@@ -282,14 +331,25 @@ class _FakePhotos:
 class _FakeService:
     """Minimal CarBackgroundEnhanceService stand-in: `results` is consumed in
     order by successive `enhance_photo` calls — an Exception instance is
-    raised instead of returned."""
+    raised instead of returned. `bg_calls` records the background_id passed to
+    each call; `valid_backgrounds` (when set) makes `resolve_background_id`
+    reject anything off-list, mirroring the real service's 400."""
 
-    def __init__(self, results):
-        self._results = list(results)
+    def __init__(self, results=None, valid_backgrounds=None):
+        self._results = list(results or [])
         self.calls = []
+        self.bg_calls = []
+        self._valid = valid_backgrounds
 
-    def enhance_photo(self, pid):
+    def resolve_background_id(self, background_id=None):
+        if background_id and self._valid is not None and background_id not in self._valid:
+            raise CarBackgroundError(
+                f'background_id "{background_id}" is not a preferred background', 400)
+        return background_id
+
+    def enhance_photo(self, pid, background_id=None):
         self.calls.append(pid)
+        self.bg_calls.append(background_id)
         result = self._results.pop(0)
         if isinstance(result, Exception):
             raise result

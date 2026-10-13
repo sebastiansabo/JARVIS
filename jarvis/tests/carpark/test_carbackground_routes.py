@@ -109,6 +109,36 @@ def test_config_get_reports_configured(client, monkeypatch):
     assert 'secret' not in str(conn), 'api key leaked in /api/config response'
 
 
+def test_config_get_reports_preferred_backgrounds(client, monkeypatch):
+    _set_user(monkeypatch, NoSettingsUser())
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: {
+        'id': 7, 'status': 'connected',
+        'credentials': {'api_key': 'secret'},
+        'config': {'background_id': 'bg-1',
+                   'preferred_background_ids': ['bg-1', 'bg-2', 'bg-3']},
+        'last_error': None,
+    })
+    r = client.get('/carbackground/api/config')
+    assert r.status_code == 200
+    conn = r.get_json()['connector']
+    assert conn['background_id'] == 'bg-1'
+    assert conn['preferred_background_ids'] == ['bg-1', 'bg-2', 'bg-3']
+
+
+def test_config_get_preferred_falls_back_to_single_legacy(client, monkeypatch):
+    # A pre-feature connector with only background_id reports it as the lone preferred id.
+    _set_user(monkeypatch, NoSettingsUser())
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: {
+        'id': 7, 'status': 'connected',
+        'credentials': {'api_key': 'secret'},
+        'config': {'background_id': 'bg-1'},
+        'last_error': None,
+    })
+    r = client.get('/carbackground/api/config')
+    conn = r.get_json()['connector']
+    assert conn['preferred_background_ids'] == ['bg-1']
+
+
 # ── POST /api/config requires admin ──
 
 def test_config_post_forbidden_without_settings(client, monkeypatch):
@@ -136,6 +166,43 @@ def test_config_post_allows_admin_creates_connector(client, monkeypatch):
     assert body['connector']['has_api_key'] is True
     assert body['connector']['background_id'] == 'bg-2'
     assert 'new-key' not in str(body), 'api key leaked in POST /api/config response'
+
+
+def test_config_post_saves_preferred_list_and_default(client, monkeypatch):
+    _set_user(monkeypatch, AdminUser())
+    saved = {}
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: None)
+
+    def _fake_save(ctype, name, status='disconnected', config=None, credentials=None):
+        saved['config'] = config
+        return 42
+
+    monkeypatch.setattr(routes_mod._repo, 'save', _fake_save)
+    monkeypatch.setattr(routes_mod._repo, 'get', lambda cid: {
+        'id': cid, 'status': 'connected',
+        'credentials': {'api_key': 'k'},
+        'config': saved['config'],
+        'last_error': None,
+    })
+    r = client.post('/carbackground/api/config', json={
+        'api_key': 'k', 'background_id': 'bg-a',
+        'preferred_background_ids': ['bg-a', 'bg-b'],
+    })
+    assert r.status_code == 200
+    assert saved['config']['preferred_background_ids'] == ['bg-a', 'bg-b']
+    assert saved['config']['background_id'] == 'bg-a'
+    assert r.get_json()['connector']['preferred_background_ids'] == ['bg-a', 'bg-b']
+
+
+def test_config_post_rejects_default_not_in_preferred(client, monkeypatch):
+    _set_user(monkeypatch, AdminUser())
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: None)
+    r = client.post('/carbackground/api/config', json={
+        'api_key': 'k', 'background_id': 'bg-c',
+        'preferred_background_ids': ['bg-a', 'bg-b'],
+    })
+    assert r.status_code == 400
+    assert 'preferred' in r.get_json()['error'].lower()
 
 
 # ── GET /api/backgrounds, /api/credits, /api/logs require CarPark access ──

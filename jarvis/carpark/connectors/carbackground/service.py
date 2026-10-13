@@ -66,7 +66,7 @@ class CarBackgroundEnhanceService:
         self._photos = photo_repo or PhotoRepository()
         self._repo = repo or ConnectorRepository()
 
-    def house_background_id(self):
+    def _config(self):
         c = self._repo.get_by_type(CONNECTOR_TYPE) or {}
         cfg = c.get('config') or {}
         if isinstance(cfg, str):
@@ -75,17 +75,44 @@ class CarBackgroundEnhanceService:
                 cfg = json.loads(cfg)
             except (ValueError, TypeError):
                 cfg = {}
-        bg = cfg.get('background_id')
+        return cfg
+
+    def house_background_id(self):
+        bg = self._config().get('background_id')
         if not bg:
             raise CarBackgroundError('carbackground house background_id not configured', 400)
         return bg
 
-    def enhance_photo(self, photo_id):
+    def preferred_background_ids(self):
+        """The curated set of backgrounds editors may pick from. Falls back to
+        the single legacy `background_id` so connectors configured before the
+        multi-background feature still expose their one house backdrop."""
+        cfg = self._config()
+        ids = cfg.get('preferred_background_ids')
+        if isinstance(ids, list):
+            ids = [str(i) for i in ids if i]
+            if ids:
+                return ids
+        bg = cfg.get('background_id')
+        return [bg] if bg else []
+
+    def resolve_background_id(self, background_id=None):
+        """Pick the background for a generation: an explicit override must be
+        one of the preferred backgrounds; absent an override, the house default
+        is used."""
+        if background_id:
+            if background_id not in self.preferred_background_ids():
+                raise CarBackgroundError(
+                    f'background_id "{background_id}" is not a preferred background', 400)
+            return background_id
+        return self.house_background_id()
+
+    def enhance_photo(self, photo_id, background_id=None):
         photo = self._photos.get_by_id(photo_id)
         if not photo:
             raise CarBackgroundError('photo not found', 404)
+        bg = self.resolve_background_id(background_id)
         raw = spaces_service.resolve_image_bytes(photo['url'])
-        bg = self.house_background_id()
         out = self._client.generate(raw, bg)
         # reuse the gallery compressors (validates it's a decodable image)
         from carpark.routes.photos import _compress_jpeg, _InvalidImage, THUMB_MAX_PX, THUMB_QUALITY

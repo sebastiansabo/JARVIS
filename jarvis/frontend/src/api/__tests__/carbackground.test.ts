@@ -48,6 +48,25 @@ describe('carbackgroundApi', () => {
     expect(res.created).toBe(2)
   })
 
+  it('enhance includes background_id when a background is chosen', async () => {
+    const post = vi
+      .spyOn(api, 'post')
+      .mockResolvedValue({ success: true, created: 1, errors: [] } as any)
+    await carbackgroundApi.enhance(9, [1], 'grey-concrete')
+    expect(post).toHaveBeenCalledWith('/carbackground/api/vehicles/9/enhance', {
+      photo_ids: [1],
+      background_id: 'grey-concrete',
+    })
+  })
+
+  it('enhance omits background_id when none is chosen', async () => {
+    const post = vi
+      .spyOn(api, 'post')
+      .mockResolvedValue({ success: true, created: 1, errors: [] } as any)
+    await carbackgroundApi.enhance(9, [1])
+    expect(post.mock.calls[0][1]).not.toHaveProperty('background_id')
+  })
+
   it('setPublished calls PUT /carbackground/api/photos/:id/publish', async () => {
     const put = vi.spyOn(api, 'put').mockResolvedValue({ success: true, published: true } as any)
     await carbackgroundApi.setPublished(5, true)

@@ -46,14 +46,37 @@ def _json(v):
     return v or {}
 
 
+def _preferred(cfg):
+    """The curated background list, falling back to the single legacy
+    `background_id` so pre-feature connectors still expose their one backdrop."""
+    ids = cfg.get('preferred_background_ids')
+    if isinstance(ids, list):
+        ids = [str(i).strip() for i in ids if str(i).strip()]
+        if ids:
+            return ids
+    bg = cfg.get('background_id')
+    return [bg] if bg else []
+
+
 def _safe(c):
     creds = _json(c.get('credentials'))
     cfg = _json(c.get('config'))
     return {'id': c['id'], 'status': c.get('status'),
             'has_api_key': bool(creds.get('api_key')),
             'background_id': cfg.get('background_id') or '',
+            'preferred_background_ids': _preferred(cfg),
             'api_base_url': cfg.get('api_base_url') or '',
             'last_error': c.get('last_error')}
+
+
+def _validate_default_in_preferred(cfg):
+    """The house default must be one of the preferred backgrounds."""
+    bg = cfg.get('background_id')
+    prefs = cfg.get('preferred_background_ids')
+    if bg and isinstance(prefs, list) and prefs and bg not in prefs:
+        return jsonify({'success': False,
+                        'error': 'background_id must be one of preferred_background_ids'}), 400
+    return None
 
 
 @carbackground_bp.route('/api/config', methods=['GET'])
@@ -71,10 +94,19 @@ def save_config():
     data = request.get_json(silent=True) or {}
     api_key = (data.get('api_key') or '').strip()
     background_id = (data.get('background_id') or '').strip()
+    preferred_raw = data.get('preferred_background_ids')
+    preferred = None
+    if isinstance(preferred_raw, list):
+        preferred = [str(i).strip() for i in preferred_raw if str(i).strip()]
     c = _repo.get_by_type(CONNECTOR_TYPE)
     if not c:
         creds = {'api_key': api_key} if api_key else {}
         cfg = {k: v for k, v in (('background_id', background_id),) if v}
+        if preferred is not None:
+            cfg['preferred_background_ids'] = preferred
+        err = _validate_default_in_preferred(cfg)
+        if err:
+            return err
         cid = _repo.save(CONNECTOR_TYPE, 'carbackground',
                          status='connected' if api_key else 'disconnected', config=cfg, credentials=creds)
         c = _repo.get(cid)
@@ -85,6 +117,11 @@ def save_config():
             creds['api_key'] = api_key
         if 'background_id' in data:
             cfg['background_id'] = background_id
+        if preferred is not None:
+            cfg['preferred_background_ids'] = preferred
+        err = _validate_default_in_preferred(cfg)
+        if err:
+            return err
         _repo.update(c['id'], config=cfg, credentials=creds,
                      status='connected' if creds.get('api_key') else 'disconnected')
         c = _repo.get(c['id'])
@@ -148,6 +185,15 @@ def api_enhance(vid):
     except (TypeError, ValueError):
         return jsonify({'success': False, 'error': 'photo_ids must be integers'}), 400
 
+    # Optional per-batch background override; validate once up front so an
+    # off-list background fails the whole request cleanly (vs. per-photo noise).
+    bg = (data.get('background_id') or '').strip() or None
+    if bg is not None:
+        try:
+            _service.resolve_background_id(bg)
+        except CarBackgroundError as e:
+            return jsonify({'success': False, 'error': e.message}), e.status
+
     created, errors = 0, []
     for pid in ids:
         p = _photos.get_by_id(pid)
@@ -155,7 +201,7 @@ def api_enhance(vid):
             errors.append(f'{pid}: not found for vehicle {vid}')
             continue
         try:
-            _service.enhance_photo(pid)
+            _service.enhance_photo(pid, background_id=bg)
             created += 1
         except CarBackgroundError as e:
             errors.append(f'{pid}: {e.status} {e.message}')
@@ -169,7 +215,8 @@ def api_enhance(vid):
         _repo.add_sync_log(c['id'], 'carbackground_enhance', status,
                            invoices_found=len(ids), invoices_imported=created,
                            details={'vehicle_id': vid, 'requested': len(ids),
-                                    'created': created, 'errors': errors})
+                                    'created': created, 'errors': errors,
+                                    'background_id': bg})
     return jsonify({'success': True, 'vehicle_id': vid, 'created': created, 'errors': errors}), 200
 
 

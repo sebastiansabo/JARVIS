@@ -1,5 +1,6 @@
-// CarBackground admin settings: API key (write-only), house backdrop select,
-// credit badge, and the Salvează mutation.
+// CarBackground admin settings: API key (write-only), a multi-select list of
+// PREFERRED studio backdrops with one starred as the default, a credit badge,
+// and the Salvează mutation.
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -12,7 +13,12 @@ vi.mock('@/api/carbackground', () => ({
       Promise.resolve({
         success: true,
         configured: true,
-        connector: { id: 1, status: 'connected', has_api_key: true, background_id: 'studio-white', api_base_url: '', last_error: null },
+        connector: {
+          id: 1, status: 'connected', has_api_key: true,
+          background_id: 'studio-white',
+          preferred_background_ids: ['studio-white'],
+          api_base_url: '', last_error: null,
+        },
       }),
     ),
     listBackgrounds: vi.fn(() =>
@@ -25,7 +31,17 @@ vi.mock('@/api/carbackground', () => ({
       }),
     ),
     credits: vi.fn(() => Promise.resolve({ success: true, balance: 5 })),
-    saveConfig: vi.fn(() => Promise.resolve({ success: true, connector: { id: 1, status: 'connected', has_api_key: true, background_id: 'grey-concrete', api_base_url: '', last_error: null } })),
+    saveConfig: vi.fn(() =>
+      Promise.resolve({
+        success: true,
+        connector: {
+          id: 1, status: 'connected', has_api_key: true,
+          background_id: 'grey-concrete',
+          preferred_background_ids: ['studio-white', 'grey-concrete'],
+          api_base_url: '', last_error: null,
+        },
+      }),
+    ),
   },
 }))
 
@@ -43,43 +59,49 @@ beforeEach(() => {
 })
 
 describe('CarBackgroundSettings', () => {
-  it('saves the chosen house backdrop', async () => {
+  it('initializes preferred checkboxes and the default radio from the saved connector', async () => {
     renderPanel()
-    await screen.findByText(/Studio White/i)
+    const studioCheck = (await screen.findByLabelText(/Preferă Studio White/i)) as HTMLInputElement
+    const greyCheck = screen.getByLabelText(/Preferă Grey Concrete/i) as HTMLInputElement
+    const studioDefault = screen.getByLabelText(/Implicit: Studio White/i)
 
-    fireEvent.change(screen.getByLabelText(/fundal/i), { target: { value: 'grey-concrete' } })
-    fireEvent.click(screen.getByRole('button', { name: /salvează/i }))
-
-    await waitFor(() =>
-      expect(carbackgroundApi.saveConfig).toHaveBeenCalledWith(
-        expect.objectContaining({ background_id: 'grey-concrete' }),
-      ),
-    )
+    expect(studioCheck.checked).toBe(true)   // in preferred_background_ids
+    expect(greyCheck.checked).toBe(false)    // not preferred
+    expect(studioDefault).toHaveAttribute('aria-checked', 'true') // == background_id
   })
 
-  it('reflects a changed selection away from the initialized saved value', async () => {
+  it('adds a checked background to preferred and saves the list', async () => {
     renderPanel()
-    await screen.findByText(/Studio White/i)
+    await screen.findByLabelText(/Preferă Studio White/i)
 
-    const select = screen.getByLabelText(/fundal/i) as HTMLSelectElement
-    // Initialized to the saved connector.background_id.
-    expect(select.value).toBe('studio-white')
-
-    // Switch to a DIFFERENT valid id — must stick (not snap back to saved).
-    fireEvent.change(select, { target: { value: 'grey-concrete' } })
-    expect(select.value).toBe('grey-concrete')
-
+    fireEvent.click(screen.getByLabelText(/Preferă Grey Concrete/i))
     fireEvent.click(screen.getByRole('button', { name: /salvează/i }))
-    await waitFor(() =>
-      expect(carbackgroundApi.saveConfig).toHaveBeenCalledWith(
-        expect.objectContaining({ background_id: 'grey-concrete' }),
-      ),
+
+    await waitFor(() => expect(carbackgroundApi.saveConfig).toHaveBeenCalled())
+    const payload = (carbackgroundApi.saveConfig as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(payload.preferred_background_ids).toEqual(
+      expect.arrayContaining(['studio-white', 'grey-concrete']),
     )
+    expect(payload.background_id).toBe('studio-white')
+  })
+
+  it('starring a background as default auto-adds it to preferred and sends it', async () => {
+    renderPanel()
+    await screen.findByLabelText(/Preferă Studio White/i)
+
+    // Grey Concrete starts unpreferred; making it default must pull it in.
+    fireEvent.click(screen.getByLabelText(/Implicit: Grey Concrete/i))
+    fireEvent.click(screen.getByRole('button', { name: /salvează/i }))
+
+    await waitFor(() => expect(carbackgroundApi.saveConfig).toHaveBeenCalled())
+    const payload = (carbackgroundApi.saveConfig as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(payload.background_id).toBe('grey-concrete')
+    expect(payload.preferred_background_ids).toContain('grey-concrete')
   })
 
   it('never sends api_key when the field is left blank', async () => {
     renderPanel()
-    await screen.findByText(/Studio White/i)
+    await screen.findByLabelText(/Preferă Studio White/i)
 
     fireEvent.click(screen.getByRole('button', { name: /salvează/i }))
 
@@ -88,24 +110,11 @@ describe('CarBackgroundSettings', () => {
     expect(payload).not.toHaveProperty('api_key')
   })
 
-  it('shows the configured indicator and credit balance, never pre-fills the key input', async () => {
-    renderPanel()
-    await screen.findByText(/Studio White/i)
-
-    expect(screen.getByText(/configured/i)).toBeInTheDocument()
-    await screen.findByText('5')
-
-    const keyInput = screen.getByPlaceholderText(/leave blank to keep/i) as HTMLInputElement
-    expect(keyInput.type).toBe('password')
-    expect(keyInput.value).toBe('')
-  })
-
   it('sends the typed api_key when provided', async () => {
     renderPanel()
-    await screen.findByText(/Studio White/i)
+    await screen.findByLabelText(/Preferă Studio White/i)
 
-    const keyInput = screen.getByPlaceholderText(/leave blank to keep/i)
-    fireEvent.change(keyInput, { target: { value: 'new-secret' } })
+    fireEvent.change(screen.getByPlaceholderText(/leave blank to keep/i), { target: { value: 'new-secret' } })
     fireEvent.click(screen.getByRole('button', { name: /salvează/i }))
 
     await waitFor(() =>
@@ -113,5 +122,17 @@ describe('CarBackgroundSettings', () => {
         expect.objectContaining({ api_key: 'new-secret' }),
       ),
     )
+  })
+
+  it('shows the configured indicator and credit balance, never pre-fills the key input', async () => {
+    renderPanel()
+    await screen.findByLabelText(/Preferă Studio White/i)
+
+    expect(screen.getByText(/configured/i)).toBeInTheDocument()
+    await screen.findByText('5')
+
+    const keyInput = screen.getByPlaceholderText(/leave blank to keep/i) as HTMLInputElement
+    expect(keyInput.type).toBe('password')
+    expect(keyInput.value).toBe('')
   })
 })

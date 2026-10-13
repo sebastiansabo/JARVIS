@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Image, Key, Save, Loader2, XCircle, Coins } from 'lucide-react'
+import { Image, Key, Save, Loader2, XCircle, Coins, Star } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,13 +10,17 @@ import { toast } from 'sonner'
 
 // ════════════════════════════════════════════════
 // CarBackground Section (CarPark — AI studio backdrop)
+// Admins pick a SET of preferred backdrops and star one as the default. The
+// gallery picker offers the preferred set; the default is pre-selected there
+// and is the fallback for any non-interactive path.
 // ════════════════════════════════════════════════
 
 export function CarBackgroundSettings() {
   const qc = useQueryClient()
   const [apiKey, setApiKey] = useState('')
-  // null = untouched (fall back to the saved value); any string = user's choice.
-  const [backgroundId, setBackgroundId] = useState<string | null>(null)
+  // null = untouched (fall back to the saved connector); a value = user's edit.
+  const [preferredEdit, setPreferredEdit] = useState<Set<string> | null>(null)
+  const [defaultEdit, setDefaultEdit] = useState<string | null>(null)
 
   const { data: cfg, isLoading } = useQuery({
     queryKey: ['carbackground', 'config'],
@@ -38,20 +42,49 @@ export function CarBackgroundSettings() {
     refetchInterval: configured ? 60_000 : false,
   })
 
-  // null (untouched) → fall back to the saved value. Use ?? so a user picking
-  // the empty placeholder isn't conflated with "untouched".
-  const selectedBackgroundId = backgroundId ?? connector?.background_id ?? ''
+  // Saved baseline: an explicit preferred list, else the single legacy default.
+  const savedPreferred =
+    connector?.preferred_background_ids ??
+    (connector?.background_id ? [connector.background_id] : [])
+  const preferred = preferredEdit ?? new Set(savedPreferred)
+  const defaultId = defaultEdit ?? connector?.background_id ?? ''
+
+  // Toggle a backdrop in/out of the preferred set. Removing the current default
+  // reassigns the star to the first remaining preferred (or clears it) so the
+  // "default must be preferred" invariant always holds.
+  const togglePreferred = (id: string) => {
+    const next = new Set(preferred)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setPreferredEdit(next)
+    if (!next.has(id) && defaultId === id) {
+      setDefaultEdit(next.values().next().value ?? '')
+    }
+  }
+
+  // Starring a backdrop makes it the default AND pulls it into the preferred set.
+  const starDefault = (id: string) => {
+    setDefaultEdit(id)
+    if (!preferred.has(id)) {
+      const next = new Set(preferred)
+      next.add(id)
+      setPreferredEdit(next)
+    }
+  }
 
   const saveMut = useMutation({
     mutationFn: () =>
       carbackgroundApi.saveConfig({
         ...(apiKey.trim() ? { api_key: apiKey.trim() } : {}),
-        // House backdrop is required — never wipe it with an empty string.
-        ...(selectedBackgroundId ? { background_id: selectedBackgroundId } : {}),
+        preferred_background_ids: Array.from(preferred),
+        // House default is required — only send it when one is starred.
+        ...(defaultId ? { background_id: defaultId } : {}),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['carbackground'] })
       setApiKey('')
+      setPreferredEdit(null)
+      setDefaultEdit(null)
       toast.success('CarBackground settings saved')
     },
     onError: () => toast.error('Failed to save CarBackground settings'),
@@ -91,20 +124,45 @@ export function CarBackgroundSettings() {
           className="h-8 text-sm"
         />
 
-        <div className="grid gap-1.5 max-w-xs">
-          <Label htmlFor="cbg-backdrop" className="text-xs">Fundal studio</Label>
-          <select
-            id="cbg-backdrop"
-            aria-label="Fundal studio"
-            value={selectedBackgroundId}
-            onChange={(e) => setBackgroundId(e.target.value)}
-            className="h-8 rounded-md border bg-background px-2 text-sm"
-          >
-            <option value="">— alege un fundal —</option>
-            {backgrounds.map((bg) => (
-              <option key={bg.id} value={bg.id}>{bg.name}</option>
-            ))}
-          </select>
+        <div className="grid gap-1.5">
+          <Label className="text-xs">Fundaluri preferate</Label>
+          <p className="text-xs text-muted-foreground">
+            Bifează fundalurile disponibile în galerie; apasă pe stea pentru cel implicit.
+          </p>
+          <ul className="divide-y rounded-md border">
+            {backgrounds.map((bg) => {
+              const isPreferred = preferred.has(bg.id)
+              const isDefault = defaultId === bg.id
+              return (
+                <li key={bg.id} className="flex items-center gap-3 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    aria-label={`Preferă ${bg.name}`}
+                    checked={isPreferred}
+                    onChange={() => togglePreferred(bg.id)}
+                    className="h-4 w-4 shrink-0 accent-violet-600"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-sm">{bg.name}</span>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={isDefault}
+                    aria-label={`Implicit: ${bg.name}`}
+                    onClick={() => starDefault(bg.id)}
+                    title={isDefault ? 'Fundal implicit' : 'Setează ca implicit'}
+                    className={`rounded p-1 transition ${isDefault ? 'text-amber-500' : 'text-muted-foreground hover:text-amber-500'}`}
+                  >
+                    <Star className={`h-4 w-4 ${isDefault ? 'fill-amber-400' : ''}`} />
+                  </button>
+                </li>
+              )
+            })}
+            {backgrounds.length === 0 && (
+              <li className="px-3 py-2 text-sm text-muted-foreground">
+                Niciun fundal disponibil (verifică cheia API).
+              </li>
+            )}
+          </ul>
         </div>
 
         <div className="flex items-center justify-between pt-1">

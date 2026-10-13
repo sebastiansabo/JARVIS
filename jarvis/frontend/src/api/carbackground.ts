@@ -16,6 +16,9 @@ export interface CbgConnector {
   status: string
   has_api_key: boolean
   background_id: string | null
+  // The curated set of backgrounds editors may choose from in the gallery.
+  // Always includes `background_id` (the starred default) as a member.
+  preferred_background_ids: string[]
   api_base_url: string
   last_error: string | null
 }
@@ -28,7 +31,9 @@ export interface CbgConfigResponse {
 
 export interface CbgSaveConfigPayload {
   api_key?: string
+  // The starred default — must be one of preferred_background_ids.
   background_id?: string
+  preferred_background_ids?: string[]
 }
 
 export interface CbgSaveConfigResponse {
@@ -69,9 +74,10 @@ export const carbackgroundApi = {
 
   credits: () => api.get<CbgCreditsResponse>(`${BASE}/credits`),
 
-  enhance: (vehicleId: number, photoIds: number[]) =>
+  enhance: (vehicleId: number, photoIds: number[], backgroundId?: string) =>
     api.post<CbgEnhanceResponse>(`${BASE}/vehicles/${vehicleId}/enhance`, {
       photo_ids: photoIds,
+      ...(backgroundId ? { background_id: backgroundId } : {}),
     }),
 
   setPublished: (photoId: number, published: boolean) =>
