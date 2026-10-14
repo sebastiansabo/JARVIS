@@ -62,7 +62,9 @@ def test_hold_from_each_active_status(old_status):
     assert result is svc.records.update.return_value
 
 
-@pytest.mark.parametrize('bad_status', [lifecycle.BOUGHT, lifecycle.LOST, lifecycle.ON_HOLD])
+@pytest.mark.parametrize('bad_status', [
+    lifecycle.BOUGHT, lifecycle.LOST, lifecycle.CANCELLED, lifecycle.ON_HOLD,
+])
 def test_hold_from_non_active_status_raises(bad_status):
     svc = _service()
     rec = {'id': 2, 'status': bad_status}
@@ -73,6 +75,27 @@ def test_hold_from_non_active_status_raises(bad_status):
     svc.records.set_status.assert_not_called()
     svc.records.update.assert_not_called()
     svc.events.log.assert_not_called()
+
+
+@pytest.mark.parametrize('note', [None, '', '   ', '\n\t '])
+def test_hold_note_blank_stored_as_none(note):
+    svc = _service()
+    rec = {'id': 5, 'status': lifecycle.INSPECTION}
+
+    svc.hold(rec, 'Poze lipsă', note, actor=9)
+
+    payload = svc.records.update.call_args.args[1]
+    assert payload['hold_note'] is None
+
+
+def test_hold_note_truncated_to_1000_chars():
+    svc = _service()
+    rec = {'id': 6, 'status': lifecycle.INSPECTION}
+
+    svc.hold(rec, 'Poze lipsă', 'x' * 1500, actor=9)
+
+    payload = svc.records.update.call_args.args[1]
+    assert payload['hold_note'] == 'x' * 1000
 
 
 def test_resume_from_on_hold_restores_exact_prior_status():
