@@ -217,3 +217,47 @@ def test_record_get_consignment_absent_when_not_lost_or_unlinked(app):
     body, CR = _get_record(app, rec_unlinked, consignment_return={'vehicle_id': 99})
     assert body['consignment'] is None
     CR.return_value.get_by_vehicle.assert_not_called()
+
+
+# ---- GET /api/carpark/vehicles/<id> — consignment embed (Task 10) ----
+# get_vehicle() is wrapped by @login_required + @carpark_required, a
+# module-local decorator (vehicles.py's own `from flask_login import
+# current_user` binding) that only checks can_access_carpark — unlike the
+# buyback v2_permission_required gate above, so the admin stand-in here just
+# needs can_access_carpark truthy (can_view_carpark_finance is set True too,
+# to skip strip_finance_fields noise and keep the dict as given).
+
+class _CarparkUser(_User):
+    def __init__(self, company_id=3):
+        super().__init__(company_id)
+        self.can_access_carpark = True
+        self.can_view_carpark_finance = True
+
+
+def _get_vehicle(app, vehicle, *, consignment_return=None):
+    from carpark.routes import vehicles as vehicles_mod
+    vehicle_service = MagicMock()
+    vehicle_service.get_vehicle.return_value = vehicle
+    with app.test_request_context():
+        with patch.object(vehicles_mod, '_vehicle_service', vehicle_service), \
+             patch.object(vehicles_mod, 'current_user', _CarparkUser(3)), \
+             patch('carpark.repositories.consignment_repository.ConsignmentRepository') as CR:
+            CR.return_value.get_by_vehicle.return_value = consignment_return
+            resp = vehicles_mod.get_vehicle(vehicle['id'] if vehicle else 1)
+    body = resp.get_json() if hasattr(resp, 'get_json') else resp[0].get_json()
+    return body, CR
+
+
+def test_carpark_vehicle_get_includes_consignment_when_is_consignment(app):
+    veh = {'id': 77, 'is_consignment': True, 'source': 'CUSTODIE'}
+    expected = {'vehicle_id': 77, 'commission_type': 'fixed'}
+    body, CR = _get_vehicle(app, veh, consignment_return=expected)
+    assert body['vehicle']['consignment'] == expected
+    CR.return_value.get_by_vehicle.assert_called_once_with(77)
+
+
+def test_carpark_vehicle_get_consignment_absent_when_not_consignment(app):
+    veh = {'id': 78, 'is_consignment': False, 'source': 'PURCHASE'}
+    body, CR = _get_vehicle(app, veh, consignment_return={'vehicle_id': 78})
+    assert 'consignment' not in body['vehicle']
+    CR.return_value.get_by_vehicle.assert_not_called()

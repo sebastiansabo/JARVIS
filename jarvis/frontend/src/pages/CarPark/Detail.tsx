@@ -603,6 +603,11 @@ export default function CarParkDetail() {
           {STATUS_LABELS[vehicle.status] ?? vehicle.status}
         </Badge>
         <Badge variant="outline">{CATEGORY_LABELS[vehicle.category] ?? vehicle.category}</Badge>
+        {vehicle.is_consignment && (
+          <Badge variant="outline" className="border-amber-500 text-amber-600 dark:text-amber-400">
+            Custodie
+          </Badge>
+        )}
         {vehicle.nr_stoc && (
           <span className="text-sm text-muted-foreground">#{vehicle.nr_stoc}</span>
         )}
@@ -1883,6 +1888,36 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
           <Field label="Curs BNR" value={v.acquisition_exchange_rate} />
         </dl>
       </EditableCard>
+
+      {/* Custody/consignment agreement — present only when the vehicle was
+          handed off from a failed (LOST) buyback record into CarPark custody
+          (is_consignment=true, source='CUSTODIE'); see carpark_vehicle_consignment. */}
+      {v.consignment && (
+        <Card className="p-4 space-y-3">
+          <h3 className="text-sm font-semibold">Acord custodie</h3>
+          <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+            <Field
+              label="Preț proprietar"
+              value={v.consignment.owner_price != null ? `${fmtMoney(v.consignment.owner_price)} ${v.consignment.currency}` : null}
+            />
+            <Field
+              label="Comision"
+              value={
+                v.consignment.commission_type === 'percent'
+                  ? `${v.consignment.commission_value}%`
+                  : `${fmtMoney(v.consignment.commission_value)} ${v.consignment.currency}`
+              }
+            />
+            <Field
+              label="Preț minim"
+              value={v.consignment.min_sale_price != null ? `${fmtMoney(v.consignment.min_sale_price)} ${v.consignment.currency}` : null}
+            />
+            <Field label="Nr. contract" value={v.consignment.contract_number} />
+            <Field label="Data acord" value={formatDate(v.consignment.agreement_date)} />
+            <Field label="Data expirare" value={formatDate(v.consignment.expiry_date)} />
+          </dl>
+        </Card>
+      )}
 
       {/* Acquisition cost lines (vehicle.cost_lines JSON) */}
       {acqCostLines.length > 0 && (

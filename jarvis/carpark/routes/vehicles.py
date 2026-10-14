@@ -273,6 +273,13 @@ def get_vehicle(vehicle_id):
     # carpark/finance_guard.py FINANCE_VEHICLE_TABLE_FIELDS.
     if not getattr(current_user, 'can_view_carpark_finance', False):
         strip_finance_fields(vehicle, FINANCE_VEHICLE_TABLE_FIELDS)
+    # Custody hand-off: a vehicle created from a failed buyback (see
+    # buyback.routes.custody / carpark_handoff) carries a 1:1 consignment
+    # agreement. Local import avoids a cross-module import cycle at
+    # module-load time and keeps the repo patchable in tests.
+    if vehicle.get('is_consignment'):
+        from carpark.repositories.consignment_repository import ConsignmentRepository
+        vehicle['consignment'] = _serialize(ConsignmentRepository().get_by_vehicle(vehicle['id']))
     return jsonify({'vehicle': _serialize(vehicle)})
 
 
