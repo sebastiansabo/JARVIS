@@ -5,7 +5,7 @@ import { buybackApi } from '@/api/buyback'
 import { usePermissions } from './usePermissions'
 import StatusChangeDialog from './StatusChangeDialog'
 import { pickLatestOffer } from './offerUtils'
-import type { BuybackRecord, BuybackOffer } from '@/types/buyback'
+import type { BuybackRecord, BuybackOffer, CustodyAgreementInput } from '@/types/buyback'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
@@ -51,10 +51,16 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   const showCancel = can('buyback.record.edit') && !TERMINAL_STATUSES.includes(status)
   // Reopen (→ PENDING_EVALUATION) for the two "didn't buy" outcomes. CANCELLED
   // joins LOST now that the lifecycle allows CANCELLED → PENDING_EVALUATION.
-  const showReopen = (status === 'LOST' || status === 'CANCELLED') && isAdminOrManager
+  // A LOST record already transferred into custody (carpark_vehicle_id set)
+  // can no longer be reopened — the vehicle now lives in CarPark.
+  const showReopen = (status === 'LOST' || status === 'CANCELLED') && isAdminOrManager && !record.carpark_vehicle_id
   // Free status override (any → any, bypassing the state machine) — the
   // admin/manager escape hatch, always available to them regardless of status.
   const showOverride = isAdminOrManager
+  // Custody transfer: a LOST record (client declined / didn't sell) not yet
+  // handed off to CarPark can be placed into custody for consignment resale.
+  const showCustody = status === 'LOST' && !record.carpark_vehicle_id && can('buyback.record.custody')
+  const showCustodyLink = status === 'LOST' && !!record.carpark_vehicle_id
 
   const nothingToShow =
     !showInitialOffer &&
@@ -65,7 +71,9 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     !showCarparkLabel &&
     !showCancel &&
     !showReopen &&
-    !showOverride
+    !showOverride &&
+    !showCustody &&
+    !showCustodyLink
 
   // ── offer dialog (shared by "initial" + "final") ──
   const [offerDialogType, setOfferDialogType] = useState<'initial' | 'final' | null>(null)
@@ -202,6 +210,19 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
       invalidate()
     },
     onError: (e) => toast.error(errMsg(e, 'Reîncercarea transferului a eșuat')),
+  })
+
+  // ── custody transfer (LOST → CarPark consignment) ──
+  const [custodyOpen, setCustodyOpen] = useState(false)
+  const [custody, setCustody] = useState<CustodyAgreementInput>({ commission_type: 'percent', commission_value: 0 })
+  const custodyMutation = useMutation({
+    mutationFn: () => buybackApi.transferToCustody(record.id, custody),
+    onSuccess: (res) => {
+      toast.success(`Transferat în custodie → CarPark #${res.vehicle.id}`)
+      setCustodyOpen(false)
+      invalidate()
+    },
+    onError: (e) => toast.error(errMsg(e, 'Transferul în custodie a eșuat')),
   })
 
   // ── status override (admin/manager escape hatch) ──
@@ -356,6 +377,16 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
           </Button>
         )}
 
+        {showCustody && (
+          <Button size="sm" variant="outline" onClick={() => setCustodyOpen(true)}>
+            Transferă în custodie
+          </Button>
+        )}
+
+        {showCustodyLink && (
+          <p className="text-sm text-muted-foreground">Transferat în Custodie → CarPark #{record.carpark_vehicle_id}</p>
+        )}
+
         {showCancel && (
           <Button size="sm" variant="destructive" onClick={() => setCancelDialogOpen(true)}>
             Anulează
@@ -478,6 +509,91 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
             </Button>
             <Button variant="destructive" disabled={cancelMutation.isPending} onClick={() => cancelMutation.mutate()}>
               Confirmă anularea
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Custody transfer agreement dialog */}
+      <Dialog open={custodyOpen} onOpenChange={setCustodyOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Transfer în custodie</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <Label className="text-xs">
+              Preț proprietar (€)
+              <Input
+                type="number"
+                value={custody.owner_price ?? ''}
+                onChange={(e) =>
+                  setCustody({ ...custody, owner_price: e.target.value === '' ? null : Number(e.target.value) })
+                }
+              />
+            </Label>
+            <Label className="text-xs">
+              Comision
+              <Select
+                value={custody.commission_type}
+                onValueChange={(v) => setCustody({ ...custody, commission_type: v as 'percent' | 'fixed' })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="percent">Procent %</SelectItem>
+                  <SelectItem value="fixed">Sumă fixă €</SelectItem>
+                </SelectContent>
+              </Select>
+            </Label>
+            <Label className="text-xs">
+              Valoare comision
+              <Input
+                type="number"
+                value={custody.commission_value}
+                onChange={(e) => setCustody({ ...custody, commission_value: Number(e.target.value) })}
+              />
+            </Label>
+            <Label className="text-xs">
+              Preț minim (€)
+              <Input
+                type="number"
+                value={custody.min_sale_price ?? ''}
+                onChange={(e) =>
+                  setCustody({ ...custody, min_sale_price: e.target.value === '' ? null : Number(e.target.value) })
+                }
+              />
+            </Label>
+            <Label className="text-xs">
+              Nr. contract
+              <Input
+                value={custody.contract_number ?? ''}
+                onChange={(e) => setCustody({ ...custody, contract_number: e.target.value })}
+              />
+            </Label>
+            <Label className="text-xs">
+              Data acord
+              <Input
+                type="date"
+                value={custody.agreement_date ?? ''}
+                onChange={(e) => setCustody({ ...custody, agreement_date: e.target.value || null })}
+              />
+            </Label>
+            <Label className="text-xs">
+              Data expirare
+              <Input
+                type="date"
+                value={custody.expiry_date ?? ''}
+                onChange={(e) => setCustody({ ...custody, expiry_date: e.target.value || null })}
+              />
+            </Label>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCustodyOpen(false)}>
+              Renunță
+            </Button>
+            <Button size="sm" disabled={custodyMutation.isPending} onClick={() => custodyMutation.mutate()}>
+              Transferă
             </Button>
           </DialogFooter>
         </DialogContent>
