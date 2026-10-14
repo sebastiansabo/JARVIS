@@ -135,3 +135,50 @@ def _backlink(veh_id, record_id, linked_by):
             'CarPark hand-off: failed to back-link vehicle=%s to buyback record=%s',
             veh_id, record_id, exc_info=True,
         )
+
+
+def handoff_to_carpark_custody(record, agreement, actor) -> dict:
+    """Create a CONSIGNMENT CarPark vehicle draft from a failed (LOST) buyback
+    `record`, attach the custody `agreement`, carry photos over, and back-link.
+
+    Parallel to handoff_to_carpark, but: is_consignment=True, source 'CUSTODIE',
+    NO purchase price (we did not buy the car). `agreement` is the validated
+    dict from the custody route (validate_custody_agreement). Returns the
+    created vehicle. Raises ValueError verbatim from VehicleService.create_vehicle
+    (dup/invalid VIN) — the route turns that into a 409, same contract as finalize.
+
+    The consignment row is written right after the vehicle exists and BEFORE the
+    best-effort photo/link steps, so a Spaces/FK hiccup never loses the agreement
+    (see the module/spec notes on the single-INSERT orphan-vehicle window)."""
+    manufacture_date = record.get('manufacture_date')
+    data = {
+        'vin': record['vin'],
+        'brand': record['brand'],
+        'model': record['model'],
+        'variant': record.get('variant'),
+        'manufacture_date': manufacture_date,
+        'year_of_manufacture': manufacture_date.year if manufacture_date else None,
+        'first_registration_date': record.get('first_registration_date'),
+        'mileage_km': record.get('mileage_km'),
+        'fuel_type': record.get('fuel_type'),
+        'transmission': record.get('transmission'),
+        'company_id': record['company_id'],  # explicit, server-side — never from HTTP input
+        'status': 'ACQUIRED',
+        'source': 'CUSTODIE',
+        'is_consignment': True,
+        'purchase_price_net': None,
+        'category': 'TI' if record.get('is_trade_in') else 'SH',
+        'supplier_name': record.get('seller_name'),
+        'owner_name': record.get('seller_name'),
+        'supplier_cif': record.get('seller_cui'),
+    }
+
+    from carpark.services.vehicle_service import VehicleService
+    veh = VehicleService().create_vehicle(data, created_by=actor)  # may raise ValueError
+
+    from carpark.repositories.consignment_repository import ConsignmentRepository
+    ConsignmentRepository().create(veh['id'], agreement, created_by=actor)
+
+    _carry_photos(record['id'], veh['id'])
+    _backlink(veh['id'], record['id'], actor)
+    return veh
