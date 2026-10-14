@@ -6,7 +6,7 @@ import { digestApi } from '@/api/digest'
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/authStore'
 import { cn } from '@/lib/utils'
-import type { FoiContract, InternalSessionPayload } from '@/types/foiParcurs'
+import type { FoiContract, InternalSessionPayload, TestDriveFormPayload } from '@/types/foiParcurs'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
@@ -19,6 +19,13 @@ import { Car, ArrowLeft, CalendarPlus, Loader2, CheckCircle2, Plus, Search, X, A
 function localDatetimeValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// Stored datetimes are naive wall-clock ("YYYY-MM-DDTHH:MM:SS" or "… …"); take
+// the leading 16 chars as the datetime-local value so the edit form reads them
+// exactly as stored (no tz shift), mirroring CorrectSessionDialog.toLocalInput.
+function toLocalInput(s?: string | null): string {
+  return s ? s.slice(0, 16).replace(' ', 'T') : ''
 }
 
 // Debounce a changing value (mirrors TestDriveForm's local helper).
@@ -76,6 +83,11 @@ interface InternalSessionFormProps {
   initialDeparture?: string
   /** Seed the return datetime ("YYYY-MM-DDTHH:MM"). */
   initialReturn?: string
+  /** Edit a PLANNED *internal* draft in place ("Corectează" on a not-started
+   *  internal session) — the slim counterpart to TestDriveForm's edit-plan.
+   *  Loads the draft, prefills, and saves via updatePlan; status stays PLANNED.
+   *  Also read from the `?edit=` query param for the standalone route. */
+  editId?: number
   onDone?: (contract: FoiContract) => void
   onCancel?: () => void
 }
@@ -90,12 +102,17 @@ export default function InternalSessionForm({
   initialCompanyId,
   initialDeparture,
   initialReturn,
+  editId: editIdProp,
   onDone,
   onCancel,
 }: InternalSessionFormProps = {}) {
   const navigate = useNavigate()
   const user = useAuthStore((s) => s.user)
   const [searchParams] = useSearchParams()
+
+  // Editing a PLANNED internal draft (Corectează) vs. creating a new session.
+  const editId = editIdProp ?? (searchParams.get('edit') ? Number(searchParams.get('edit')) : null)
+  const isEditing = editId != null
 
   const seedDeparture = initialDeparture ?? searchParams.get('departure') ?? undefined
   const seedReturn = initialReturn ?? searchParams.get('return') ?? undefined
@@ -107,7 +124,9 @@ export default function InternalSessionForm({
   const [companyId, setCompanyId] = useState<number | null>(initialCompanyId ?? null)
   const companyDefaulted = useRef(initialCompanyId != null)
   const [vin, setVin] = useState('')
-  const [driver, setDriver] = useState(user?.name ?? '')
+  // In edit mode the driver is loaded from the draft (advisor_name); don't seed
+  // the current user — the prefill effect fills it once the contract arrives.
+  const [driver, setDriver] = useState(isEditing ? '' : (user?.name ?? ''))
   // Șofer is now a JARVIS-user search-and-select (all users): `driver` holds the
   // chosen user's name (still submitted as advisor_name). The search UI shows
   // only while no driver is picked.
@@ -123,13 +142,14 @@ export default function InternalSessionForm({
   const [comment, setComment] = useState('')
   // Start-now (live FILLED) vs plan-for-later (PLANNED draft, km deferred to
   // start). Mirrors the customer draft→activate model for internal sessions.
-  const [planning, setPlanning] = useState(false)
+  // Editing a PLANNED draft keeps it planned (km deferred), so default on.
+  const [planning, setPlanning] = useState(isEditing)
   const [attempted, setAttempted] = useState(false)
   const [noCompanyError, setNoCompanyError] = useState(false)
   const [submittedContract, setSubmittedContract] = useState<FoiContract | null>(null)
 
   useEffect(() => {
-    if (user?.name && !driver) setDriver(user.name)
+    if (!isEditing && user?.name && !driver) setDriver(user.name)
   }, [user?.name]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // JARVIS-user search for the Șofer picker (login-gated /api/digest/users/search,
@@ -147,11 +167,32 @@ export default function InternalSessionForm({
   })
   const companies = companiesData?.companies ?? []
 
+  // ── Edit mode: load the PLANNED internal draft and prefill the form once
+  //    (company/car/driver/dates/comment). KM stays deferred (planned draft). ──
+  const { data: editData } = useQuery({
+    queryKey: ['fp-contract', editId],
+    queryFn: () => foiParcursApi.getContract(editId!),
+    enabled: isEditing,
+  })
+  const prefilled = useRef(false)
+  useEffect(() => {
+    const c = editData?.contract
+    if (!isEditing || prefilled.current || !c) return
+    prefilled.current = true
+    companyDefaulted.current = true // the draft's company wins over the user-company default
+    if (c.company_id != null) setCompanyId(c.company_id)
+    if (c.vin) setVin(c.vin)
+    setDriver((c.advisor_name ?? '').trim())
+    if (c.departure_datetime) setDeparture(toLocalInput(c.departure_datetime))
+    setRet(toLocalInput(c.return_datetime))
+    setComment(c.itinerary ?? '')
+  }, [editData, isEditing])
+
   // Default the filter to the logged-in user's own company on first load (unless
   // the caller already seeded one). Auth carries the company *name*; match it to
   // an id — mirrors TestDriveForm's company auto-select.
   useEffect(() => {
-    if (companyDefaulted.current || companyId != null || !user?.company || !companies.length) return
+    if (isEditing || companyDefaulted.current || companyId != null || !user?.company || !companies.length) return
     const target = user.company.trim().toLowerCase()
     const match = companies.find((c) => c.company.trim().toLowerCase() === target)
     if (match) { setCompanyId(match.id); companyDefaulted.current = true }
@@ -176,9 +217,12 @@ export default function InternalSessionForm({
 
   // Drop a chosen car once it no longer belongs to the filtered company (e.g. the
   // default company resolves after a car was picked, or the user switches company).
+  // Guard on `allVehicles.length` so a prefilled car (edit mode) isn't cleared
+  // while the vehicle list is still loading — otherwise an empty `vehicles`
+  // momentarily "doesn't contain" the draft's car and wipes the selection.
   useEffect(() => {
-    if (vin && !vehicles.some((v) => v.vin === vin)) { setVin(''); setKmStart('') }
-  }, [vehicles, vin])
+    if (vin && allVehicles.length > 0 && !vehicles.some((v) => v.vin === vin)) { setVin(''); setKmStart('') }
+  }, [vehicles, vin, allVehicles.length])
 
   const handleVehicleChange = (nextVin: string) => {
     setVin(nextVin)
@@ -231,8 +275,20 @@ export default function InternalSessionForm({
     },
   })
 
+  // Edit (Corectează) a PLANNED internal draft in place — the slim counterpart
+  // to TestDriveForm's updatePlan. Status stays PLANNED; km remains deferred.
+  const updateMutation = useMutation({
+    mutationFn: (payload: Partial<TestDriveFormPayload>) => foiParcursApi.updatePlan(editId!, payload),
+    onSuccess: (data) => {
+      if (embedded) onDone?.(data.contract)
+      else navigate('/app/foi-parcurs')
+    },
+  })
+
+  const isPending = submitMutation.isPending || updateMutation.isPending
+
   function handleSubmit() {
-    if (submitMutation.isPending) return
+    if (isPending) return
     if (validationError) {
       setAttempted(true)
       return
@@ -245,6 +301,19 @@ export default function InternalSessionForm({
     }
     setAttempted(false)
     setNoCompanyError(false)
+    if (isEditing) {
+      // `itinerary` is always sent so an edit can blank the comment; the return
+      // is sent only when set (updatePlan leaves unprovided fields untouched).
+      updateMutation.mutate({
+        company_id: Number(companyId),
+        vin,
+        advisor_name: driver.trim(),
+        departure_datetime: departure,
+        ...(ret ? { return_datetime: ret } : {}),
+        itinerary: comment.trim(),
+      })
+      return
+    }
     submitMutation.mutate({
       is_internal: true,
       company_id: Number(companyId),
@@ -278,10 +347,11 @@ export default function InternalSessionForm({
   // Surface the backend 409 (locked_out / open-session) — or any other submit
   // error — inline, without the full admin-override retry flow (the internal
   // form is intentionally slim; an advisor blocked this way just picks
-  // another car or contacts an admin).
-  const apiErrorMessage = submitMutation.isError
-    ? ((submitMutation.error instanceof ApiError ? (submitMutation.error.data as { error?: string } | null)?.error : null)
-        ?? 'Crearea sesiunii a eșuat. Încearcă din nou.')
+  // another car or contacts an admin). Covers both create and edit.
+  const activeMutation = isEditing ? updateMutation : submitMutation
+  const apiErrorMessage = activeMutation.isError
+    ? ((activeMutation.error instanceof ApiError ? (activeMutation.error.data as { error?: string } | null)?.error : null)
+        ?? (isEditing ? 'Salvarea modificărilor a eșuat. Încearcă din nou.' : 'Crearea sesiunii a eșuat. Încearcă din nou.'))
     : null
 
   // ── Success screen — mirrors TestDriveForm's, minus the PDF links (an
@@ -317,7 +387,7 @@ export default function InternalSessionForm({
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-lg font-semibold">Sesiune Internă Nouă</h1>
+          <h1 className="text-lg font-semibold">{isEditing ? 'Corectează sesiunea internă' : 'Sesiune Internă Nouă'}</h1>
           <p className="text-sm text-muted-foreground">Jurnal de conducere intern — fără client sau semnătură</p>
         </div>
       </div>
@@ -327,6 +397,9 @@ export default function InternalSessionForm({
           <CardTitle className="text-base flex items-center gap-2"><Car className="h-4 w-4" />Detalii sesiune</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Mode toggle hidden while editing — a Corectează keeps the draft
+              PLANNED (km deferred); starting it is the separate "Începe" action. */}
+          {!isEditing && (
           <div className="flex gap-0.5 rounded-lg bg-muted p-0.5" role="group" aria-label="Mod sesiune">
             {[
               { v: false, label: 'Începe acum' },
@@ -354,7 +427,8 @@ export default function InternalSessionForm({
               )
             })}
           </div>
-          {departureIsFuture && (
+          )}
+          {!isEditing && departureIsFuture && (
             <p className="text-xs text-muted-foreground">
               Data plecării este în viitor — sesiunea se planifică (se pornește la plecare).
             </p>
@@ -472,7 +546,8 @@ export default function InternalSessionForm({
             </div>
           </div>
 
-          {planning ? (
+          {/* KM is captured at start, not while editing a planned draft. */}
+          {isEditing ? null : planning ? (
             <div className="space-y-1.5">
               <Label className="text-xs">KM plecare</Label>
               <p className="text-xs text-muted-foreground">Se preia la pornirea sesiunii.</p>
@@ -512,10 +587,10 @@ export default function InternalSessionForm({
         <p className="text-xs text-destructive text-center">{MESSAGES[validationError]}</p>
       )}
 
-      <Button className="w-full" size="lg" onClick={handleSubmit} disabled={submitMutation.isPending}>
-        {submitMutation.isPending
-          ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Se creează...</>
-          : <><CalendarPlus className="h-4 w-4 mr-2" />{planning ? 'Planifică sesiunea' : 'Creează sesiunea'}</>}
+      <Button className="w-full" size="lg" onClick={handleSubmit} disabled={isPending}>
+        {isPending
+          ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{isEditing ? 'Se salvează...' : 'Se creează...'}</>
+          : <><CalendarPlus className="h-4 w-4 mr-2" />{isEditing ? 'Salvează modificările' : planning ? 'Planifică sesiunea' : 'Creează sesiunea'}</>}
       </Button>
 
       {/* Event-TD reservation soft gate — confirm to proceed over the event window. */}

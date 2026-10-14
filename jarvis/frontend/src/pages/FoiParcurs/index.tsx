@@ -2934,7 +2934,12 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
                             )}
                             {canCorrect && (
                               <Button variant="outline" size="sm"
-                                onClick={() => sessionStatus(c).key === 'planificat' ? navigate(`/app/foi-parcurs/test-drive?edit=${c.id}`) : setCorrecting(c)}
+                                onClick={() => sessionStatus(c).key === 'planificat'
+                                  // A not-started draft is a full edit: client sessions open the
+                                  // TestDriveForm, internal logs the slim InternalSessionForm. Already-
+                                  // started/finished sessions use the light CorrectSessionDialog (both).
+                                  ? navigate(c.is_internal ? `/app/foi-parcurs/internal?edit=${c.id}` : `/app/foi-parcurs/test-drive?edit=${c.id}`)
+                                  : setCorrecting(c)}
                                 title="Corectează">
                                 <Pencil className="mr-1.5 h-3.5 w-3.5" />
                                 Corectează

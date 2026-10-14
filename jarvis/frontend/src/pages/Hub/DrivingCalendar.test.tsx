@@ -116,7 +116,9 @@ describe('DrivingCalendar', () => {
     fireEvent.click(await screen.findByTestId('tg-block-12'))
     expect(await screen.findByText('Detalii sesiune')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Începe sesiunea/ }))
-    expect(onActivate).toHaveBeenCalledWith(12)
+    // onActivate now receives the whole contract (so the panel can route an
+    // internal log to the slim km dialog, not the full client form).
+    expect(onActivate).toHaveBeenCalledWith(expect.objectContaining({ id: 12 }))
   })
 
   it('drag-moves a PLANNED session block and reschedules it via the API', async () => {

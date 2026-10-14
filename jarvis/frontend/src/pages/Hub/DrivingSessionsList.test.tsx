@@ -51,7 +51,9 @@ describe('DrivingSessionsList', () => {
     fireEvent.click(await screen.findByRole('button', { name: /completează retur/i }))
     expect(onReturn).toHaveBeenCalledWith(11)
     fireEvent.click(screen.getByRole('button', { name: /începe sesiunea/i }))
-    expect(onActivate).toHaveBeenCalledWith(20)
+    // onActivate now gets the whole contract so the panel can route an internal
+    // log to the slim km dialog instead of the full client form.
+    expect(onActivate).toHaveBeenCalledWith(expect.objectContaining({ id: 20 }))
   })
 
   it('filters by search', async () => {

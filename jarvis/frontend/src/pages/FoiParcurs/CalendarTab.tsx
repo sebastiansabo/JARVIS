@@ -14,6 +14,7 @@ import { naiveDate } from '@/lib/naiveDate'
 import TimeGrid, { type TimeGridEvent } from '@/pages/Hub/TimeGrid'
 import SessionDetailModal from '@/pages/Hub/SessionDetailModal'
 import SessionTypeChooser from './SessionTypeChooser'
+import InternalStartDialog from './InternalStartDialog'
 import MonthCalendar, { type EventWindow } from './MonthCalendar'
 import DriveTypeToggle from './DriveTypeToggle'
 import type { DocType } from './documentType'
@@ -50,6 +51,9 @@ export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', 
   // Slot-add (drag/click empty grid space) opens the Client/Intern chooser
   // before navigating, instead of always assuming a client test drive.
   const [slotChooser, setSlotChooser] = useState<{ departure: string; ret: string } | null>(null)
+  // Starting a PLANNED *internal* session uses the slim km-only dialog, never
+  // the full client TestDriveForm (which the client "Începe" navigates to).
+  const [startingInternal, setStartingInternal] = useState<FoiContract | null>(null)
   const [weekOffset, setWeekOffset] = useState(0) // rolling 7-day window: slide by ±1 day
 
   // Fetch the visible month's range (± a week to cover the grid's leading/
@@ -112,6 +116,17 @@ export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', 
       setMoveErr((err as { data?: { error?: string } })?.data?.error ?? 'Nu s-a putut reprograma sesiunea')
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] }),
+  })
+
+  // Start a PLANNED internal session (km-only) — the internal counterpart to the
+  // client "Începe", which navigates to the full TestDriveForm activate flow.
+  const startInternalMutation = useMutation({
+    mutationFn: ({ id, odometer_start }: { id: number; odometer_start: number }) =>
+      foiParcursApi.startInternalSession(id, { odometer_start }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['foi-contracts-all'] })
+      setStartingInternal(null)
+    },
   })
   const onMoveEvent = (id: number, dk: string, startTime: string, endTime: string) => {
     setMoveErr(null)
@@ -323,10 +338,30 @@ export function CalendarTab({ companyId, brand, toolbarSlot, driveType = 'all', 
           session={selected}
           vehicle={vinVehicle.get(selected.vin)}
           onClose={() => setSelected(null)}
-          onActivate={() => { const { id } = selected; setSelected(null); navigate(`/app/foi-parcurs/test-drive?activate=${id}`) }}
+          onActivate={() => {
+            const s = selected
+            setSelected(null)
+            // Internal → slim km-only dialog; client → full TestDriveForm activate.
+            if (s.is_internal) setStartingInternal(s)
+            else navigate(`/app/foi-parcurs/test-drive?activate=${s.id}`)
+          }}
           onReturn={() => { const { id } = selected; setSelected(null); navigate(`/app/foi-parcurs/test-drive/${id}/return`) }}
         />
       )}
+
+      {startingInternal && (() => {
+        const v = vinVehicle.get(startingInternal.vin)
+        return (
+          <InternalStartDialog
+            session={startingInternal}
+            vehicleName={v ? [v.brand || v.mark, v.model].filter(Boolean).join(' ') : undefined}
+            defaultKm={v?.mileage_floor ?? v?.odometer_km ?? null}
+            submitting={startInternalMutation.isPending}
+            onClose={() => setStartingInternal(null)}
+            onSubmit={(odometer_start) => startInternalMutation.mutate({ id: startingInternal.id, odometer_start })}
+          />
+        )
+      })()}
 
       <SessionTypeChooser
         open={!!slotChooser}
