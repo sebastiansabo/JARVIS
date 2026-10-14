@@ -9,6 +9,7 @@ import { VisitDetailDialog } from '@/pages/FieldSales/VisitDetailDialog'
 import NoteCaptureModal from '@/pages/FieldSales/NoteCaptureModal'
 import ClientCard360 from '@/pages/FieldSales/ClientCard360'
 import FieldSalesCalendar from '@/pages/Hub/FieldSalesCalendar'
+import RouteBuilderForm from '@/pages/FieldSales/RouteBuilderForm'
 
 export const VISIT_TYPE_LABELS: Record<string, string> = {
   fleet_review: 'Revizuire flota', renewal_discussion: 'Discutie reinnoire',
@@ -302,6 +303,7 @@ function AddVisitForm({ initialDate, initialTime, initialEndTime, companyId, onD
 
 type Overlay = null | { kind: 'add'; date?: string; time?: string; endTime?: string } | { kind: 'detail'; id: number }
   | { kind: 'note'; id: number } | { kind: 'client360'; clientId: number; clientName?: string }
+  | { kind: 'route' }
 type PanelTab = 'today' | 'calendar'
 
 export default function HubFieldSalesPanel() {
@@ -433,9 +435,14 @@ export default function HubFieldSalesPanel() {
                 entry point is hidden. AddVisitForm's client search is gated on
                 a resolved companyId too, as defense-in-depth. */}
             {companyReady && (
-              <button onClick={() => setOverlay({ kind: 'add' })} className="rounded-xl bg-teal-600 px-3 py-2.5 text-sm font-semibold text-white active:bg-teal-700">
-                <span className="flex items-center gap-1"><Plus className="h-4 w-4" />Adauga</span>
-              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setOverlay({ kind: 'route' })} className="rounded-xl border border-teal-600 px-3 py-2.5 text-sm font-semibold text-teal-700 active:bg-teal-50 dark:text-teal-300 dark:active:bg-teal-900/20">
+                  <span className="flex items-center gap-1"><MapPin className="h-4 w-4" />Ruta noua</span>
+                </button>
+                <button onClick={() => setOverlay({ kind: 'add' })} className="rounded-xl bg-teal-600 px-3 py-2.5 text-sm font-semibold text-white active:bg-teal-700">
+                  <span className="flex items-center gap-1"><Plus className="h-4 w-4" />Adauga</span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -534,6 +541,16 @@ export default function HubFieldSalesPanel() {
             initialTime={overlay.time}
             initialEndTime={overlay.endTime}
             companyId={companyReady ? companyId : undefined}
+            onDone={() => { invalidateVisitLists(); setOverlay(null) }}
+            onCancel={() => setOverlay(null)}
+          />
+        </OverlaySheet>
+      )}
+
+      {overlay?.kind === 'route' && (
+        <OverlaySheet wide onClose={() => setOverlay(null)}>
+          <RouteBuilderForm
+            companyId={companyId}
             onDone={() => { invalidateVisitLists(); setOverlay(null) }}
             onCancel={() => setOverlay(null)}
           />

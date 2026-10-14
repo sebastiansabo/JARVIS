@@ -14,6 +14,7 @@ vi.mock('@/api/fieldSales', () => ({
     searchClients: vi.fn(), createVisit: vi.fn(),
     checkin: vi.fn(), checkout: vi.fn(), addNote: vi.fn(),
     getVisit: vi.fn(), getClient360: vi.fn(), refreshFiscal: vi.fn(),
+    createMyRoute: vi.fn(), createClient: vi.fn(),
   },
 }))
 // VisitDetailDialog is heavy; stub it for panel tests. A close button is
@@ -27,6 +28,11 @@ vi.mock('@/pages/FieldSales/VisitDetailDialog', () => ({
 // test file); stub it here so the panel test stays focused on tab wiring.
 vi.mock('@/pages/Hub/FieldSalesCalendar', () => ({
   default: () => <div>calendar-tab</div>,
+}))
+// RouteBuilderForm is covered by its own test file; stub it here so the panel
+// test stays focused on the overlay wiring (button -> OverlaySheet -> onDone).
+vi.mock('@/pages/FieldSales/RouteBuilderForm', () => ({
+  default: ({ onDone }: { onDone: () => void }) => <div>route-builder<button onClick={onDone}>mock-route-done</button></div>,
 }))
 
 import HubFieldSalesPanel from './HubFieldSalesPanel'
@@ -204,6 +210,13 @@ describe('HubFieldSalesPanel', () => {
     wrap(<HubFieldSalesPanel />)
     expect(await screen.findByText(/vizite viitoare/i)).toBeInTheDocument()
     expect(screen.getByText('Viitor Client SRL')).toBeInTheDocument()
+  })
+
+  it('opens the route-builder overlay from the "Ruta noua" button', async () => {
+    getTodayVisits.mockResolvedValue({ success: true, visits: [], date: '2026-08-04' })
+    wrap(<HubFieldSalesPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /ruta noua/i }))
+    expect(await screen.findByText('route-builder')).toBeInTheDocument()
   })
 
   it('switches to the Calendar tab', async () => {
