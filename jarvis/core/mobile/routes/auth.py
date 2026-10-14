@@ -6,7 +6,9 @@ from flask import jsonify, request
 
 from core.auth.models import User
 from core.auth.services.auth_service import AuthService
+from core.auth.repositories import EventRepository
 from core.notifications.push_service import send_push_to_users, _DeviceRepo
+from core.utils.logging_config import get_logger
 from ._shared import (
     mobile_bp,
     jwt_required,
@@ -20,6 +22,36 @@ from ._shared import (
     _JWT_SECRET,
 )
 
+logger = get_logger('jarvis.mobile.auth')
+_event_repo = EventRepository()
+
+
+def _log_mobile_auth(event_type, description, user_id=None, user_email=None, reason=None, extra=None):
+    """Best-effort audit log for mobile auth attempts.
+
+    Mobile login was previously UNAUDITED — no row anywhere for a failed
+    mobile login, and telemetry can't see it (pre-session). This closes that
+    blind spot. Wrapped so an audit-log failure can NEVER break login.
+    `details.platform='mobile'` makes these distinguishable from web rows.
+    """
+    try:
+        details = {'platform': 'mobile'}
+        if reason:
+            details['reason'] = reason
+        if extra:
+            details.update(extra)
+        _event_repo.log_event(
+            event_type=event_type,
+            event_description=description,
+            user_id=user_id,
+            user_email=user_email,
+            ip_address=request.remote_addr if request else None,
+            user_agent=(request.headers.get('User-Agent', '')[:500] if request else None),
+            details=details,
+        )
+    except Exception as e:
+        logger.warning(f'mobile auth audit log failed ({event_type}): {e}')
+
 
 # ============== AUTH ENDPOINTS ==============
 
@@ -29,6 +61,7 @@ def api_token():
     allowed, retry_after = _auth_limiter.is_allowed(
         f'mobile_login:{request.remote_addr}', max_requests=10, window_seconds=300)
     if not allowed:
+        _log_mobile_auth('login_failed', 'Mobile login rate-limited', reason='rate_limited')
         return jsonify({'error': f'Too many login attempts. Try again in {retry_after} seconds.'}), 429
 
     data = request.get_json()
@@ -45,6 +78,9 @@ def api_token():
 
     user_data = _user_repo.authenticate_identifier(identifier, password)
     if not user_data:
+        _log_mobile_auth('login_failed', f'Mobile login failed for {identifier}',
+                         user_email=identifier,
+                         reason=_user_repo.classify_login_failure(identifier))
         return jsonify({'error': 'Invalid credentials'}), 401
 
     user = User(user_data)
@@ -52,12 +88,17 @@ def api_token():
 
     # Phone sign-in is restricted to Viewer accounts.
     if via_phone and not is_viewer:
+        _log_mobile_auth('login_failed', f'Mobile phone login rejected for non-viewer {identifier}',
+                         user_id=user.id, user_email=user.email, reason='phone_login_nonviewer')
         return jsonify({'error': 'Phone sign-in is only available for viewer '
                                  'accounts. Please use your email address.'}), 403
 
     # Viewers are single-factor — issue tokens immediately, no OTP.
     if is_viewer:
         threading.Thread(target=lambda: _user_repo.update_last_login(user.id), daemon=True).start()
+        _log_mobile_auth('login', f'{user.email} logged in (mobile, viewer single-factor)',
+                         user_id=user.id, user_email=user.email,
+                         extra={'factor': 'viewer', 'via': 'phone' if via_phone else 'email'})
         tokens = _generate_tokens(user.id)
         return jsonify({**tokens, 'user': _user_json(user)})
 
@@ -75,6 +116,9 @@ def api_token():
     if is_trusted:
         # Trusted device — login completes now, so it's safe to record it.
         threading.Thread(target=lambda: _user_repo.update_last_login(user.id), daemon=True).start()
+        _log_mobile_auth('login', f'User {user.email} logged in (mobile, trusted device)',
+                         user_id=user.id, user_email=user.email,
+                         extra={'factor': 'trusted-device'})
         tokens = _generate_tokens(user.id)
         return jsonify({
             **tokens,
@@ -109,11 +153,17 @@ def api_token():
     else:
         otp_id, ok, err = svc.generate_and_send_otp(user.id, user.email, user.name, _JWT_SECRET)
         if not otp_id:
+            _log_mobile_auth('login_failed', f'Mobile OTP generation failed for {user.email}',
+                             user_id=user.id, user_email=user.email, reason='otp_generate_failed')
             return jsonify({'error': err or 'Failed to send code'}), 500
         if not ok:
+            _log_mobile_auth('login_failed', f'Mobile OTP email send failed for {user.email}',
+                             user_id=user.id, user_email=user.email, reason='otp_send_failed')
             return jsonify({'error': err or 'Failed to send verification email'}), 502
         channel = 'email'
 
+    _log_mobile_auth('login_otp_challenged', f'Mobile OTP challenge issued for {user.email}',
+                     user_id=user.id, user_email=user.email, extra={'channel': channel})
     return jsonify({
         'otp_required': True,
         'challenge_id': otp_id,
@@ -127,6 +177,7 @@ def api_verify_otp():
     allowed, retry_after = _auth_limiter.is_allowed(
         f'mobile_verify:{request.remote_addr}', max_requests=10, window_seconds=300)
     if not allowed:
+        _log_mobile_auth('login_otp_failed', 'Mobile OTP verify rate-limited', reason='rate_limited')
         return jsonify({'error': f'Too many attempts. Try again in {retry_after} seconds.'}), 429
 
     data = request.get_json()
@@ -142,15 +193,21 @@ def api_verify_otp():
 
     otp = _user_repo.get_otp(challenge_id)
     if not otp or otp.get('used_at'):
+        _log_mobile_auth('login_otp_failed', 'Mobile OTP invalid/expired challenge',
+                         reason='invalid_challenge', extra={'challenge_id': challenge_id})
         return jsonify({'error': 'Invalid or expired code'}), 401
 
     svc = AuthService()
     success, error = svc.verify_otp(challenge_id, code, _JWT_SECRET)
     if not success:
+        _log_mobile_auth('login_otp_failed', f'Mobile OTP verification failed for user {otp.get("user_id")}',
+                         user_id=otp.get('user_id'), reason='otp_failed', extra={'detail': error})
         return jsonify({'error': error or 'Invalid or expired code'}), 401
 
     user_data = _user_repo.get_by_id(otp['user_id'])
     if not user_data:
+        _log_mobile_auth('login_otp_failed', f'Mobile OTP ok but user {otp.get("user_id")} not found',
+                         user_id=otp.get('user_id'), reason='user_not_found')
         return jsonify({'error': 'User not found'}), 401
 
     user = User(user_data)
@@ -158,6 +215,8 @@ def api_verify_otp():
     trusted = svc.create_trusted_device_token(user.id, device_id, _JWT_SECRET)
 
     threading.Thread(target=lambda: _user_repo.update_last_login(user.id), daemon=True).start()
+    _log_mobile_auth('login', f'User {user.email} logged in (mobile, OTP verified)',
+                     user_id=user.id, user_email=user.email, extra={'factor': 'otp'})
 
     return jsonify({
         **tokens,
