@@ -49,6 +49,35 @@ def api_visits_mine():
         return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
 
+def _resolve_stop_companies(stops, is_admin, allowed_ids, client_company_lookup):
+    """Tag each route stop with its client's tenant company_id (JAR-1130).
+
+    Mutates `stops` in place: a stop whose client HAS a company gets
+    stop['company_id'] set to it (authoritative, overriding any request value);
+    a companyless client has any request-supplied company_id dropped so
+    create_route falls back to the route-level company.
+
+    Args:
+        stops: list of stop dicts (each has 'client_id', maybe 'company_id').
+        is_admin: True to skip the allowed-companies gate.
+        allowed_ids: set of company ids the caller may use (ignored if is_admin).
+        client_company_lookup: callable client_id -> company_id | None.
+
+    Returns:
+        None if every stop is allowed, else the 0-based index of the first stop
+        whose client belongs to a company outside allowed_ids.
+    """
+    for i, stop in enumerate(stops):
+        client_company_id = client_company_lookup(stop['client_id'])
+        if client_company_id is not None:
+            if not is_admin and client_company_id not in allowed_ids:
+                return i
+            stop['company_id'] = client_company_id
+        else:
+            stop.pop('company_id', None)
+    return None
+
+
 @field_sales_bp.route('/api/field-sales/visits', methods=['POST'])
 @jwt_or_login_required
 @field_sales_required
@@ -251,17 +280,9 @@ def api_create_route():
         # company (route-level below). Mirrors the single-visit gate (JAR-1118).
         is_admin = getattr(user, 'role_id', None) == 1
         allowed_ids = None if is_admin else {c['id'] for c in _client_repo.get_allowed_companies(user.id, False)}
-        for i, stop in enumerate(stops):
-            client_company_id = _client_repo.get_client_company_id(stop['client_id'])
-            if client_company_id is not None:
-                if allowed_ids is not None and client_company_id not in allowed_ids:
-                    return jsonify({'success': False, 'error': f'Stop {i+1}: client dintr-o companie neautorizată'}), 403
-                stop['company_id'] = client_company_id
-            else:
-                # Companyless client: never trust a request-supplied company_id
-                # (tenant bypass) — drop it so create_route falls back to the
-                # route-level KAM company (target.get('company_id')).
-                stop.pop('company_id', None)
+        forbidden = _resolve_stop_companies(stops, is_admin, allowed_ids or set(), _client_repo.get_client_company_id)
+        if forbidden is not None:
+            return jsonify({'success': False, 'error': f'Stop {forbidden+1}: client dintr-o companie neautorizată'}), 403
 
         route_data = {
             'kam_id': kam_id,
