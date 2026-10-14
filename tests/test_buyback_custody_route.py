@@ -165,3 +165,55 @@ def test_missing_record_is_404(app):
     status, handoff, _ = _post(app, None, VALID_BODY)
     assert status == 404
     handoff.assert_not_called()
+
+
+# ---- GET /api/buyback/records/<id> — consignment embed (Task 6) ----
+# get_record() is decorated with @v2_permission_required('buyback', 'record',
+# 'view') and calls _shared._guard_company -> _shared._permitted_company_ids,
+# which reads _shared's OWN `current_user` binding (see module docstring
+# above), so the admin stand-in must be patched into THREE places:
+# core.roles.decorators.current_user (decorator's fast path), records_mod's
+# own `current_user` (unused here but kept for parity), and
+# records_mod._shared.current_user (the one that actually matters for the
+# guard).
+
+def _get_record(app, record, *, consignment_return=None):
+    from buyback.routes import records as records_mod
+    from core.roles import decorators
+    records_repo = MagicMock()
+    records_repo.get_by_id.return_value = record
+    with app.test_request_context():
+        with patch.object(records_mod._shared, 'records_repo', records_repo), \
+             patch.object(records_mod._shared, 'offers_repo', MagicMock(list_for_record=MagicMock(return_value=[]))), \
+             patch.object(records_mod._shared, 'photos_repo', MagicMock(get_by_record=MagicMock(return_value=[]))), \
+             patch.object(records_mod._shared, 'events_repo', MagicMock(list_for_record=MagicMock(return_value=[]))), \
+             patch.object(records_mod, 'current_user', _User(3)), \
+             patch.object(records_mod._shared, 'current_user', _User(3)), \
+             patch.object(decorators, 'current_user', _User(3)), \
+             patch('carpark.repositories.consignment_repository.ConsignmentRepository') as CR:
+            CR.return_value.get_by_vehicle.return_value = consignment_return
+            resp = records_mod.get_record(record['id'])
+    body = resp.get_json() if hasattr(resp, 'get_json') else resp[0].get_json()
+    return body, CR
+
+
+def test_record_get_includes_consignment_when_lost_and_linked(app):
+    rec = {'id': 11, 'status': 'LOST', 'company_id': 3, 'carpark_vehicle_id': 77}
+    expected = {'vehicle_id': 77, 'commission_type': 'fixed'}
+    body, CR = _get_record(app, rec, consignment_return=expected)
+    assert body['consignment'] == expected
+    CR.return_value.get_by_vehicle.assert_called_once_with(77)
+
+
+def test_record_get_consignment_absent_when_not_lost_or_unlinked(app):
+    # Non-LOST record: gate short-circuits on status, repo must not be hit.
+    rec_bought = {'id': 12, 'status': 'BOUGHT', 'company_id': 3, 'carpark_vehicle_id': 77}
+    body, CR = _get_record(app, rec_bought, consignment_return={'vehicle_id': 77})
+    assert body['consignment'] is None
+    CR.return_value.get_by_vehicle.assert_not_called()
+
+    # LOST but never linked to a carpark vehicle: gate short-circuits on id.
+    rec_unlinked = {'id': 13, 'status': 'LOST', 'company_id': 3, 'carpark_vehicle_id': None}
+    body, CR = _get_record(app, rec_unlinked, consignment_return={'vehicle_id': 99})
+    assert body['consignment'] is None
+    CR.return_value.get_by_vehicle.assert_not_called()
