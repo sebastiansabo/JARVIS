@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { Plus, X, CalendarDays, SlidersHorizontal, Car, UserRound, ChevronLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -12,13 +12,14 @@ import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
 import type { DocType } from '@/pages/FoiParcurs/documentType'
-import type { FpVehicle } from '@/types/foiParcurs'
+import type { FpVehicle, FoiContract } from '@/types/foiParcurs'
 import DrivingSessionsList from '@/pages/Hub/DrivingSessionsList'
 import DrivingCalendar from '@/pages/Hub/DrivingCalendar'
 import DrivingParkList from '@/pages/Hub/DrivingParkList'
 import TestDriveForm from '@/pages/FoiParcurs/TestDriveForm'
 import TestDriveReturn from '@/pages/FoiParcurs/TestDriveReturn'
 import InternalSessionForm from '@/pages/FoiParcurs/InternalSessionForm'
+import InternalStartDialog from '@/pages/FoiParcurs/InternalStartDialog'
 import SessionTypeChooser from '@/pages/FoiParcurs/SessionTypeChooser'
 
 type Overlay = null
@@ -27,6 +28,10 @@ type Overlay = null
   | { kind: 'new-internal'; departure?: string; ret?: string }
   | { kind: 'activate'; id: number }
   | { kind: 'edit-plan'; id: number }
+  // Slim internal counterparts: start a PLANNED internal draft (km-only dialog)
+  // and correct one (the slim InternalSessionForm), never the full client form.
+  | { kind: 'start-internal'; contract: FoiContract }
+  | { kind: 'edit-internal'; id: number }
   | { kind: 'return'; id: number }
 type PanelTab = 'sessions' | 'calendar' | 'park'
 
@@ -194,6 +199,14 @@ export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { on
     setOverlay(null)
   }
 
+  // Start a PLANNED internal session (km-only) — the internal counterpart to the
+  // client activate flow, which opens the full TestDriveForm.
+  const startInternalMutation = useMutation({
+    mutationFn: ({ id, odometer_start }: { id: number; odometer_start: number }) =>
+      foiParcursApi.startInternalSession(id, { odometer_start }),
+    onSuccess: handleOverlayDone,
+  })
+
   const headerSlot = useHubHeaderSlot()
 
   // Inline nav (portaled onto the "‹ Hub / Driving Sessions" title row when the
@@ -235,9 +248,9 @@ export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { on
           carFilter={carFilter}
           consultantFilter={consultantFilter}
           documentType={documentType}
-          onActivate={(id) => setOverlay({ kind: 'activate', id })}
+          onActivate={(c) => setOverlay(c.is_internal ? { kind: 'start-internal', contract: c } : { kind: 'activate', id: c.id })}
           onReturn={(id) => setOverlay({ kind: 'return', id })}
-          onEditPlan={(id) => setOverlay({ kind: 'edit-plan', id })}
+          onEditPlan={(c) => setOverlay(c.is_internal ? { kind: 'edit-internal', id: c.id } : { kind: 'edit-plan', id: c.id })}
         />
       )}
       {hasCompany && tab === 'calendar' && (
@@ -247,7 +260,7 @@ export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { on
           carFilter={carFilter}
           consultantFilter={consultantFilter}
           documentType={documentType}
-          onActivate={(id) => setOverlay({ kind: 'activate', id })}
+          onActivate={(c) => setOverlay(c.is_internal ? { kind: 'start-internal', contract: c } : { kind: 'activate', id: c.id })}
           onReturn={(id) => setOverlay({ kind: 'return', id })}
           onAdd={(departure, ret) => setOverlay({ kind: 'choose', departure, ret })}
         />
@@ -320,8 +333,9 @@ export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { on
       />
 
       {/* iOS-style modal sheet inside the Hub — full-screen on phones, a centered
-          floating card on desktop. */}
-      {overlay && overlay.kind !== 'choose' && (
+          floating card on desktop. 'choose' and 'start-internal' render their own
+          compact dialogs below instead of this full-screen form sheet. */}
+      {overlay && overlay.kind !== 'choose' && overlay.kind !== 'start-internal' && (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-sm">
           <div className="mx-auto min-h-full w-full max-w-2xl bg-background shadow-2xl sm:my-8 sm:min-h-0 sm:rounded-2xl">
             <div className="sticky top-0 z-10 flex items-center justify-end border-b bg-background/95 p-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] backdrop-blur sm:rounded-t-2xl sm:pt-2">
@@ -357,12 +371,33 @@ export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { on
             {overlay.kind === 'edit-plan' && (
               <TestDriveForm embedded editId={overlay.id} initialDocumentType={documentType} onDone={handleOverlayDone} onCancel={closeOverlay} />
             )}
+            {/* Corectează a PLANNED internal draft — slim internal form, not the
+                full client TestDriveForm. */}
+            {overlay.kind === 'edit-internal' && (
+              <InternalSessionForm embedded editId={overlay.id} onDone={handleOverlayDone} onCancel={closeOverlay} />
+            )}
             {overlay.kind === 'return' && (
               <TestDriveReturn embedded id={overlay.id} onDone={handleOverlayDone} onCancel={closeOverlay} />
             )}
           </div>
         </div>
       )}
+
+      {/* Start a PLANNED internal session — compact km-only dialog (the internal
+          counterpart to the client activate form). */}
+      {overlay?.kind === 'start-internal' && (() => {
+        const v = vinVehicle.get(overlay.contract.vin)
+        return (
+          <InternalStartDialog
+            session={overlay.contract}
+            vehicleName={v ? vehName(v, overlay.contract.vin) : undefined}
+            defaultKm={v?.mileage_floor ?? v?.odometer_km ?? null}
+            submitting={startInternalMutation.isPending}
+            onClose={closeOverlay}
+            onSubmit={(odometer_start) => startInternalMutation.mutate({ id: overlay.contract.id, odometer_start })}
+          />
+        )
+      })()}
 
       {/* Phone control surface — a fixed bottom pill (mirrors the Hub's global
           nav pill). Always rendered on mobile: the breadcrumb's header slot

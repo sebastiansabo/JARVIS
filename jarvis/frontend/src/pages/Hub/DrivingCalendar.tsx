@@ -39,7 +39,9 @@ interface Props {
   carFilter?: string[]
   /** Selected consultant (advisor) names; [] = all consultants. */
   consultantFilter?: string[]
-  onActivate: (id: number) => void
+  /** Start (activate) a session. Gets the whole contract so the panel can route
+   *  an internal log to the slim km-only dialog, not the full client form. */
+  onActivate: (c: FoiContract) => void
   onReturn: (id: number) => void
   /** Create a session for a dragged calendar range — full "YYYY-MM-DDTHH:MM"
    *  departure/return strings (return may be a later day for multi-day sessions). */
@@ -258,7 +260,7 @@ export default function DrivingCalendar({ companyId, brand, carFilter = [], cons
           session={detail}
           vehicle={detail.vin ? vinVehicle.get(detail.vin) : undefined}
           onClose={() => setDetail(null)}
-          onActivate={() => { const { id } = detail; setDetail(null); onActivate(id) }}
+          onActivate={() => { const c = detail; setDetail(null); onActivate(c) }}
           onReturn={() => { const { id } = detail; setDetail(null); onReturn(id) }}
         />
       )}

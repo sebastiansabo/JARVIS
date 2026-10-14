@@ -40,11 +40,14 @@ interface Props {
   carFilter?: string[]
   /** Selected consultant (advisor) names; [] = all consultants. */
   consultantFilter?: string[]
-  onActivate: (id: number) => void
+  /** Start (activate) a session. Gets the whole contract so the panel can route
+   *  an internal log to the slim km-only dialog, not the full client form. */
+  onActivate: (c: FoiContract) => void
   onReturn: (id: number) => void
   /** Open the full editor for a not-started (PLANNED) session — "Corectează"
-   *  becomes a full edit there instead of the light date/KM dialog. */
-  onEditPlan?: (id: number) => void
+   *  becomes a full edit there instead of the light date/KM dialog. Gets the
+   *  whole contract so internal drafts open the slim internal form. */
+  onEditPlan?: (c: FoiContract) => void
   /** Which fleet/pool to show — 'sales' (default) or 'service' (courtesy). */
   documentType?: DocType
 }
@@ -184,7 +187,7 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
               vehicle={c.vin ? vinVehicle.get(c.vin) : undefined}
               expanded={expandedId === c.id}
               onToggle={() => setExpandedId((prev) => (prev === c.id ? null : c.id))}
-              onActivate={() => onActivate(c.id)}
+              onActivate={() => onActivate(c)}
               onReturn={() => onReturn(c.id)}
               onDiscard={() => {
                 if (confirm('Renunți la această sesiune planificată? Acțiunea nu poate fi anulată.')) discardMutation.mutate(c.id)
@@ -195,7 +198,7 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
               onExtend={() => setExtending(c)}
               onCorrect={() => setCorrecting(c)}
               onReschedule={() => setRescheduling(c)}
-              onEditPlan={onEditPlan ? () => onEditPlan(c.id) : undefined}
+              onEditPlan={onEditPlan ? () => onEditPlan(c) : undefined}
             />
           ))}
         </div>
