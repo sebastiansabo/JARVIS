@@ -150,6 +150,7 @@ def handoff_to_carpark_custody(record, agreement, actor) -> dict:
     The consignment row is written right after the vehicle exists and BEFORE the
     best-effort photo/link steps, so a Spaces/FK hiccup never loses the agreement
     (see the module/spec notes on the single-INSERT orphan-vehicle window)."""
+
     manufacture_date = record.get('manufacture_date')
     data = {
         'vin': record['vin'],

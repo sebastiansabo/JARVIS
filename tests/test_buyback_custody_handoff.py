@@ -28,6 +28,13 @@ def test_handoff_custody_creates_consignment_vehicle_and_agreement():
          patch('carpark.repositories.consignment_repository.ConsignmentRepository', return_value=consign_repo), \
          patch.object(carpark_handoff, '_carry_photos') as carry, \
          patch.object(carpark_handoff, '_backlink') as backlink:
+        # Attach the three post-create steps to one parent so we can assert
+        # ordering: the agreement MUST be persisted before the best-effort
+        # photo-carry / back-link steps (a reorder would orphan the agreement).
+        manager = MagicMock()
+        manager.attach_mock(consign_repo.create, 'create')
+        manager.attach_mock(carry, 'carry_photos')
+        manager.attach_mock(backlink, 'backlink')
         veh = carpark_handoff.handoff_to_carpark_custody(RECORD, AGREEMENT, actor=9)
 
     data = svc.create_vehicle.call_args.args[0]
@@ -36,10 +43,27 @@ def test_handoff_custody_creates_consignment_vehicle_and_agreement():
     assert data['status'] == 'ACQUIRED'
     assert data['purchase_price_net'] is None
     assert data['company_id'] == 3
+    assert data['category'] == 'SH'  # RECORD has is_trade_in=False
     consign_repo.create.assert_called_once_with(77, AGREEMENT, created_by=9)
     carry.assert_called_once_with(11, 77)
     backlink.assert_called_once_with(77, 11, 9)
     assert veh == created
+    assert [c[0] for c in manager.mock_calls] == ['create', 'carry_photos', 'backlink']
+
+
+def test_handoff_custody_category_trade_in_is_ti():
+    record = dict(RECORD, id=12, vin='WAUZZZ8V1JA999999', is_trade_in=True)
+    created = {'id': 78, 'vin': record['vin']}
+    svc = MagicMock()
+    svc.create_vehicle.return_value = created
+    with patch('carpark.services.vehicle_service.VehicleService', return_value=svc), \
+         patch('carpark.repositories.consignment_repository.ConsignmentRepository'), \
+         patch.object(carpark_handoff, '_carry_photos'), \
+         patch.object(carpark_handoff, '_backlink'):
+        carpark_handoff.handoff_to_carpark_custody(record, AGREEMENT, actor=9)
+
+    data = svc.create_vehicle.call_args.args[0]
+    assert data['category'] == 'TI'
 
 
 def test_handoff_custody_propagates_vin_valueerror():
