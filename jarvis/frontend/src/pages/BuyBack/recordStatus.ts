@@ -3,7 +3,9 @@ export type RecordStatusKey =
   | 'initial_offer'
   | 'inspection'
   | 'final_offer'
+  | 'consignment_offer'
   | 'bought'
+  | 'consignat'
   | 'lost'
   | 'cancelled'
   | 'on_hold'
@@ -44,12 +46,26 @@ export function recordStatus(status: string): {
         badgeClass: 'bg-indigo-600 text-white',
         rowClass: 'bg-indigo-500/5 border-l-4 border-l-indigo-500/40',
       }
+    case 'CONSIGNMENT_OFFER':
+      return {
+        key: 'consignment_offer',
+        label: 'Ofertă consignație',
+        badgeClass: 'bg-teal-600 text-white',
+        rowClass: 'bg-teal-500/5 border-l-4 border-l-teal-500/40',
+      }
     case 'BOUGHT':
       return {
         key: 'bought',
         label: 'Achiziționat',
         badgeClass: 'bg-green-600 text-white',
         rowClass: 'bg-green-500/5 border-l-4 border-l-green-500/40',
+      }
+    case 'CONSIGNAT':
+      return {
+        key: 'consignat',
+        label: 'Consignat',
+        badgeClass: 'bg-teal-700 text-white',
+        rowClass: 'bg-teal-500/5 border-l-4 border-l-teal-600/40',
       }
     case 'LOST':
       return {
@@ -87,7 +103,9 @@ export const STATUS_FILTER_OPTIONS = [
   { value: 'INITIAL_OFFER', label: 'Ofertă inițială' },
   { value: 'INSPECTION', label: 'În inspecție' },
   { value: 'FINAL_OFFER', label: 'Ofertă finală' },
+  { value: 'CONSIGNMENT_OFFER', label: 'Ofertă consignație' },
   { value: 'BOUGHT', label: 'Achiziționat' },
+  { value: 'CONSIGNAT', label: 'Consignat' },
   { value: 'LOST', label: 'Pierdut' },
   { value: 'CANCELLED', label: 'Anulat' },
   { value: 'ON_HOLD', label: 'Suspendat' },

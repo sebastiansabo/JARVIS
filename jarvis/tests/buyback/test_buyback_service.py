@@ -402,3 +402,139 @@ def test_force_status_notifies_owner(require_real_db, monkeypatch):
     assert args[1] == 'status_changed'
     assert args[2] == 321
     assert kwargs.get('new_status') == lifecycle.LOST
+
+
+# ── Consignment proposal (Propune consignație) ─────────────────────────────
+
+_TERMS = {
+    'commission_type': 'percent', 'commission_value': 12.0, 'currency': 'EUR',
+    'owner_price': 15000.0, 'min_sale_price': 14000.0,
+    'contract_number': 'CS-9', 'agreement_date': '2026-10-14', 'expiry_date': '2027-01-01',
+}
+
+
+def test_post_consignment_offer_advances_and_stores_terms(require_real_db):
+    """A consignment proposal from PENDING_EVALUATION opens a 'consignment'
+    offer (terms stored in JSONB, headline amount = owner_price) and moves the
+    record to CONSIGNMENT_OFFER."""
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    offer = svc.post_offer(rec, 'consignment', {'consignment_terms': dict(_TERMS)}, actor=1)
+
+    assert offer['offer_type'] == 'consignment'
+    assert offer['client_decision'] == 'pending'
+    assert offer['consignment_terms'] == _TERMS
+    assert float(offer['amount_eur']) == 15000.0  # headline = owner_price
+
+    assert RecordRepository().get_by_id(rec['id'])['status'] == lifecycle.CONSIGNMENT_OFFER
+
+
+def test_post_consignment_offer_without_owner_price_defaults_amount_zero(require_real_db):
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    terms = {'commission_type': 'fixed', 'commission_value': 500.0, 'currency': 'EUR'}
+    offer = svc.post_offer(rec, 'consignment', {'consignment_terms': terms}, actor=1)
+    assert float(offer['amount_eur']) == 0
+
+
+def test_post_consignment_offer_wrong_status_raises(require_real_db):
+    """'consignment' requires PENDING_EVALUATION, like 'initial' — from
+    INITIAL_OFFER it must raise."""
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    svc.post_offer(rec, 'initial', {'amount_eur': 1000}, actor=1)  # -> INITIAL_OFFER
+    rec2 = RecordRepository().get_by_id(rec['id'])
+    try:
+        svc.post_offer(rec2, 'consignment', {'consignment_terms': dict(_TERMS)}, actor=1)
+        assert False, 'expected ValueError (wrong pre-offer status for consignment)'
+    except ValueError:
+        pass
+
+
+def test_consignment_decline_moves_to_lost(require_real_db):
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    offer = svc.post_offer(rec, 'consignment', {'consignment_terms': dict(_TERMS)}, actor=1)
+    rec2 = RecordRepository().get_by_id(rec['id'])
+    updated = svc.record_decision(rec2, offer['id'], 'declined', actor=2, decline_reason='nu vrea')
+    assert updated['status'] == lifecycle.LOST
+    assert RecordRepository().get_by_id(rec['id'])['lost_reason'] == 'nu vrea'
+
+
+def test_consignment_accept_hands_off_and_moves_to_consignat(require_real_db, monkeypatch):
+    """Accepting a consignment proposal performs the CarPark custody hand-off
+    (stubbed here), stamps the offer accepted, links the vehicle, and moves the
+    record to CONSIGNAT. The hand-off receives the proposed terms re-coerced to
+    typed values (Decimal/date) via validate_custody_agreement."""
+    import buyback.services.carpark_handoff as handoff_mod
+    calls = []
+    monkeypatch.setattr(
+        handoff_mod, 'handoff_to_carpark_custody',
+        lambda record, agreement, actor: calls.append((record['id'], agreement, actor)) or {'id': 987654},
+    )
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    offer = svc.post_offer(rec, 'consignment', {'consignment_terms': dict(_TERMS)}, actor=1)
+    rec2 = RecordRepository().get_by_id(rec['id'])
+    updated = svc.record_decision(rec2, offer['id'], 'accepted', actor=7)
+
+    assert updated['status'] == lifecycle.CONSIGNAT
+    assert updated['carpark_vehicle_id'] == 987654
+    fresh = RecordRepository().get_by_id(rec['id'])
+    assert fresh['status'] == lifecycle.CONSIGNAT
+    assert fresh['carpark_vehicle_id'] == 987654
+
+    assert len(calls) == 1
+    _rid, agreement, actor = calls[0]
+    assert actor == 7
+    assert agreement['commission_type'] == 'percent'
+    assert float(agreement['commission_value']) == 12.0
+    assert float(agreement['owner_price']) == 15000.0
+
+    accepted = OfferRepository().get(offer['id'])
+    assert accepted['client_decision'] == 'accepted'
+    assert accepted['decided_by'] == 7
+
+
+def test_consignment_accept_dup_vin_leaves_offer_pending(require_real_db, monkeypatch):
+    """A dup/invalid VIN (ValueError from the hand-off) must leave the offer
+    pending and the record in CONSIGNMENT_OFFER (retryable) — the decision is
+    NOT stamped and no vehicle is linked."""
+    import buyback.services.carpark_handoff as handoff_mod
+    monkeypatch.setattr(
+        handoff_mod, 'handoff_to_carpark_custody',
+        lambda record, agreement, actor: (_ for _ in ()).throw(ValueError('duplicate VIN')),
+    )
+    svc = BuyBackService(notifier=None)
+    rec = _record()
+    offer = svc.post_offer(rec, 'consignment', {'consignment_terms': dict(_TERMS)}, actor=1)
+    rec2 = RecordRepository().get_by_id(rec['id'])
+    try:
+        svc.record_decision(rec2, offer['id'], 'accepted', actor=7)
+        assert False, 'expected ValueError (dup VIN)'
+    except ValueError:
+        pass
+
+    assert OfferRepository().get(offer['id'])['client_decision'] == 'pending'
+    fresh = RecordRepository().get_by_id(rec['id'])
+    assert fresh['status'] == lifecycle.CONSIGNMENT_OFFER
+    assert fresh['carpark_vehicle_id'] is None
+
+
+def test_notifier_not_called_for_consignment_offer(require_real_db):
+    """The external seller-facing offer email (send_offer_email/notify_sales)
+    is a buy-offer notification — it must NOT fire for a consignment proposal."""
+    calls = {'email': [], 'sales': []}
+
+    class FakeNotifier:
+        def send_offer_email(self, record, offer):
+            calls['email'].append(1)
+
+        def notify_sales(self, record):
+            calls['sales'].append(1)
+
+    svc = BuyBackService(notifier=FakeNotifier())
+    rec = _record()
+    svc.post_offer(rec, 'consignment', {'consignment_terms': dict(_TERMS)}, actor=1)
+    assert calls['email'] == []
+    assert calls['sales'] == []

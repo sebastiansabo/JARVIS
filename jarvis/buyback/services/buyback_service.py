@@ -38,16 +38,21 @@ from buyback.repositories.record_repository import RecordRepository
 from buyback.repositories.offer_repository import OfferRepository
 from buyback.repositories.event_repository import EventRepository
 
-# Which pre-offer status a given offer round may be opened from.
+# Which pre-offer status a given offer round may be opened from. A
+# 'consignment' proposal opens from PENDING_EVALUATION (the same pre-offer
+# stage as an initial buy offer) — it's an alternative to buying, offered
+# before any inspection.
 _ROUND_REQUIRED_STATUS = {
     'initial': lifecycle.PENDING_EVALUATION,
     'final': lifecycle.INSPECTION,
+    'consignment': lifecycle.PENDING_EVALUATION,
 }
 
 # Which post-offer status an offer round lands the record in once posted.
 _ROUND_TARGET_STATUS = {
     'initial': lifecycle.INITIAL_OFFER,
     'final': lifecycle.FINAL_OFFER,
+    'consignment': lifecycle.CONSIGNMENT_OFFER,
 }
 
 # Statuses a record may be placed ON_HOLD from — the four "active" stages
@@ -227,10 +232,26 @@ class BuyBackService:
                 "cannot open a second one"
             )
 
+        # A consignment proposal carries its terms (already validated + JSON-
+        # serialized by the route) in payload['consignment_terms'] rather than
+        # the amount/vat/valid_until of a buy offer. Store the terms on the
+        # offer; use owner_price as the headline amount_eur (amount_eur is NOT
+        # NULL — fall back to 0 when no owner_price was proposed), with no
+        # vat_status/valid_until.
+        consignment_terms = None
+        amount_eur = payload.get('amount_eur')
+        vat_status = payload.get('vat_status')
+        valid_until = payload.get('valid_until')
+        if offer_type == 'consignment':
+            consignment_terms = payload.get('consignment_terms')
+            amount_eur = (consignment_terms or {}).get('owner_price') or 0
+            vat_status = None
+            valid_until = None
+
         offer = self.offers.create(
             record['id'], offer_type,
-            payload.get('amount_eur'), payload.get('vat_status'),
-            payload.get('valid_until'), payload.get('notes'), actor,
+            amount_eur, vat_status, valid_until, payload.get('notes'), actor,
+            consignment_terms=consignment_terms,
         )
 
         record = self.transition(
@@ -238,7 +259,10 @@ class BuyBackService:
             {'offer_id': offer['id']},
         )
 
-        if self.notifier is not None:
+        # The notifier hooks render a seller-facing BUY offer (email + sales
+        # heads-up); a consignment proposal is not a buy offer, so skip them —
+        # the in-app status-change notification still fires inside transition().
+        if self.notifier is not None and offer_type != 'consignment':
             # Hand the notifier the FRESH record (post-transition status),
             # not the stale pre-offer one — the email/sales hooks render
             # status, so they must see INITIAL_OFFER/FINAL_OFFER, not the
@@ -267,7 +291,9 @@ class BuyBackService:
             or latest is None
             or latest['id'] != offer_id
             or latest['client_decision'] != 'pending'
-            or record['status'] not in (lifecycle.INITIAL_OFFER, lifecycle.FINAL_OFFER)
+            or record['status'] not in (
+                lifecycle.INITIAL_OFFER, lifecycle.FINAL_OFFER, lifecycle.CONSIGNMENT_OFFER
+            )
         ):
             raise ValueError(
                 f"Cannot record decision {decision!r} on offer {offer_id} for "
@@ -275,9 +301,22 @@ class BuyBackService:
                 f"latest pending offer, or record is not awaiting a decision"
             )
 
+        # Accepting a consignment proposal performs the external CarPark custody
+        # hand-off, which must SUCCEED before we stamp the offer accepted / move
+        # the record — so a dup-VIN or mid-hand-off fault leaves the offer
+        # pending and the record in CONSIGNMENT_OFFER (retryable), never a
+        # half-accepted offer with no vehicle. Handled ahead of the generic
+        # record_decision stamp below for exactly that ordering (mirrors
+        # buyback.routes.custody's validate→hand-off→link sequence).
+        if decision == 'accepted' and record['status'] == lifecycle.CONSIGNMENT_OFFER:
+            return self._accept_consignment(record, latest, actor)
+
         self.offers.record_decision(offer_id, decision, actor, decline_reason)
 
         if decision == 'declined':
+            # Also covers a declined CONSIGNMENT_OFFER → LOST (lifecycle allows
+            # CONSIGNMENT_OFFER → LOST), same "didn't happen" outcome as a
+            # declined buy offer.
             updated_record = self.records.update(record['id'], {'lost_reason': decline_reason})
             return self.transition(
                 updated_record, lifecycle.LOST, actor,
@@ -295,4 +334,33 @@ class BuyBackService:
         raise ValueError(
             f"Unhandled decision {decision!r} for record {record['id']} "
             f"in status {record['status']!r}"
+        )
+
+    def _accept_consignment(self, record, offer, actor) -> dict:
+        """Seller accepted a consignment proposal: perform the CarPark custody
+        hand-off from the proposed terms, link the created vehicle, stamp the
+        offer accepted, and move the record to CONSIGNAT.
+
+        The hand-off runs FIRST (before stamping the decision) so a dup/invalid
+        VIN — ValueError raised verbatim from VehicleService.create_vehicle, the
+        route turns it into a 409 — or any other mid-hand-off fault leaves the
+        offer pending and the record in CONSIGNMENT_OFFER, i.e. retryable. Only
+        once a vehicle exists do we stamp `accepted`, write carpark_vehicle_id,
+        and transition. Imports are LOCAL to keep this service a leaf
+        (carpark_handoff pulls in carpark; custody is a route that imports
+        _shared → this service — a module-level import of either would cycle)."""
+        from buyback.services.carpark_handoff import handoff_to_carpark_custody
+        from buyback.routes.custody import validate_custody_agreement
+
+        # Re-coerce the JSON-stored terms (floats/ISO strings) back to the
+        # Decimal/date types ConsignmentRepository expects — the same validator
+        # the propose route ran, idempotent on its own serialized output.
+        agreement = validate_custody_agreement(offer.get('consignment_terms') or {})
+        vehicle = handoff_to_carpark_custody(record, agreement, actor)  # may raise ValueError (dup VIN)
+
+        self.offers.record_decision(offer['id'], 'accepted', actor)
+        updated = self.records.update(record['id'], {'carpark_vehicle_id': vehicle['id']})
+        return self.transition(
+            updated, lifecycle.CONSIGNAT, actor,
+            {'offer_id': offer['id'], 'carpark_vehicle_id': vehicle['id']},
         )

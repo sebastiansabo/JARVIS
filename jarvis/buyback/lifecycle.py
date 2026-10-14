@@ -11,13 +11,24 @@ BOUGHT = 'BOUGHT'
 LOST = 'LOST'
 CANCELLED = 'CANCELLED'
 ON_HOLD = 'ON_HOLD'
+# Consignment proposal flow (Propune consignație): a seller-accepted
+# consignment instead of a purchase. CONSIGNMENT_OFFER is the awaiting-decision
+# state (parallel to INITIAL_OFFER/FINAL_OFFER); CONSIGNAT is the accepted
+# terminal state where the car has been handed off to CarPark on consignment
+# (parallel to BOUGHT — the car now lives in CarPark, so no reopen).
+CONSIGNMENT_OFFER = 'CONSIGNMENT_OFFER'
+CONSIGNAT = 'CONSIGNAT'
 
 TRANSITIONS = {
-    PENDING_EVALUATION: {INITIAL_OFFER, CANCELLED, ON_HOLD},
+    PENDING_EVALUATION: {INITIAL_OFFER, CONSIGNMENT_OFFER, CANCELLED, ON_HOLD},
     INITIAL_OFFER: {INSPECTION, LOST, CANCELLED, ON_HOLD},
     INSPECTION: {FINAL_OFFER, CANCELLED, ON_HOLD},
     FINAL_OFFER: {BOUGHT, LOST, CANCELLED, ON_HOLD},
+    # Consignment proposal: accept → CONSIGNAT (hand-off), decline → LOST,
+    # manager abort → CANCELLED.
+    CONSIGNMENT_OFFER: {CONSIGNAT, LOST, CANCELLED},
     BOUGHT: set(),
+    CONSIGNAT: set(),                  # terminal — car handed off to CarPark
     LOST: {PENDING_EVALUATION},        # manager reopen
     CANCELLED: {PENDING_EVALUATION},   # manager reopen (same as LOST)
     ON_HOLD: {PENDING_EVALUATION, INITIAL_OFFER, INSPECTION, FINAL_OFFER, CANCELLED},
@@ -28,7 +39,9 @@ STATUS_LABELS = {
     INITIAL_OFFER: 'Ofertă inițială',
     INSPECTION: 'În inspecție',
     FINAL_OFFER: 'Ofertă finală',
+    CONSIGNMENT_OFFER: 'Ofertă consignație',
     BOUGHT: 'Achiziționat',
+    CONSIGNAT: 'Consignat',
     LOST: 'Pierdut',
     CANCELLED: 'Anulat',
     ON_HOLD: 'Suspendat',

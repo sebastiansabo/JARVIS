@@ -3,7 +3,7 @@ import { recordStatus, STATUS_FILTER_OPTIONS } from './recordStatus'
 
 describe('recordStatus', () => {
   it('maps each lifecycle status to a non-empty RO label + badge', () => {
-    for (const s of ['PENDING_EVALUATION', 'INITIAL_OFFER', 'INSPECTION', 'FINAL_OFFER', 'BOUGHT', 'LOST', 'CANCELLED']) {
+    for (const s of ['PENDING_EVALUATION', 'INITIAL_OFFER', 'INSPECTION', 'FINAL_OFFER', 'CONSIGNMENT_OFFER', 'BOUGHT', 'CONSIGNAT', 'LOST', 'CANCELLED']) {
       const r = recordStatus(s)
       expect(r.label).toBeTruthy()
       expect(r.badgeClass).toBeTruthy()
@@ -15,18 +15,25 @@ describe('recordStatus', () => {
     expect(recordStatus('CANCELLED').label).toBe('Anulat')
   })
 
+  it('maps the consignment statuses to their RO labels', () => {
+    expect(recordStatus('CONSIGNMENT_OFFER').label).toBe('Ofertă consignație')
+    expect(recordStatus('CONSIGNAT').label).toBe('Consignat')
+  })
+
   it('unknown status falls back, does not throw', () => {
     expect(recordStatus('WAT').label).toBeTruthy()
   })
 
-  it('STATUS_FILTER_OPTIONS contains all 8 statuses', () => {
-    expect(STATUS_FILTER_OPTIONS).toHaveLength(8)
+  it('STATUS_FILTER_OPTIONS contains all 10 statuses', () => {
+    expect(STATUS_FILTER_OPTIONS).toHaveLength(10)
     const values = STATUS_FILTER_OPTIONS.map((opt) => opt.value)
     expect(values).toContain('PENDING_EVALUATION')
     expect(values).toContain('INITIAL_OFFER')
     expect(values).toContain('INSPECTION')
     expect(values).toContain('FINAL_OFFER')
+    expect(values).toContain('CONSIGNMENT_OFFER')
     expect(values).toContain('BOUGHT')
+    expect(values).toContain('CONSIGNAT')
     expect(values).toContain('LOST')
     expect(values).toContain('CANCELLED')
     expect(values).toContain('ON_HOLD')

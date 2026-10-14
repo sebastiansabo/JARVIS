@@ -129,3 +129,45 @@ def transfer_to_custody(record_id):
         'record': _shared._serialize(updated),
         'vehicle': _shared._serialize(vehicle),
     }), 200
+
+
+@buyback_bp.route('/records/<int:record_id>/propose-consignment', methods=['POST'])
+@login_required
+@v2_permission_required('buyback', 'offer', 'manage')
+def propose_consignment(record_id):
+    """Open a consignment PROPOSAL on a PENDING_EVALUATION record: a
+    'consignment' offer carrying the proposed terms, moving the record to
+    CONSIGNMENT_OFFER to await the seller's decision. Unlike transfer_to_custody
+    (which acts on an already-LOST record and hands off immediately), nothing is
+    created in CarPark here — the hand-off happens only if the seller accepts
+    (buyback.routes.offers.record_decision → BuyBackService._accept_consignment).
+
+    Same offer-manage permission and company/IDOR guard as posting a buy offer.
+    Reuses validate_custody_agreement for the terms; post_offer enforces the
+    PENDING_EVALUATION / one-pending-offer invariants (ValueError → 409)."""
+    record = _shared.records_repo.get_by_id(record_id)
+    if not record:
+        return jsonify({'success': False, 'error': 'Record not found'}), 404
+
+    err = _shared._guard_company(record)
+    if err:
+        return err
+
+    body = request.get_json(silent=True) or {}
+    try:
+        agreement = validate_custody_agreement(body)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+    # Store the terms JSON-safe (Decimals/dates serialized) on the offer; they
+    # are re-coerced back to typed values at accept time for the hand-off.
+    payload = {
+        'consignment_terms': _shared._serialize(agreement),
+        'notes': body.get('notes'),
+    }
+    try:
+        offer = _shared.service.post_offer(record, 'consignment', payload, current_user.id)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 409
+
+    return jsonify({'success': True, 'offer': _shared._serialize(offer)}), 201

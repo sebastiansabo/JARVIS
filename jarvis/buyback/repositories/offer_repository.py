@@ -14,26 +14,38 @@ enforced here — they belong to the service layer (Task 8) and the route
 brief specifies.
 """
 
+from psycopg2.extras import Json
+
 from core.base_repository import BaseRepository
 
 
 class OfferRepository(BaseRepository):
 
-    def create(self, record_id, offer_type, amount_eur, vat_status, valid_until, notes, created_by) -> dict:
+    def create(self, record_id, offer_type, amount_eur, vat_status, valid_until, notes, created_by,
+               consignment_terms=None) -> dict:
         """INSERT into buyback_offers with RETURNING *.
 
         `client_decision` always starts as 'pending' (the DB column default,
         made explicit here too). When `valid_until` is None, it defaults to
         `CURRENT_DATE + INTERVAL '7 days'` — computed in SQL via COALESCE so
         the DB, not Python, owns "what is today" and the interval math.
+
+        `consignment_terms` is an optional dict of proposed consignment terms
+        (owner_price/commission/floor/contract/dates), stored on a
+        'consignment' offer in the JSONB column. It must be JSON-safe already
+        (Decimals/dates serialized by the caller) — wrapped in Json() so
+        psycopg2 serializes it; None is stored as SQL NULL, not an empty-object
+        JSONB (mirrors EventRepository.log's `Json(x) if x else None` idiom).
         """
         sql = (
             'INSERT INTO buyback_offers '
-            '(record_id, offer_type, amount_eur, vat_status, valid_until, notes, created_by, client_decision) '
-            "VALUES (%s, %s, %s, %s, COALESCE(%s, CURRENT_DATE + INTERVAL '7 days'), %s, %s, 'pending') "
+            '(record_id, offer_type, amount_eur, vat_status, valid_until, notes, created_by, '
+            'client_decision, consignment_terms) '
+            "VALUES (%s, %s, %s, %s, COALESCE(%s, CURRENT_DATE + INTERVAL '7 days'), %s, %s, 'pending', %s) "
             'RETURNING *'
         )
-        params = (record_id, offer_type, amount_eur, vat_status, valid_until, notes, created_by)
+        params = (record_id, offer_type, amount_eur, vat_status, valid_until, notes, created_by,
+                  Json(consignment_terms) if consignment_terms else None)
         return self.execute(sql, params, returning=True)
 
     def get(self, offer_id) -> dict | None:

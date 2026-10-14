@@ -221,8 +221,12 @@ def get_record(record_id):
     # custody (see buyback.routes.custody) carries a consignment agreement
     # keyed by carpark_vehicle_id. Local import avoids a cross-module import
     # cycle at module-load time and keeps the repo patchable in tests.
+    # Two paths reach a consignment agreement: a LOST record taken onto custody
+    # (buyback.routes.custody), and a CONSIGNAT record from an accepted
+    # consignment proposal (Propune consignație) — both carry the agreement on
+    # their carpark_vehicle_id.
     consignment = None
-    if record.get('status') == lifecycle.LOST and record.get('carpark_vehicle_id'):
+    if record.get('status') in (lifecycle.LOST, lifecycle.CONSIGNAT) and record.get('carpark_vehicle_id'):
         from carpark.repositories.consignment_repository import ConsignmentRepository
         consignment = ConsignmentRepository().get_by_vehicle(record['carpark_vehicle_id'])
 

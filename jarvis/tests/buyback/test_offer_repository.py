@@ -137,3 +137,31 @@ def test_record_decision_declined_with_reason(require_real_db):
     assert decided['decided_by'] == 3
     assert decided['decline_reason'] == 'price too low'
     assert repo.pending_for_record(rid) is None
+
+
+def test_create_consignment_offer_persists_terms_jsonb(require_real_db):
+    """A 'consignment' offer stores its proposed terms dict in the JSONB
+    consignment_terms column, read back as a Python dict (psycopg2 auto-parses
+    JSONB). The 11-char offer_type fits the widened column."""
+    rid = _record()['id']
+    repo = OfferRepository()
+    terms = {
+        'commission_type': 'percent', 'commission_value': 10.0, 'currency': 'EUR',
+        'owner_price': 15000.0, 'min_sale_price': 14000.0,
+        'contract_number': 'CS-42', 'agreement_date': '2026-10-14', 'expiry_date': '2027-01-01',
+    }
+    offer = repo.create(rid, 'consignment', 15000, None, None, None, 1, consignment_terms=terms)
+
+    assert offer['offer_type'] == 'consignment'
+    assert offer['consignment_terms'] == terms
+    # Round-trips identically on re-fetch.
+    assert repo.get(offer['id'])['consignment_terms'] == terms
+
+
+def test_create_non_consignment_offer_leaves_terms_null(require_real_db):
+    """An ordinary offer (no consignment_terms passed) stores SQL NULL, not an
+    empty-object JSONB — mirrors EventRepository.log's Json(x) if x else None."""
+    rid = _record()['id']
+    repo = OfferRepository()
+    offer = repo.create(rid, 'initial', 1000, 'no_vat', None, None, 1)
+    assert offer['consignment_terms'] is None

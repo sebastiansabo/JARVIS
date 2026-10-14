@@ -173,6 +173,17 @@ export default function BuyBackDetail() {
   const { record, offers, photos, events, consignment } = data
   const rs = recordStatus(record.status)
   const offer = pickLatestOffer(offers)
+  // When the current offer is accepted, its amount IS the agreed acquisition
+  // price — show it as "Preț achiziție" even before finalize stamps
+  // record.purchase_price_eur (which still wins once set). Excluded statuses:
+  // CANCELLED/LOST (abandoned deal — no purchase), and the consignment states
+  // (CONSIGNMENT_OFFER/CONSIGNAT) where the accepted offer's amount is the
+  // owner's asking price for a consignment, NOT a price we paid.
+  const PURCHASE_PRICE_HIDDEN = ['CANCELLED', 'LOST', 'CONSIGNMENT_OFFER', 'CONSIGNAT']
+  const acceptedOfferAmount =
+    offer?.client_decision === 'accepted' && !PURCHASE_PRICE_HIDDEN.includes(record.status)
+      ? offer.amount_eur
+      : null
   // Resolve the stored hold_reason code to its RO label (falls back to the raw
   // code if the lookups haven't loaded yet, same pattern as makeLabelers).
   const holdReasonLabel = optsData?.hold_reasons?.find((o) => o.value === record.hold_reason)?.label ?? record.hold_reason
@@ -322,15 +333,19 @@ export default function BuyBackDetail() {
                   : null
               }
             />
-            {record.status === 'BOUGHT' && <Field label="Preț achiziție" value={fmtEur(record.purchase_price_eur)} />}
+            {(record.status === 'BOUGHT' || acceptedOfferAmount != null) && (
+              <Field label="Preț achiziție" value={fmtEur(record.purchase_price_eur ?? acceptedOfferAmount)} />
+            )}
             <Field label="Cost recondiționare" value={fmtEur(record.reconditioning_cost_eur)} />
           </CardContent>
         </Card>
 
-        {record.status === 'LOST' && record.carpark_vehicle_id && (
+        {(record.status === 'LOST' || record.status === 'CONSIGNAT') && record.carpark_vehicle_id && (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><Euro className="h-4 w-4" />Custodie</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Euro className="h-4 w-4" />{record.status === 'CONSIGNAT' ? 'Consignație' : 'Custodie'}
+              </CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-2 gap-3">
               <Field label="Preț proprietar" value={fmtEur(consignment?.owner_price)} />
