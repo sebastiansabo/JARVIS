@@ -299,3 +299,39 @@ def _ensure_buyback_schema():
         conn.commit()
     finally:
         release_db(conn)
+
+
+# ---------------------------------------------------------------------------
+# Guard: no buyback test may dispatch a REAL email or push notification
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _mute_external_notifications(monkeypatch):
+    """Silence the two *external* notification sinks for EVERY buyback test.
+
+    Several DB-backed service/route tests transition a record whose owner
+    (created_by) differs from the acting user — e.g. `record_decision(...,
+    actor=2)` on a `_record(created_by=1)`. That fires notify_owner's
+    best-effort email/push to the *real* owner: `channel_email` defaults True
+    (buyback/services/config.py), and the owner is resolved via a fresh
+    `UserRepository().get_by_id()` that bypasses as_role()'s get_by_id stub —
+    so on a real DB where user id 1 is a live account it reaches a real inbox,
+    and send_email does a real smtplib send (core/services/notification_service.py).
+    Without this guard a single `pytest tests/buyback` run against a real DB
+    blasts that owner with a burst of "BuyBack …: Pierdut/Achiziție/…" emails.
+
+    Both notify functions do a *function-level* `from ... import send_email` /
+    `send_push_to_users`, so patching the source-module attribute is what takes
+    effect (same idiom as the per-test `_mute_emails` helper in
+    test_routes_records.py). Tests that assert on send payloads
+    (test_notifications.py) re-patch these in their own body, which runs after
+    this fixture and therefore wins.
+    """
+    monkeypatch.setattr(
+        'core.services.notification_service.send_email',
+        lambda *a, **k: (True, None),
+    )
+    monkeypatch.setattr(
+        'core.notifications.push_service.send_push_to_users',
+        lambda *a, **k: None,
+    )
