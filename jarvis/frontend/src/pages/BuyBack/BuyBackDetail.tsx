@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { ArrowLeft, Car, User, Euro, Wrench, Clock, FileText, Camera, Pencil, FileDown, Loader2 } from 'lucide-react'
+import { ArrowLeft, Car, User, Euro, Wrench, Clock, FileText, Camera, Pencil, FileDown, Loader2, PauseCircle } from 'lucide-react'
 import { buybackApi } from '@/api/buyback'
 import { VehicleCardEditor, SellerCardEditor } from './BuyBackCardEditors'
 import { mediaUrl } from '@/lib/media'
@@ -173,6 +173,9 @@ export default function BuyBackDetail() {
   const { record, offers, photos, events } = data
   const rs = recordStatus(record.status)
   const offer = pickLatestOffer(offers)
+  // Resolve the stored hold_reason code to its RO label (falls back to the raw
+  // code if the lookups haven't loaded yet, same pattern as makeLabelers).
+  const holdReasonLabel = optsData?.hold_reasons?.find((o) => o.value === record.hold_reason)?.label ?? record.hold_reason
 
   async function handleExport() {
     if (exporting) return
@@ -211,6 +214,22 @@ export default function BuyBackDetail() {
           )}
         </div>
       </div>
+
+      {/* Hold info — shown only while the request is ON_HOLD, near the status badge above. */}
+      {record.status === 'ON_HOLD' && (
+        <Card className="border-amber-500/40 bg-amber-500/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2"><PauseCircle className="h-4 w-4" />Suspendat</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-2 gap-3">
+            <Field label="Motiv" value={holdReasonLabel} />
+            <Field label="Suspendat la" value={fmtDate(record.held_at)} />
+            <div className="col-span-2">
+              <Field label="Notă" value={record.hold_note} />
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Primary workflow actions — kept at the top as the main action. */}
       <ActionPanel record={record} offers={offers} />

@@ -127,6 +127,15 @@ _CLIENT_TYPES = [
     {'value': 'company', 'label': 'Persoana juridica'},
 ]
 
+_STATIC_HOLD_REASONS = [
+    {'value': 'Poze lipsă', 'label': 'Poze lipsă'},
+    {'value': 'Talon/CIV lipsă', 'label': 'Talon/CIV lipsă'},
+    {'value': 'VIN lipsă/greșit', 'label': 'VIN lipsă/greșit'},
+    {'value': 'Preț incomplet', 'label': 'Preț incomplet'},
+    {'value': 'Date contact lipsă', 'label': 'Date contact lipsă'},
+    {'value': 'Altele', 'label': 'Altele'},
+]
+
 
 def _dropdown_or_static(dropdown_type, static_list):
     """Active rows from dropdown_options for `dropdown_type` as
@@ -155,6 +164,7 @@ def get_lookup_options():
         'acquisition_types': _ACQUISITION_TYPES,
         'client_types': _CLIENT_TYPES,
         'client_sources': _dropdown_or_static('buyback_client_source', _STATIC_CLIENT_SOURCES),
+        'hold_reasons': _dropdown_or_static('buyback_hold_reason', _STATIC_HOLD_REASONS),
     })
 
 

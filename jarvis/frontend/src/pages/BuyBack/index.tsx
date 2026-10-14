@@ -22,6 +22,8 @@ import { Card } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { SearchInput } from '@/components/shared/SearchInput'
@@ -90,6 +92,10 @@ function compareRecords(a: BuybackRecord, b: BuybackRecord, key: SortKey, dir: '
 // Statuses a record may be deleted in (mirrors the backend's _DELETABLE_STATUSES).
 const DELETABLE_STATUSES = ['PENDING_EVALUATION', 'LOST', 'CANCELLED']
 
+// "Active" statuses a record may be put ON_HOLD from (mirrors ActionPanel's showHold).
+const HOLDABLE_STATUSES = ['PENDING_EVALUATION', 'INITIAL_OFFER', 'INSPECTION', 'FINAL_OFFER']
+const isHoldable = (s: string) => HOLDABLE_STATUSES.includes(s)
+
 // List-view columns, in display order, each sortable by its key.
 const COLUMNS: { key: SortKey; label: string; align?: 'right' }[] = [
   { key: 'record_code', label: 'Cod' },
@@ -137,10 +143,15 @@ export default function BuyBack() {
   const [deleteTarget, setDeleteTarget] = useState<BuybackRecord | null>(null)
   // Record whose status is being overridden via the inline row menu (null = closed).
   const [overrideRecord, setOverrideRecord] = useState<BuybackRecord | null>(null)
+  // Record being put ON_HOLD via the inline row menu (null = dialog closed).
+  const [holdTarget, setHoldTarget] = useState<BuybackRecord | null>(null)
+  const [holdReason, setHoldReason] = useState('')
+  const [holdNote, setHoldNote] = useState('')
 
   const { can, isAdminOrManager } = usePermissions()
   const canCreate = can('buyback.record.create')
   const canDelete = can('buyback.record.delete')
+  const canHold = can('buyback.record.hold')
   // Global admins may hard-delete ANY archived record (incl. BOUGHT /
   // CarPark-linked) — mirrors the backend's can_access_settings exception.
   const isAdmin = !!user?.can_access_settings
@@ -156,6 +167,14 @@ export default function BuyBack() {
   })
   const companies = companiesData?.companies ?? []
   const ownCompanyId = user?.company_id ?? null
+
+  // Lookup options → hold reasons for the Hold dialog's Select (shares the
+  // ['buyback-options'] cache key used by the detail page / ActionPanel).
+  const { data: holdOpts } = useQuery({
+    queryKey: ['buyback-options'],
+    queryFn: () => buybackApi.getLookupOptions(),
+    staleTime: 5 * 60_000,
+  })
 
   const selectCompany = (sel: typeof ALL_COMPANIES | number) => {
     setCompanySel(sel)
@@ -300,10 +319,37 @@ export default function BuyBack() {
     onError: (e) => toast.error((e as { data?: { error?: string } })?.data?.error || 'Redeschiderea a eșuat'),
   })
 
-  // The row's Status cell is an interactive menu only for admins/managers
-  // (reopen resolved records + free override); everyone else sees a static badge.
+  // Inline "Suspendă" / "Reia" from the row menu — mirrors ActionPanel's hold/resume.
+  const holdMutation = useMutation({
+    mutationFn: ({ id, reason, note }: { id: number; reason: string; note?: string }) =>
+      buybackApi.hold(id, { reason, note: note || undefined }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['buyback-records'] })
+      toast.success('Solicitare suspendată')
+      setHoldTarget(null)
+      setHoldReason('')
+      setHoldNote('')
+    },
+    onError: (e) => toast.error((e as { data?: { error?: string } })?.data?.error || 'Suspendarea a eșuat'),
+  })
+
+  const resumeMutation = useMutation({
+    mutationFn: (id: number) => buybackApi.resume(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['buyback-records'] })
+      toast.success('Solicitare reluată')
+    },
+    onError: (e) => toast.error((e as { data?: { error?: string } })?.data?.error || 'Reluarea a eșuat'),
+  })
+
+  // The row's Status cell is an interactive menu for admins/managers (reopen
+  // resolved records + free override) OR for a holder of buyback.record.hold on
+  // a hold-eligible row (Suspendă on active, Reia on ON_HOLD). Everyone else
+  // sees a static badge.
   const canChangeStatus = isAdminOrManager
   const isReopenable = (s: string) => s === 'LOST' || s === 'CANCELLED'
+  const showStatusMenu = (r: BuybackRecord) =>
+    canChangeStatus || (canHold && (isHoldable(r.status) || r.status === 'ON_HOLD'))
 
   const goToRecord = (id: number) => navigate(`/app/buyback/${id}`)
   const onRecordKeyDown = (e: React.KeyboardEvent, id: number) => {
@@ -533,10 +579,10 @@ export default function BuyBack() {
                       {r.purchase_price_eur != null ? r.purchase_price_eur.toLocaleString('ro-RO') : '—'}
                     </TableCell>
                     <TableCell
-                      onClick={(e) => { if (canChangeStatus) e.stopPropagation() }}
-                      onKeyDown={(e) => { if (canChangeStatus) e.stopPropagation() }}
+                      onClick={(e) => { if (showStatusMenu(r)) e.stopPropagation() }}
+                      onKeyDown={(e) => { if (showStatusMenu(r)) e.stopPropagation() }}
                     >
-                      {canChangeStatus ? (
+                      {showStatusMenu(r) ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
@@ -549,7 +595,7 @@ export default function BuyBack() {
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="start">
-                            {isReopenable(r.status) && (
+                            {canChangeStatus && isReopenable(r.status) && (
                               <>
                                 <DropdownMenuItem
                                   disabled={reopenMutation.isPending}
@@ -560,9 +606,29 @@ export default function BuyBack() {
                                 <DropdownMenuSeparator />
                               </>
                             )}
-                            <DropdownMenuItem onClick={() => setOverrideRecord(r)}>
-                              Schimbă status…
-                            </DropdownMenuItem>
+                            {canHold && (isHoldable(r.status) || r.status === 'ON_HOLD') && (
+                              <>
+                                {isHoldable(r.status) && (
+                                  <DropdownMenuItem onClick={() => setHoldTarget(r)}>
+                                    Suspendă
+                                  </DropdownMenuItem>
+                                )}
+                                {r.status === 'ON_HOLD' && (
+                                  <DropdownMenuItem
+                                    disabled={resumeMutation.isPending}
+                                    onClick={() => resumeMutation.mutate(r.id)}
+                                  >
+                                    Reia
+                                  </DropdownMenuItem>
+                                )}
+                                {canChangeStatus && <DropdownMenuSeparator />}
+                              </>
+                            )}
+                            {canChangeStatus && (
+                              <DropdownMenuItem onClick={() => setOverrideRecord(r)}>
+                                Schimbă status…
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       ) : (
@@ -638,6 +704,54 @@ export default function BuyBack() {
               onClick={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
             >
               Șterge
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Hold confirmation — opened from a row's Status menu. */}
+      <Dialog
+        open={!!holdTarget}
+        onOpenChange={(o) => {
+          if (!o) {
+            setHoldTarget(null)
+            setHoldReason('')
+            setHoldNote('')
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Suspendă solicitarea</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Motiv</Label>
+              <Select value={holdReason} onValueChange={setHoldReason}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Alege motivul" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(holdOpts?.hold_reasons ?? []).map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Notă (opțional)</Label>
+              <Textarea rows={3} value={holdNote} onChange={(e) => setHoldNote(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHoldTarget(null)}>Renunță</Button>
+            <Button
+              disabled={!holdReason || holdMutation.isPending}
+              onClick={() => holdTarget && holdMutation.mutate({ id: holdTarget.id, reason: holdReason, note: holdNote })}
+            >
+              Suspendă
             </Button>
           </DialogFooter>
         </DialogContent>

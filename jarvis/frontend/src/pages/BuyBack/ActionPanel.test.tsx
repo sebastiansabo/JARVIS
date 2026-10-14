@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 vi.mock('@/api/buyback', () => ({
@@ -12,7 +12,11 @@ vi.mock('@/api/buyback', () => ({
     retryHandoff: vi.fn(() => Promise.resolve({})),
     cancelRecord: vi.fn(() => Promise.resolve({})),
     reopenRecord: vi.fn(() => Promise.resolve({})),
-    getLookupOptions: vi.fn(() => Promise.resolve({ vat_statuses: [] })),
+    hold: vi.fn(() => Promise.resolve({ record: {} })),
+    resume: vi.fn(() => Promise.resolve({ record: {} })),
+    getLookupOptions: vi.fn(() =>
+      Promise.resolve({ vat_statuses: [], hold_reasons: [{ value: 'Poze lipsă', label: 'Poze lipsă' }] })
+    ),
   },
 }))
 
@@ -145,5 +149,34 @@ describe('ActionPanel permission gating', () => {
   it('shows nothing actionable for a user with no permissions on PENDING_EVALUATION', () => {
     renderPanel('PENDING_EVALUATION', {})
     expect(screen.getByText(/Nicio acțiune disponibilă/)).toBeInTheDocument()
+  })
+
+  it('PENDING_EVALUATION + record.hold shows "Suspendă"', () => {
+    renderPanel('PENDING_EVALUATION', { 'buyback.record.hold': true })
+    expect(screen.getByText(/Suspendă/)).toBeInTheDocument()
+  })
+
+  it('PENDING_EVALUATION without record.hold HIDES "Suspendă"', () => {
+    renderPanel('PENDING_EVALUATION', {})
+    expect(screen.queryByText(/Suspendă/)).not.toBeInTheDocument()
+  })
+
+  it('ON_HOLD + record.hold shows "Reia" and HIDES "Suspendă"', () => {
+    renderPanel('ON_HOLD', { 'buyback.record.hold': true })
+    expect(screen.getByText(/Reia/)).toBeInTheDocument()
+    expect(screen.queryByText(/Suspendă/)).not.toBeInTheDocument()
+  })
+
+  it('a non-active, non-hold status (BOUGHT) HIDES both "Suspendă" and "Reia"', () => {
+    renderPanel('BOUGHT', { 'buyback.record.hold': true }, { record: { carpark_vehicle_id: 1 } })
+    expect(screen.queryByText(/Suspendă/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Reia/)).not.toBeInTheDocument()
+  })
+
+  it('hold dialog submit is disabled until a reason is chosen', () => {
+    renderPanel('PENDING_EVALUATION', { 'buyback.record.hold': true })
+    fireEvent.click(screen.getByText('Suspendă'))
+    const dialog = screen.getByRole('dialog')
+    expect(within(dialog).getByText('Suspendă').closest('button')).toBeDisabled()
   })
 })

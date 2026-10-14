@@ -1235,14 +1235,14 @@ def _seed_buyback_permissions_v2(cursor, conn):
     """Seed Buyback module permissions into permissions_v2 and grant EXPLICIT
     per-role defaults, mirroring _seed_carpark_permissions_v2.
 
-    Perms: buyback.module.access (module toggle) plus five record-level
-    actions (view/create/edit/delete/finalize) and two role-scoped manage
+    Perms: buyback.module.access (module toggle) plus six record-level
+    actions (view/create/edit/delete/finalize/hold) and two role-scoped manage
     actions (offer.manage, inspection.manage). Defaults:
       - Admin/Manager: 'all' scope on everything.
       - Sales role: module.access + view/create/edit at 'own' scope (no
         delete/finalize/offer/inspection authority).
-      - Acquisition role: record.view + offer.manage + record.finalize at
-        'all' scope (needs to see all records to close purchases).
+      - Acquisition role: record.view + offer.manage + record.finalize +
+        record.hold at 'all' scope (needs to see all records to close purchases).
       - Service role: record.view + inspection.manage at 'all' scope.
       - Viewer: explicit deny on every buyback permission, so the generic
         module.access sweep in _seed_sidebar_permissions_v2 cannot widen it.
@@ -1266,6 +1266,7 @@ def _seed_buyback_permissions_v2(cursor, conn):
         ('record',     'Buyback Records',     'finalize', 'Finalize', 'Finalize a buyback record (complete the purchase)',        True,  5),
         ('offer',      'Buyback Offers',      'manage',   'Manage',   'Create and manage offers made to sellers',                 False, 6),
         ('inspection', 'Vehicle Inspection',  'manage',   'Manage',   'Record and manage vehicle inspections',                    False, 7),
+        ('record',     'Buyback Records',     'hold',     'Hold',     'Pune o solicitare în așteptare (info lipsă)',              True,  9),
     ]
     for entity, entity_label, action, action_label, desc, scope_based, sort in perms:
         cursor.execute('''
@@ -1297,8 +1298,9 @@ def _seed_buyback_permissions_v2(cursor, conn):
     for entity, action in (('record', 'view'), ('record', 'create'), ('record', 'edit')):
         _grant('Sales', entity, action, 'own')
 
-    # Acquisition: module access + view + offer management + finalize authority.
-    for entity, action in (('module', 'access'), ('record', 'view'), ('offer', 'manage'), ('record', 'finalize')):
+    # Acquisition: module access + view + offer management + finalize authority + hold.
+    for entity, action in (('module', 'access'), ('record', 'view'), ('offer', 'manage'),
+                            ('record', 'finalize'), ('record', 'hold')):
         _grant('Acquisition', entity, action, 'all')
 
     # Service: module access + view + inspection management.

@@ -50,6 +50,38 @@ def create_schema_buyback(conn, cursor):
                       ('idx_bb_vin', 'vin'), ('idx_bb_created', 'created_at')]:
         cursor.execute(f'CREATE INDEX IF NOT EXISTS {idx} ON buyback_records ({col})')
 
+    # ── Hold status: columns capturing the prior status, reason, note, and
+    # who/when put a record on hold (info missing / blocked). Idempotent per
+    # column via information_schema guard -- safe on already-seeded DBs.
+    for _col, _type in [
+        ('hold_prior_status', 'VARCHAR(24)'), ('hold_reason', 'VARCHAR(100)'),
+        ('hold_note', 'TEXT'), ('held_at', 'TIMESTAMPTZ'), ('held_by', 'INTEGER'),
+    ]:
+        cursor.execute(f'''
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_name='buyback_records' AND column_name='{_col}') THEN
+                    ALTER TABLE buyback_records ADD COLUMN {_col} {_type};
+                END IF;
+            END $$;
+        ''')
+
+    # Seed buyback_hold_reason dropdown options (idempotent, one INSERT per
+    # value guarded by WHERE NOT EXISTS, mirrors the invoice_status seed
+    # pattern in schema_misc.py -- additive only, won't disturb existing rows).
+    for _value, _sort in [
+        ('Poze lipsă', 1), ('Talon/CIV lipsă', 2), ('VIN lipsă/greșit', 3),
+        ('Preț incomplet', 4), ('Date contact lipsă', 5), ('Altele', 6),
+    ]:
+        cursor.execute('''
+            INSERT INTO dropdown_options (dropdown_type, value, label, sort_order, is_active)
+            SELECT 'buyback_hold_reason', %s, %s, %s, TRUE
+            WHERE NOT EXISTS (
+                SELECT 1 FROM dropdown_options
+                WHERE dropdown_type = 'buyback_hold_reason' AND value = %s
+            )
+        ''', (_value, _value, _sort, _value))
+
     # equipment is declared TEXT above (fresh DBs). This widens EXISTING
     # deployments where it was still VARCHAR(200): the intake form stores every
     # selected Autovit feature as a comma-joined string, and a well-equipped car

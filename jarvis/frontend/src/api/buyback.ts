@@ -106,6 +106,12 @@ export const buybackApi = {
   retryHandoff: (id: number) =>
     api.post(`${BASE}/records/${id}/handoff/retry`, {}),
 
+  hold: (id: number, data: { reason: string; note?: string }) =>
+    api.post<{ record: BuybackRecord }>(`${BASE}/records/${id}/hold`, data),
+
+  resume: (id: number) =>
+    api.post<{ record: BuybackRecord }>(`${BASE}/records/${id}/resume`, {}),
+
   getLookupOptions: () =>
     api.get<Record<string, { value: string; label: string }[]>>(`${BASE}/lookups/options`),
 
