@@ -339,6 +339,80 @@ def api_create_route():
         return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
 
+@field_sales_bp.route('/api/field-sales/routes/mine', methods=['POST'])
+@jwt_or_login_required
+@field_sales_required
+def api_create_my_route():
+    """Create a route with multiple stops for the CALLING field rep.
+
+    Field-rep self-serve sibling of api_create_route (manager-only, assigns to
+    another KAM). kam_id is ALWAYS the caller — any kam_id in the body is
+    ignored. Per-stop tenant coherence mirrors JAR-1130; the route-level
+    fallback company is the caller's own company. No manager "planned"
+    notification is sent for self-created routes.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        planned_date = data.get('planned_date')
+        stops = data.get('stops', [])
+
+        if not planned_date:
+            return jsonify({'success': False, 'error': 'planned_date is required'}), 400
+        if not stops or not isinstance(stops, list):
+            return jsonify({'success': False, 'error': 'At least one stop is required'}), 400
+
+        try:
+            datetime.strptime(planned_date, '%Y-%m-%d')
+        except ValueError:
+            return jsonify({'success': False, 'error': 'Invalid date format. Use YYYY-MM-DD'}), 400
+
+        for i, stop in enumerate(stops):
+            if not stop.get('client_id'):
+                return jsonify({'success': False, 'error': f'Stop {i+1}: client_id is required'}), 400
+            if stop.get('visit_type', 'general') not in ALLOWED_VISIT_TYPES:
+                return jsonify({'success': False, 'error': f'Stop {i+1}: invalid visit_type'}), 400
+
+        user = _get_current_user()
+        kam_id = user.id
+        is_admin = getattr(user, 'role_id', None) == 1
+        allowed_ids = None if is_admin else {c['id'] for c in _client_repo.get_allowed_companies(user.id, False)}
+
+        forbidden = _resolve_stop_companies(stops, is_admin, allowed_ids or set(), _client_repo.get_client_company_id)
+        if forbidden is not None:
+            return jsonify({'success': False, 'error': f'Stop {forbidden+1}: client dintr-o companie neautorizată'}), 403
+
+        route_data = {
+            'kam_id': kam_id,
+            'planned_date': planned_date,
+            'name': data.get('name'),
+            'created_by': kam_id,
+            'stops': stops,
+            'company_id': getattr(user, 'company_id', None),  # route-level fallback for companyless clients
+        }
+        route = _visit_repo.create_route(route_data)
+
+        app = current_app._get_current_object()
+        visit_ids = [v['id'] for v in route.get('visits', [])]
+
+        def _generate_briefs():
+            for vid in visit_ids:
+                try:
+                    context = _visit_repo.get_client_context(vid)
+                    if context:
+                        brief = ai_service.generate_visit_brief(context)
+                        if brief:
+                            _visit_repo.update_brief(vid, brief)
+                except Exception:
+                    logger.exception('Brief generation failed for visit %s', vid)
+
+        _run_background(app, _generate_briefs)
+
+        return jsonify({'success': True, 'route': route}), 201
+    except Exception as e:
+        logger.exception('Error creating self route')
+        return jsonify({'success': False, 'error': _safe_error(e)}), 500
+
+
 @field_sales_bp.route('/api/field-sales/routes', methods=['GET'])
 @jwt_or_login_required
 @field_sales_manager_required
