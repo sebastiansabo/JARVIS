@@ -1266,6 +1266,7 @@ def _seed_buyback_permissions_v2(cursor, conn):
         ('record',     'Buyback Records',     'finalize', 'Finalize', 'Finalize a buyback record (complete the purchase)',        True,  5),
         ('offer',      'Buyback Offers',      'manage',   'Manage',   'Create and manage offers made to sellers',                 False, 6),
         ('inspection', 'Vehicle Inspection',  'manage',   'Manage',   'Record and manage vehicle inspections',                    False, 7),
+        ('record',     'Buyback Records',     'hold',     'Hold',     'Pune o solicitare în așteptare (info lipsă)',              True,  9),
     ]
     for entity, entity_label, action, action_label, desc, scope_based, sort in perms:
         cursor.execute('''
@@ -1297,8 +1298,9 @@ def _seed_buyback_permissions_v2(cursor, conn):
     for entity, action in (('record', 'view'), ('record', 'create'), ('record', 'edit')):
         _grant('Sales', entity, action, 'own')
 
-    # Acquisition: module access + view + offer management + finalize authority.
-    for entity, action in (('module', 'access'), ('record', 'view'), ('offer', 'manage'), ('record', 'finalize')):
+    # Acquisition: module access + view + offer management + finalize authority + hold.
+    for entity, action in (('module', 'access'), ('record', 'view'), ('offer', 'manage'),
+                            ('record', 'finalize'), ('record', 'hold')):
         _grant('Acquisition', entity, action, 'all')
 
     # Service: module access + view + inspection management.
