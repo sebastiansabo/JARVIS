@@ -61,7 +61,11 @@ function toDateInput(value: string | null | undefined): string {
   return `${yyyy}-${mm}-${dd}`
 }
 
-const STATUS_OPTIONS = ['draft', 'pending_approval', 'approved', 'active', 'rejected', 'redeemed', 'expired', 'archived']
+// Admin edit Status options — only the statuses the voucher lifecycle actually
+// produces. 'draft' and 'approved' are intentionally omitted: creation starts
+// at 'pending_approval' and approval auto-activates straight to 'active', so
+// neither is ever reached (offering them only caused confusion / dead UI).
+const STATUS_OPTIONS = ['pending_approval', 'active', 'rejected', 'redeemed', 'expired', 'archived']
 const VALIDITY_OPTIONS = ['1', '3', '6', '12', '24', '36', '48']
 
 type EditForm = {
