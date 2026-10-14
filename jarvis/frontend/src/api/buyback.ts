@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { BuybackRecord, BuybackOffer, BuybackPhoto, BuybackEvent, BuybackConfig } from '../types/buyback'
+import type { BuybackRecord, BuybackOffer, BuybackPhoto, BuybackEvent, BuybackConfig, ConsignmentAgreement, CustodyAgreementInput } from '../types/buyback'
 
 const BASE = '/api/buyback'
 
@@ -29,7 +29,7 @@ export const buybackApi = {
     ),
 
   getRecord: (id: number) =>
-    api.get<{ record: BuybackRecord; offers: BuybackOffer[]; photos: BuybackPhoto[]; events: BuybackEvent[] }>(
+    api.get<{ record: BuybackRecord; offers: BuybackOffer[]; photos: BuybackPhoto[]; events: BuybackEvent[]; consignment: ConsignmentAgreement | null }>(
       `${BASE}/records/${id}`
     ),
 
@@ -105,6 +105,9 @@ export const buybackApi = {
 
   retryHandoff: (id: number) =>
     api.post(`${BASE}/records/${id}/handoff/retry`, {}),
+
+  transferToCustody: (id: number, agreement: CustodyAgreementInput) =>
+    api.post<{ record: BuybackRecord; vehicle: { id: number } }>(`${BASE}/records/${id}/custody`, agreement),
 
   getLookupOptions: () =>
     api.get<Record<string, { value: string; label: string }[]>>(`${BASE}/lookups/options`),
