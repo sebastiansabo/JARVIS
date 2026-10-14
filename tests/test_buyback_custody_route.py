@@ -60,6 +60,16 @@ def test_validator_rejects_expiry_before_agreement():
         })
 
 
+def test_validator_rejects_dict_contract_number():
+    with pytest.raises(ValueError):
+        validate_custody_agreement({'commission_type': 'fixed', 'commission_value': 100, 'contract_number': {'x': 1}})
+
+
+def test_validator_rejects_list_contract_number():
+    with pytest.raises(ValueError):
+        validate_custody_agreement({'commission_type': 'fixed', 'commission_value': 100, 'contract_number': ['a', 'b']})
+
+
 # ---- route ----
 @pytest.fixture(scope='module')
 def app():
