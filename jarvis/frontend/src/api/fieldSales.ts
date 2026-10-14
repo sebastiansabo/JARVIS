@@ -160,6 +160,28 @@ export interface CreateRoutePayload {
   stops: RouteStop[]
 }
 
+// Field-rep SELF route create (POST /routes/mine). No kam_id — the backend
+// forces the caller's id. Distinct from CreateRoutePayload (manager, needs kam_id).
+export interface CreateMyRoutePayload {
+  planned_date: string
+  name?: string
+  stops: RouteStop[]
+}
+
+// Inline client create from the Field Sales Hub (POST /clients).
+export interface CreateFSClientPayload {
+  display_name: string
+  client_type?: string
+  phone?: string
+  email?: string
+  city?: string
+  region?: string
+  company_name?: string
+  cui?: string
+  // Active tenant from the Hub selector; re-resolved server-side.
+  company_id?: number
+}
+
 export type VisitUpdatePayload = Partial<Pick<FSVisit,
   'planned_date' | 'planned_time' | 'planned_end_time' | 'visit_type' | 'goals' | 'status' | 'outcome' |
   'contact_person' | 'companions' | 'pre_visit_data' | 'post_visit_data'
@@ -291,6 +313,13 @@ export const fieldSalesApi = {
 
   createRoute: (data: CreateRoutePayload) =>
     api.post<{ success: boolean; route: { id: number; visits: FSVisit[] } }>('/api/field-sales/routes', data),
+
+  createMyRoute: (data: CreateMyRoutePayload) =>
+    api.post<{ success: boolean; route: { id: number; visits: FSVisit[] } }>('/api/field-sales/routes/mine', data),
+
+  createClient: (data: CreateFSClientPayload) =>
+    api.post<{ success: boolean; duplicate?: boolean; client: { id: number; display_name: string; company_id: number | null } }>(
+      '/api/field-sales/clients', data),
 
   // ── Tasks ──
   getVisitTasks: (visitId: number) =>
