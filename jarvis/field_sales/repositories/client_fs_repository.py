@@ -53,6 +53,13 @@ class ClientFSRepository(BaseRepository):
             RETURNING *
         ''', (client_id,), returning=True)
 
+    def set_profile_company(self, client_id, company_id):
+        """Set a client_profiles.company_id (tenant tag) for a client."""
+        self.execute(
+            'UPDATE client_profiles SET company_id = %s, updated_at = NOW() WHERE client_id = %s',
+            (company_id, client_id),
+        )
+
     def update_profile(self, client_id, data):
         """Update client profile fields.
 
