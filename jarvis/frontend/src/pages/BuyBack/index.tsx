@@ -342,10 +342,14 @@ export default function BuyBack() {
     onError: (e) => toast.error((e as { data?: { error?: string } })?.data?.error || 'Reluarea a eșuat'),
   })
 
-  // The row's Status cell is an interactive menu only for admins/managers
-  // (reopen resolved records + free override); everyone else sees a static badge.
+  // The row's Status cell is an interactive menu for admins/managers (reopen
+  // resolved records + free override) OR for a holder of buyback.record.hold on
+  // a hold-eligible row (Suspendă on active, Reia on ON_HOLD). Everyone else
+  // sees a static badge.
   const canChangeStatus = isAdminOrManager
   const isReopenable = (s: string) => s === 'LOST' || s === 'CANCELLED'
+  const showStatusMenu = (r: BuybackRecord) =>
+    canChangeStatus || (canHold && (isHoldable(r.status) || r.status === 'ON_HOLD'))
 
   const goToRecord = (id: number) => navigate(`/app/buyback/${id}`)
   const onRecordKeyDown = (e: React.KeyboardEvent, id: number) => {
@@ -575,10 +579,10 @@ export default function BuyBack() {
                       {r.purchase_price_eur != null ? r.purchase_price_eur.toLocaleString('ro-RO') : '—'}
                     </TableCell>
                     <TableCell
-                      onClick={(e) => { if (canChangeStatus) e.stopPropagation() }}
-                      onKeyDown={(e) => { if (canChangeStatus) e.stopPropagation() }}
+                      onClick={(e) => { if (showStatusMenu(r)) e.stopPropagation() }}
+                      onKeyDown={(e) => { if (showStatusMenu(r)) e.stopPropagation() }}
                     >
-                      {canChangeStatus ? (
+                      {showStatusMenu(r) ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <button
@@ -591,7 +595,7 @@ export default function BuyBack() {
                             </button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="start">
-                            {isReopenable(r.status) && (
+                            {canChangeStatus && isReopenable(r.status) && (
                               <>
                                 <DropdownMenuItem
                                   disabled={reopenMutation.isPending}
@@ -617,12 +621,14 @@ export default function BuyBack() {
                                     Reia
                                   </DropdownMenuItem>
                                 )}
-                                <DropdownMenuSeparator />
+                                {canChangeStatus && <DropdownMenuSeparator />}
                               </>
                             )}
-                            <DropdownMenuItem onClick={() => setOverrideRecord(r)}>
-                              Schimbă status…
-                            </DropdownMenuItem>
+                            {canChangeStatus && (
+                              <DropdownMenuItem onClick={() => setOverrideRecord(r)}>
+                                Schimbă status…
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       ) : (
