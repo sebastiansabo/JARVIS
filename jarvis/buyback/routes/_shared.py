@@ -265,6 +265,47 @@ _INTAKE_TEXT_FIELDS = (
 _TRUE_STRINGS = {'true', '1', 'yes', 'y', 'on'}
 _FALSE_STRINGS = {'false', '0', 'no', 'n', 'off'}
 
+# Date input formats accepted beyond ISO — Romanian day-first conventions,
+# normalised to ISO (YYYY-MM-DD) before storage. 2-digit year uses Python's
+# %y pivot (00-68 -> 2000-2068, 69-99 -> 1969-1999).
+_DATE_INPUT_FORMATS = (
+    '%Y-%m-%d', '%d.%m.%Y', '%d-%m-%Y', '%d/%m/%Y',
+    '%d.%m.%y', '%d-%m-%y', '%d/%m/%y',
+)
+
+
+def _coerce_date(field, value):
+    """Normalise a date-ish value to an ISO 'YYYY-MM-DD' string. Accepts ISO
+    plus Romanian day-first formats (DD.MM.YYYY / DD-MM-YYYY / DD/MM/YYYY and
+    their 2-digit-year variants). Blank -> None. Raises ValueError naming the
+    offending value on anything unrecognised, so the caller's 400 is explicit
+    rather than a bare "must be an ISO date"."""
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value.isoformat()
+    s = str(value).strip()
+    if not s:
+        return None
+    # ISO fast path (also normalises an already-valid ISO string).
+    try:
+        return date.fromisoformat(s).isoformat()
+    except ValueError:
+        pass
+    for fmt in _DATE_INPUT_FORMATS:
+        try:
+            parsed = datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+        # Reject nonsensical years from an explicit tiny/leading-zero year
+        # token (e.g. '30.06.0022' -> year 22) rather than storing them; a
+        # real vehicle date is never year < 1000. (2-digit years like
+        # '30.06.22' are handled by the %y formats, not this branch.)
+        if parsed.year < 1000:
+            continue
+        return parsed.isoformat()
+    raise ValueError(
+        f"{field}: '{s}' is not a recognized date — use DD.MM.YYYY or YYYY-MM-DD"
+    )
+
 
 def _coerce_bool(field, value):
     if isinstance(value, bool):
@@ -319,10 +360,7 @@ def validate_intake(data: dict) -> dict:
 
     for field in _INTAKE_DATE_FIELDS:
         if out.get(field) is not None:
-            try:
-                date.fromisoformat(str(out[field]))
-            except (TypeError, ValueError):
-                raise ValueError(f'{field} must be an ISO date (YYYY-MM-DD)')
+            out[field] = _coerce_date(field, out[field])
 
     for field in _INTAKE_BOOL_FIELDS:
         if out.get(field) is not None:

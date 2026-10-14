@@ -273,6 +273,45 @@ def export_record_pdf(record_id):
     })
 
 
+# Seller contact / fiscal-id fields — redacted (length only) in failure logs.
+_PII_LOG_FIELDS = frozenset({'seller_name', 'seller_email', 'seller_phone', 'seller_cui'})
+
+
+def _intake_write_failed(action, data, exc):
+    """Telemetry + explicit error for a failed buyback intake DB write.
+
+    The global 500 handler (app.py) masks both the real exception and the
+    payload, which made a recurring intake failure (a well-equipped car's
+    comma-joined `equipment` string overflowing VARCHAR(200)) impossible to
+    diagnose from the client's "An internal error occurred". Here we still
+    hold the payload, so log the submitted field SHAPE — value for short
+    scalars, `str(len=N)` for long strings so an overflow is obvious, type
+    name otherwise; image bytes are never in `data` — then return a
+    non-opaque, actionable message instead of the generic 500."""
+    summary = {}
+    for k, v in (data or {}).items():
+        if k in _PII_LOG_FIELDS:
+            # Never dump seller contact / fiscal id into logs — record only its
+            # presence/length so an overflow is still visible without the PII.
+            summary[k] = f'<redacted len={len(v)}>' if isinstance(v, str) else '<redacted>'
+        elif isinstance(v, str) and len(v) > 60:
+            summary[k] = f'str(len={len(v)})'
+        elif isinstance(v, (str, int, float, bool)) or v is None:
+            summary[k] = v
+        else:
+            summary[k] = type(v).__name__
+    logger.exception(
+        'BuyBack intake %s failed (user=%s company=%s vin=%r): %s',
+        action, getattr(current_user, 'id', None),
+        data.get('company_id'), data.get('vin'), summary,
+    )
+    msg = 'Nu am putut salva solicitarea (eroare internă). A fost înregistrată pentru verificare.'
+    if exc.__class__.__name__ == 'StringDataRightTruncation':
+        msg = ('Un câmp depășește lungimea maximă permisă — '
+               'reduceți textul (ex. Echipare / Detalii) și reîncercați.')
+    return jsonify({'success': False, 'error': msg}), 500
+
+
 # ═══════════════════════════════════════════════
 # CREATE
 # ═══════════════════════════════════════════════
@@ -328,7 +367,15 @@ def create_record():
     create_data['record_code'] = _shared._gen_record_code(vin)
     create_data['status'] = lifecycle.PENDING_EVALUATION
 
-    record = _shared.records_repo.create(create_data)
+    try:
+        record = _shared.records_repo.create(create_data)
+    except Exception as e:
+        # Telemetry + explicit error: the global 500 handler masks the real
+        # cause of an intake failure, and we have no payload there. Capture the
+        # submitted field shape (NOT image bytes — those live in raw_images,
+        # not create_data) and the exception HERE, then return a non-opaque
+        # message instead of "An internal error occurred".
+        return _intake_write_failed('create', create_data, e)
 
     # Non-blocking heads-up: the same VIN already exists in CarPark stock.
     # Never blocks the buyback intake — just flagged in the response so the
@@ -469,7 +516,10 @@ def update_record(record_id):
     # Stamp the editor (server-set, never from the client body). updated_at is
     # bumped by RecordRepository.update itself.
     update_data['updated_by'] = current_user.id
-    updated = _shared.records_repo.update(record_id, update_data)
+    try:
+        updated = _shared.records_repo.update(record_id, update_data)
+    except Exception as e:
+        return _intake_write_failed('update', update_data, e)
 
     # History: log the fields that actually changed (old→new), compared via the
     # serializer so dates/decimals/booleans normalize on both sides and a

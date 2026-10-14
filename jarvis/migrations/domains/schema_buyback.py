@@ -27,7 +27,7 @@ def create_schema_buyback(conn, cursor):
             client_type VARCHAR(20), vat_status VARCHAR(20), client_id BIGINT,
             seller_name VARCHAR(255), seller_email VARCHAR(255),
             seller_phone VARCHAR(50), seller_cui VARCHAR(30),
-            brand VARCHAR(100), model VARCHAR(200), variant VARCHAR(200), equipment VARCHAR(200),
+            brand VARCHAR(100), model VARCHAR(200), variant VARCHAR(200), equipment TEXT,
             vin VARCHAR(17), mileage_km INTEGER, engine_capacity_cm3 INTEGER,
             fuel_type VARCHAR(50), transmission VARCHAR(50), gearbox VARCHAR(50),
             manufacture_date DATE, first_registration_date DATE,
@@ -49,6 +49,26 @@ def create_schema_buyback(conn, cursor):
     for idx, col in [('idx_bb_company', 'company_id'), ('idx_bb_status', 'status'),
                       ('idx_bb_vin', 'vin'), ('idx_bb_created', 'created_at')]:
         cursor.execute(f'CREATE INDEX IF NOT EXISTS {idx} ON buyback_records ({col})')
+
+    # equipment is declared TEXT above (fresh DBs). This widens EXISTING
+    # deployments where it was still VARCHAR(200): the intake form stores every
+    # selected Autovit feature as a comma-joined string, and a well-equipped car
+    # (20+ features) overflows 200 chars -> StringDataRightTruncation on INSERT
+    # -> uncaught 500 ("An internal error occurred"). Idempotent: the
+    # information_schema guard makes it a no-op once the column is already TEXT.
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'buyback_records'
+                  AND column_name = 'equipment'
+                  AND data_type = 'character varying'
+            ) THEN
+                ALTER TABLE buyback_records ALTER COLUMN equipment TYPE TEXT;
+            END IF;
+        END $$;
+    ''')
 
     # ── Offers: offers made to the seller for a record ──
     cursor.execute('''
