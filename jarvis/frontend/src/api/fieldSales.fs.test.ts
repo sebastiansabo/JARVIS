@@ -125,3 +125,27 @@ describe('fieldSalesApi company-scoping wrappers', () => {
     expect(res.client).toEqual({ id: 760, display_name: 'ACME', phone: '0722000000' })
   })
 })
+
+describe('fieldSalesApi field-person route + client wrappers', () => {
+  beforeEach(() => { get.mockReset(); post.mockReset(); put.mockReset(); get.mockResolvedValue({}); post.mockResolvedValue({}); put.mockResolvedValue({}) })
+
+  it('createMyRoute posts to /routes/mine and never sends kam_id', async () => {
+    await fieldSalesApi.createMyRoute({
+      planned_date: '2026-10-20',
+      name: 'Zona Nord',
+      stops: [{ client_id: 5, planned_time: '09:00', visit_type: 'general' }],
+    })
+    expect(post).toHaveBeenCalledWith('/api/field-sales/routes/mine', {
+      planned_date: '2026-10-20',
+      name: 'Zona Nord',
+      stops: [{ client_id: 5, planned_time: '09:00', visit_type: 'general' }],
+    })
+    const payload = post.mock.calls[0][1] as Record<string, unknown>
+    expect(payload).not.toHaveProperty('kam_id')
+  })
+
+  it('createClient posts the create payload to /clients', async () => {
+    await fieldSalesApi.createClient({ display_name: 'ACME SRL', cui: 'RO123', client_type: 'company', company_id: 7 })
+    expect(post).toHaveBeenCalledWith('/api/field-sales/clients', { display_name: 'ACME SRL', cui: 'RO123', client_type: 'company', company_id: 7 })
+  })
+})
