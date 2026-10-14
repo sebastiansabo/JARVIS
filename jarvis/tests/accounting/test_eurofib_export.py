@@ -299,6 +299,11 @@ class DoubleAdvanceFakeRepo(FakeRepo):
     def get_lines_by_anexa(self, anexa_id):
         return [dict(CAR_714)]
 
+    def get_invoices_by_anexa(self, anexa_id):
+        return [dict(ADV_10PCT, invoice_type="INVOICE", split_mode="proportional"),
+                dict(ADV_100PCT, invoice_type="INVOICE", split_mode="proportional"),
+                dict(STORNO_714), dict(FINAL_714)]
+
     def get_document_number_map(self, invoice_id):
         return {714: 9103790}
 
@@ -368,6 +373,11 @@ class DecimalAdvanceFakeRepo(FakeRepo):
 
     def get_lines_by_anexa(self, anexa_id):
         return [dict(CAR_152392)]
+
+    def get_invoices_by_anexa(self, anexa_id):
+        return [dict(ADV_5PCT, invoice_type="INVOICE"),
+                dict(ADV_95PCT, invoice_type="INVOICE"),
+                dict(STORNO_152392), dict(FINAL_152392)]
 
     def get_document_number_map(self, invoice_id):
         return {500: 9201914} if invoice_id == 400 else {500: 9201915}

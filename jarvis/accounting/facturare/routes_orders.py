@@ -39,6 +39,7 @@ TYPE_LABELS = {"PROFORMA": "Proforma", "INVOICE": "Factura", "STORNO": "Storno",
 from .services.advance_alloc import (  # pure per-car advance math, shared with the state machine
     WHOLE_EUR, CENTS, _PCT_CLOSE_TOL,
     _round_half_up, _snap_pct, _car_slice_eur, _per_car_advance_eur,
+    anexa_car_allocations,
 )
 from .services.document_numbering import per_car_number  # per-car doc number rule (shared)
 
@@ -698,27 +699,44 @@ def api_get_anexa_detail(anexa_id):
     line_coverage = {}  # line_id -> list of {invoice_id, invoice_type, sequence_number}
     line_proforma_eur = {l["id"]: 0.0 for l in lines}
     line_invoiced_eur = {l["id"]: 0.0 for l in lines}
+    # Per-car amounts for PROFORMA/INVOICE/FINAL: a single chronological, per-track
+    # allocation where each closing car books price − ACTUAL prior bookings, so the
+    # bulk proforma reconciles to its total AND the car's 10%+90% = its price.
+    # STORNO keeps the legacy proportional slice (reverses what it covers).
+    anexa_alloc = anexa_car_allocations(invoices, {k: float(v) for k, v in line_prices.items()})
+    # A storno reverses EXACTLY what the invoices it targets actually booked, so
+    # the avansuri − storno net to zero even when the storno's own stored total
+    # rounds a euro differently than the recomputed avansuri.
+    storno_shares = {}
+    for inv in invoices:
+        if inv["invoice_type"] == "STORNO":
+            smap = {}
+            for rid in (inv.get("reversed_invoice_ids") or []):
+                for lid, amt in anexa_alloc.get(rid, {}).items():
+                    smap[lid] = smap.get(lid, 0) + amt
+            storno_shares[inv["id"]] = smap
     for inv in invoices:
         covered = inv.get("line_ids") or list(all_line_ids)  # null = all
         doc_mode = inv.get("doc_mode", "per_car")
         base_no = inv.get("invoice_number")
         # Stored per-car document numbers for this invoice (facturare_document_numbers).
         docnum = _repo.get_document_number_map(inv["id"])
-        # Per-car share follows the invoice's split_mode (equal = total/N, matching
-        # the PDF; proportional = price-sliced with the snapped percent, never 0).
-        # Cents vs whole EUR follows the invoice's own round_decimals.
         covered_total = sum(line_prices.get(lid, 0) for lid in covered)
         inv_total = float(inv["total_amount_eur"])
         split_mode = inv.get("split_mode", "equal")
         quant = _quant_for(inv)
+        inv_alloc = anexa_alloc.get(inv["id"])
         for idx, lid in enumerate(covered):
             if lid not in line_coverage:
                 line_coverage[lid] = []
-            # Closing slice books the residual so advance + rest reconcile to the
-            # car's price (2288 + 43462 = 45750, not …43463 = 45751).
-            priors = _prior_car_fractions(invoices, inv, lid, line_prices, all_line_ids)
-            share = _coverage_share(inv_total, line_prices.get(lid, 0), covered_total,
-                                    len(covered), split_mode, priors, quant)
+            if inv_alloc is not None:
+                share = inv_alloc.get(lid, 0)
+            elif inv["id"] in storno_shares and storno_shares[inv["id"]]:
+                share = storno_shares[inv["id"]].get(lid, 0)  # reverse actual bookings
+            else:  # STORNO with no resolvable links: proportional slice of its total
+                priors = _prior_car_fractions(invoices, inv, lid, line_prices, all_line_ids)
+                share = _coverage_share(inv_total, line_prices.get(lid, 0), covered_total,
+                                        len(covered), split_mode, priors, quant)
             share_ron = 0
             # Per-vehicle document number: prefer the stored number; fall back
             # to the pre-backfill derivation (matches PDF renderer logic: start_no + idx).
@@ -736,7 +754,10 @@ def api_get_anexa_detail(anexa_id):
             })
             if inv["invoice_type"] == "PROFORMA":
                 line_proforma_eur[lid] = line_proforma_eur.get(lid, 0) + share
-            elif inv["invoice_type"] == "INVOICE":
+            elif inv["invoice_type"] in ("INVOICE", "FINAL"):
+                # FINAL counts as invoiced too — otherwise a car billed by a final
+                # (incl. storno→final) shows invoiced 0 / Rest = full price / 0%,
+                # even though the final invoice billed it.
                 line_invoiced_eur[lid] = line_invoiced_eur.get(lid, 0) + share
             elif inv["invoice_type"] == "STORNO":
                 # Storno reverses: subtract from both proforma and invoiced
@@ -1368,6 +1389,14 @@ def api_document_items():
     for r in rows:
         invs_by_anexa_type.setdefault((r["anexa_id"], r["invoice_type"]), []).append(r)
 
+    # Per-anexa chronological allocation (same math as coverage/PDF/EuroFib).
+    # Tracks are independent, so the queried-type rows suffice for PROFORMA/
+    # INVOICE/FINAL; STORNO falls back to its own proportional slice below.
+    anexa_allocs = {}
+    for aid, alines in lines_cache.items():
+        aprices = {l["id"]: float(l["selling_price_eur"]) for l in alines}
+        anexa_allocs[aid] = anexa_car_allocations([r for r in rows if r["anexa_id"] == aid], aprices)
+
     items = []
     for inv in rows:
         import json as _json
@@ -1392,13 +1421,17 @@ def api_document_items():
         # per car) — facturare_document_numbers.
         docnum = _repo.get_document_number_map(inv["invoice_id"])
         quant = _quant_for(inv)
+        inv_shares = anexa_allocs.get(inv["anexa_id"], {}).get(inv["invoice_id"])
 
         for idx, l in enumerate(inv_lines):
             selling = float(l["selling_price_eur"])
-            priors = _prior_car_fractions(
-                same_type_siblings, inv, l["id"], anexa_price_by_line, anexa_all_lids)
-            car_amount = _coverage_share(total_amount, selling, total_selling,
-                                         len(inv_lines), split_mode, priors, quant)
+            if inv_shares is not None:
+                car_amount = inv_shares.get(l["id"], 0)
+            else:  # STORNO: own proportional slice
+                priors = _prior_car_fractions(
+                    same_type_siblings, inv, l["id"], anexa_price_by_line, anexa_all_lids)
+                car_amount = _coverage_share(total_amount, selling, total_selling,
+                                             len(inv_lines), split_mode, priors, quant)
             # Prefer the stored number for this car; fall back to the
             # pre-backfill positional derivation (start_no + idx).
             fallback_no = start_no + idx if start_no else None
@@ -1458,8 +1491,10 @@ def api_generate_pdf(invoice_id):
     # overshoots by 1 EUR. Keyed by id for the storno reversal lookup below.
     _anexa_invoices = list(_repo.get_invoices_by_anexa(anexa["id"]))
     _anexa_price_by_line = {l["id"]: float(l["selling_price_eur"]) for l in all_lines}
-    _anexa_all_lids = [l["id"] for l in all_lines]
-    _anexa_inv_by_id = {i["id"]: i for i in _anexa_invoices}
+    # Single chronological per-track allocation: each closing car books price −
+    # ACTUAL prior bookings, so the bulk proforma reconciles to its total AND the
+    # car's 10%+90% = its price. Every render/export/storno path indexes this map.
+    _anexa_alloc = anexa_car_allocations(_anexa_invoices, _anexa_price_by_line)
     # Filter to selected lines if line_ids is set on this invoice
     # Preserve line_ids order so PDF page numbering matches the UI
     inv_line_ids = inv_row.get("line_ids")
@@ -1516,7 +1551,6 @@ def api_generate_pdf(invoice_id):
         if reversed_inv_ids:
             all_invoices = [inv for inv in all_invoices if inv["id"] in reversed_inv_ids]
         storno_line_set = set(inv_line_ids) if inv_line_ids else {l["id"] for l in all_lines}
-        line_map = {l["id"]: l for l in all_lines}
         # Stored document numbers per reversed invoice, fetched once each (not
         # once per car) — used for the "Ref: Factura Nr." text below.
         reversed_docnum = {inv["id"]: _repo.get_document_number_map(inv["id"]) for inv in all_invoices}
@@ -1536,13 +1570,9 @@ def api_generate_pdf(invoice_id):
                 inv_lines = set(raw) if raw else {x["id"] for x in all_lines}
                 if lid not in inv_lines:
                     continue
-                # Per-car share of this invoice — reverse the residual the advance
-                # actually booked (43462, not 43463) so the storno nets to zero.
-                inv_total = float(inv["total_amount_eur"])
-                inv_selling_sum = sum(float(line_map[x]["selling_price_eur"]) for x in inv_lines if x in line_map) or 1
-                _priors = _prior_car_fractions(
-                    _anexa_invoices, inv, lid, _anexa_price_by_line, _anexa_all_lids)
-                car_share = _car_slice_eur(selling, _snap_pct(inv_total, inv_selling_sum), _priors, _quant_for(inv))
+                # Per-car share of this invoice — reverse EXACTLY what the advance
+                # actually booked (the reconciled amount) so the storno nets to zero.
+                car_share = _anexa_alloc.get(inv["id"], {}).get(lid, 0)
                 base_no = inv.get("invoice_number") or inv["id"]
                 inv_doc_mode = inv.get("doc_mode", "per_car")
                 # Per-vehicle document number for the REVERSED invoice: prefer
@@ -1582,22 +1612,14 @@ def api_generate_pdf(invoice_id):
         order_lines = [item for group in storno_groups for item in group]
     else:
         storno_groups = None
-        # Per-car order lines
-        total_amount = float(inv_row["total_amount_eur"])
-        split_mode = inv_row.get("split_mode", "equal")
-        total_selling = sum(float(l["selling_price_eur"]) for l in lines) or 1
-        quant = _quant_for(inv_row)
+        # Per-car order lines from the shared anexa allocation (reconciles to the
+        # document total; closing cars book price − actual prior bookings).
+        _inv_shares = _anexa_alloc.get(inv_row["id"], {})
 
         order_lines = []
         for l in lines:
             selling = float(l["selling_price_eur"])
-            if split_mode == "proportional" and total_selling > 0:
-                priors = _prior_car_fractions(
-                    _anexa_invoices, inv_row, l["id"], _anexa_price_by_line, _anexa_all_lids)
-                car_advance = _car_slice_eur(
-                    selling, _snap_pct(total_amount, total_selling), priors, quant)
-            else:
-                car_advance = _round_half_up(total_amount / max(len(lines), 1), quant)
+            car_advance = _inv_shares.get(l["id"], 0)
 
             order_lines.append(OrderLine(
                 comanda=int(l["nr_comanda"]) if l.get("nr_comanda") and str(l["nr_comanda"]).isdigit() else 0,
@@ -1818,8 +1840,7 @@ def api_generate_eurofib(invoice_id):
     # advances), and a storno reverses exactly that residual — see _car_slice_eur.
     _anexa_invoices = list(_repo.get_invoices_by_anexa(anexa["id"]))
     _anexa_price_by_line = {l["id"]: float(l["selling_price_eur"]) for l in all_lines}
-    _anexa_all_lids = [l["id"] for l in all_lines]
-    _anexa_inv_by_id = {i["id"]: i for i in _anexa_invoices}
+    _anexa_alloc = anexa_car_allocations(_anexa_invoices, _anexa_price_by_line)
     # Filter to selected lines if line_ids is set
     # Preserve line_ids order so numbering matches the UI
     inv_line_ids = inv_row.get("line_ids")
@@ -1846,7 +1867,6 @@ def api_generate_eurofib(invoice_id):
     inv_type_str = inv_row["invoice_type"]
     total_amount = float(inv_row["total_amount_eur"])
     split_mode = inv_row.get("split_mode", "equal")
-    total_selling = sum(float(l["selling_price_eur"]) for l in lines) or 1
     start_no = inv_row.get("invoice_number") or inv_row["id"]
     issued_date = inv_row.get("issued_date")
     if not issued_date:
@@ -1878,19 +1898,14 @@ def api_generate_eurofib(invoice_id):
 
         order_lines = []
         for ri in reversed_invoices:
-            ri_total = float(ri["total_amount_eur"])
-            ri_split = ri.get("split_mode") or "equal"
             # Kurs from the original advance invoice
             ri_kurs = float(ri["kurs_applied"]) if ri.get("kurs_applied") else kurs
-            # Compute covered_selling from the ADVANCE's lines, not the storno's
             import json as _json2
             ri_raw_lids = ri.get("line_ids")
             if isinstance(ri_raw_lids, str):
                 ri_raw_lids = _json2.loads(ri_raw_lids)
             ri_line_ids = set(ri_raw_lids) if ri_raw_lids else all_line_id_set
-            covered_selling = sum(all_line_prices.get(lid, 0) for lid in ri_line_ids) or 1
 
-            ri_full = _anexa_inv_by_id.get(ri["id"], ri)
             for car in lines:
                 # Only reverse cars this advance actually covered. Without this,
                 # a single-car advance fans out across every car of a multi-car
@@ -1899,12 +1914,8 @@ def api_generate_eurofib(invoice_id):
                 if car["id"] not in ri_line_ids:
                     continue
                 selling = float(car["selling_price_eur"])
-                # Reverse the residual the advance actually booked (43462, not 43463).
-                ri_priors = _prior_car_fractions(
-                    _anexa_invoices, ri_full, car["id"], _anexa_price_by_line, _anexa_all_lids)
-                car_amount = _per_car_advance_eur(
-                    ri_total, selling, covered_selling, ri_split, len(ri_line_ids),
-                    prior_fractions=ri_priors, quant=_quant_for(ri_full))
+                # Reverse EXACTLY what the advance booked for this car (reconciled).
+                car_amount = _anexa_alloc.get(ri["id"], {}).get(car["id"], 0)
                 order_lines.append(OrderLine(
                     comanda=int(car["nr_comanda"]) if car.get("nr_comanda") and str(car["nr_comanda"]).isdigit() else 0,
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
@@ -1929,16 +1940,11 @@ def api_generate_eurofib(invoice_id):
                 kurs_date = last_adv_date - _td(days=1)
                 _final_kurs_date_set = True
 
+        _inv_shares = _anexa_alloc.get(inv_row["id"], {})
         order_lines = []
         for l in lines:
             selling = float(l["selling_price_eur"])
-            if split_mode == "proportional" and total_selling > 0:
-                _priors = _prior_car_fractions(
-                    _anexa_invoices, inv_row, l["id"], _anexa_price_by_line, _anexa_all_lids)
-                car_advance = _car_slice_eur(
-                    selling, _snap_pct(total_amount, total_selling), _priors, _quant_for(inv_row))
-            else:
-                car_advance = _round_half_up(total_amount / max(len(lines), 1), _quant_for(inv_row))
+            car_advance = _inv_shares.get(l["id"], 0)
 
             # For FINAL: look up venituri rule per line + blended kurs
             line_kostenstelle = None
@@ -2057,10 +2063,6 @@ def _final_blended_kurs(repo, inv_row, all_lines):
     prices = {l["id"]: float(l["selling_price_eur"]) for l in all_lines}
     all_ids = set(prices)
     final_lids = set(fraw) if fraw else all_ids
-    # Cumulative context: each advance's per-car share must equal the storno's
-    # residual reversal (43462, not 43463) so final RON == storno RON.
-    anexa_invoices = list(repo.get_invoices_by_anexa(anexa_id))
-    anexa_inv_by_id = {i["id"]: i for i in anexa_invoices}
 
     # The storno this final closes: same cars, same |EUR|, most recent.
     matching_storno_id = None
@@ -2105,6 +2107,10 @@ def _final_blended_kurs(repo, inv_row, all_lines):
             "FROM facturare_invoices "
             "WHERE anexa_id = %s AND invoice_type = 'INVOICE' ORDER BY sequence_number",
             (anexa_id,))
+    # Full-anexa allocation, indexed by the advances this final reverses — same
+    # source the storno reversal and coverage use, so each car's share equals the
+    # storno's residual reversal and the final RON == the storno RON to the cent.
+    anexa_alloc = anexa_car_allocations(list(repo.get_invoices_by_anexa(anexa_id)), prices)
     acc = {}          # line_id -> [ron_sum, eur_sum]
     last_date = None
     for adv in advances or []:
@@ -2117,16 +2123,11 @@ def _final_blended_kurs(repo, inv_row, all_lines):
         if isinstance(raw, str):
             raw = _json.loads(raw)
         adv_lids = set(raw) if raw else all_ids
-        covered = sum(prices.get(x, 0) for x in adv_lids) or 1
-        adv_full = anexa_inv_by_id.get(adv.get("id"), adv)
+        adv_shares = anexa_alloc.get(adv.get("id"), {})
         for lid in adv_lids:
-            # Whole-EUR share, identical to the storno's per-car amount for this
+            # Reconciled share, identical to the storno's per-car amount for this
             # advance, so the final's RON equals the storno's RON to the cent.
-            adv_priors = _prior_car_fractions(
-                anexa_invoices, adv_full, lid, prices, list(all_ids))
-            share = _per_car_advance_eur(
-                adv_eur, prices.get(lid, 0), covered, adv_split, len(adv_lids),
-                prior_fractions=adv_priors, quant=_quant_for(adv_full))
+            share = adv_shares.get(lid, 0)
             slot = acc.setdefault(lid, [0.0, 0.0])
             slot[0] += share * adv_kurs
             slot[1] += share
@@ -2155,8 +2156,7 @@ def _build_eurofib_batch(inv_row):
     # exactly that residual — see _car_slice_eur.
     _anexa_invoices = list(_repo.get_invoices_by_anexa(anexa["id"]))
     _anexa_price_by_line = {l["id"]: float(l["selling_price_eur"]) for l in all_lines}
-    _anexa_all_lids = [l["id"] for l in all_lines]
-    _anexa_inv_by_id = {i["id"]: i for i in _anexa_invoices}
+    _anexa_alloc = anexa_car_allocations(_anexa_invoices, _anexa_price_by_line)
 
     inv_line_ids = inv_row.get("line_ids")
     if inv_line_ids:
@@ -2177,7 +2177,6 @@ def _build_eurofib_batch(inv_row):
     inv_type_str = inv_row["invoice_type"]
     total_amount = float(inv_row["total_amount_eur"])
     split_mode = inv_row.get("split_mode", "equal")
-    total_selling = sum(float(l["selling_price_eur"]) for l in lines) or 1
     start_no = inv_row.get("invoice_number") or inv_row["id"]
     issued_date = inv_row.get("issued_date")
     if not issued_date:
@@ -2204,17 +2203,13 @@ def _build_eurofib_batch(inv_row):
 
         order_lines = []
         for ri in reversed_invoices:
-            ri_total = float(ri["total_amount_eur"])
-            ri_split = ri.get("split_mode") or "equal"
             ri_kurs = float(ri["kurs_applied"]) if ri.get("kurs_applied") else kurs
             import json as _json2
             ri_raw_lids = ri.get("line_ids")
             if isinstance(ri_raw_lids, str):
                 ri_raw_lids = _json2.loads(ri_raw_lids)
             ri_line_ids = set(ri_raw_lids) if ri_raw_lids else all_line_id_set
-            covered_selling = sum(all_line_prices.get(lid, 0) for lid in ri_line_ids) or 1
 
-            ri_full = _anexa_inv_by_id.get(ri["id"], ri)
             for car in lines:
                 # Only reverse cars this advance actually covered. Without this,
                 # a single-car advance fans out across every car of a multi-car
@@ -2223,12 +2218,8 @@ def _build_eurofib_batch(inv_row):
                 if car["id"] not in ri_line_ids:
                     continue
                 selling = float(car["selling_price_eur"])
-                # Reverse the residual the advance actually booked (43462, not 43463).
-                ri_priors = _prior_car_fractions(
-                    _anexa_invoices, ri_full, car["id"], _anexa_price_by_line, _anexa_all_lids)
-                car_amount = _per_car_advance_eur(
-                    ri_total, selling, covered_selling, ri_split, len(ri_line_ids),
-                    prior_fractions=ri_priors, quant=_quant_for(ri_full))
+                # Reverse EXACTLY what the advance booked for this car (reconciled).
+                car_amount = _anexa_alloc.get(ri["id"], {}).get(car["id"], 0)
                 order_lines.append(OrderLine(
                     comanda=int(car["nr_comanda"]) if car.get("nr_comanda") and str(car["nr_comanda"]).isdigit() else 0,
                     model=car.get("model", ""), culoare=car.get("culoare") or "",
@@ -2250,16 +2241,11 @@ def _build_eurofib_batch(inv_row):
                 kurs_date = last_adv_date - timedelta(days=1)
                 _final_kurs_date_set = True
 
+        _inv_shares = _anexa_alloc.get(inv_row["id"], {})
         order_lines = []
         for l in lines:
             selling = float(l["selling_price_eur"])
-            if split_mode == "proportional" and total_selling > 0:
-                _priors = _prior_car_fractions(
-                    _anexa_invoices, inv_row, l["id"], _anexa_price_by_line, _anexa_all_lids)
-                car_advance = _car_slice_eur(
-                    selling, _snap_pct(total_amount, total_selling), _priors, _quant_for(inv_row))
-            else:
-                car_advance = _round_half_up(total_amount / max(len(lines), 1), _quant_for(inv_row))
+            car_advance = _inv_shares.get(l["id"], 0)
             line_kostenstelle = None
             line_konto_credit = None
             line_kurs = None

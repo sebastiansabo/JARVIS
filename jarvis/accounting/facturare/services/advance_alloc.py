@@ -7,7 +7,7 @@ invoice state machine can reuse them without importing the routes module (which
 imports the state machine — a circular dependency). ``routes_orders`` re-imports
 these names, so ``routes_orders._per_car_advance_eur`` etc. still resolve.
 """
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, ROUND_FLOOR
 
 WHOLE_EUR = Decimal("1")
 CENTS = Decimal("0.01")
@@ -98,6 +98,109 @@ def _per_car_advance_eur(inv_total, selling, covered_selling, split_mode, n_line
         return _car_slice_eur(selling, _snap_pct(inv_total, covered_selling),
                               prior_fractions or [], quant)
     return _round_half_up(inv_total / max(n_lines, 1), quant)
+
+
+def _hamilton(target: Decimal, weights, quant: Decimal):
+    """Apportion `target` across items proportional to `weights`, rounded to
+    `quant`, so the rounded slices sum to `target` EXACTLY (largest-remainder).
+
+    Each item gets floor(target*weight/Σweight) to the quant, then the leftover
+    whole quants go one each to the largest fractional remainders. Reconciles the
+    slices to the document total instead of rounding each car independently
+    (2 × 5.613,60 rounded up = 11.228 vs the stored 11.226).
+    """
+    if not weights:
+        return []
+    target = Decimal(str(target))
+    W = sum(Decimal(str(w)) for w in weights) or Decimal("1")
+    ideals = [target * Decimal(str(w)) / W for w in weights]
+    floors = [(i / quant).to_integral_value(rounding=ROUND_FLOOR) * quant for i in ideals]
+    units = int(((target - sum(floors)) / quant).to_integral_value(rounding=ROUND_HALF_UP))
+    alloc = list(floors)
+    order = sorted(range(len(weights)), key=lambda i: ideals[i] - floors[i], reverse=True)
+    for k in range(max(units, 0)):
+        alloc[order[k % len(order)]] += quant
+    return [int(a) if quant == WHOLE_EUR else float(a) for a in alloc]
+
+
+def _allocate_one(inv_total, covered_ids, line_prices, split_mode, quant, prior_booked):
+    """Per-car EUR for ONE document, reconciled to round(inv_total).
+
+    A car whose cumulative coverage (its ACTUAL prior bookings on this track plus
+    this document's snapped fraction) reaches ~100% books the residual
+    ``round(price) − prior_booked`` — the amount that makes advance + rest equal
+    the car's whole price, using what earlier invoices ACTUALLY booked (not a
+    theoretical ``round(price × fraction)``). The remaining, non-closing cars
+    share ``round(inv_total) − Σ(closing residuals)`` via largest-remainder.
+
+    `prior_booked`: {line_id: EUR already booked for this car by earlier
+    same-track invoices}.
+    """
+    quant = Decimal(quant)
+    result = {}
+    nonclosing = []
+    closing_sum = Decimal("0")
+    covered_selling = sum(float(line_prices.get(l, 0)) for l in covered_ids) or 1.0
+    this_fraction = _snap_pct(float(inv_total), covered_selling) if split_mode == "proportional" else None
+    for lid in covered_ids:
+        price = float(line_prices.get(lid, 0))
+        prior = float(prior_booked.get(lid, 0))
+        if this_fraction is not None and price > 0 and \
+                abs(prior / price + this_fraction - 1.0) < _PCT_CLOSE_TOL:
+            resid = Decimal(str(_round_half_up(price, quant))) - Decimal(str(prior))
+            share = int(resid) if quant == WHOLE_EUR else float(resid)
+            result[lid] = share
+            closing_sum += Decimal(str(share))
+        else:
+            nonclosing.append((lid, price if split_mode == "proportional" else 1))
+    # Non-closing cars share whatever the document total leaves after the closing
+    # residuals; clamp at 0 so a (degenerate) over-closed document never hands out
+    # negative slices.
+    target = max(Decimal(str(_round_half_up(inv_total, quant))) - closing_sum, Decimal("0"))
+    for (lid, _), amt in zip(nonclosing, _hamilton(target, [w for _, w in nonclosing], quant)):
+        result[lid] = amt
+    return result
+
+
+def _alloc_order_key(inv):
+    return (str(inv.get("issued_date") or ""), inv.get("sequence_number") or 0, inv.get("id") or 0)
+
+
+def anexa_car_allocations(invoices, line_prices):
+    """``{invoice_id: {line_id: eur}}`` for every PROFORMA / INVOICE / FINAL of an
+    anexa, computed CHRONOLOGICALLY within each independent track.
+
+    Single source of truth for per-car amounts used by the PDF, coverage,
+    doc-items, EuroFib and storno-reversal paths. Because each document's cars
+    reconcile to its stored total AND a car's closing slice subtracts the ACTUAL
+    prior bookings, both invariants hold at once:
+      * a bulk 10% proforma's cars sum to its stored total (CTR-790), and
+      * a car's 10% + 90% = its whole price (CTR-605, CTR-945).
+    PROFORMA, INVOICE and FINAL accumulate on separate tracks (a car's avans
+    track is independent of its proforma track), matching the coverage view.
+    STORNO is excluded — callers reverse the reversed invoice's allocation.
+    """
+    import json as _json
+    tracks = {}  # invoice_type -> {line_id: cumulative Decimal booked}
+    result = {}
+    for inv in sorted(invoices, key=_alloc_order_key):
+        itype = inv.get("invoice_type")
+        if itype not in ("PROFORMA", "INVOICE", "FINAL"):
+            continue
+        booked = tracks.setdefault(itype, {})
+        raw = inv.get("line_ids")
+        if isinstance(raw, str):
+            raw = _json.loads(raw)
+        covered = list(raw) if raw else list(line_prices.keys())
+        quant = CENTS if inv.get("round_decimals") else WHOLE_EUR
+        shares = _allocate_one(
+            float(inv["total_amount_eur"]), covered, line_prices,
+            inv.get("split_mode", "equal"), quant,
+            {lid: float(booked.get(lid, 0)) for lid in covered})
+        result[inv["id"]] = shares
+        for lid, amt in shares.items():
+            booked[lid] = float(booked.get(lid, 0)) + float(amt)
+    return result
 
 
 def partial_advance_total(proforma_total: Decimal, split_mode: str, quant: Decimal,
