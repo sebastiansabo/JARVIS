@@ -1016,3 +1016,37 @@ def test_set_status_non_string_status_is_400_not_500(client, as_role, monkeypatc
     rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
     r = client.post(f'/api/buyback/records/{rid}/status', json={'status': 123})
     assert r.status_code == 400
+
+
+# ── CREATE with documents[] (CIV/talon PDF retained at intake) ──────────────
+
+def test_create_with_documents_stores_private_doc(client, as_role, monkeypatch):
+    _mute_emails(monkeypatch)
+    import base64
+    import buyback.repositories.photo_repository as photo_mod
+    monkeypatch.setattr(photo_mod.spaces_service, 'upload',
+                        lambda data, key, ct, acl='private': key)
+    as_role('Admin', 1)
+    data_url = 'data:application/pdf;base64,' + base64.b64encode(b'%PDF-1.4 test').decode()
+    payload = _payload()
+    payload['documents'] = [{'data': data_url, 'photo_type': 'civ', 'caption': 'CIV'}]
+    r = client.post('/api/buyback/records', json=payload)
+    assert r.status_code == 201, r.get_json()
+    rid = r.get_json()['record']['id']
+
+    body = client.get(f'/api/buyback/records/{rid}').get_json()
+    docs = [p for p in body['photos'] if p.get('is_document')]
+    assert len(docs) == 1
+    assert docs[0]['photo_type'] == 'civ'
+    assert docs[0]['label'] == 'CIV'
+    assert docs[0]['download_url'] == f"/api/buyback/records/{rid}/photos/{docs[0]['id']}/download"
+    assert docs[0]['url'].endswith('.pdf')
+
+
+def test_create_documents_must_be_array(client, as_role, monkeypatch):
+    _mute_emails(monkeypatch)
+    as_role('Admin', 1)
+    payload = _payload()
+    payload['documents'] = 'nope'
+    r = client.post('/api/buyback/records', json=payload)
+    assert r.status_code == 400

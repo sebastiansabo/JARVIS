@@ -18,7 +18,7 @@ const DRAFT_PREFIX = 'buyback.draft.v1.'
 // which the form auto-fills from the logged-in user on mount (so it must not,
 // on its own, count as user-entered content or every fresh form would look
 // dirty and keep re-saving an otherwise-empty draft).
-const EXCLUDED_KEYS = ['images', 'advisor_id', 'advisor_name'] as const
+const EXCLUDED_KEYS = ['images', 'documents', 'advisor_id', 'advisor_name'] as const
 
 type FormLike = Record<string, unknown>
 

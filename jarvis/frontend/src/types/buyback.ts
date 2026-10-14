@@ -99,6 +99,12 @@ export interface BuybackPhoto {
   caption: string | null
   file_size: number | null
   created_at: string
+  // Document (CIV/talon PDF or other attached doc): photo_type !== 'gallery'.
+  // Served privately, so instead of cdn_url it carries an authenticated
+  // download_url + a human label. Absent/false for gallery images.
+  is_document?: boolean
+  download_url?: string
+  label?: string
 }
 
 export interface BuybackEvent {

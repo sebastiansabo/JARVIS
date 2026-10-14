@@ -202,20 +202,36 @@ def _serialize(obj):
     return obj
 
 
+_DOC_LABELS = {'civ': 'CIV', 'talon': 'Talon'}
+
+
 def serialize_photos(photos):
-    """Serialize buyback photos and attach the public CDN URL for each object
-    key. Buyback photos are uploaded public-read (see photos.py /
-    photo_repository), so the frontend can load them straight from the Spaces
-    CDN edge instead of the authenticated /api/media proxy. cdn_url is only
-    attached when Spaces is configured (absent locally → frontend falls back to
-    mediaUrl(url))."""
+    """Serialize buyback photos/documents for the frontend.
+
+    Gallery images (photo_type 'gallery') are uploaded public-read, so they
+    get a `cdn_url` to load straight off the Spaces CDN edge (absent locally →
+    frontend falls back to mediaUrl(url)).
+
+    Documents (photo_type 'document'/'civ'/'talon' — e.g. an imported CIV/talon
+    PDF) are stored PRIVATE, so instead of a CDN url they get `is_document`,
+    a `download_url` pointing at the authenticated download route, and a
+    human `label` (caption, or 'CIV'/'Talon'). The frontend renders these as a
+    document tile with a download action rather than an <img>."""
     from core.services import spaces_service
     enabled = spaces_service.is_enabled()
     out = []
     for p in (photos or []):
         d = _serialize(p)
-        if enabled and isinstance(d, dict) and d.get('url'):
-            d['cdn_url'] = spaces_service.cdn_url(d['url'])
+        if isinstance(d, dict):
+            ptype = d.get('photo_type')
+            if ptype and ptype != 'gallery':
+                d['is_document'] = True
+                d['download_url'] = (
+                    f"/api/buyback/records/{d.get('record_id')}/photos/{d.get('id')}/download"
+                )
+                d['label'] = d.get('caption') or _DOC_LABELS.get(ptype, 'Document')
+            elif enabled and d.get('url'):
+                d['cdn_url'] = spaces_service.cdn_url(d['url'])
         out.append(d)
     return out
 

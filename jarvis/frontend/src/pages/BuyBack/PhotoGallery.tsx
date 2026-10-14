@@ -4,6 +4,7 @@ import {
   Camera,
   ChevronLeft,
   ChevronRight,
+  FileText,
   GripVertical,
   LayoutGrid,
   Loader2,
@@ -62,10 +63,16 @@ export default function PhotoGallery({
   const queryClient = useQueryClient()
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['buyback-record', recordId] })
 
-  // Local optimistic order, seeded from + kept in sync with the prop (the
-  // parent detail page owns the actual query and refetches on invalidation).
-  const [photos, setPhotos] = useState(photosProp)
-  useEffect(() => setPhotos(photosProp), [photosProp])
+  // Split images (the hero/filmstrip/reorder gallery) from documents (PDFs like
+  // an imported CIV/talon — rendered as a separate download row below).
+  const imageProp = photosProp.filter((p) => !p.is_document)
+  const documents = photosProp.filter((p) => p.is_document)
+
+  // Local optimistic order, seeded from + kept in sync with the (image) prop
+  // (the parent detail page owns the actual query and refetches on invalidation).
+  const [photos, setPhotos] = useState(imageProp)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => setPhotos(photosProp.filter((p) => !p.is_document)), [photosProp])
 
   const [active, setActive] = useState(0)
   const [gridOpen, setGridOpen] = useState(false)
@@ -88,18 +95,67 @@ export default function PhotoGallery({
   }, [idx])
 
   const uploadMutation = useMutation({
-    // Downscale+JPEG-compress client-side before upload (mirrors the intake
-    // form) so full-res phone photos don't hit the wire / Spaces uncompressed.
+    // Images are downscaled+JPEG-compressed client-side (mirrors the intake
+    // form) so full-res phone photos don't hit the wire uncompressed; PDFs are
+    // sent as-is and the backend stores them as private documents.
     mutationFn: async (files: File[]) => {
-      const compressed = await Promise.all(files.map((f) => fileToCompressedFile(f)))
-      return buybackApi.uploadPhotos(recordId, compressed)
+      const out = await Promise.all(
+        files.map((f) =>
+          f.type === 'application/pdf' || /\.pdf$/i.test(f.name)
+            ? Promise.resolve(f)
+            : fileToCompressedFile(f),
+        ),
+      )
+      return buybackApi.uploadPhotos(recordId, out.filter((f): f is File => !!f))
     },
     onSuccess: () => {
       invalidate()
-      toast.success('Poze încărcate')
+      toast.success('Încărcat')
     },
-    onError: () => toast.error('Încărcarea pozelor a eșuat'),
+    onError: () => toast.error('Încărcarea a eșuat'),
   })
+
+  const deleteDocMutation = useMutation({
+    mutationFn: (photoId: number) => buybackApi.deletePhoto(recordId, photoId),
+    onSuccess: () => {
+      invalidate()
+      toast.success('Document șters')
+    },
+    onError: () => toast.error('Ștergerea a eșuat'),
+  })
+
+  // Private documents (PDF) — a download row rendered alongside the gallery.
+  const documentsSection = documents.length > 0 && (
+    <div className="space-y-1.5" style={{ maxWidth: GALLERY_MAX_WIDTH }}>
+      <p className="text-xs font-medium text-muted-foreground">Documente</p>
+      <div className="flex flex-wrap gap-2">
+        {documents.map((d) => (
+          <div key={d.id} className="flex items-center gap-2 rounded-md border bg-muted/30 px-2.5 py-1.5">
+            <a
+              href={d.download_url ?? '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 text-sm hover:underline"
+            >
+              <FileText className="h-4 w-4 shrink-0 text-red-600" />
+              <span className="max-w-[160px] truncate">{d.label || d.caption || 'Document'}</span>
+            </a>
+            {canEdit && (
+              <button
+                type="button"
+                aria-label="Șterge documentul"
+                disabled={deleteDocMutation.isPending}
+                onClick={() => deleteDocMutation.mutate(d.id)}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? [])
@@ -113,7 +169,7 @@ export default function PhotoGallery({
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*"
+        accept="image/*,application/pdf"
         className="hidden"
         onChange={handleFileChange}
       />
@@ -136,12 +192,15 @@ export default function PhotoGallery({
 
   if (photos.length === 0) {
     return (
-      <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-muted/30">
-        <div className="text-center">
-          <Camera className="mx-auto h-8 w-8 text-muted-foreground" />
-          <p className="mt-2 text-sm text-muted-foreground">Fără poze</p>
+      <div className="space-y-3">
+        <div className="flex h-64 flex-col items-center justify-center gap-3 rounded-lg border border-dashed bg-muted/30">
+          <div className="text-center">
+            <Camera className="mx-auto h-8 w-8 text-muted-foreground" />
+            <p className="mt-2 text-sm text-muted-foreground">Fără poze</p>
+          </div>
+          {uploadControl}
         </div>
-        {uploadControl}
+        {documentsSection}
       </div>
     )
   }
@@ -235,6 +294,8 @@ export default function PhotoGallery({
       )}
 
       {canEdit && <div className="flex items-center gap-2">{uploadControl}</div>}
+
+      {documentsSection}
 
       {gridOpen && (
         <PhotoGridOverlay
