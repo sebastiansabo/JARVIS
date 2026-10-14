@@ -246,7 +246,11 @@ def export_record_pdf(record_id):
 
     offers = _shared.offers_repo.list_for_record(record_id)
     events = _shared.events_repo.list_for_record(record_id)
-    photo_rows = _shared.photos_repo.get_by_record(record_id)
+    # Only gallery IMAGES are embedded in the export — document rows (CIV/talon
+    # PDFs) hold PDF bytes, not image bytes, and must not be fed to the image
+    # embedder.
+    photo_rows = [p for p in _shared.photos_repo.get_by_record(record_id)
+                  if (p.get('photo_type') or 'gallery') == 'gallery']
 
     from core.services import spaces_service
     photos = []
@@ -289,6 +293,10 @@ def create_record():
     raw_images = data.get('images')
     if raw_images is not None and not isinstance(raw_images, list):
         return jsonify({'success': False, 'error': 'images must be an array'}), 400
+
+    raw_documents = data.get('documents')
+    if raw_documents is not None and not isinstance(raw_documents, list):
+        return jsonify({'success': False, 'error': 'documents must be an array'}), 400
 
     # Type-validate/coerce the intake fields BEFORE building create_data, so
     # a badly-typed value (e.g. mileage_km: 'abc', manufacture_date:
@@ -356,6 +364,20 @@ def create_record():
             # ValueError here (malformed base64, non-data: URL entry, ...) is
             # a 400 (Bad Request) — a decode failure is NOT a size problem
             # and a flat 413 for it would be misleading.
+            _shared.records_repo.delete(record['id'])
+            status = 413 if str(e) == 'payload too large' else 400
+            return jsonify({'success': False, 'error': str(e)}), status
+
+    # Documents (CIV/talon PDF retained from the import, or any PDF attached at
+    # intake) — stored PRIVATE alongside the photos. Same roll-back-the-record
+    # posture as images; only well-formed {data: data-URL, ...} entries pass.
+    documents = [d for d in (raw_documents or []) if isinstance(d, dict) and d.get('data')]
+    if documents:
+        try:
+            _shared.photos_repo.store_documents(
+                record['id'], documents, _shared.MAX_CREATE_BYTES,
+            )
+        except ValueError as e:
             _shared.records_repo.delete(record['id'])
             status = 413 if str(e) == 'payload too large' else 400
             return jsonify({'success': False, 'error': str(e)}), status

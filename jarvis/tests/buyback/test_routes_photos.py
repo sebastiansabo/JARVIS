@@ -298,3 +298,102 @@ def test_reorder_cross_company_forbidden(client, as_role):
     as_role('Sales', 2)
     r = client.post(f'/api/buyback/records/{rid}/photos/reorder', json={'ids': []})
     assert r.status_code == 403
+
+
+# ── PDF DOCUMENTS (upload private + authenticated download) ─────────────────
+
+def _pdf_bytes():
+    b = io.BytesIO(b'%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF')
+    b.seek(0)
+    return b
+
+
+def test_upload_pdf_stores_private_document(client, as_role):
+    rid = _make_record(client, as_role)
+    r = client.post(f'/api/buyback/records/{rid}/photos/upload',
+                     data={'files': (_pdf_bytes(), 'civ.pdf')},
+                     content_type='multipart/form-data')
+    assert r.status_code in (200, 201), r.get_json()
+    p = r.get_json()['photos'][0]
+    assert p['is_document'] is True
+    assert p['photo_type'] == 'document'
+    assert p['is_primary'] is False            # documents are never the cover
+    assert p['url'].startswith(f'private/buyback/{rid}/doc-')
+    assert p['url'].endswith('.pdf')
+    assert p['download_url'] == f"/api/buyback/records/{rid}/photos/{p['id']}/download"
+    assert 'cdn_url' not in p                   # private — no public CDN url
+
+
+def test_upload_pdf_with_doc_type_civ_labels_it(client, as_role):
+    rid = _make_record(client, as_role)
+    r = client.post(f'/api/buyback/records/{rid}/photos/upload',
+                     data={'files': (_pdf_bytes(), 'scan.pdf'), 'doc_type': 'civ'},
+                     content_type='multipart/form-data')
+    p = r.get_json()['photos'][0]
+    assert p['photo_type'] == 'civ'
+    assert p['label'] == 'CIV'
+
+
+def test_upload_mixed_image_and_pdf(client, as_role):
+    rid = _make_record(client, as_role)
+    r = client.post(f'/api/buyback/records/{rid}/photos/upload',
+                     data={'files': [(_png_bytes(), 'a.png'), (_pdf_bytes(), 'b.pdf')]},
+                     content_type='multipart/form-data')
+    assert r.status_code in (200, 201), r.get_json()
+    photos = r.get_json()['photos']
+    img = next(p for p in photos if not p.get('is_document'))
+    doc = next(p for p in photos if p.get('is_document'))
+    assert img['is_primary'] is True           # the image becomes the cover
+    assert doc['is_primary'] is False
+    assert doc['url'].endswith('.pdf')
+
+
+def test_download_document_streams_pdf(client, as_role, monkeypatch):
+    rid = _make_record(client, as_role)
+    up = client.post(f'/api/buyback/records/{rid}/photos/upload',
+                     data={'files': (_pdf_bytes(), 'civ.pdf'), 'doc_type': 'civ'},
+                     content_type='multipart/form-data')
+    pid = up.get_json()['photos'][0]['id']
+
+    # Stub fetch to return a MALICIOUS stored Content-Type — the route must
+    # IGNORE it and serve a safe type derived from the .pdf extension, with
+    # nosniff, so a smuggled text/html object can never render inline.
+    monkeypatch.setattr(photos_mod.spaces_service, 'fetch',
+                        lambda key: (b'%PDF-1.4 hello', 'text/html'))
+    r = client.get(f'/api/buyback/records/{rid}/photos/{pid}/download')
+    assert r.status_code == 200, r.get_json() if r.is_json else r.status_code
+    assert r.mimetype == 'application/pdf'                       # NOT the stored text/html
+    assert r.headers.get('X-Content-Type-Options') == 'nosniff'
+    assert 'inline' in r.headers.get('Content-Disposition', '')
+    assert '.pdf' in r.headers.get('Content-Disposition', '')
+    assert r.data == b'%PDF-1.4 hello'
+
+
+def test_download_cross_company_forbidden(client, as_role):
+    as_role('Sales', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    client.post(f'/api/buyback/records/{rid}/photos/upload',
+                data={'files': (_pdf_bytes(), 'civ.pdf')}, content_type='multipart/form-data')
+    pid = client.get(f'/api/buyback/records/{rid}/photos').get_json()['photos'][0]['id']
+    as_role('Sales', 2)
+    r = client.get(f'/api/buyback/records/{rid}/photos/{pid}/download')
+    assert r.status_code == 403
+
+
+def test_download_photo_not_on_record_is_404(client, as_role):
+    rid = _make_record(client, as_role)
+    r = client.get(f'/api/buyback/records/{rid}/photos/99999999/download')
+    assert r.status_code == 404
+
+
+def test_first_image_after_document_becomes_primary(client, as_role):
+    """A document (CIV PDF) present on a record must not block the first real
+    image from becoming the cover (documents never occupy the primary slot)."""
+    rid = _make_record(client, as_role)
+    client.post(f'/api/buyback/records/{rid}/photos/upload',
+                data={'files': (_pdf_bytes(), 'civ.pdf')}, content_type='multipart/form-data')
+    r = client.post(f'/api/buyback/records/{rid}/photos/upload',
+                    data={'files': (_png_bytes(), 'a.png')}, content_type='multipart/form-data')
+    img = r.get_json()['photos'][0]
+    assert img.get('is_document') is not True
+    assert img['is_primary'] is True

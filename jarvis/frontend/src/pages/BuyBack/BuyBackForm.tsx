@@ -82,6 +82,27 @@ interface LookupCarparkVehicle {
 // drops anything empty. Mirrors the shape buildCreatePayload's unit test
 // exercises directly (some numeric fields there arrive pre-coerced too —
 // `Number(x)` handles both).
+const PDF_RE = /\.pdf$/i
+const isPdfFile = (f: File) => f.type === 'application/pdf' || PDF_RE.test(f.name)
+
+// Read a File to a base64 data-URL (PDFs are kept as-is, not compressed).
+function fileToDataUrl(file: File): Promise<string | null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
+    reader.onerror = () => resolve(null)
+    reader.readAsDataURL(file)
+  })
+}
+
+// A document the user attached (or imported as CIV/talon) during intake,
+// carried as a base64 data-URL and uploaded private on create.
+interface PendingDocument {
+  data: string
+  photo_type?: 'civ' | 'talon' | 'document'
+  caption?: string
+}
+
 export interface BuyBackFormState {
   // Header
   advisor_id?: number | null
@@ -117,6 +138,9 @@ export interface BuyBackFormState {
   damage_details?: string
   general_condition?: string | number
   images?: string[]
+  // Retained documents (CIV/talon PDF from the import, or PDFs added at intake)
+  // as base64 data-URLs — uploaded private on create. Excluded from the draft.
+  documents?: PendingDocument[]
   // Trade-in
   target_vehicle_text?: string
   target_carpark_vehicle_id?: number | null
@@ -159,6 +183,7 @@ const emptyForm: BuyBackFormState = {
   damage_details: '',
   general_condition: '',
   images: [],
+  documents: [],
   target_vehicle_text: '',
   target_carpark_vehicle_id: null,
   crm_deal_id: null,
@@ -205,6 +230,7 @@ function recordToForm(r: BuybackRecord): BuyBackFormState {
     damage_details: s(r.damage_details),
     general_condition: n(r.general_condition),
     images: [],
+    documents: [],
     target_vehicle_text: s(r.target_vehicle_text),
     target_carpark_vehicle_id: r.target_carpark_vehicle_id ?? null,
     crm_deal_id: r.crm_deal_id ?? null,
@@ -257,6 +283,7 @@ export interface CreatePayload {
   target_carpark_vehicle_id?: number
   crm_deal_id?: number
   images?: string[]
+  documents?: PendingDocument[]
 }
 
 // Optional string fields copied as-is (dates included — sent as the
@@ -331,6 +358,10 @@ export function buildCreatePayload(form: BuyBackFormState): CreatePayload {
 
   if (Array.isArray(form.images) && form.images.length > 0) {
     payload.images = form.images
+  }
+
+  if (Array.isArray(form.documents) && form.documents.length > 0) {
+    payload.documents = form.documents
   }
 
   return payload
@@ -491,6 +522,28 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
       })
       if (applied.length) toast.success(`${docType.toUpperCase()} citit — ${applied.length} câmpuri completate, verifică-le.`)
       else toast.warning(`Nu am găsit date utile în ${docType.toUpperCase()}.`)
+
+      // Retain the source file so it stays downloadable on the record. On a new
+      // intake it's carried in form.documents (uploaded on submit); when editing
+      // an existing record it's uploaded immediately.
+      const label = docType === 'civ' ? 'CIV' : 'Talon'
+      try {
+        if (isEdit && editId) {
+          await buybackApi.uploadDocuments(editId, [file], docType)
+          queryClient.invalidateQueries({ queryKey: ['buyback-record', editId] })
+          toast.success(`${label} atașat la solicitare.`)
+        } else {
+          const dataUrl = await fileToDataUrl(file)
+          if (dataUrl) {
+            setForm((f) => ({
+              ...f,
+              documents: [...(f.documents ?? []), { data: dataUrl, photo_type: docType, caption: label }],
+            }))
+          }
+        }
+      } catch {
+        toast.error('Datele au fost citite, dar atașarea fișierului a eșuat.')
+      }
     } catch (err) {
       const msg = (err as { data?: { error?: string } })?.data?.error || 'Importul documentului a eșuat.'
       toast.error(msg)
@@ -583,14 +636,33 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
     const files = Array.from(e.target.files ?? [])
     e.target.value = ''
     if (!files.length) return
+    // PDFs → documents (kept as-is); everything else → compressed images.
+    const pdfs = files.filter(isPdfFile)
+    const imgs = files.filter((f) => !isPdfFile(f))
     setImageBusy(true)
-    const compressed = await Promise.all(files.map((f) => fileToCompressedDataUrl(f)))
+    const [compressed, docUrls] = await Promise.all([
+      Promise.all(imgs.map((f) => fileToCompressedDataUrl(f))),
+      Promise.all(pdfs.map((f) => fileToDataUrl(f))),
+    ])
     setImageBusy(false)
-    const ok = compressed.filter((x): x is string => !!x)
-    if (ok.length) setForm((f) => ({ ...f, images: [...(f.images ?? []), ...ok] }))
+    const okImgs = compressed.filter((x): x is string => !!x)
+    const okDocs = docUrls.filter((x): x is string => !!x)
+    if (okImgs.length || okDocs.length) {
+      setForm((f) => ({
+        ...f,
+        images: [...(f.images ?? []), ...okImgs],
+        documents: [
+          ...(f.documents ?? []),
+          ...okDocs.map((data) => ({ data, photo_type: 'document' as const, caption: 'Document' })),
+        ],
+      }))
+    }
   }
   function removeImage(idx: number) {
     setForm((f) => ({ ...f, images: (f.images ?? []).filter((_, i) => i !== idx) }))
+  }
+  function removeDocument(idx: number) {
+    setForm((f) => ({ ...f, documents: (f.documents ?? []).filter((_, i) => i !== idx) }))
   }
 
   // ── Submit ──
@@ -1100,7 +1172,7 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Imagini</Label>
+            <Label className="text-xs">Imagini și documente</Label>
             <div className="flex flex-wrap gap-2">
               {(form.images ?? []).map((src, idx) => (
                 <div key={idx} className="relative">
@@ -1115,12 +1187,27 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
                   </button>
                 </div>
               ))}
+              {(form.documents ?? []).map((doc, idx) => (
+                <div key={`doc-${idx}`} className="relative flex h-20 w-28 flex-col items-center justify-center gap-1 rounded-md border bg-muted/30 px-2 text-center">
+                  <FileText className="h-6 w-6 text-red-600" />
+                  <span className="w-full truncate text-[11px] font-medium">{doc.caption || 'Document'}</span>
+                  <button
+                    type="button"
+                    aria-label="Șterge documentul"
+                    onClick={() => removeDocument(idx)}
+                    className="absolute -top-2 -right-2 rounded-full bg-destructive text-white p-1"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
               <label className="flex h-20 w-28 cursor-pointer flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed text-muted-foreground hover:bg-accent transition-colors">
                 {imageBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />}
                 <span className="text-xs font-medium">Adaugă</span>
-                <input type="file" accept="image/*" multiple className="hidden" onChange={handleImageFiles} />
+                <input type="file" accept="image/*,application/pdf" multiple className="hidden" onChange={handleImageFiles} />
               </label>
             </div>
+            <p className="text-[11px] text-muted-foreground">Imagini sau PDF (ex: CIV/talon). PDF-urile nu sunt salvate în schiță.</p>
           </div>
         </CardContent>
       </Card>

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { draftKey, isDraftDirty, loadDraft, saveDraft, clearDraft } from './buybackDraft'
 
-const empty = { brand: '', model: '', vin: '', seller_name: '', images: [], advisor_id: 0, advisor_name: '' }
+const empty = { brand: '', model: '', vin: '', seller_name: '', images: [], documents: [], advisor_id: 0, advisor_name: '' }
 
 afterEach(() => localStorage.clear())
 
@@ -12,11 +12,12 @@ describe('buybackDraft', () => {
     expect(draftKey(null)).toBe('buyback.draft.v1.anon')
   })
 
-  it('round-trips a draft but strips images + advisor', () => {
-    saveDraft(7, { ...empty, brand: 'BMW', images: ['data:huge'], advisor_id: 99, advisor_name: 'X' })
+  it('round-trips a draft but strips images + documents + advisor', () => {
+    saveDraft(7, { ...empty, brand: 'BMW', images: ['data:huge'], documents: [{ data: 'data:pdf' }], advisor_id: 99, advisor_name: 'X' })
     const d = loadDraft<Record<string, unknown>>(7)
     expect(d?.brand).toBe('BMW')
     expect('images' in (d ?? {})).toBe(false)
+    expect('documents' in (d ?? {})).toBe(false)
     expect('advisor_id' in (d ?? {})).toBe(false)
     expect('advisor_name' in (d ?? {})).toBe(false)
   })
@@ -26,9 +27,9 @@ describe('buybackDraft', () => {
     expect(loadDraft(8)).toBeNull()
   })
 
-  it('isDraftDirty ignores the auto-filled advisor and images', () => {
-    // Only advisor/images differ from empty → not dirty.
-    expect(isDraftDirty({ ...empty, advisor_id: 5, advisor_name: 'Me', images: ['x'] }, empty)).toBe(false)
+  it('isDraftDirty ignores the auto-filled advisor, images and documents', () => {
+    // Only advisor/images/documents differ from empty → not dirty.
+    expect(isDraftDirty({ ...empty, advisor_id: 5, advisor_name: 'Me', images: ['x'], documents: [{ data: 'd' }] }, empty)).toBe(false)
     // A real content field differs → dirty.
     expect(isDraftDirty({ ...empty, vin: 'WVWZZZ' }, empty)).toBe(true)
   })

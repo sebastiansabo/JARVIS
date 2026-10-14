@@ -144,7 +144,7 @@ def test_store_base64_images_uploads_and_creates_rows(require_real_db):
     repo = PhotoRepository()
     images = [_data_url(100), _data_url(100)]
     with mock.patch('buyback.repositories.photo_repository.spaces_service.upload',
-                     side_effect=lambda data, key, ct: key) as up:
+                     side_effect=lambda data, key, ct, acl='public-read': key) as up:
         rows = repo.store_base64_images(rid, images, max_bytes=10_000)
 
     assert up.call_count == 2
@@ -165,7 +165,7 @@ def test_store_base64_images_not_primary_when_gallery_nonempty(require_real_db):
     repo = PhotoRepository()
     repo.create(rid, 'private/buyback/1/existing.jpg', is_primary=True)
     with mock.patch('buyback.repositories.photo_repository.spaces_service.upload',
-                     side_effect=lambda data, key, ct: key):
+                     side_effect=lambda data, key, ct, acl='public-read': key):
         rows = repo.store_base64_images(rid, [_data_url(100)], max_bytes=10_000)
     assert rows[0]['is_primary'] is False
 
@@ -179,3 +179,85 @@ def test_store_base64_images_rejects_oversized_batch_before_upload(require_real_
             repo.store_base64_images(rid, images, max_bytes=300)
     up.assert_not_called()
     assert len(repo.get_by_record(rid)) == 0
+
+
+# ── store_documents (private PDF/document storage) ──────────────────────────
+
+def _pdf_data_url(n_bytes=100):
+    raw = b'%PDF-1.4' + os.urandom(max(0, n_bytes - 8))
+    b64 = base64.b64encode(raw).decode()
+    return f'data:application/pdf;base64,{b64}'
+
+
+def test_store_documents_uploads_private_pdf_and_creates_rows(require_real_db):
+    rid = _record()['id']
+    repo = PhotoRepository()
+    with mock.patch('buyback.repositories.photo_repository.spaces_service.upload',
+                     side_effect=lambda data, key, ct, acl='private': key) as up:
+        rows = repo.store_documents(
+            rid,
+            [{'data': _pdf_data_url(120), 'photo_type': 'civ', 'caption': 'CIV'}],
+            max_bytes=10_000,
+        )
+
+    assert up.call_count == 1
+    call = up.call_args_list[0]
+    # private ACL (NOT public-read) + real content-type + .pdf key under the record
+    assert call.kwargs.get('acl') == 'private'
+    assert call.args[1].startswith(f'private/buyback/{rid}/')
+    assert call.args[1].endswith('.pdf')
+    assert call.args[2] == 'application/pdf'
+
+    assert len(rows) == 1
+    assert rows[0]['photo_type'] == 'civ'
+    assert rows[0]['caption'] == 'CIV'
+    assert rows[0]['is_primary'] is False
+    assert rows[0]['file_size'] == 120
+
+
+def test_store_documents_clamps_unknown_photo_type_to_document(require_real_db):
+    rid = _record()['id']
+    repo = PhotoRepository()
+    with mock.patch('buyback.repositories.photo_repository.spaces_service.upload',
+                     side_effect=lambda data, key, ct, acl='private': key):
+        rows = repo.store_documents(
+            rid, [{'data': _pdf_data_url(50), 'photo_type': 'junk'}], max_bytes=10_000)
+    assert rows[0]['photo_type'] == 'document'
+
+
+def test_store_documents_rejects_unsafe_mime(require_real_db):
+    """SECURITY: text/html (and svg) must be rejected — they'd be a stored-XSS
+    vector when served back by the download route."""
+    rid = _record()['id']
+    repo = PhotoRepository()
+    html = 'data:text/html;base64,' + base64.b64encode(b'<script>alert(1)</script>').decode()
+    try:
+        repo.store_documents(rid, [{'data': html}], max_bytes=10_000)
+        assert False, 'expected ValueError for unsafe MIME'
+    except ValueError:
+        pass
+
+
+def test_store_documents_rejects_non_data_url(require_real_db):
+    rid = _record()['id']
+    repo = PhotoRepository()
+    # A bare Spaces key must be rejected (cross-tenant copy guard), never fetched.
+    try:
+        repo.store_documents(rid, [{'data': 'private/buyback/999/secret.pdf'}], max_bytes=10_000)
+        assert False, 'expected ValueError for non-data: URL'
+    except ValueError:
+        pass
+
+
+def test_store_documents_rejects_oversized_before_upload(require_real_db):
+    rid = _record()['id']
+    repo = PhotoRepository()
+    called = []
+    with mock.patch('buyback.repositories.photo_repository.spaces_service.upload',
+                     side_effect=lambda *a, **k: called.append(1)):
+        try:
+            repo.store_documents(rid, [{'data': _pdf_data_url(500)}], max_bytes=100)
+            assert False, 'expected ValueError for oversized payload'
+        except ValueError as e:
+            assert str(e) == 'payload too large'
+    assert not called, 'must reject BEFORE any upload'

@@ -6,11 +6,46 @@ Mirrors carpark/repositories/photo_repository.py's BaseRepository style
 its injection posture — every value is %s-bound; no caller-influenced value
 is ever interpolated into SQL text.
 """
+import base64
 from typing import Optional, Dict, Any, List
 from uuid import uuid4
 
 from core.base_repository import BaseRepository
 from core.services import spaces_service
+
+# Document MIME allowlist + file extension. SECURITY: only safe-to-serve types
+# are accepted — PDF and raster images. Deliberately EXCLUDES text/html and
+# image/svg+xml (both can carry executable script): a stored document is served
+# back by the download route, so an attacker-controlled Content-Type like
+# text/html would be a stored-XSS vector. Anything not in this map is rejected.
+_EXT_BY_MIME = {
+    'application/pdf': 'pdf',
+    'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png',
+    'image/webp': 'webp', 'image/gif': 'gif',
+}
+
+# photo_type values a client may assign to an uploaded document — anything else
+# is clamped to the generic 'document' so a caller can't inject arbitrary types.
+_DOC_TYPES = {'document', 'civ', 'talon'}
+
+
+def _parse_data_url(value: str):
+    """('data:<mime>;base64,<payload>') -> (bytes, mime).
+
+    SECURITY: rejects any non-`data:` string so a bare Spaces key is NEVER
+    fetched — same cross-tenant-copy guard as store_base64_images (a caller
+    must not be able to copy another tenant's private object into their record
+    by naming its key). Raises ValueError on a malformed value.
+    """
+    if not isinstance(value, str) or not value.startswith('data:'):
+        raise ValueError('documents must be data: URLs')
+    header, _, payload = value.partition(',')
+    mime = (header[5:].split(';')[0].strip().lower()) or 'application/octet-stream'
+    try:
+        data = base64.b64decode(payload)
+    except Exception:
+        raise ValueError('invalid base64 document')
+    return data, mime
 
 
 class PhotoRepository(BaseRepository):
@@ -134,5 +169,47 @@ class PhotoRepository(BaseRepository):
             is_primary = gallery_empty and idx == 0
             created.append(self.create(
                 record_id, url=key, is_primary=is_primary, file_size=len(data)
+            ))
+        return created
+
+    def store_documents(self, record_id: int, documents: List[Dict[str, Any]],
+                         max_bytes: int) -> List[Dict[str, Any]]:
+        """Decode a batch of base64 data-URL documents (PDFs or image docs),
+        upload each PRIVATE to Spaces, and create a buyback_photos row per
+        document (photo_type 'document'/'civ'/'talon', never 'gallery').
+
+        Unlike store_base64_images, documents are stored with acl='private'
+        (they can carry personal data — owner name/address, VIN) and keep
+        their real content-type + extension; they are served only through the
+        authenticated download route, never the public CDN. The same
+        data:-URL-only guard applies (a bare key is rejected, never fetched),
+        and the combined decoded size is checked against `max_bytes` BEFORE
+        any upload so an oversized batch never partially writes.
+
+        Each `documents` entry: {data: data-URL, photo_type?: str,
+        caption?: str}. `is_primary` is never set for a document.
+        """
+        parsed = []
+        for d in documents:
+            data, mime = _parse_data_url(d.get('data'))
+            # SECURITY: reject any MIME not on the safe allowlist (no text/html,
+            # no image/svg+xml) BEFORE upload — these are served back to users.
+            if mime not in _EXT_BY_MIME:
+                raise ValueError(f'unsupported document type: {mime!r}')
+            parsed.append((data, mime, d))
+
+        total = sum(len(data) for data, _, _ in parsed)
+        if total > max_bytes:
+            raise ValueError('payload too large')
+
+        created = []
+        for data, mime, d in parsed:
+            ext = _EXT_BY_MIME.get(mime, 'bin')
+            key = f'private/buyback/{record_id}/doc-{uuid4().hex}.{ext}'
+            spaces_service.upload(data, key, mime, acl='private')
+            photo_type = d.get('photo_type') if d.get('photo_type') in _DOC_TYPES else 'document'
+            created.append(self.create(
+                record_id, url=key, photo_type=photo_type,
+                caption=d.get('caption'), file_size=len(data),
             ))
         return created

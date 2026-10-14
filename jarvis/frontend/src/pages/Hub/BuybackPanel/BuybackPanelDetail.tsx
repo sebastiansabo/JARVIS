@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, FileText } from 'lucide-react'
 import { buybackApi } from '@/api/buyback'
 import { recordStatus } from '@/pages/BuyBack/recordStatus'
 import { pickLatestOffer } from '@/pages/BuyBack/offerUtils'
@@ -178,18 +178,42 @@ export default function BuybackPanelDetail({ id, onBack }: { id: number; onBack:
         </Section>
 
         <Section title="Poze">
-          {photos.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nicio poză</p>
-          ) : (
-            <div className="grid grid-cols-4 gap-2">
-              {photos.map((p) => {
-                const src = photoSrc(p)
-                return src ? (
-                  <img key={p.id} src={src} alt="" className="aspect-square w-full rounded-md border object-cover" />
-                ) : null
-              })}
-            </div>
-          )}
+          {(() => {
+            const images = photos.filter((p) => !p.is_document)
+            const documents = photos.filter((p) => p.is_document)
+            return (
+              <div className="space-y-2">
+                {images.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nicio poză</p>
+                ) : (
+                  <div className="grid grid-cols-4 gap-2">
+                    {images.map((p) => {
+                      const src = photoSrc(p)
+                      return src ? (
+                        <img key={p.id} src={src} alt="" className="aspect-square w-full rounded-md border object-cover" />
+                      ) : null
+                    })}
+                  </div>
+                )}
+                {documents.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {documents.map((d) => (
+                      <a
+                        key={d.id}
+                        href={d.download_url ?? '#'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 rounded-md border bg-muted/30 px-2.5 py-1.5 text-sm hover:underline"
+                      >
+                        <FileText className="h-4 w-4 shrink-0 text-red-600" />
+                        <span className="max-w-[160px] truncate">{d.label || d.caption || 'Document'}</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </Section>
       </div>
     </div>

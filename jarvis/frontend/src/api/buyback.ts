@@ -49,8 +49,23 @@ export const buybackApi = {
     URL.revokeObjectURL(url)
   },
 
-  createRecord: (data: Partial<BuybackRecord> & { vin: string; brand: string; model: string; images?: string[] }) =>
+  createRecord: (
+    data: Partial<BuybackRecord> & {
+      vin: string; brand: string; model: string; images?: string[]
+      // Retained CIV/talon (or other) PDFs as base64 data-URLs — stored private.
+      documents?: { data: string; photo_type?: string; caption?: string }[]
+    },
+  ) =>
     api.post<{ success: boolean; record: BuybackRecord; vin_in_carpark?: boolean }>(`${BASE}/records`, data),
+
+  // Upload document file(s) (PDF) to an existing record — stored private as
+  // photo_type documents. `docType` ('civ'|'talon') labels an imported CIV/talon.
+  uploadDocuments: (id: number, files: File[], docType?: 'civ' | 'talon' | 'document') => {
+    const f = new FormData()
+    files.forEach((x) => f.append('files', x))
+    if (docType) f.append('doc_type', docType)
+    return api.post<{ photos: BuybackPhoto[] }>(`${BASE}/records/${id}/photos/upload`, f)
+  },
 
   updateRecord: (id: number, data: Partial<BuybackRecord>) =>
     api.put<{ record: BuybackRecord }>(`${BASE}/records/${id}`, data),
