@@ -50,6 +50,12 @@ _ROUND_TARGET_STATUS = {
     'final': lifecycle.FINAL_OFFER,
 }
 
+# Statuses a record may be placed ON_HOLD from — the four "active" stages
+# where work-in-progress can stall (missing photos, awaiting client, etc).
+# BOUGHT/LOST/CANCELLED are terminal; ON_HOLD itself is excluded (no-op).
+_HOLDABLE = (lifecycle.PENDING_EVALUATION, lifecycle.INITIAL_OFFER,
+             lifecycle.INSPECTION, lifecycle.FINAL_OFFER)
+
 
 class BuyBackService:
 
@@ -153,6 +159,40 @@ class BuyBackService:
             notify_owner(record, 'status_changed', actor, new_status=new_status)
         except Exception:
             pass
+        return updated
+
+    def hold(self, record, reason, note, actor) -> dict:
+        """Put `record` ON_HOLD from one of the four active statuses
+        (PENDING_EVALUATION/INITIAL_OFFER/INSPECTION/FINAL_OFFER), stamping
+        the prior status (so resume() can restore it exactly), a reason,
+        an optional free-text note, and who/when. Logs a `held` audit
+        event. Raises ValueError if the record isn't in a holdable
+        status (terminal BOUGHT/LOST/CANCELLED, or already ON_HOLD)."""
+        if record['status'] not in _HOLDABLE:
+            raise ValueError(f"Cannot hold a record in status {record['status']!r}")
+        self.records.set_status(record['id'], lifecycle.ON_HOLD, actor)
+        updated = self.records.update(record['id'], {
+            'hold_prior_status': record['status'], 'hold_reason': reason,
+            'hold_note': (note or '').strip()[:1000] or None,
+            'held_at': datetime.now(timezone.utc), 'held_by': actor,
+        })
+        self.events.log(record['id'], 'held', actor, {'reason': reason, 'note': note})
+        return updated
+
+    def resume(self, record, actor) -> dict:
+        """Take `record` off ON_HOLD, restoring the EXACT status it was
+        held from (`hold_prior_status`), and clearing the hold bookkeeping
+        fields. Logs a `resumed` audit event. Raises ValueError if the
+        record isn't currently ON_HOLD."""
+        if record['status'] != lifecycle.ON_HOLD:
+            raise ValueError(f"Record {record['id']} is not on hold")
+        prior = record.get('hold_prior_status') or lifecycle.PENDING_EVALUATION
+        self.records.set_status(record['id'], prior, actor)
+        updated = self.records.update(record['id'], {
+            'hold_prior_status': None, 'hold_reason': None, 'hold_note': None,
+            'held_at': None, 'held_by': None,
+        })
+        self.events.log(record['id'], 'resumed', actor, {'restored_to': prior})
         return updated
 
     def post_offer(self, record, offer_type, payload, actor) -> dict:
