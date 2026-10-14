@@ -246,6 +246,7 @@ def api_field_sales_client_create():
         _client_repo.get_or_create_profile(client_id)
         if company_id is not None:
             _client_repo.set_profile_company(client_id, company_id)
+        ClientRepository().update_source_flags(client_id, 'field_sales')
 
         return jsonify({'success': True,
                         'client': {'id': client_id,
