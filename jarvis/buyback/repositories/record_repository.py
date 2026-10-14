@@ -42,7 +42,8 @@ _LIST_COLUMNS = (
     'r.inspection_notes, r.inspected_by, r.inspected_at, '
     'r.purchase_price_eur, r.carpark_vehicle_id, '
     'r.bought_at, r.finalized_by, r.lost_reason, '
-    'r.created_by, r.updated_by, r.created_at, r.updated_at, r.closed_at'
+    'r.created_by, r.updated_by, r.created_at, r.updated_at, r.closed_at, '
+    'r.hold_prior_status, r.hold_reason, r.hold_note, r.held_at, r.held_by'
 )
 
 _SORT_WHITELIST = {'created_at', 'record_code', 'vin', 'status', 'brand', 'client_asking_price_eur'}
@@ -69,6 +70,7 @@ _UPDATABLE_COLUMNS = {
     'inspection_notes', 'inspected_by', 'inspected_at',
     'purchase_price_eur', 'carpark_vehicle_id',
     'bought_at', 'finalized_by', 'lost_reason',
+    'hold_prior_status', 'hold_reason', 'hold_note', 'held_at', 'held_by',
     'updated_by', 'closed_at',
 }
 
