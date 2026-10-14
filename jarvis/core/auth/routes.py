@@ -102,7 +102,8 @@ def login():
             # Phone sign-in is restricted to Viewer accounts.
             if via_phone and not is_viewer:
                 _log_event('login_failed',
-                           f'Phone login rejected for non-viewer {identifier}')
+                           f'Phone login rejected for non-viewer {identifier}',
+                           details={'platform': 'web', 'reason': 'phone_login_nonviewer'})
                 flash('Phone sign-in is only available for viewer accounts. '
                       'Please use your email address.', 'error')
                 return render_template('core/login.html')
@@ -118,7 +119,8 @@ def login():
                 login_user(user, remember=remember)
                 _user_repo.update_last_login(user.id)
                 _factor = 'viewer' if is_viewer else 'otp-exempt'
-                _log_event('login', f'{user.email} logged in (single-factor, {_factor})')
+                _log_event('login', f'{user.email} logged in (single-factor, {_factor})',
+                           details={'platform': 'web', 'factor': _factor})
                 return redirect(next_page or url_for('index'))
 
             # Non-viewers: existing trusted-device + OTP 2FA flow.
@@ -129,7 +131,8 @@ def login():
             ):
                 login_user(user, remember=remember)
                 _user_repo.update_last_login(user.id)
-                _log_event('login', f'User {user.email} logged in (trusted device)')
+                _log_event('login', f'User {user.email} logged in (trusted device)',
+                           details={'platform': 'web', 'factor': 'trusted-device'})
                 return redirect(next_page or url_for('index'))
 
             otp_allowed, otp_retry = _auth_limiter.is_allowed(
@@ -158,7 +161,9 @@ def login():
 
             return redirect(url_for('auth.verify_otp'))
         else:
-            _log_event('login_failed', f'Failed login attempt for {identifier}')
+            reason = _user_repo.classify_login_failure(identifier)
+            _log_event('login_failed', f'Failed login attempt for {identifier}',
+                       details={'platform': 'web', 'reason': reason})
             flash('Invalid credentials.', 'error')
 
     return render_template('core/login.html')
@@ -201,7 +206,8 @@ def verify_otp():
             user = User(user_data)
             login_user(user, remember=pending.get('remember', False))
             _user_repo.update_last_login(user.id)
-            _log_event('login', f'User {user.email} logged in (OTP verified)')
+            _log_event('login', f'User {user.email} logged in (OTP verified)',
+                       details={'platform': 'web', 'factor': 'otp'})
 
             next_page = pending.get('next_page')
             session.pop('otp_pending', None)
@@ -221,6 +227,13 @@ def verify_otp():
             )
             return resp
         else:
+            # OTP stage failed (wrong/expired code, too many attempts). Password
+            # already succeeded, so this never hits the login_failed path above —
+            # audit it explicitly or an OTP-stuck user is invisible everywhere.
+            _log_event('login_otp_failed',
+                       f'OTP verification failed for user {pending.get("user_id")}',
+                       details={'platform': 'web', 'reason': 'otp_failed',
+                                'user_id': pending.get('user_id'), 'detail': error})
             # Errors that indicate the OTP session is invalid — redirect to login
             if 'Please log in again' in error or 'Please request a new' in error:
                 session.pop('otp_pending', None)

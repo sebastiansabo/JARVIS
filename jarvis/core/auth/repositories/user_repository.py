@@ -177,6 +177,28 @@ class UserRepository(BaseRepository):
             return None
         return user
 
+    def classify_login_failure(self, identifier: str) -> str:
+        """Best-effort reason for why authenticate_identifier() returned None.
+
+        For AUDIT LOGGING ONLY — never surface to the client (would enable
+        account enumeration). Runs only on the failure path, so the extra
+        lookup is cheap. Mirrors the checks in authenticate_identifier().
+        """
+        identifier = (identifier or '').strip()
+        if not identifier:
+            return 'empty_identifier'
+        try:
+            user = self.get_by_email(identifier) if '@' in identifier else self.get_by_phone(identifier)
+        except Exception:
+            return 'unknown'
+        if not user:
+            return 'unknown_account'
+        if not user.get('is_active', False):
+            return 'inactive_account'
+        if not user.get('password_hash'):
+            return 'no_password'
+        return 'bad_password'
+
     def get_online_count(self, minutes: int = 5) -> dict:
         """Get online users count with user list.
 
