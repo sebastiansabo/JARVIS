@@ -6,6 +6,7 @@ export const BUYBACK_STATUSES = [
   'BOUGHT',
   'LOST',
   'CANCELLED',
+  'ON_HOLD',
 ] as const
 
 export type BuybackStatus = (typeof BUYBACK_STATUSES)[number]
@@ -63,6 +64,11 @@ export interface BuybackRecord {
   bought_at: string | null
   finalized_by: number | null
   lost_reason: string | null
+  hold_prior_status: string | null
+  hold_reason: string | null
+  hold_note: string | null
+  held_at: string | null
+  held_by: number | null
   created_by: number | null
   created_at: string
   updated_at: string

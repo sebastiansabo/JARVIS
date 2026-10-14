@@ -6,6 +6,7 @@ export type RecordStatusKey =
   | 'bought'
   | 'lost'
   | 'cancelled'
+  | 'on_hold'
   | 'unknown'
 
 export function recordStatus(status: string): {
@@ -64,6 +65,13 @@ export function recordStatus(status: string): {
         badgeClass: 'bg-gray-600 text-white',
         rowClass: 'bg-gray-500/5 border-l-4 border-l-gray-500/40',
       }
+    case 'ON_HOLD':
+      return {
+        key: 'on_hold',
+        label: 'Suspendat',
+        badgeClass: 'bg-amber-600 text-white',
+        rowClass: 'bg-amber-500/5 border-l-4 border-l-amber-500/40',
+      }
     default:
       return {
         key: 'unknown',
@@ -82,4 +90,5 @@ export const STATUS_FILTER_OPTIONS = [
   { value: 'BOUGHT', label: 'Achiziționat' },
   { value: 'LOST', label: 'Pierdut' },
   { value: 'CANCELLED', label: 'Anulat' },
+  { value: 'ON_HOLD', label: 'Suspendat' },
 ]
