@@ -2,6 +2,7 @@
 
 notify_new_request(record)                  -> acquisition inbox (email)
 notify_owner(record, event, actor_id, ...)  -> form creator (in-app/push/email)
+notify_held(record, reason, note, actor)    -> issuer (email + in-app/push)
 
 Every path swallows its own exceptions: these run after the record/offer is
 already committed, so a send failure must never surface as a 500.
@@ -133,3 +134,61 @@ def notify_owner(record, event, actor_id, new_status=None) -> None:
                 logger.exception('buyback owner email failed (record %s)', rid)
     except Exception:
         logger.exception('notify_owner failed for record %s', record.get('id'))
+
+
+def notify_held(record, reason, note, actor) -> None:
+    """Best-effort notification to the issuing advisor/creator when a record
+    is put ON_HOLD: an email carrying the reason + note, AND an in-app+push
+    notification (core.notifications.notify.notify_user). Fires AFTER
+    BuyBackService.hold() has already committed the hold — mirrors every
+    other notifier in this module: each channel wraps its own body in
+    try/except (log+swallow) so a send failure can never surface as a 500
+    on an otherwise-successful hold.
+    """
+    rid = record.get('id')
+    code = record.get('record_code') or rid
+    message = reason + (f' — {note}' if note else '')
+
+    # Email the advisor/creator — reuses email.py's internal-recipient
+    # resolver (advisor_id, then created_by) the same way notify_sales does,
+    # just with no department env-var override configured for this path.
+    try:
+        from buyback.services.email import _resolve_internal_recipient
+        from core.services.notification_service import send_email
+
+        to_email = _resolve_internal_recipient(record, 'BUYBACK_HOLD_EMAIL')
+        if to_email:
+            subject = f"BuyBack {code}: Solicitare suspendată".strip()
+            text = f"Solicitarea {code} ({_vehicle(record)}) a fost suspendată.\nMotiv: {message}"
+            html_body = (
+                f"<p>Solicitarea {_esc(code)} ({_esc(_vehicle(record))}) a fost suspendată.</p>"
+                f"<p>Motiv: {_esc(message)}</p>"
+            )
+            success, error = send_email(
+                to_email=to_email, subject=subject, html_body=html_body,
+                text_body=text, from_name='AUTOWORLD',
+            )
+            if not success:
+                logger.warning(
+                    'buyback hold email to %s failed (record %s): %s',
+                    to_email, rid, error,
+                )
+        else:
+            logger.info(
+                'buyback record %s: no recipient resolvable for hold email', rid,
+            )
+    except Exception:
+        logger.exception('notify_held email failed for record %s', rid)
+
+    # In-app + push to the creator.
+    try:
+        creator = record.get('created_by')
+        if creator:
+            from core.notifications.notify import notify_user
+            notify_user(
+                creator, 'Solicitare BuyBack suspendată', message=message,
+                link=f'/app/buyback/{rid}', entity_type='buyback_record',
+                entity_id=rid, category='buyback',
+            )
+    except Exception:
+        logger.exception('notify_held push/in-app failed for record %s', rid)

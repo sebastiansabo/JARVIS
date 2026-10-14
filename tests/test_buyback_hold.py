@@ -1,5 +1,6 @@
 import sys, os
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+from contextlib import ExitStack
 
 import pytest
 
@@ -139,3 +140,252 @@ def test_resume_from_non_on_hold_raises():
     svc.records.set_status.assert_not_called()
     svc.records.update.assert_not_called()
     svc.events.log.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Route tests: POST /records/<id>/hold + POST /records/<id>/resume
+#
+# Called as plain function calls (hold.hold_record(100), not via the test
+# client) inside app.test_request_context(), matching the established
+# pattern for this codebase's permission-gated route tests (see
+# tests/test_dms_file_download_company_access.py,
+# tests/test_buyback_intake_error.py). The permission gate
+# (@v2_permission_required) and the route body each read their OWN
+# module-level `current_user` binding (core.roles.decorators.current_user
+# and buyback.routes.hold.current_user respectively), and _guard_company's
+# _permitted_company_ids() reads buyback.routes._shared's own `current_user`
+# binding — so a test that wants a consistent "logged-in as X" story must
+# patch all three.
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.fixture(scope='module')
+def app():
+    from core.config import AppConfig
+    from app import create_app
+    cfg = AppConfig(
+        secret_key='test-secret-key-for-tests',
+        database_url=os.environ.get('DATABASE_URL', 'postgresql://localhost/defaultdb'),
+    )
+    application = create_app(cfg)
+    application.config['TESTING'] = True
+    application.config['LOGIN_DISABLED'] = True
+    return application
+
+
+class _Admin:
+    """Authenticated admin: passes the @v2_permission_required gate (admin
+    bypass -> g.permission_scope = 'all') and is used as the route's own
+    current_user (current_user.id becomes the actor on hold/resume)."""
+    id = 9
+    company_id = 3
+    is_authenticated = True
+    is_admin = True
+    can_access_settings = True
+
+
+class _NoPermUser:
+    """Authenticated, but no admin flag and no role -> the permission gate
+    itself denies with 403 before the route body (and its repo/service
+    mocks) ever runs."""
+    id = 11
+    company_id = 3
+    is_authenticated = True
+    is_admin = False
+    can_access_settings = False
+    role_id = None
+
+
+def _record(**overrides):
+    base = {
+        'id': 100, 'company_id': 3, 'status': lifecycle.PENDING_EVALUATION,
+        'created_by': 42, 'record_code': 'BB-TEST01',
+    }
+    base.update(overrides)
+    return base
+
+
+def _hold_ctx(record, *, actor=None, permitted_company_ids=None):
+    """Build the (module, repo, service, patches) tuple shared by every
+    hold/resume route test: the triple current_user patch, a mocked
+    records_repo returning `record`, a mocked service, and a muted
+    notify_held (so no real email/push fires). `patches` is a list of
+    not-yet-entered patch.object(...) context managers — apply with
+    `_patched(patches)`."""
+    from buyback.routes import hold
+    from core.roles import decorators
+
+    actor = actor or _Admin()
+    repo = MagicMock()
+    repo.get_by_id.return_value = record
+    service = MagicMock()
+
+    patches = [
+        patch.object(decorators, 'current_user', actor),
+        patch.object(hold, 'current_user', actor),
+        patch.object(hold._shared, 'current_user', actor),
+        patch.object(hold._shared, 'records_repo', repo),
+        patch.object(hold._shared, 'service', service),
+        patch.object(hold, 'notify_held'),
+    ]
+    if permitted_company_ids is not None:
+        patches.append(
+            patch.object(hold._shared, '_permitted_company_ids',
+                         return_value=permitted_company_ids)
+        )
+    return hold, repo, service, patches
+
+
+def _patched(patches):
+    stack = ExitStack()
+    for p in patches:
+        stack.enter_context(p)
+    return stack
+
+
+def _unwrap(resp):
+    """Route handlers return either a bare jsonify(...) (implicit 200) or a
+    (jsonify(...), status) tuple -> normalize to (body, status)."""
+    return resp if isinstance(resp, tuple) else (resp, 200)
+
+
+def test_hold_route_happy_path(app):
+    record = _record()
+    hold, repo, service, patches = _hold_ctx(record)
+    updated = _record(status=lifecycle.ON_HOLD, hold_reason='Poze lipsă')
+    service.hold.return_value = updated
+
+    with app.test_request_context(json={'reason': 'Poze lipsă', 'note': 'lipsesc 3 poze'}):
+        with _patched(patches):
+            resp = hold.hold_record(100)
+            # notify_held must be checked INSIDE the patch scope — it's a
+            # local `hold.py` import, so the patch.object(hold, ...) mock is
+            # only reachable via `hold.notify_held` while still patched;
+            # outside the `with`, that name reverts to the real function.
+            hold.notify_held.assert_called_once_with(updated, 'Poze lipsă', 'lipsesc 3 poze', 9)
+
+    body, status = _unwrap(resp)
+    data = body.get_json()
+    assert status == 200
+    assert data['success'] is True
+    assert data['record']['status'] == lifecycle.ON_HOLD
+    service.hold.assert_called_once_with(record, 'Poze lipsă', 'lipsesc 3 poze', 9)
+
+
+def test_hold_route_non_active_status_returns_409(app):
+    record = _record(status=lifecycle.BOUGHT)
+    hold, repo, service, patches = _hold_ctx(record)
+    service.hold.side_effect = ValueError("Cannot hold a record in status 'BOUGHT'")
+
+    with app.test_request_context(json={'reason': 'Poze lipsă'}):
+        with _patched(patches):
+            resp = hold.hold_record(100)
+            hold.notify_held.assert_not_called()
+
+    body, status = _unwrap(resp)
+    assert status == 409
+    assert body.get_json()['success'] is False
+
+
+@pytest.mark.parametrize('payload', [{}, {'reason': ''}, {'reason': '   '}, {'reason': 123}])
+def test_hold_route_missing_or_empty_reason_returns_400(app, payload):
+    record = _record()
+    hold, repo, service, patches = _hold_ctx(record)
+
+    with app.test_request_context(json=payload):
+        with _patched(patches):
+            resp = hold.hold_record(100)
+
+    body, status = _unwrap(resp)
+    assert status == 400
+    service.hold.assert_not_called()
+
+
+def test_hold_route_no_permission_returns_403(app):
+    record = _record()
+    hold, repo, service, patches = _hold_ctx(record, actor=_NoPermUser())
+
+    with app.test_request_context(json={'reason': 'Poze lipsă'}):
+        with _patched(patches):
+            resp = hold.hold_record(100)
+
+    body, status = _unwrap(resp)
+    assert status == 403
+    service.hold.assert_not_called()
+
+
+def test_hold_route_cross_company_returns_403(app):
+    record = _record(company_id=8)
+    hold, repo, service, patches = _hold_ctx(record, permitted_company_ids={3})
+
+    with app.test_request_context(json={'reason': 'Poze lipsă'}):
+        with _patched(patches):
+            resp = hold.hold_record(100)
+
+    body, status = _unwrap(resp)
+    assert status == 403
+    service.hold.assert_not_called()
+
+
+def test_hold_route_notify_failure_does_not_block_the_hold(app):
+    """notify_held is best-effort (fires AFTER the hold already committed):
+    a raising notifier must not turn a successful hold into an error
+    response."""
+    record = _record()
+    hold, repo, service, patches = _hold_ctx(record)
+    updated = _record(status=lifecycle.ON_HOLD)
+    service.hold.return_value = updated
+
+    with app.test_request_context(json={'reason': 'Poze lipsă'}):
+        with _patched(patches):
+            hold.notify_held.side_effect = Exception('smtp down')
+            resp = hold.hold_record(100)
+
+    body, status = _unwrap(resp)
+    assert status == 200
+    assert body.get_json()['success'] is True
+    service.hold.assert_called_once()
+
+
+def test_resume_route_happy_path(app):
+    record = _record(status=lifecycle.ON_HOLD, hold_prior_status=lifecycle.INSPECTION)
+    hold, repo, service, patches = _hold_ctx(record)
+    updated = _record(status=lifecycle.INSPECTION, hold_prior_status=None)
+    service.resume.return_value = updated
+
+    with app.test_request_context():
+        with _patched(patches):
+            resp = hold.resume_record(100)
+
+    body, status = _unwrap(resp)
+    data = body.get_json()
+    assert status == 200
+    assert data['success'] is True
+    assert data['record']['status'] == lifecycle.INSPECTION
+    service.resume.assert_called_once_with(record, 9)
+
+
+def test_resume_route_not_on_hold_returns_409(app):
+    record = _record(status=lifecycle.PENDING_EVALUATION)
+    hold, repo, service, patches = _hold_ctx(record)
+    service.resume.side_effect = ValueError('Record 100 is not on hold')
+
+    with app.test_request_context():
+        with _patched(patches):
+            resp = hold.resume_record(100)
+
+    body, status = _unwrap(resp)
+    assert status == 409
+    assert body.get_json()['success'] is False
+
+
+def test_resume_route_cross_company_returns_403(app):
+    record = _record(company_id=8, status=lifecycle.ON_HOLD)
+    hold, repo, service, patches = _hold_ctx(record, permitted_company_ids={3})
+
+    with app.test_request_context():
+        with _patched(patches):
+            resp = hold.resume_record(100)
+
+    body, status = _unwrap(resp)
+    assert status == 403
+    service.resume.assert_not_called()
