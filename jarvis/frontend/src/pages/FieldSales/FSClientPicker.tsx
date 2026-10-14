@@ -130,12 +130,15 @@ function ClientCreateForm({ companyId, onCancel, onPicked }: {
           <br />
           <span className="text-muted-foreground">Există deja un client cu acest nume — a fost selectat cel existent.</span>
         </p>
-        <button
-          onClick={() => onPicked(dup)}
-          className="h-11 w-full rounded-xl bg-teal-600 text-base font-semibold text-white active:bg-teal-700"
-        >
-          Continua
-        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button onClick={() => setDup(null)} className="h-11 rounded-xl border border-border text-base font-semibold active:bg-muted">Inapoi</button>
+          <button
+            onClick={() => onPicked(dup)}
+            className="h-11 rounded-xl bg-teal-600 text-base font-semibold text-white active:bg-teal-700"
+          >
+            Continua
+          </button>
+        </div>
       </div>
     )
   }

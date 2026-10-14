@@ -60,4 +60,17 @@ describe('FSClientPicker', () => {
     fireEvent.click(screen.getByRole('button', { name: /continu/i }))
     expect(onPick).toHaveBeenCalledWith({ id: 5, display_name: 'ACME SRL' })
   })
+
+  it('returns to the editable create form from the duplicate notice via Inapoi without picking', async () => {
+    createClient.mockResolvedValue({ success: true, duplicate: true, client: { id: 5, display_name: 'ACME SRL', company_id: 7 } })
+    const onPick = vi.fn()
+    wrap(<FSClientPicker companyId={7} onPick={onPick} />)
+    fireEvent.click(screen.getByRole('button', { name: /client nou/i }))
+    fireEvent.change(screen.getByPlaceholderText(/nume client/i), { target: { value: 'ACME SRL' } })
+    fireEvent.click(screen.getByRole('button', { name: /^creeaz/i }))
+    expect(await screen.findByText(/exist[ăa] deja un client cu acest nume/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /inapoi/i }))
+    expect(screen.getByPlaceholderText(/nume client/i)).toBeInTheDocument()
+    expect(onPick).not.toHaveBeenCalled()
+  })
 })
