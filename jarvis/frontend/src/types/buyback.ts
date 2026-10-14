@@ -6,6 +6,7 @@ export const BUYBACK_STATUSES = [
   'BOUGHT',
   'LOST',
   'CANCELLED',
+  'ON_HOLD',
 ] as const
 
 export type BuybackStatus = (typeof BUYBACK_STATUSES)[number]
@@ -63,6 +64,11 @@ export interface BuybackRecord {
   bought_at: string | null
   finalized_by: number | null
   lost_reason: string | null
+  hold_prior_status: string | null
+  hold_reason: string | null
+  hold_note: string | null
+  held_at: string | null
+  held_by: number | null
   created_by: number | null
   created_at: string
   updated_at: string
@@ -131,4 +137,29 @@ export interface BuybackConfig {
   notify_new_request: boolean
   notify_milestones: boolean
   notify_inspection: boolean
+}
+
+export interface ConsignmentAgreement {
+  vehicle_id: number
+  owner_price: number | null
+  currency: string
+  commission_type: 'percent' | 'fixed'
+  commission_value: number
+  min_sale_price: number | null
+  contract_number: string | null
+  agreement_date: string | null
+  expiry_date: string | null
+  created_by: number | null
+  created_at: string
+}
+
+export interface CustodyAgreementInput {
+  owner_price?: number | null
+  currency?: string
+  commission_type: 'percent' | 'fixed'
+  commission_value: number
+  min_sale_price?: number | null
+  contract_number?: string | null
+  agreement_date?: string | null
+  expiry_date?: string | null
 }

@@ -216,11 +216,22 @@ def get_record(record_id):
     offers = _shared.offers_repo.list_for_record(record_id)
     photos = _shared.photos_repo.get_by_record(record_id)
     events = _shared.events_repo.list_for_record(record_id)
+
+    # Custody hand-off: a LOST record that's been transferred onto CarPark
+    # custody (see buyback.routes.custody) carries a consignment agreement
+    # keyed by carpark_vehicle_id. Local import avoids a cross-module import
+    # cycle at module-load time and keeps the repo patchable in tests.
+    consignment = None
+    if record.get('status') == lifecycle.LOST and record.get('carpark_vehicle_id'):
+        from carpark.repositories.consignment_repository import ConsignmentRepository
+        consignment = ConsignmentRepository().get_by_vehicle(record['carpark_vehicle_id'])
+
     return jsonify({
         'record': _shared._serialize(record),
         'offers': _shared._serialize(offers),
         'photos': _shared.serialize_photos(photos),
         'events': _shared._serialize(events),
+        'consignment': _shared._serialize(consignment),
     })
 
 

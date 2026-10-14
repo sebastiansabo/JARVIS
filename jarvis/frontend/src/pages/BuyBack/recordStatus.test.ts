@@ -19,8 +19,8 @@ describe('recordStatus', () => {
     expect(recordStatus('WAT').label).toBeTruthy()
   })
 
-  it('STATUS_FILTER_OPTIONS contains all 7 statuses', () => {
-    expect(STATUS_FILTER_OPTIONS).toHaveLength(7)
+  it('STATUS_FILTER_OPTIONS contains all 8 statuses', () => {
+    expect(STATUS_FILTER_OPTIONS).toHaveLength(8)
     const values = STATUS_FILTER_OPTIONS.map((opt) => opt.value)
     expect(values).toContain('PENDING_EVALUATION')
     expect(values).toContain('INITIAL_OFFER')
@@ -29,6 +29,7 @@ describe('recordStatus', () => {
     expect(values).toContain('BOUGHT')
     expect(values).toContain('LOST')
     expect(values).toContain('CANCELLED')
+    expect(values).toContain('ON_HOLD')
   })
 
   it('each filter option has a non-empty label', () => {

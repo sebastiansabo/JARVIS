@@ -31,6 +31,11 @@ FINANCE_VEHICLE_TABLE_FIELDS = (
     'total_cost', 'minimum_price', 'cost_lines', 'pricing_sheets',
 )
 
+# Consignment (custody) agreement money/structure fields — stripped from the
+# vehicle GET's embedded `consignment` for non-finance users (owner payout /
+# commission / floor). Non-money keys (contract_number, dates, currency) stay.
+FINANCE_CONSIGNMENT_FIELDS = ('owner_price', 'min_sale_price', 'commission_type', 'commission_value')
+
 # ── Analytics finance field names ────────────────────────────────────────────
 # Money fields on analytics KPI blocks (Dispo KPIs).
 FINANCE_KPI_FIELDS = ('gross_margin_mtd',)
