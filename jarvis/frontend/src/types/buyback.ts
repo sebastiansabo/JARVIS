@@ -3,7 +3,9 @@ export const BUYBACK_STATUSES = [
   'INITIAL_OFFER',
   'INSPECTION',
   'FINAL_OFFER',
+  'CONSIGNMENT_OFFER',
   'BOUGHT',
+  'CONSIGNAT',
   'LOST',
   'CANCELLED',
   'ON_HOLD',
@@ -78,7 +80,7 @@ export interface BuybackRecord {
 export interface BuybackOffer {
   id: number
   record_id: number
-  offer_type: 'initial' | 'final'
+  offer_type: 'initial' | 'final' | 'consignment'
   amount_eur: number
   vat_status: string | null
   valid_until: string | null
@@ -89,6 +91,20 @@ export interface BuybackOffer {
   decided_by: number | null
   decided_at: string | null
   decline_reason: string | null
+  // Proposed consignment terms, present only on a 'consignment' offer (the
+  // Propune consignație flow). Mirrors CustodyAgreementInput; stored JSON-safe.
+  consignment_terms?: ConsignmentTerms | null
+}
+
+export interface ConsignmentTerms {
+  owner_price: number | null
+  currency: string
+  commission_type: 'percent' | 'fixed'
+  commission_value: number
+  min_sale_price: number | null
+  contract_number: string | null
+  agreement_date: string | null
+  expiry_date: string | null
 }
 
 export interface BuybackPhoto {

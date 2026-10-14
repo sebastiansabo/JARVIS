@@ -115,6 +115,12 @@ export const buybackApi = {
   transferToCustody: (id: number, agreement: CustodyAgreementInput) =>
     api.post<{ record: BuybackRecord; vehicle: { id: number } }>(`${BASE}/records/${id}/custody`, agreement),
 
+  // Propose a consignment (Propune consignație) on a PENDING_EVALUATION record:
+  // opens a 'consignment' offer with the proposed terms, awaiting the seller's
+  // accept/decision (recorded via recordDecision on the returned offer).
+  proposeConsignment: (id: number, agreement: CustodyAgreementInput) =>
+    api.post<{ offer: BuybackOffer }>(`${BASE}/records/${id}/propose-consignment`, agreement),
+
   getLookupOptions: () =>
     api.get<Record<string, { value: string; label: string }[]>>(`${BASE}/lookups/options`),
 

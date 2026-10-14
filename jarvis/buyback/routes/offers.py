@@ -21,6 +21,7 @@ in BuyBackService.post_offer / record_decision (Task 8); this route only
 translates their ValueError into a 409, mirroring records.py's
 cancel_record/reopen_record translation of service.transition's ValueError.
 """
+import logging
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
@@ -30,6 +31,8 @@ from flask_login import login_required, current_user
 from buyback import buyback_bp
 from buyback.routes import _shared
 from core.roles.decorators import v2_permission_required
+
+logger = logging.getLogger('jarvis.buyback')
 
 # Offer rounds the service recognizes (BuyBackService._ROUND_REQUIRED_STATUS).
 # Validated here too so a missing/garbage offer_type 400s before it reaches
@@ -123,6 +126,24 @@ def record_decision(record_id, offer_id):
             record, offer_id, decision, current_user.id, data.get('decline_reason'),
         )
     except ValueError as e:
+        # Includes a consignment-accept dup/invalid VIN (the hand-off's VIN
+        # guard, surfaced verbatim from VehicleService.create_vehicle) — the
+        # offer stays pending + record in CONSIGNMENT_OFFER, retryable. Same
+        # 409 contract as custody/finalize.
         return jsonify({'success': False, 'error': str(e)}), 409
+    except Exception:
+        # A non-ValueError fault mid consignment-accept hand-off (e.g. a DB
+        # error, or ConsignmentRepository().create()'s INSERT) can leave an
+        # orphan is_consignment CarPark vehicle with no linked buyback record.
+        # Log it loudly and return a clean 500 rather than a raw traceback
+        # (mirrors buyback.routes.custody.transfer_to_custody's handling).
+        logger.exception(
+            'record_decision failed for record %s offer %s (a consignment '
+            'CarPark vehicle may be orphaned)', record_id, offer_id,
+        )
+        return jsonify({
+            'success': False,
+            'error': 'Înregistrarea deciziei a eșuat (eroare internă). A fost înregistrată.',
+        }), 500
 
     return jsonify({'success': True, 'record': _shared._serialize(updated)})

@@ -38,7 +38,9 @@ const ACQUISITION_TYPE_OPTIONS = [
 // also lingers on the Active side for 72h so the team sees the outcome before
 // it drops to Arhivă only.
 const PAGE_SIZE = 25 // list-view rows per page (Kanban shows all)
-const RESOLVED_STATUSES = ['BOUGHT', 'LOST', 'CANCELLED']
+// CONSIGNAT is terminal like BOUGHT (the car has been handed off to CarPark on
+// consignment) — it belongs under Arhivă, not stuck on Active forever.
+const RESOLVED_STATUSES = ['BOUGHT', 'CONSIGNAT', 'LOST', 'CANCELLED']
 const isResolved = (s: string) => RESOLVED_STATUSES.includes(s)
 const RESOLVED_ACTIVE_WINDOW_MS = 72 * 60 * 60 * 1000
 
@@ -60,8 +62,11 @@ type SortKey =
   | 'client_asking_price_eur' | 'purchase_price_eur' | 'status' | 'advisor_name' | 'created_at'
 
 // Lifecycle progression order so sorting by Status is meaningful, not alphabetical.
+// CONSIGNMENT_OFFER sits alongside the other awaiting-decision offer states;
+// CONSIGNAT alongside BOUGHT (both terminal hand-offs to CarPark).
 const STATUS_ORDER: Record<string, number> = {
-  PENDING_EVALUATION: 0, INITIAL_OFFER: 1, INSPECTION: 2, FINAL_OFFER: 3, BOUGHT: 4, LOST: 5, CANCELLED: 6,
+  PENDING_EVALUATION: 0, INITIAL_OFFER: 1, INSPECTION: 2, FINAL_OFFER: 3,
+  CONSIGNMENT_OFFER: 4, BOUGHT: 5, CONSIGNAT: 6, LOST: 7, CANCELLED: 8,
 }
 
 function sortValue(r: BuybackRecord, key: SortKey): string | number | null {

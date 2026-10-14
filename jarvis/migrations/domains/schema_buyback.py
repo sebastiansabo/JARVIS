@@ -116,6 +116,41 @@ def create_schema_buyback(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_bb_offers_record ON buyback_offers (record_id)')
 
+    # offer_type was VARCHAR(10) for the original 'initial'/'final' rounds; the
+    # consignment proposal flow (Propune consignație) adds an 11-char
+    # 'consignment' round that overflows it -> StringDataRightTruncation on
+    # INSERT -> uncaught 500. Widen EXISTING deployments to VARCHAR(20).
+    # Idempotent: the character_maximum_length guard makes it a no-op once the
+    # column is already wide enough (fresh DBs created above still land at 10,
+    # so this ALTER runs once for them too).
+    cursor.execute('''
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'buyback_offers'
+                  AND column_name = 'offer_type'
+                  AND character_maximum_length < 20
+            ) THEN
+                ALTER TABLE buyback_offers ALTER COLUMN offer_type TYPE VARCHAR(20);
+            END IF;
+        END $$;
+    ''')
+
+    # consignment_terms holds a consignment proposal's terms (owner_price,
+    # commission, floor, contract no., dates) as JSONB on the 'consignment'
+    # offer, until the seller accepts and they're written to
+    # carpark_vehicle_consignment at hand-off. Idempotent column add
+    # (information_schema guard, mirrors the hold_* columns above).
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name='buyback_offers' AND column_name='consignment_terms') THEN
+                ALTER TABLE buyback_offers ADD COLUMN consignment_terms JSONB;
+            END IF;
+        END $$;
+    ''')
+
     # ── Photos: vehicle photo gallery for a record ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS buyback_photos (

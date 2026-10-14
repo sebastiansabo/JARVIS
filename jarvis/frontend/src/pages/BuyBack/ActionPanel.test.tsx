@@ -15,6 +15,7 @@ vi.mock('@/api/buyback', () => ({
     hold: vi.fn(() => Promise.resolve({ record: {} })),
     resume: vi.fn(() => Promise.resolve({ record: {} })),
     transferToCustody: vi.fn(() => Promise.resolve({ vehicle: { id: 77 } })),
+    proposeConsignment: vi.fn(() => Promise.resolve({ offer: {} })),
     getLookupOptions: vi.fn(() =>
       Promise.resolve({ vat_statuses: [], hold_reasons: [{ value: 'Poze lipsă', label: 'Poze lipsă' }] })
     ),
@@ -205,5 +206,52 @@ describe('ActionPanel permission gating', () => {
   it('non-LOST HIDES the custody button', () => {
     renderPanel('BOUGHT', { 'buyback.record.custody': true }, { record: { carpark_vehicle_id: null } })
     expect(screen.queryByText(/Transferă în custodie/)).not.toBeInTheDocument()
+  })
+
+  // ── Consignment proposal (Propune consignație) ──
+  it('PENDING_EVALUATION + offer.manage shows "Propune consignație"', () => {
+    renderPanel('PENDING_EVALUATION', { 'buyback.offer.manage': true })
+    expect(screen.getByText(/Propune consignație/)).toBeInTheDocument()
+  })
+
+  it('PENDING_EVALUATION without offer.manage HIDES "Propune consignație"', () => {
+    renderPanel('PENDING_EVALUATION', {})
+    expect(screen.queryByText(/Propune consignație/)).not.toBeInTheDocument()
+  })
+
+  it('CONSIGNMENT_OFFER + record.edit shows consignment accept/decline + proposed terms', () => {
+    const offers = [
+      {
+        id: 9,
+        record_id: 5,
+        offer_type: 'consignment',
+        amount_eur: 15000,
+        client_decision: 'pending',
+        consignment_terms: {
+          owner_price: 15000,
+          currency: 'EUR',
+          commission_type: 'percent',
+          commission_value: 10,
+          min_sale_price: 14000,
+          contract_number: 'CS-9',
+          agreement_date: '2026-10-14',
+          expiry_date: '2027-01-01',
+        },
+      },
+    ] as unknown as BuybackOffer[]
+    renderPanel('CONSIGNMENT_OFFER', { 'buyback.record.edit': true }, { offers })
+    expect(screen.getByText(/Acceptă consignația/)).toBeInTheDocument()
+    expect(screen.getByText(/Refuză consignația/)).toBeInTheDocument()
+    expect(screen.getByText(/Termeni consignație propuși/)).toBeInTheDocument()
+  })
+
+  it('CONSIGNMENT_OFFER without record.edit HIDES the decision buttons', () => {
+    renderPanel('CONSIGNMENT_OFFER', {})
+    expect(screen.queryByText(/Acceptă consignația/)).not.toBeInTheDocument()
+  })
+
+  it('CONSIGNAT with a CarPark vehicle shows the consignment link', () => {
+    renderPanel('CONSIGNAT', {}, { record: { carpark_vehicle_id: 77 } })
+    expect(screen.getByText(/Consignat → CarPark #77/)).toBeInTheDocument()
   })
 })

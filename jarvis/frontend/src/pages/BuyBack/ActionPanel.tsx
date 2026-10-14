@@ -20,13 +20,91 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
-const TERMINAL_STATUSES = ['BOUGHT', 'LOST', 'CANCELLED']
+const TERMINAL_STATUSES = ['BOUGHT', 'CONSIGNAT', 'LOST', 'CANCELLED']
 
 function errMsg(e: unknown, fallback: string): string {
   const data = (e as { data?: { error?: string } } | undefined)?.data
   if (data?.error) return data.error
   if (e instanceof Error && e.message) return e.message
   return fallback
+}
+
+// Shared agreement-terms field grid, used by BOTH the custody-transfer dialog
+// (LOST → CarPark) and the consignment-proposal dialog (Propune consignație at
+// PENDING_EVALUATION) — identical inputs, different submit action.
+function AgreementFields({
+  value,
+  onChange,
+}: {
+  value: CustodyAgreementInput
+  onChange: (v: CustodyAgreementInput) => void
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <Label className="text-xs">
+        Preț proprietar (€)
+        <Input
+          type="number"
+          value={value.owner_price ?? ''}
+          onChange={(e) => onChange({ ...value, owner_price: e.target.value === '' ? null : Number(e.target.value) })}
+        />
+      </Label>
+      <Label className="text-xs">
+        Comision
+        <Select
+          value={value.commission_type}
+          onValueChange={(v) => onChange({ ...value, commission_type: v as 'percent' | 'fixed' })}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="percent">Procent %</SelectItem>
+            <SelectItem value="fixed">Sumă fixă €</SelectItem>
+          </SelectContent>
+        </Select>
+      </Label>
+      <Label className="text-xs">
+        Valoare comision
+        <Input
+          type="number"
+          value={value.commission_value}
+          onChange={(e) => onChange({ ...value, commission_value: Number(e.target.value) })}
+        />
+      </Label>
+      <Label className="text-xs">
+        Preț minim (€)
+        <Input
+          type="number"
+          value={value.min_sale_price ?? ''}
+          onChange={(e) => onChange({ ...value, min_sale_price: e.target.value === '' ? null : Number(e.target.value) })}
+        />
+      </Label>
+      <Label className="text-xs">
+        Nr. contract
+        <Input
+          value={value.contract_number ?? ''}
+          onChange={(e) => onChange({ ...value, contract_number: e.target.value })}
+        />
+      </Label>
+      <Label className="text-xs">
+        Data acord
+        <Input
+          type="date"
+          value={value.agreement_date ?? ''}
+          onChange={(e) => onChange({ ...value, agreement_date: e.target.value || null })}
+        />
+      </Label>
+      <Label className="text-xs">
+        Data expirare
+        <Input
+          type="date"
+          value={value.expiry_date ?? ''}
+          onChange={(e) => onChange({ ...value, expiry_date: e.target.value || null })}
+        />
+      </Label>
+    </div>
+  )
 }
 
 export default function ActionPanel({ record, offers }: { record: BuybackRecord; offers: BuybackOffer[] }) {
@@ -43,7 +121,12 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
 
   const status = record.status
   const showInitialOffer = status === 'PENDING_EVALUATION' && can('buyback.offer.manage')
-  const showDecision = (status === 'INITIAL_OFFER' || status === 'FINAL_OFFER') && can('buyback.record.edit')
+  // Propose a consignment from PENDING_EVALUATION — same offer-manage authority
+  // as posting a buy offer (both are the acquisition advisor's call).
+  const showProposeConsignment = status === 'PENDING_EVALUATION' && can('buyback.offer.manage')
+  const showDecision =
+    (status === 'INITIAL_OFFER' || status === 'FINAL_OFFER' || status === 'CONSIGNMENT_OFFER') &&
+    can('buyback.record.edit')
   const showInspection = status === 'INSPECTION' && can('buyback.inspection.manage')
   const showFinalOfferButton = status === 'INSPECTION' && can('buyback.offer.manage')
   const showFinalize = status === 'BOUGHT' && !record.carpark_vehicle_id && can('buyback.record.finalize')
@@ -67,9 +150,12 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   // handed off to CarPark can be placed into custody for consignment resale.
   const showCustody = status === 'LOST' && !record.carpark_vehicle_id && can('buyback.record.custody')
   const showCustodyLink = status === 'LOST' && !!record.carpark_vehicle_id
+  // Accepted consignment proposal: the car now lives in CarPark on consignment.
+  const showConsignatLink = status === 'CONSIGNAT' && !!record.carpark_vehicle_id
 
   const nothingToShow =
     !showInitialOffer &&
+    !showProposeConsignment &&
     !showDecision &&
     !showInspection &&
     !showFinalOfferButton &&
@@ -81,7 +167,8 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     !showHold &&
     !showResume &&
     !showCustody &&
-    !showCustodyLink
+    !showCustodyLink &&
+    !showConsignatLink
 
   // ── offer dialog (shared by "initial" + "final") ──
   const [offerDialogType, setOfferDialogType] = useState<'initial' | 'final' | null>(null)
@@ -131,6 +218,10 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   const [declineDialogOpen, setDeclineDialogOpen] = useState(false)
   const [declineReason, setDeclineReason] = useState('')
   const pendingOffer = pickLatestOffer(offers, (o) => o.client_decision === 'pending')
+  // A pending consignment proposal drives a slightly different decision UI:
+  // the proposed terms are shown and the accept/decline labels name it.
+  const isConsignmentDecision = pendingOffer?.offer_type === 'consignment'
+  const terms = pendingOffer?.consignment_terms ?? null
 
   const decisionMutation = useMutation({
     mutationFn: (data: { decision: 'accepted' | 'declined'; decline_reason?: string }) => {
@@ -238,6 +329,19 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     onError: (e) => toast.error(errMsg(e, 'Transferul în custodie a eșuat')),
   })
 
+  // ── consignment proposal (Propune consignație, PENDING_EVALUATION → CONSIGNMENT_OFFER) ──
+  const [proposeOpen, setProposeOpen] = useState(false)
+  const [proposal, setProposal] = useState<CustodyAgreementInput>({ commission_type: 'percent', commission_value: 0 })
+  const proposeMutation = useMutation({
+    mutationFn: () => buybackApi.proposeConsignment(record.id, proposal),
+    onSuccess: () => {
+      toast.success('Propunere de consignație trimisă')
+      setProposeOpen(false)
+      invalidate()
+    },
+    onError: (e) => toast.error(errMsg(e, 'Propunerea de consignație a eșuat')),
+  })
+
   // ── status override (admin/manager escape hatch) ──
   const [overrideOpen, setOverrideOpen] = useState(false)
 
@@ -303,23 +407,48 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
           </Button>
         )}
 
+        {showProposeConsignment && (
+          <Button size="sm" variant="outline" onClick={() => setProposeOpen(true)}>
+            Propune consignație
+          </Button>
+        )}
+
         {showDecision && (
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              disabled={!pendingOffer || decisionMutation.isPending}
-              onClick={() => decisionMutation.mutate({ decision: 'accepted' })}
-            >
-              Client a acceptat
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={!pendingOffer || decisionMutation.isPending}
-              onClick={() => setDeclineDialogOpen(true)}
-            >
-              Client a refuzat
-            </Button>
+          <div className="space-y-2">
+            {isConsignmentDecision && terms && (
+              <div className="space-y-0.5 rounded-md border border-border p-2 text-xs">
+                <p className="font-medium">Termeni consignație propuși</p>
+                <p>Preț proprietar: {terms.owner_price != null ? `${terms.owner_price} €` : '—'}</p>
+                <p>
+                  Comision:{' '}
+                  {terms.commission_type === 'percent'
+                    ? `${terms.commission_value}%`
+                    : `${terms.commission_value} €`}
+                </p>
+                <p>Preț minim: {terms.min_sale_price != null ? `${terms.min_sale_price} €` : '—'}</p>
+                {terms.contract_number && <p>Nr. contract: {terms.contract_number}</p>}
+                {(terms.agreement_date || terms.expiry_date) && (
+                  <p>Valabil: {terms.agreement_date ?? '—'} → {terms.expiry_date ?? '—'}</p>
+                )}
+              </div>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                disabled={!pendingOffer || decisionMutation.isPending}
+                onClick={() => decisionMutation.mutate({ decision: 'accepted' })}
+              >
+                {isConsignmentDecision ? 'Acceptă consignația' : 'Client a acceptat'}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!pendingOffer || decisionMutation.isPending}
+                onClick={() => setDeclineDialogOpen(true)}
+              >
+                {isConsignmentDecision ? 'Refuză consignația' : 'Client a refuzat'}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -421,6 +550,10 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
           <p className="text-sm text-muted-foreground">Transferat în Custodie → CarPark #{record.carpark_vehicle_id}</p>
         )}
 
+        {showConsignatLink && (
+          <p className="text-sm text-muted-foreground">Consignat → CarPark #{record.carpark_vehicle_id}</p>
+        )}
+
         {showCancel && (
           <Button size="sm" variant="destructive" onClick={() => setCancelDialogOpen(true)}>
             Anulează
@@ -512,7 +645,7 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Client a refuzat oferta</DialogTitle>
+            <DialogTitle>{isConsignmentDecision ? 'Client a refuzat consignația' : 'Client a refuzat oferta'}</DialogTitle>
           </DialogHeader>
           <div className="space-y-1">
             <Label className="text-xs">Motiv (opțional)</Label>
@@ -613,80 +746,31 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
           <DialogHeader>
             <DialogTitle>Transfer în custodie</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-3">
-            <Label className="text-xs">
-              Preț proprietar (€)
-              <Input
-                type="number"
-                value={custody.owner_price ?? ''}
-                onChange={(e) =>
-                  setCustody({ ...custody, owner_price: e.target.value === '' ? null : Number(e.target.value) })
-                }
-              />
-            </Label>
-            <Label className="text-xs">
-              Comision
-              <Select
-                value={custody.commission_type}
-                onValueChange={(v) => setCustody({ ...custody, commission_type: v as 'percent' | 'fixed' })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="percent">Procent %</SelectItem>
-                  <SelectItem value="fixed">Sumă fixă €</SelectItem>
-                </SelectContent>
-              </Select>
-            </Label>
-            <Label className="text-xs">
-              Valoare comision
-              <Input
-                type="number"
-                value={custody.commission_value}
-                onChange={(e) => setCustody({ ...custody, commission_value: Number(e.target.value) })}
-              />
-            </Label>
-            <Label className="text-xs">
-              Preț minim (€)
-              <Input
-                type="number"
-                value={custody.min_sale_price ?? ''}
-                onChange={(e) =>
-                  setCustody({ ...custody, min_sale_price: e.target.value === '' ? null : Number(e.target.value) })
-                }
-              />
-            </Label>
-            <Label className="text-xs">
-              Nr. contract
-              <Input
-                value={custody.contract_number ?? ''}
-                onChange={(e) => setCustody({ ...custody, contract_number: e.target.value })}
-              />
-            </Label>
-            <Label className="text-xs">
-              Data acord
-              <Input
-                type="date"
-                value={custody.agreement_date ?? ''}
-                onChange={(e) => setCustody({ ...custody, agreement_date: e.target.value || null })}
-              />
-            </Label>
-            <Label className="text-xs">
-              Data expirare
-              <Input
-                type="date"
-                value={custody.expiry_date ?? ''}
-                onChange={(e) => setCustody({ ...custody, expiry_date: e.target.value || null })}
-              />
-            </Label>
-          </div>
+          <AgreementFields value={custody} onChange={setCustody} />
           <DialogFooter>
             <Button variant="outline" onClick={() => setCustodyOpen(false)}>
               Renunță
             </Button>
             <Button size="sm" disabled={custodyMutation.isPending} onClick={() => custodyMutation.mutate()}>
               Transferă
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Consignment proposal dialog (Propune consignație at PENDING_EVALUATION) */}
+      <Dialog open={proposeOpen} onOpenChange={setProposeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Propune consignație</DialogTitle>
+          </DialogHeader>
+          <AgreementFields value={proposal} onChange={setProposal} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProposeOpen(false)}>
+              Renunță
+            </Button>
+            <Button size="sm" disabled={proposeMutation.isPending} onClick={() => proposeMutation.mutate()}>
+              Trimite propunerea
             </Button>
           </DialogFooter>
         </DialogContent>
