@@ -389,3 +389,55 @@ def test_resume_route_cross_company_returns_403(app):
     body, status = _unwrap(resp)
     assert status == 403
     service.resume.assert_not_called()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Final-review fix wave: cancel-from-ON_HOLD must be a legal transition
+# (not a 409), must clear the hold_* bookkeeping, and hold_reason must
+# never overflow the VARCHAR(100) column.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_on_hold_to_cancelled_transition_allowed():
+    assert lifecycle.is_valid_transition('ON_HOLD', 'CANCELLED')
+    # existing ON_HOLD transitions must still be intact
+    assert lifecycle.is_valid_transition('ON_HOLD', 'INSPECTION')
+    assert lifecycle.is_valid_transition('ON_HOLD', 'PENDING_EVALUATION')
+    assert lifecycle.is_valid_transition('ON_HOLD', 'INITIAL_OFFER')
+    assert lifecycle.is_valid_transition('ON_HOLD', 'FINAL_OFFER')
+
+
+def test_transition_on_hold_to_cancelled_clears_hold_fields():
+    svc = _service()
+    rec = {
+        'id': 10, 'status': lifecycle.ON_HOLD,
+        'hold_prior_status': lifecycle.INSPECTION, 'hold_reason': 'Poze lipsă',
+        'hold_note': 'lipsesc poze', 'held_at': 'some-ts', 'held_by': 3,
+    }
+    svc.records.set_status.return_value = {**rec, 'status': lifecycle.CANCELLED}
+    svc.records.update.return_value = {**rec, 'status': lifecycle.CANCELLED}
+
+    svc.transition(rec, lifecycle.CANCELLED, actor=9)
+
+    svc.records.set_status.assert_called_once_with(10, lifecycle.CANCELLED, 9)
+
+    update_args = svc.records.update.call_args.args
+    assert update_args[0] == 10
+    payload = update_args[1]
+    assert payload['hold_prior_status'] is None
+    assert payload['hold_reason'] is None
+    assert payload['hold_note'] is None
+    assert payload['held_at'] is None
+    assert payload['held_by'] is None
+    # existing CANCELLED bookkeeping (resolution timestamp) preserved
+    assert payload['closed_at'] is not None
+
+
+def test_hold_reason_truncated_to_100_chars():
+    svc = _service()
+    rec = {'id': 11, 'status': lifecycle.INSPECTION}
+
+    svc.hold(rec, 'x' * 150, 'note', actor=9)
+
+    payload = svc.records.update.call_args.args[1]
+    assert payload['hold_reason'] == 'x' * 100
+    assert len(payload['hold_reason']) == 100

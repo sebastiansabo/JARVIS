@@ -82,14 +82,23 @@ class BuyBackService:
         # which left closed_at perpetually NULL. BOUGHT keeps bought_at (stamped
         # at finalize) as its resolution time; reopening a LOST record clears
         # closed_at again so it's treated as in-progress once more.
+        changes = {}
         if new_status in (lifecycle.LOST, lifecycle.CANCELLED):
-            updated = self.records.update(
-                record['id'], {'closed_at': datetime.now(timezone.utc)}
-            )
+            changes['closed_at'] = datetime.now(timezone.utc)
         elif new_status == lifecycle.PENDING_EVALUATION and old_status in (
             lifecycle.LOST, lifecycle.CANCELLED
         ):
-            updated = self.records.update(record['id'], {'closed_at': None})
+            changes['closed_at'] = None
+        # Leaving ON_HOLD (e.g. cancelling a held record) must clear the hold
+        # bookkeeping fields — they're hidden in the UI once status != ON_HOLD,
+        # but a stale hold_* would otherwise linger on the row forever.
+        if old_status == lifecycle.ON_HOLD:
+            changes.update({
+                'hold_prior_status': None, 'hold_reason': None,
+                'hold_note': None, 'held_at': None, 'held_by': None,
+            })
+        if changes:
+            updated = self.records.update(record['id'], changes)
         self.events.log(
             record['id'], 'status_changed', actor,
             {'from': old_status, 'to': new_status, **(details or {})},
@@ -172,7 +181,7 @@ class BuyBackService:
             raise ValueError(f"Cannot hold a record in status {record['status']!r}")
         self.records.set_status(record['id'], lifecycle.ON_HOLD, actor)
         updated = self.records.update(record['id'], {
-            'hold_prior_status': record['status'], 'hold_reason': reason,
+            'hold_prior_status': record['status'], 'hold_reason': reason[:100],
             'hold_note': (note or '').strip()[:1000] or None,
             'held_at': datetime.now(timezone.utc), 'held_by': actor,
         })

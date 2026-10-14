@@ -128,12 +128,12 @@ _CLIENT_TYPES = [
 ]
 
 _STATIC_HOLD_REASONS = [
-    {'value': 'missing_photos', 'label': 'Poze lipsă'},
-    {'value': 'missing_talon_civ', 'label': 'Talon/CIV lipsă'},
-    {'value': 'missing_or_incorrect_vin', 'label': 'VIN lipsă/greșit'},
-    {'value': 'incomplete_price', 'label': 'Preț incomplet'},
-    {'value': 'missing_contact_details', 'label': 'Date contact lipsă'},
-    {'value': 'other', 'label': 'Altele'},
+    {'value': 'Poze lipsă', 'label': 'Poze lipsă'},
+    {'value': 'Talon/CIV lipsă', 'label': 'Talon/CIV lipsă'},
+    {'value': 'VIN lipsă/greșit', 'label': 'VIN lipsă/greșit'},
+    {'value': 'Preț incomplet', 'label': 'Preț incomplet'},
+    {'value': 'Date contact lipsă', 'label': 'Date contact lipsă'},
+    {'value': 'Altele', 'label': 'Altele'},
 ]
 
 
