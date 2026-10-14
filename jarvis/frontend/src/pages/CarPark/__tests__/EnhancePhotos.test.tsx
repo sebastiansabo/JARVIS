@@ -9,7 +9,10 @@ import type { VehiclePhoto } from '@/types/carpark'
 
 vi.mock('@/api/carbackground', () => ({
   carbackgroundApi: {
-    enhance: vi.fn(() => Promise.resolve({ success: true, created: 1, errors: [] })),
+    enhance: vi.fn(() => Promise.resolve({ success: true, queued: 1, job_id: 1 })),
+    enhanceStatus: vi.fn(() =>
+      Promise.resolve({ success: true, running: false, total: 0, done: 0, created: 0, errors: [], background_id: null }),
+    ),
     setPublished: vi.fn(() => Promise.resolve({ success: true, published: true })),
     deleteEnhanced: vi.fn(() => Promise.resolve({ success: true })),
     getConfig: vi.fn(() =>
@@ -63,10 +66,16 @@ function renderOverlay(photos: VehiclePhoto[], canEdit = true) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // clearAllMocks keeps implementations, so reset the status mock to idle each
+  // test — otherwise a running-job override leaks into later tests and leaves
+  // the "Generează studio" button disabled.
+  vi.mocked(carbackgroundApi.enhanceStatus).mockResolvedValue({
+    success: true, running: false, total: 0, done: 0, created: 0, errors: [], background_id: null,
+  } as any)
 })
 
 describe('PhotoGridOverlay — studio enhance', () => {
-  it('enhances the selected photos', async () => {
+  it('queues the selected photos for background enhancement', async () => {
     const photos = [photo({ id: 5, url: 'k5.jpg' }), photo({ id: 6, url: 'k6.jpg', sort_order: 1 })]
     renderOverlay(photos)
 
@@ -79,6 +88,31 @@ describe('PhotoGridOverlay — studio enhance', () => {
     const [vid, ids] = (carbackgroundApi.enhance as ReturnType<typeof vi.fn>).mock.calls[0]
     expect(vid).toBe(9)
     expect(ids).toEqual([5])
+  })
+
+  it('shows a live progress count while a job is running', async () => {
+    vi.mocked(carbackgroundApi.enhanceStatus).mockResolvedValue({
+      success: true, running: true, total: 7, done: 3, created: 3, errors: [], background_id: null,
+    } as any)
+    renderOverlay([photo({ id: 5 })])
+    // Resumes/shows progress straight from the server (survives reload).
+    expect(await screen.findByText(/3\s*\/\s*7/)).toBeInTheDocument()
+  })
+
+  it('refetches the vehicle while a job runs so enhanced photos and their publish toggle appear without a manual refresh', async () => {
+    vi.mocked(carbackgroundApi.enhanceStatus).mockResolvedValue({
+      success: true, running: true, total: 3, done: 1, created: 1, errors: [], background_id: null,
+    } as any)
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
+    const spy = vi.spyOn(qc, 'invalidateQueries')
+    render(
+      <QueryClientProvider client={qc}>
+        <PhotoGridOverlay photos={[photo({ id: 5 })]} vehicleId={9} canEdit onClose={() => {}} />
+      </QueryClientProvider>,
+    )
+    await waitFor(() =>
+      expect(spy).toHaveBeenCalledWith({ queryKey: ['carpark', 'vehicle', 9] }),
+    )
   })
 
   it('passes the chosen preferred background to enhance', async () => {
