@@ -1235,14 +1235,14 @@ def _seed_buyback_permissions_v2(cursor, conn):
     """Seed Buyback module permissions into permissions_v2 and grant EXPLICIT
     per-role defaults, mirroring _seed_carpark_permissions_v2.
 
-    Perms: buyback.module.access (module toggle) plus five record-level
-    actions (view/create/edit/delete/finalize) and two role-scoped manage
+    Perms: buyback.module.access (module toggle) plus six record-level
+    actions (view/create/edit/delete/finalize/hold) and two role-scoped manage
     actions (offer.manage, inspection.manage). Defaults:
       - Admin/Manager: 'all' scope on everything.
       - Sales role: module.access + view/create/edit at 'own' scope (no
         delete/finalize/offer/inspection authority).
-      - Acquisition role: record.view + offer.manage + record.finalize at
-        'all' scope (needs to see all records to close purchases).
+      - Acquisition role: record.view + offer.manage + record.finalize +
+        record.hold at 'all' scope (needs to see all records to close purchases).
       - Service role: record.view + inspection.manage at 'all' scope.
       - Viewer: explicit deny on every buyback permission, so the generic
         module.access sweep in _seed_sidebar_permissions_v2 cannot widen it.

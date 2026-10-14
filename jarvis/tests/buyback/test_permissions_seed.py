@@ -28,11 +28,12 @@ def test_buyback_perms_seeded(require_real_db):
         pairs = {(r['entity_key'], r['action_key']) if isinstance(r, dict) else (r[0], r[1]) for r in rows}
         actions = {a for _, a in pairs}
 
-        assert len(pairs) == 8, f'expected 8 buyback permissions, got {pairs}'
+        assert len(pairs) == 9, f'expected 9 buyback permissions, got {pairs}'
         assert 'access' in actions
-        assert {'view', 'create', 'edit', 'delete', 'finalize'}.issubset(actions)
+        assert {'view', 'create', 'edit', 'delete', 'finalize', 'hold'}.issubset(actions)
         assert ('offer', 'manage') in pairs
         assert ('inspection', 'manage') in pairs
+        assert ('record', 'hold') in pairs
     finally:
         release_db(conn)
 
@@ -67,7 +68,7 @@ def test_seed_is_idempotent(require_real_db):
         cur.execute("SELECT COUNT(*) AS cnt FROM permissions_v2 WHERE module_key='buyback'")
         row = cur.fetchone()
         cnt = row['cnt'] if isinstance(row, dict) else row[0]
-        assert cnt == 8
+        assert cnt == 9
     finally:
         release_db(conn)
 
