@@ -4,6 +4,7 @@ CUSTODIE, no purchase price) and record the custody agreement. Mirrors
 finalize.py's guard ordering; the accepted-decision machinery does not apply
 (the record is already terminal LOST)."""
 import decimal
+import logging
 from datetime import date
 
 from flask import jsonify, request
@@ -14,6 +15,8 @@ from buyback.routes import _shared
 from buyback import lifecycle
 from buyback.services.carpark_handoff import handoff_to_carpark_custody
 from core.roles.decorators import v2_permission_required
+
+logger = logging.getLogger('jarvis.buyback')
 
 
 def validate_custody_agreement(data: dict) -> dict:
@@ -106,6 +109,19 @@ def transfer_to_custody(record_id):
         # dup/invalid VIN — the car's VIN already lives in CarPark (same orphan
         # window the BOUGHT hand-off accepts). Record left unlinked, retryable.
         return jsonify({'success': False, 'error': str(e)}), 409
+    except Exception:
+        # Any other fault mid hand-off (e.g. ConsignmentRepository().create()'s
+        # INSERT, or create_vehicle's post-insert status write) can leave an
+        # orphan is_consignment CarPark vehicle with no linked buyback record.
+        # Log it loudly and return a clean 500 instead of letting it propagate raw.
+        logger.exception(
+            'custody hand-off failed for record %s (a CarPark vehicle may be orphaned)',
+            record_id,
+        )
+        return jsonify({
+            'success': False,
+            'error': 'Transferul în custodie a eșuat (eroare internă). A fost înregistrată.',
+        }), 500
 
     updated = _shared.records_repo.update(record_id, {'carpark_vehicle_id': vehicle['id']})
     return jsonify({

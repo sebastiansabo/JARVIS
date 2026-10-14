@@ -222,7 +222,7 @@ def get_record(record_id):
     # keyed by carpark_vehicle_id. Local import avoids a cross-module import
     # cycle at module-load time and keeps the repo patchable in tests.
     consignment = None
-    if record.get('status') == 'LOST' and record.get('carpark_vehicle_id'):
+    if record.get('status') == lifecycle.LOST and record.get('carpark_vehicle_id'):
         from carpark.repositories.consignment_repository import ConsignmentRepository
         consignment = ConsignmentRepository().get_by_vehicle(record['carpark_vehicle_id'])
 

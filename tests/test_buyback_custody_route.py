@@ -121,6 +121,32 @@ def test_happy_path_creates_and_links(app):
     repo.update.assert_called_once_with(11, {'carpark_vehicle_id': 77})
 
 
+def test_handoff_duplicate_vin_is_409(app):
+    """handoff_to_carpark_custody raising ValueError (dup/invalid VIN already
+    in CarPark) must surface as a 409 with the error message, and the record
+    must be left unlinked — records_repo.update must NOT be called."""
+    from buyback.routes import custody
+    from core.roles import decorators
+    records_repo = MagicMock()
+    records_repo.get_by_id.return_value = LOST_REC
+    with app.test_request_context(json=VALID_BODY):
+        with patch.object(custody._shared, 'records_repo', records_repo), \
+             patch.object(custody, 'current_user', _User(3)), \
+             patch.object(custody._shared, 'current_user', _User(3)), \
+             patch.object(decorators, 'current_user', _User(3)), \
+             patch.object(
+                 custody, 'handoff_to_carpark_custody',
+                 side_effect=ValueError('A vehicle with VIN X already exists'),
+             ) as handoff:
+            resp = custody.transfer_to_custody(LOST_REC['id'])
+    status = resp[1] if isinstance(resp, tuple) else 200
+    body = resp[0].get_json() if isinstance(resp, tuple) else resp.get_json()
+    assert status == 409
+    assert 'A vehicle with VIN X already exists' in body['error']
+    handoff.assert_called_once()
+    records_repo.update.assert_not_called()
+
+
 def test_non_lost_is_409(app):
     status, handoff, _ = _post(app, {**LOST_REC, 'status': 'BOUGHT'}, VALID_BODY)
     assert status == 409
