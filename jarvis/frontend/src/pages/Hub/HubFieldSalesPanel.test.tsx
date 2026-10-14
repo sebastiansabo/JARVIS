@@ -124,6 +124,20 @@ describe('HubFieldSalesPanel', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: /salveaza vizita/i })).not.toBeInTheDocument())
   })
 
+  it('add-visit: picking a client shows a chip + enables Salveaza; "Schimba" clears it', async () => {
+    const mod = await import('@/api/fieldSales')
+    getTodayVisits.mockResolvedValue({ success: true, visits: [], date: '2026-08-04' })
+    ;(mod.fieldSalesApi.searchClients as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue({ success: true, clients: [{ id: 77, display_name: 'Client Nou SRL', client_type: 'company' }], count: 1 })
+    wrap(<HubFieldSalesPanel />)
+    fireEvent.click(await screen.findByRole('button', { name: /adauga/i }))
+    fireEvent.change(await screen.findByPlaceholderText(/cauta client/i), { target: { value: 'Client' } })
+    fireEvent.click(await screen.findByText('Client Nou SRL'))
+    expect(screen.getByRole('button', { name: /salveaza vizita/i })).not.toBeDisabled()
+    // picker is now replaced by the selected-client chip; "Schimba" restores it
+    fireEvent.click(screen.getByRole('button', { name: /schimb/i }))
+    expect(screen.getByPlaceholderText(/cauta client/i)).toBeInTheDocument()
+  })
+
   it('check-in fires the checkin mutation even when geolocation is unavailable', async () => {
     const { fireEvent } = await import('@testing-library/react')
     const mod = await import('@/api/fieldSales')
