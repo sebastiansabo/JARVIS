@@ -1112,6 +1112,34 @@ export function PhotoGridOverlay({
   const [bgChoice, setBgChoice] = useState<string | null>(null)
   const chosenBg = bgChoice ?? defaultBgId
 
+  // Background studio-enhance job status for THIS vehicle. Resolves once on
+  // mount (so the progress indicator resumes after a reload / navigating back)
+  // and polls every 3s while a job is running, then stops.
+  const { data: enhanceJob } = useQuery({
+    queryKey: ['carbackground', 'enhance-status', vehicleId],
+    queryFn: () => carbackgroundApi.enhanceStatus(vehicleId),
+    enabled: canEdit,
+    refetchInterval: (q) => (q.state.data?.running ? 3000 : false),
+  })
+  const jobRunning = enhanceJob?.running ?? false
+
+  // While a job runs, pull the vehicle query forward on each progress tick so
+  // finished photos — and their publish toggle — appear without a manual
+  // refresh. On the running→idle edge, emit the completion toast.
+  const prevJobRunning = useRef(false)
+  useEffect(() => {
+    if (!enhanceJob) return
+    if (enhanceJob.running || prevJobRunning.current) {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] })
+    }
+    if (prevJobRunning.current && !enhanceJob.running) {
+      const errs = enhanceJob.errors?.length ?? 0
+      if (enhanceJob.created === 0 && errs) toast.error(`Generare studio eșuată (${errs} erori)`)
+      else toast.success(`${enhanceJob.created} poze studio generate${errs ? ` (${errs} erori)` : ''}`)
+    }
+    prevJobRunning.current = enhanceJob.running
+  }, [enhanceJob?.running, enhanceJob?.done, enhanceJob, queryClient, vehicleId])
+
   const reorderMutation = useMutation({
     mutationFn: (orderedIds: number[]) => carparkApi.reorderPhotos(vehicleId, orderedIds),
     onSuccess: () => {
@@ -1169,25 +1197,21 @@ export function PhotoGridOverlay({
     onError: () => toast.error('Ștergerea pozelor a eșuat'),
   })
 
-  // "Generează studio" — sends the selected photos through carbackground.ai;
-  // created variants land on the vehicle query (enhanced_url etc) via invalidate.
+  // "Generează studio" — queues the selected photos for BACKGROUND enhancement
+  // and returns at once (202). A daemon worker processes them server-side; the
+  // enhance-status poll above drives the live progress count and refreshes the
+  // gallery as each photo lands, so the user never waits here and the publish
+  // toggle appears without a manual reload. The job survives leaving the page.
   const enhanceMut = useMutation({
     mutationFn: () => carbackgroundApi.enhance(vehicleId, Array.from(selected), chosenBg || undefined),
     onSuccess: (res) => {
-      if (res.created === 0 && res.errors?.length) {
-        toast.error(`Generare studio eșuată (${res.errors.length} erori)`)
-      } else {
-        toast.success(`${res.created} poze studio generate${res.errors?.length ? ` (${res.errors.length} erori)` : ''}`)
-      }
+      toast.success(`Generare pornită în fundal (${res.queued} poze)`)
       setSelected(new Set())
+      setSelectMode(false)
+      // Kick the status poll immediately so progress shows without the 3s wait.
+      queryClient.invalidateQueries({ queryKey: ['carbackground', 'enhance-status', vehicleId] })
     },
-    onError: () => toast.error('Generarea studio a eșuat'),
-    // Refetch after EVERY attempt, not just success: the enhance call is slow
-    // (synchronous, seconds/photo) and can hit a gateway timeout while the
-    // variant is still written server-side — so the gallery must refresh even
-    // when the browser saw an error, otherwise the badge/publish toggle only
-    // appear after a manual reload.
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicleId] }),
+    onError: () => toast.error('Pornirea generării a eșuat'),
   })
 
   // Publish/unpublish the studio variant for a single photo.
@@ -1235,6 +1259,12 @@ export function PhotoGridOverlay({
           )}
         </div>
         <div className="flex items-center gap-2">
+          {jobRunning && (
+            <span className="flex items-center gap-1.5 rounded-full bg-violet-600/10 px-2.5 py-1 text-xs font-medium text-violet-700 dark:text-violet-300">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {`Generare studio: ${enhanceJob?.done ?? 0}/${enhanceJob?.total ?? 0}`}
+            </span>
+          )}
           {canEdit && selectMode && (
             <>
               <Button size="sm" variant="ghost" onClick={toggleAll} disabled={deleteMut.isPending || photos.length === 0}>
@@ -1259,9 +1289,10 @@ export function PhotoGridOverlay({
                     size="sm"
                     variant="outline"
                     onClick={() => enhanceMut.mutate()}
-                    disabled={enhanceMut.isPending}
+                    disabled={enhanceMut.isPending || jobRunning}
+                    title={jobRunning ? 'O generare este deja în curs' : undefined}
                   >
-                    {enhanceMut.isPending ? (
+                    {enhanceMut.isPending || jobRunning ? (
                       <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
                     ) : (
                       <Sparkles className="mr-1 h-3.5 w-3.5" />

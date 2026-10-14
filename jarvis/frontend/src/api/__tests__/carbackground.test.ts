@@ -37,21 +37,22 @@ describe('carbackgroundApi', () => {
     expect(get).toHaveBeenCalledWith('/carbackground/api/credits')
   })
 
-  it('enhance posts the selected photo ids to the vehicle enhance route', async () => {
+  it('enhance queues the selected photo ids and returns the job', async () => {
     const post = vi
       .spyOn(api, 'post')
-      .mockResolvedValue({ success: true, created: 2, errors: [] } as any)
+      .mockResolvedValue({ success: true, queued: 2, job_id: 7 } as any)
     const res = await carbackgroundApi.enhance(9, [1, 2])
     expect(post).toHaveBeenCalledWith('/carbackground/api/vehicles/9/enhance', {
       photo_ids: [1, 2],
     })
-    expect(res.created).toBe(2)
+    expect(res.queued).toBe(2)
+    expect(res.job_id).toBe(7)
   })
 
   it('enhance includes background_id when a background is chosen', async () => {
     const post = vi
       .spyOn(api, 'post')
-      .mockResolvedValue({ success: true, created: 1, errors: [] } as any)
+      .mockResolvedValue({ success: true, queued: 1, job_id: 1 } as any)
     await carbackgroundApi.enhance(9, [1], 'grey-concrete')
     expect(post).toHaveBeenCalledWith('/carbackground/api/vehicles/9/enhance', {
       photo_ids: [1],
@@ -62,9 +63,19 @@ describe('carbackgroundApi', () => {
   it('enhance omits background_id when none is chosen', async () => {
     const post = vi
       .spyOn(api, 'post')
-      .mockResolvedValue({ success: true, created: 1, errors: [] } as any)
+      .mockResolvedValue({ success: true, queued: 1, job_id: 1 } as any)
     await carbackgroundApi.enhance(9, [1])
     expect(post.mock.calls[0][1]).not.toHaveProperty('background_id')
+  })
+
+  it('enhanceStatus GETs the per-vehicle job status', async () => {
+    const get = vi.spyOn(api, 'get').mockResolvedValue({
+      success: true, running: true, total: 7, done: 3, created: 3, errors: [], background_id: 'x',
+    } as any)
+    const res = await carbackgroundApi.enhanceStatus(9)
+    expect(get).toHaveBeenCalledWith('/carbackground/api/vehicles/9/enhance/status')
+    expect(res.running).toBe(true)
+    expect(res.done).toBe(3)
   })
 
   it('setPublished calls PUT /carbackground/api/photos/:id/publish', async () => {

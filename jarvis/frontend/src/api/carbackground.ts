@@ -51,10 +51,22 @@ export interface CbgCreditsResponse {
   balance: number
 }
 
+// Enhance is now async: the POST returns immediately once the job is queued; a
+// daemon worker processes the photos. Poll enhanceStatus() for live progress.
 export interface CbgEnhanceResponse {
   success: boolean
+  queued: number
+  job_id: number
+}
+
+export interface CbgEnhanceStatus {
+  success: boolean
+  running: boolean
+  total: number
+  done: number
   created: number
   errors: string[]
+  background_id: string | null
 }
 
 export interface CbgPublishResponse {
@@ -79,6 +91,9 @@ export const carbackgroundApi = {
       photo_ids: photoIds,
       ...(backgroundId ? { background_id: backgroundId } : {}),
     }),
+
+  enhanceStatus: (vehicleId: number) =>
+    api.get<CbgEnhanceStatus>(`${BASE}/vehicles/${vehicleId}/enhance/status`),
 
   setPublished: (photoId: number, published: boolean) =>
     api.put<CbgPublishResponse>(`${BASE}/photos/${photoId}/publish`, { published }),

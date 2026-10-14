@@ -16,6 +16,7 @@ decorator stack + ownership pattern exactly — see module docstring there):
 """
 import json
 import logging
+import threading
 
 from flask import request, jsonify
 from flask_login import login_required
@@ -163,14 +164,61 @@ def api_logs():
 # ENHANCE / PUBLISH / DELETE — vehicle-scoped enhance, photo-scoped publish+delete
 # ═══════════════════════════════════════════════
 
+def _progress(log_id, vid, ids, bg, created, done, errors, status):
+    """Patch the job's sync-log with the current count (and terminal status on
+    the final call). Best-effort: a logging hiccup must not kill the job."""
+    if not log_id:
+        return
+    try:
+        _repo.update_sync_log(
+            log_id, status=status, invoices_imported=created,
+            details={'vehicle_id': vid, 'requested': len(ids), 'created': created,
+                     'done': done, 'errors': errors, 'background_id': bg,
+                     'finished': status is not None})
+    except Exception:  # noqa: BLE001
+        logger.warning('carbackground: progress update failed (log=%s)', log_id)
+
+
+def _run_enhance_job(vid, ids, bg, connector_id, log_id):
+    """Off-request worker (daemon thread): enhance each photo independently,
+    bumping the sync-log after every one for a live progress count, then flip it
+    to a terminal status. A mid-batch failure (e.g. 402 out-of-credits) is
+    recorded per-photo and never aborts the run; the `finally` guarantees a
+    terminal log so the UI never hangs on 'running'."""
+    created, processed, errors = 0, 0, []
+    try:
+        for pid in ids:
+            # The WHOLE body is guarded (not just enhance_photo): a failure at
+            # get_by_id — e.g. a stale pooled connection — must be recorded as a
+            # per-photo error, never break to `finally` with an empty error list
+            # and get mislabeled 'success' while dropping the rest of the batch.
+            try:
+                p = _photos.get_by_id(pid)
+                if not p or p.get('vehicle_id') != vid:
+                    errors.append(f'{pid}: not found for vehicle {vid}')
+                else:
+                    _service.enhance_photo(pid, background_id=bg)
+                    created += 1
+            except CarBackgroundError as e:
+                errors.append(f'{pid}: {e.status} {e.message}')
+            except Exception as e:  # noqa: BLE001
+                logger.exception('carbackground enhance failed (vid=%s pid=%s)', vid, pid)
+                errors.append(f'{pid}: {e}')
+            processed += 1
+            _progress(log_id, vid, ids, bg, created, processed, errors, status=None)
+    finally:
+        status = 'success' if not errors else ('partial' if created else 'error')
+        _progress(log_id, vid, ids, bg, created, len(ids), errors, status=status)
+
+
 @carbackground_bp.route('/api/vehicles/<int:vid>/enhance', methods=['POST'])
 @login_required
 @carpark_edit_required
 def api_enhance(vid):
-    """Enhance the given photo_ids for one vehicle. Processes each id
-    independently: a mid-batch failure (e.g. 402 out-of-credits) is recorded
-    per-photo and the batch still returns 200 with whatever succeeded —
-    never aborts the whole request."""
+    """Queue a background studio-enhance for the given photo_ids. Validates then
+    returns 202 immediately; a daemon worker processes each photo and writes a
+    'running' sync-log that /enhance/status polls. The job keeps running even if
+    the user closes the gallery or navigates away."""
     # SECURITY: Verify vehicle belongs to user's company
     _, err = _verify_vehicle_ownership(vid)
     if err:
@@ -194,30 +242,46 @@ def api_enhance(vid):
         except CarBackgroundError as e:
             return jsonify({'success': False, 'error': e.message}), e.status
 
-    created, errors = 0, []
-    for pid in ids:
-        p = _photos.get_by_id(pid)
-        if not p or p.get('vehicle_id') != vid:
-            errors.append(f'{pid}: not found for vehicle {vid}')
-            continue
-        try:
-            _service.enhance_photo(pid, background_id=bg)
-            created += 1
-        except CarBackgroundError as e:
-            errors.append(f'{pid}: {e.status} {e.message}')
-        except Exception as e:  # noqa: BLE001
-            logger.exception('carbackground enhance failed (vid=%s pid=%s)', vid, pid)
-            errors.append(f'{pid}: {e}')
-
     c = _repo.get_by_type(CONNECTOR_TYPE)
-    if c:
-        status = 'success' if not errors else ('partial' if created else 'error')
-        _repo.add_sync_log(c['id'], 'carbackground_enhance', status,
-                           invoices_found=len(ids), invoices_imported=created,
-                           details={'vehicle_id': vid, 'requested': len(ids),
-                                    'created': created, 'errors': errors,
-                                    'background_id': bg})
-    return jsonify({'success': True, 'vehicle_id': vid, 'created': created, 'errors': errors}), 200
+    if not c:
+        return jsonify({'success': False, 'error': 'carbackground connector not configured'}), 400
+
+    log_id = _repo.add_sync_log(
+        c['id'], 'carbackground_enhance', 'running',
+        invoices_found=len(ids), invoices_imported=0,
+        details={'vehicle_id': vid, 'requested': len(ids), 'created': 0,
+                 'done': 0, 'errors': [], 'background_id': bg, 'finished': False})
+
+    threading.Thread(target=_run_enhance_job,
+                     args=(vid, ids, bg, c['id'], log_id), daemon=True).start()
+    return jsonify({'success': True, 'vehicle_id': vid, 'queued': len(ids),
+                    'job_id': log_id}), 202
+
+
+@carbackground_bp.route('/api/vehicles/<int:vid>/enhance/status', methods=['GET'])
+@login_required
+@carpark_edit_required
+def api_enhance_status(vid):
+    """Latest background-enhance job state for one vehicle — the gallery polls
+    this to show live progress and to resume the indicator after a reload."""
+    _, err = _verify_vehicle_ownership(vid)
+    if err:
+        return err
+    idle = {'success': True, 'running': False, 'total': 0, 'done': 0,
+            'created': 0, 'errors': [], 'background_id': None}
+    c = _repo.get_by_type(CONNECTOR_TYPE)
+    if not c:
+        return jsonify(idle)
+    log = _repo.get_latest_sync_log(c['id'], 'carbackground_enhance', vid)
+    if not log:
+        return jsonify(idle)
+    d = _json(log.get('details'))
+    return jsonify({'success': True, 'running': log.get('status') == 'running',
+                    'total': log.get('invoices_found') or d.get('requested', 0),
+                    'done': d.get('done', log.get('invoices_imported', 0)),
+                    'created': d.get('created', log.get('invoices_imported', 0)),
+                    'errors': d.get('errors', []),
+                    'background_id': d.get('background_id')})
 
 
 @carbackground_bp.route('/api/photos/<int:pid>/publish', methods=['PUT'])

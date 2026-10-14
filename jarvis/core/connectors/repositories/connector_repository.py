@@ -91,6 +91,28 @@ class ConnectorRepository(BaseRepository):
             returning=True)
         return result['id']
 
+    def update_sync_log(self, log_id: int, status: str = None,
+                        invoices_imported: int = None, error_message: str = None,
+                        details: dict = None):
+        """Patch an existing sync-log row — used to flip a 'running' job to its
+        terminal state and bump the live progress count. Only the fields passed
+        are written; a call with nothing to set is a no-op. Column names are
+        static literals (never user input), values are parameterized."""
+        sets, params = [], []
+        if status is not None:
+            sets.append('status=%s'); params.append(status)
+        if invoices_imported is not None:
+            sets.append('invoices_imported=%s'); params.append(invoices_imported)
+        if error_message is not None:
+            sets.append('error_message=%s'); params.append(error_message)
+        if details is not None:
+            sets.append('details=%s'); params.append(json.dumps(details))
+        if not sets:
+            return None
+        params.append(log_id)
+        return self.execute(
+            f"UPDATE connector_sync_log SET {', '.join(sets)} WHERE id=%s", tuple(params))
+
     def get_sync_logs(self, connector_id: int, limit: int = 20) -> list[dict]:
         """Get sync logs for a connector, most recent first."""
         return self.query_all('''
@@ -99,3 +121,15 @@ class ConnectorRepository(BaseRepository):
             ORDER BY created_at DESC
             LIMIT %s
         ''', (connector_id, limit))
+
+    def get_latest_sync_log(self, connector_id: int, sync_type: str, vehicle_id: int):
+        """Most recent sync-log row for one vehicle, matched on the JSONB
+        details->>'vehicle_id'. Bounded to a single row so a busy, fleet-wide
+        connector can't push a still-running job out of a fixed recent-rows
+        window (which would make a per-vehicle status poll falsely read idle)."""
+        return self.query_one('''
+            SELECT * FROM connector_sync_log
+            WHERE connector_id = %s AND sync_type = %s AND details->>'vehicle_id' = %s
+            ORDER BY created_at DESC
+            LIMIT 1
+        ''', (connector_id, sync_type, str(vehicle_id)))

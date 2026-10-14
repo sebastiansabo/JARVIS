@@ -114,98 +114,220 @@ def test_enhance_vehicle_not_found_propagates_404(client, monkeypatch):
     assert r.status_code == 404
 
 
-def test_enhance_skips_photo_ids_whose_vehicle_id_differs(client, monkeypatch):
+# The route no longer processes photos inline — it validates, opens a
+# 'running' sync-log, spawns a daemon worker, and returns 202. These tests
+# cover the route contract; the per-photo processing lives in _run_enhance_job
+# and is covered by the worker tests further below.
+
+def test_enhance_returns_202_and_spawns_worker(client, monkeypatch):
     _set_user(monkeypatch, EditUser())
     _own_vehicle(monkeypatch, 9)
-    monkeypatch.setattr(routes_mod, '_photos', _FakePhotos({
-        1: {'id': 1, 'vehicle_id': 9},
-        2: {'id': 2, 'vehicle_id': 777},  # belongs to a different vehicle
-    }))
-    monkeypatch.setattr(routes_mod, '_service', _FakeService(results=[{'id': 1}]))
-    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: None)
+    monkeypatch.setattr(routes_mod, '_service', _FakeService(valid_backgrounds={'grey-concrete'}))
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: {'id': 7})
+    monkeypatch.setattr(routes_mod._repo, 'add_sync_log', lambda *a, **kw: 555)
+    threads = _capture_threads(monkeypatch)
 
-    r = client.post('/carbackground/api/vehicles/9/enhance', json={'photo_ids': [1, 2]})
+    r = client.post('/carbackground/api/vehicles/9/enhance',
+                    json={'photo_ids': [1, 2, 3], 'background_id': 'grey-concrete'})
+    assert r.status_code == 202
     body = r.get_json()
-    assert r.status_code == 200
-    assert body['created'] == 1
-    assert len(body['errors']) == 1
-    assert 'not found for vehicle 9' in body['errors'][0]
-    assert routes_mod._service.calls == [1]  # pid 2 was never attempted
+    assert body['queued'] == 3 and body['job_id'] == 555
+    # worker spawned as a daemon with (vid, ids, bg, connector_id, log_id)
+    assert len(threads) == 1
+    t = threads[0]
+    assert t.target is routes_mod._run_enhance_job
+    assert t.args == (9, [1, 2, 3], 'grey-concrete', 7, 555)
+    assert t.daemon is True and t.started is True
 
 
-def test_enhance_reports_partial_on_out_of_credits(client, monkeypatch):
-    """Review Focus: a 402 mid-batch must not abort the whole request — the
-    route returns 200 with whatever succeeded plus the per-photo errors."""
+def test_enhance_no_background_spawns_worker_with_none(client, monkeypatch):
     _set_user(monkeypatch, EditUser())
     _own_vehicle(monkeypatch, 9)
+    monkeypatch.setattr(routes_mod, '_service', _FakeService())
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: {'id': 7})
+    monkeypatch.setattr(routes_mod._repo, 'add_sync_log', lambda *a, **kw: 42)
+    threads = _capture_threads(monkeypatch)
+
+    r = client.post('/carbackground/api/vehicles/9/enhance', json={'photo_ids': [1]})
+    assert r.status_code == 202
+    assert threads[0].args == (9, [1], None, 7, 42)
+
+
+def test_enhance_requires_connector(client, monkeypatch):
+    """Without a configured connector there's nowhere to track progress and no
+    API key to enhance with — fail fast with a 400, spawn nothing."""
+    _set_user(monkeypatch, EditUser())
+    _own_vehicle(monkeypatch, 9)
+    monkeypatch.setattr(routes_mod, '_service', _FakeService())
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: None)
+    threads = _capture_threads(monkeypatch)
+
+    r = client.post('/carbackground/api/vehicles/9/enhance', json={'photo_ids': [1]})
+    assert r.status_code == 400
+    assert 'connector' in r.get_json()['error'].lower()
+    assert threads == []
+
+
+def test_enhance_opens_running_log_before_spawning(client, monkeypatch):
+    _set_user(monkeypatch, EditUser())
+    _own_vehicle(monkeypatch, 9)
+    monkeypatch.setattr(routes_mod, '_service', _FakeService())
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: {'id': 7})
+    opened = {}
+    monkeypatch.setattr(routes_mod._repo, 'add_sync_log',
+                        lambda cid, stype, status, **kw: opened.update(
+                            cid=cid, stype=stype, status=status, **kw) or 99)
+    _capture_threads(monkeypatch)
+
+    client.post('/carbackground/api/vehicles/9/enhance', json={'photo_ids': [1, 2]})
+    assert opened['status'] == 'running'
+    assert opened['stype'] == 'carbackground_enhance'
+    assert opened['invoices_found'] == 2
+    assert opened['details']['vehicle_id'] == 9
+
+
+# ── worker: _run_enhance_job (the per-photo processing, off-request) ──
+
+def test_worker_skips_photo_ids_whose_vehicle_id_differs(monkeypatch):
     monkeypatch.setattr(routes_mod, '_photos', _FakePhotos({
         1: {'id': 1, 'vehicle_id': 9},
-        2: {'id': 2, 'vehicle_id': 9},
+        2: {'id': 2, 'vehicle_id': 777},  # different vehicle
+    }))
+    svc = _FakeService(results=[{'id': 1}])
+    monkeypatch.setattr(routes_mod, '_service', svc)
+    logs = _capture_logs(monkeypatch)
+
+    routes_mod._run_enhance_job(9, [1, 2], None, 7, 555)
+    assert svc.calls == [1]  # pid 2 never attempted
+    final = logs[-1]
+    assert final['status'] == 'partial'
+    assert final['invoices_imported'] == 1
+    assert any('not found for vehicle 9' in e for e in final['details']['errors'])
+
+
+def test_worker_partial_on_out_of_credits(monkeypatch):
+    """A 402 mid-batch is recorded per-photo; the job still finishes and the
+    log lands as 'partial', never aborting the whole run."""
+    monkeypatch.setattr(routes_mod, '_photos', _FakePhotos({
+        1: {'id': 1, 'vehicle_id': 9}, 2: {'id': 2, 'vehicle_id': 9},
     }))
     monkeypatch.setattr(routes_mod, '_service',
                         _FakeService(results=[{'id': 1}, CarBackgroundError('out of credits', 402)]))
-    logged = {}
-    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: {'id': 7})
-    monkeypatch.setattr(routes_mod._repo, 'add_sync_log',
-                        lambda *a, **kw: logged.update(kw) or 1)
+    logs = _capture_logs(monkeypatch)
 
-    r = client.post('/carbackground/api/vehicles/9/enhance', json={'photo_ids': [1, 2]})
-    body = r.get_json()
-    assert r.status_code == 200
-    assert body['created'] == 1
-    assert len(body['errors']) == 1
-    assert '402' in body['errors'][0] and 'out of credits' in body['errors'][0]
-    # sync log recorded as a partial failure, not silently dropped
-    assert logged['details']['created'] == 1
-    assert logged['details']['errors'] == body['errors']
+    routes_mod._run_enhance_job(9, [1, 2], None, 7, 555)
+    final = logs[-1]
+    assert final['status'] == 'partial'
+    assert final['invoices_imported'] == 1
+    assert '402' in final['details']['errors'][0] and 'out of credits' in final['details']['errors'][0]
 
 
-def test_enhance_unexpected_exception_is_caught_not_500(client, monkeypatch):
-    _set_user(monkeypatch, EditUser())
-    _own_vehicle(monkeypatch, 9)
+def test_worker_unexpected_exception_is_caught(monkeypatch):
     monkeypatch.setattr(routes_mod, '_photos', _FakePhotos({1: {'id': 1, 'vehicle_id': 9}}))
     monkeypatch.setattr(routes_mod, '_service', _FakeService(results=[RuntimeError('boom')]))
-    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: None)
+    logs = _capture_logs(monkeypatch)
 
-    r = client.post('/carbackground/api/vehicles/9/enhance', json={'photo_ids': [1]})
-    body = r.get_json()
-    assert r.status_code == 200
-    assert body['created'] == 0
-    assert 'boom' in body['errors'][0]
+    routes_mod._run_enhance_job(9, [1], None, 7, 555)
+    final = logs[-1]
+    assert final['status'] == 'error'  # nothing succeeded
+    assert final['invoices_imported'] == 0
+    assert 'boom' in final['details']['errors'][0]
 
 
-def test_enhance_passes_background_override_to_service(client, monkeypatch):
-    """A background_id in the request body is forwarded to the service for
-    every photo in the batch."""
-    _set_user(monkeypatch, EditUser())
-    _own_vehicle(monkeypatch, 9)
+def test_worker_db_error_mid_loop_is_recorded_not_mislabeled_success(monkeypatch):
+    """A failure at get_by_id (e.g. a stale pooled connection) must be recorded
+    as an error and land the job 'error'/'partial' — never a silent 'success'
+    with the remaining photos dropped."""
+    class _BoomPhotos:
+        def get_by_id(self, pid):
+            raise RuntimeError('db down')
+
+    monkeypatch.setattr(routes_mod, '_photos', _BoomPhotos())
+    monkeypatch.setattr(routes_mod, '_service', _FakeService())
+    logs = _capture_logs(monkeypatch)
+
+    routes_mod._run_enhance_job(9, [1], None, 7, 555)  # must not raise
+    final = logs[-1]
+    assert final['status'] == 'error'
+    assert final['invoices_imported'] == 0
+    assert 'db down' in final['details']['errors'][0]
+
+
+def test_worker_forwards_background_and_reports_live_progress(monkeypatch):
     monkeypatch.setattr(routes_mod, '_photos', _FakePhotos({
-        1: {'id': 1, 'vehicle_id': 9},
-        2: {'id': 2, 'vehicle_id': 9},
+        1: {'id': 1, 'vehicle_id': 9}, 2: {'id': 2, 'vehicle_id': 9},
     }))
-    svc = _FakeService(results=[{'id': 1}, {'id': 2}], valid_backgrounds={'grey-concrete', 'studio-white'})
+    svc = _FakeService(results=[{'id': 1}, {'id': 2}],
+                       valid_backgrounds={'grey-concrete'})
     monkeypatch.setattr(routes_mod, '_service', svc)
-    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: None)
+    logs = _capture_logs(monkeypatch)
 
-    r = client.post('/carbackground/api/vehicles/9/enhance',
-                    json={'photo_ids': [1, 2], 'background_id': 'grey-concrete'})
-    assert r.status_code == 200
-    assert r.get_json()['created'] == 2
+    routes_mod._run_enhance_job(9, [1, 2], 'grey-concrete', 7, 555)
     assert svc.bg_calls == ['grey-concrete', 'grey-concrete']
+    # progress climbs 1 -> 2 before the terminal update, all on log 555
+    done_seq = [l['details']['done'] for l in logs]
+    assert done_seq == [1, 2, 2]
+    assert logs[-1]['status'] == 'success'
 
 
-def test_enhance_without_background_passes_none(client, monkeypatch):
-    """Omitting background_id leaves the service to fall back to the house default."""
+# ── GET /api/vehicles/<vid>/enhance/status ──
+
+def test_status_forbidden_without_edit(client, monkeypatch):
+    _set_user(monkeypatch, NoEditUser())
+    r = client.get('/carbackground/api/vehicles/9/enhance/status')
+    assert r.status_code == 403
+
+
+def test_status_no_connector_reports_idle(client, monkeypatch):
     _set_user(monkeypatch, EditUser())
     _own_vehicle(monkeypatch, 9)
-    monkeypatch.setattr(routes_mod, '_photos', _FakePhotos({1: {'id': 1, 'vehicle_id': 9}}))
-    svc = _FakeService(results=[{'id': 1}])
-    monkeypatch.setattr(routes_mod, '_service', svc)
     monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: None)
-
-    r = client.post('/carbackground/api/vehicles/9/enhance', json={'photo_ids': [1]})
+    r = client.get('/carbackground/api/vehicles/9/enhance/status')
     assert r.status_code == 200
-    assert svc.bg_calls == [None]
+    body = r.get_json()
+    assert body['running'] is False and body['total'] == 0 and body['done'] == 0
+
+
+def test_status_returns_latest_running_job_for_vehicle(client, monkeypatch):
+    _set_user(monkeypatch, EditUser())
+    _own_vehicle(monkeypatch, 9)
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: {'id': 7})
+    monkeypatch.setattr(routes_mod._repo, 'get_latest_sync_log', lambda cid, stype, vid: {
+        'status': 'running', 'invoices_found': 7, 'invoices_imported': 3,
+        'details': {'vehicle_id': 9, 'done': 3, 'requested': 7, 'errors': [],
+                    'background_id': 'grey-concrete'}})
+    r = client.get('/carbackground/api/vehicles/9/enhance/status')
+    body = r.get_json()
+    assert body['running'] is True
+    assert body['total'] == 7 and body['done'] == 3
+    assert body['background_id'] == 'grey-concrete' and body['errors'] == []
+
+
+def test_status_scopes_lookup_to_this_vehicle(client, monkeypatch):
+    """The status is resolved by a vehicle-scoped query (not a fixed window of
+    recent connector-wide logs) so a busy fleet can't hide a running job."""
+    _set_user(monkeypatch, EditUser())
+    _own_vehicle(monkeypatch, 9)
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: {'id': 7})
+    seen = {}
+    monkeypatch.setattr(routes_mod._repo, 'get_latest_sync_log',
+                        lambda cid, stype, vid: seen.update(cid=cid, stype=stype, vid=vid) or {
+                            'status': 'success', 'invoices_found': 4, 'invoices_imported': 4,
+                            'details': {'vehicle_id': 9, 'done': 4, 'errors': []}})
+    r = client.get('/carbackground/api/vehicles/9/enhance/status')
+    body = r.get_json()
+    assert seen == {'cid': 7, 'stype': 'carbackground_enhance', 'vid': 9}
+    assert body['running'] is False and body['total'] == 4 and body['done'] == 4
+
+
+def test_status_no_job_for_vehicle_reports_idle(client, monkeypatch):
+    _set_user(monkeypatch, EditUser())
+    _own_vehicle(monkeypatch, 9)
+    monkeypatch.setattr(routes_mod._repo, 'get_by_type', lambda t: {'id': 7})
+    monkeypatch.setattr(routes_mod._repo, 'get_latest_sync_log', lambda cid, stype, vid: None)
+    r = client.get('/carbackground/api/vehicles/9/enhance/status')
+    body = r.get_json()
+    assert body['running'] is False and body['total'] == 0 and body['done'] == 0
 
 
 def test_enhance_rejects_off_list_background_400(client, monkeypatch):
@@ -317,6 +439,44 @@ def test_delete_enhanced_spaces_failure_does_not_block_db_clear(client, monkeypa
 
 
 # ── test doubles ──
+
+class _FakeThread:
+    """Captures threading.Thread(...) args and records .start() without ever
+    running the target — so route tests assert what the worker WOULD be called
+    with, and the worker is tested directly (not through a real thread)."""
+
+    def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+        self.target = target
+        self.args = tuple(args)
+        self.kwargs = kwargs or {}
+        self.daemon = daemon
+        self.started = False
+
+    def start(self):
+        self.started = True
+
+
+def _capture_threads(monkeypatch):
+    """Swap routes_mod.threading.Thread for _FakeThread; return the list the
+    route appends its spawned thread(s) to."""
+    created = []
+
+    def _factory(*a, **kw):
+        t = _FakeThread(*a, **kw)
+        created.append(t)
+        return t
+
+    monkeypatch.setattr(routes_mod.threading, 'Thread', _factory)
+    return created
+
+
+def _capture_logs(monkeypatch):
+    """Record every update_sync_log(log_id, **kw) the worker makes, in order."""
+    calls = []
+    monkeypatch.setattr(routes_mod._repo, 'update_sync_log',
+                        lambda log_id, **kw: calls.append({'log_id': log_id, **kw}) or 1)
+    return calls
+
 
 class _FakePhotos:
     """Minimal PhotoRepository stand-in keyed by photo id -> dict."""
