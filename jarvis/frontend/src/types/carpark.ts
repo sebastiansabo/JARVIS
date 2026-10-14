@@ -178,6 +178,19 @@ export interface Vehicle extends VehicleCatalogItem {
   updated_at: string
   photos: VehiclePhoto[]
   photo_count: number
+  // Present only when is_consignment is true — the custody/consignment
+  // agreement a vehicle carries when handed off from a failed (LOST)
+  // buyback record (see carpark_vehicle_consignment / ConsignmentRepository).
+  consignment?: {
+    owner_price: number | null
+    currency: string
+    commission_type: 'percent' | 'fixed'
+    commission_value: number
+    min_sale_price: number | null
+    contract_number: string | null
+    agreement_date: string | null
+    expiry_date: string | null
+  } | null
 }
 
 export interface VehiclePhoto {

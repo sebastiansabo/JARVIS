@@ -138,3 +138,28 @@ export interface BuybackConfig {
   notify_milestones: boolean
   notify_inspection: boolean
 }
+
+export interface ConsignmentAgreement {
+  vehicle_id: number
+  owner_price: number | null
+  currency: string
+  commission_type: 'percent' | 'fixed'
+  commission_value: number
+  min_sale_price: number | null
+  contract_number: string | null
+  agreement_date: string | null
+  expiry_date: string | null
+  created_by: number | null
+  created_at: string
+}
+
+export interface CustodyAgreementInput {
+  owner_price?: number | null
+  currency?: string
+  commission_type: 'percent' | 'fixed'
+  commission_value: number
+  min_sale_price?: number | null
+  contract_number?: string | null
+  agreement_date?: string | null
+  expiry_date?: string | null
+}

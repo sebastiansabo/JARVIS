@@ -14,6 +14,7 @@ vi.mock('@/api/buyback', () => ({
     reopenRecord: vi.fn(() => Promise.resolve({})),
     hold: vi.fn(() => Promise.resolve({ record: {} })),
     resume: vi.fn(() => Promise.resolve({ record: {} })),
+    transferToCustody: vi.fn(() => Promise.resolve({ vehicle: { id: 77 } })),
     getLookupOptions: vi.fn(() =>
       Promise.resolve({ vat_statuses: [], hold_reasons: [{ value: 'Poze lipsă', label: 'Poze lipsă' }] })
     ),
@@ -178,5 +179,31 @@ describe('ActionPanel permission gating', () => {
     fireEvent.click(screen.getByText('Suspendă'))
     const dialog = screen.getByRole('dialog')
     expect(within(dialog).getByText('Suspendă').closest('button')).toBeDisabled()
+  })
+
+  it('LOST + custody permission shows "Transferă în custodie"', () => {
+    renderPanel('LOST', { 'buyback.record.custody': true }, { record: { carpark_vehicle_id: null } })
+    expect(screen.getByText(/Transferă în custodie/)).toBeInTheDocument()
+  })
+
+  it('LOST without custody permission HIDES the custody button', () => {
+    renderPanel('LOST', {}, { record: { carpark_vehicle_id: null } })
+    expect(screen.queryByText(/Transferă în custodie/)).not.toBeInTheDocument()
+  })
+
+  it('LOST already transferred HIDES the button and shows the CarPark link', () => {
+    renderPanel('LOST', { 'buyback.record.custody': true }, { record: { carpark_vehicle_id: 77 } })
+    expect(screen.queryByText(/Transferă în custodie/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Custodie/)).toBeInTheDocument()
+  })
+
+  it('LOST already transferred HIDES Redeschide (reopen) for admin', () => {
+    renderPanel('LOST', {}, { role: 'Manager', record: { carpark_vehicle_id: 77 } })
+    expect(screen.queryByText(/Redeschide/)).not.toBeInTheDocument()
+  })
+
+  it('non-LOST HIDES the custody button', () => {
+    renderPanel('BOUGHT', { 'buyback.record.custody': true }, { record: { carpark_vehicle_id: null } })
+    expect(screen.queryByText(/Transferă în custodie/)).not.toBeInTheDocument()
   })
 })

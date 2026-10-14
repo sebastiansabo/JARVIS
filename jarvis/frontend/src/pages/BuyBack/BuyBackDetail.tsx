@@ -170,7 +170,7 @@ export default function BuyBackDetail() {
     )
   }
 
-  const { record, offers, photos, events } = data
+  const { record, offers, photos, events, consignment } = data
   const rs = recordStatus(record.status)
   const offer = pickLatestOffer(offers)
   // Resolve the stored hold_reason code to its RO label (falls back to the raw
@@ -326,6 +326,28 @@ export default function BuyBackDetail() {
             <Field label="Cost recondiționare" value={fmtEur(record.reconditioning_cost_eur)} />
           </CardContent>
         </Card>
+
+        {record.status === 'LOST' && record.carpark_vehicle_id && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2"><Euro className="h-4 w-4" />Custodie</CardTitle>
+            </CardHeader>
+            <CardContent className="grid grid-cols-2 gap-3">
+              <Field label="Preț proprietar" value={fmtEur(consignment?.owner_price)} />
+              <Field label="Comision" value={consignment ? (consignment.commission_type === 'percent' ? `${consignment.commission_value}%` : fmtEur(consignment.commission_value)) : null} />
+              <Field label="Preț minim" value={fmtEur(consignment?.min_sale_price)} />
+              <Field label="Nr. contract" value={consignment?.contract_number} />
+              <Field label="Data acord" value={fmtDate(consignment?.agreement_date)} />
+              <Field label="Data expirare" value={fmtDate(consignment?.expiry_date)} />
+              <div className="col-span-2">
+                <p className="text-xs text-muted-foreground">Vehicul CarPark</p>
+                <Link to={`/app/carpark/${record.carpark_vehicle_id}`} className="text-sm underline">
+                  #{record.carpark_vehicle_id}
+                </Link>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader className="pb-3">

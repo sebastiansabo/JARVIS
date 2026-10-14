@@ -193,6 +193,25 @@ def create_schema_carpark(conn, cursor):
         )
     ''')
 
+    # ── Consignment (custody) agreement — 1:1 with a carpark vehicle. Written
+    #    by the buyback → custody transfer (buyback/services/carpark_handoff.py:
+    #    handoff_to_carpark_custody). Cascades away with the vehicle.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_vehicle_consignment (
+            vehicle_id       BIGINT PRIMARY KEY REFERENCES carpark_vehicles(id) ON DELETE CASCADE,
+            owner_price      NUMERIC(12,2),
+            currency         VARCHAR(3)  NOT NULL DEFAULT 'EUR',
+            commission_type  VARCHAR(10) NOT NULL CHECK (commission_type IN ('percent','fixed')),
+            commission_value NUMERIC(12,2) NOT NULL,
+            min_sale_price   NUMERIC(12,2),
+            contract_number  VARCHAR(50),
+            agreement_date   DATE,
+            expiry_date      DATE,
+            created_by       INTEGER,
+            created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    ''')
+
     # Performance indexes
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_cv_vin ON carpark_vehicles(vin)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_cv_status ON carpark_vehicles(status)')
@@ -977,6 +996,17 @@ def create_schema_carpark(conn, cursor):
             ('carpark_revenue_type', 'bonus_leasing', 'Bonus leasing', 1, TRUE)
         ''')
         conn.commit()
+
+    # The carpark_source seed above only runs on an empty dropdown set, so DBs
+    # seeded before CUSTODIE was added won't have it. Ensure it idempotently.
+    cursor.execute('''
+        INSERT INTO dropdown_options (dropdown_type, value, label, sort_order, is_active)
+        SELECT 'carpark_source', 'CUSTODIE', 'CUSTODIE', 10, TRUE
+        WHERE NOT EXISTS (
+            SELECT 1 FROM dropdown_options
+            WHERE dropdown_type = 'carpark_source' AND value = 'CUSTODIE'
+        )
+    ''')
 
     # ── VIN Decoder Cache ──
     cursor.execute('''
