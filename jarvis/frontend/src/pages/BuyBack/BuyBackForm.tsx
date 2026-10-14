@@ -18,6 +18,7 @@ import {
 import { buybackApi } from '@/api/buyback'
 import type { BuybackRecord } from '@/types/buyback'
 import { useAuth } from '@/hooks/useAuth'
+import { telemetry } from '@/lib/telemetry'
 import { cn, useDebounce } from '@/lib/utils'
 import { fileToCompressedDataUrl } from '@/lib/imageCompress'
 import { loadDraft, saveDraft, clearDraft, isDraftDirty } from './buybackDraft'
@@ -666,6 +667,22 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
   }
 
   // ── Submit ──
+  // Telemetry: record a buyback intake submit failure with the fields most
+  // likely to be the cause — equipment_length (the VARCHAR(200) overflow that
+  // produced the opaque "An internal error occurred") and the date values —
+  // so a recurring failure on this form is observable instead of silent.
+  function trackSubmitFailure(mode: 'create' | 'edit', err: any) {
+    telemetry.track('BuyBack Submit Failed', {
+      mode,
+      error: err?.data?.error || err?.message || 'unknown',
+      status: err?.status ?? null,
+      manufacture_date: form.manufacture_date || null,
+      first_registration_date: form.first_registration_date || null,
+      equipment_length: (form.equipment || '').length,
+      vin: form.vin || null,
+    })
+  }
+
   const createMutation = useMutation({
     mutationFn: () => buybackApi.createRecord(buildCreatePayload(form)),
     onSuccess: (data) => {
@@ -675,7 +692,10 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
       if (embedded) onDone?.(data.record)
       else navigate(`/app/buyback/${data.record.id}`)
     },
-    onError: (err: any) => setSubmitError(err?.data?.error || err?.message || 'Salvarea a eșuat'),
+    onError: (err: any) => {
+      setSubmitError(err?.data?.error || err?.message || 'Salvarea a eșuat')
+      trackSubmitFailure('create', err)
+    },
   })
 
   const updateMutation = useMutation({
@@ -687,7 +707,10 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
       queryClient.invalidateQueries({ queryKey: ['buyback-record', editId] })
       navigate(`/app/buyback/${editId}`)
     },
-    onError: (err: any) => setSubmitError(err?.data?.error || err?.message || 'Salvarea a eșuat'),
+    onError: (err: any) => {
+      setSubmitError(err?.data?.error || err?.message || 'Salvarea a eșuat')
+      trackSubmitFailure('edit', err)
+    },
   })
 
   const mutation = isEdit ? updateMutation : createMutation
