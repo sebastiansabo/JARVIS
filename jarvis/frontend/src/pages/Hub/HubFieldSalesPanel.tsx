@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Clock, AlertTriangle, CalendarDays, ChevronRight, MapPin, X, Search } from 'lucide-react'
+import { Plus, Clock, AlertTriangle, CalendarDays, ChevronRight, MapPin, X } from 'lucide-react'
 import { cn, usePersistedState } from '@/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -10,6 +10,7 @@ import NoteCaptureModal from '@/pages/FieldSales/NoteCaptureModal'
 import ClientCard360 from '@/pages/FieldSales/ClientCard360'
 import FieldSalesCalendar from '@/pages/Hub/FieldSalesCalendar'
 import RouteBuilderForm from '@/pages/FieldSales/RouteBuilderForm'
+import FSClientPicker from '@/pages/FieldSales/FSClientPicker'
 
 export const VISIT_TYPE_LABELS: Record<string, string> = {
   fleet_review: 'Revizuire flota', renewal_discussion: 'Discutie reinnoire',
@@ -113,36 +114,17 @@ function OverlaySheet({ onClose, children, wide }: { onClose: () => void; childr
 function AddVisitForm({ initialDate, initialTime, initialEndTime, companyId, onDone, onCancel }: {
   initialDate?: string; initialTime?: string; initialEndTime?: string; companyId?: number; onDone: () => void; onCancel: () => void
 }) {
-  const [query, setQuery] = useState('')
   const [selectedClient, setSelectedClient] = useState<FSClientSearch | null>(null)
-  const [showResults, setShowResults] = useState(false)
   const [visitDate, setVisitDate] = useState(initialDate ?? todayStr())
   const [time, setTime] = useState(initialTime ?? '')
   const [endTime, setEndTime] = useState(initialEndTime ?? '')
   const [visitType, setVisitType] = useState('general')
   const [goals, setGoals] = useState('')
 
-  const { data: searchData, isLoading: searching } = useQuery({
-    queryKey: ['fs-client-search', query, companyId],
-    queryFn: () => fieldSalesApi.searchClients(query, companyId),
-    // Defense-in-depth: the client-search endpoint has no ownership clause, so
-    // an unscoped call (no company_id) would return clients from EVERY tenant.
-    // Never let it run without a resolved company — the add flow's entry point
-    // is already gated on companyId > 0, this closes the direct-call path too.
-    enabled: query.length >= 2 && (companyId ?? 0) > 0,
-  })
-  const results = searchData?.clients ?? []
-
   const createVisit = useMutation({
     mutationFn: fieldSalesApi.createVisit,
     onSuccess: () => onDone(),
   })
-
-  const handleSelectClient = (client: FSClientSearch) => {
-    setSelectedClient(client)
-    setQuery(client.display_name)
-    setShowResults(false)
-  }
 
   const handleSubmit = () => {
     if (!selectedClient) return
@@ -167,50 +149,18 @@ function AddVisitForm({ initialDate, initialTime, initialEndTime, companyId, onD
       <h3 className="text-lg font-bold">Adauga vizita</h3>
 
       <div>
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1.5 block">Client *</label>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => { setQuery(e.target.value); setSelectedClient(null); setShowResults(true) }}
-            onFocus={() => query.length >= 2 && setShowResults(true)}
-            placeholder="Cauta client dupa nume sau CUI..."
-            className="h-11 w-full rounded-xl border border-border bg-background pl-9 pr-9 text-base placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-teal-600/40"
-          />
-          {query && (
-            <button
-              onClick={() => { setQuery(''); setSelectedClient(null); setShowResults(false) }}
-              className="absolute right-3 top-1/2 -translate-y-1/2"
-            >
-              <X className="h-4 w-4 text-muted-foreground" />
-            </button>
-          )}
-        </div>
-        {showResults && query.length >= 2 && (
-          <div className="mt-1 max-h-48 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
-            {searching && (
-              <div className="flex items-center justify-center py-4">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-foreground" />
-              </div>
-            )}
-            {!searching && results.length === 0 && (
-              <p className="px-3 py-3 text-xs text-muted-foreground">Niciun client gasit</p>
-            )}
-            {!searching && results.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => handleSelectClient(c)}
-                className="w-full text-left px-3 py-2.5 hover:bg-secondary active:bg-secondary transition-colors border-b border-border/50 last:border-0"
-              >
-                <p className="text-sm font-medium">{c.display_name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {c.client_type === 'company' ? 'Firma' : 'Persoana fizica'}
-                  {c.city ? ` - ${c.city}` : ''}
-                </p>
-              </button>
-            ))}
+        <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">Client *</label>
+        {selectedClient ? (
+          <div className="flex items-center gap-2 rounded-xl border border-border bg-card px-3 py-2.5">
+            <span className="flex-1 truncate text-sm font-medium">{selectedClient.display_name}</span>
+            <button onClick={() => setSelectedClient(null)} className="text-xs font-semibold text-teal-700 dark:text-teal-300">Schimba</button>
           </div>
+        ) : (
+          <FSClientPicker
+            companyId={companyId ?? 0}
+            onPick={(c) => setSelectedClient({ id: c.id, display_name: c.display_name, client_type: 'person' } as FSClientSearch)}
+            autoFocus
+          />
         )}
       </div>
 
