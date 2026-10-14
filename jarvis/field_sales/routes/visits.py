@@ -371,6 +371,8 @@ def api_create_my_route():
                 return jsonify({'success': False, 'error': f'Stop {i+1}: client_id is required'}), 400
             if stop.get('visit_type', 'general') not in ALLOWED_VISIT_TYPES:
                 return jsonify({'success': False, 'error': f'Stop {i+1}: invalid visit_type'}), 400
+            if not _client_repo.get_by_id(stop['client_id']):
+                return jsonify({'success': False, 'error': f'Stop {i+1}: client not found'}), 404
 
         user = _get_current_user()
         kam_id = user.id
