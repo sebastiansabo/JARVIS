@@ -55,6 +55,12 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   // Free status override (any → any, bypassing the state machine) — the
   // admin/manager escape hatch, always available to them regardless of status.
   const showOverride = isAdminOrManager
+  // Hold/Resume — only from the "active" statuses, gated by the same
+  // explicit permission in both directions.
+  const showHold =
+    ['PENDING_EVALUATION', 'INITIAL_OFFER', 'INSPECTION', 'FINAL_OFFER'].includes(status) &&
+    can('buyback.record.hold')
+  const showResume = status === 'ON_HOLD' && can('buyback.record.hold')
 
   const nothingToShow =
     !showInitialOffer &&
@@ -65,7 +71,9 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     !showCarparkLabel &&
     !showCancel &&
     !showReopen &&
-    !showOverride
+    !showOverride &&
+    !showHold &&
+    !showResume
 
   // ── offer dialog (shared by "initial" + "final") ──
   const [offerDialogType, setOfferDialogType] = useState<'initial' | 'final' | null>(null)
@@ -74,11 +82,16 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   const [offerValidUntil, setOfferValidUntil] = useState('')
   const [offerNotes, setOfferNotes] = useState('')
 
+  // ── hold / resume ──
+  const [holdOpen, setHoldOpen] = useState(false)
+  const [holdReason, setHoldReason] = useState('')
+  const [holdNote, setHoldNote] = useState('')
+
   const { data: opts } = useQuery({
     queryKey: ['buyback-options'],
     queryFn: () => buybackApi.getLookupOptions(),
     staleTime: 5 * 60_000,
-    enabled: offerDialogType !== null,
+    enabled: offerDialogType !== null || holdOpen,
   })
 
   const resetOfferForm = () => {
@@ -232,6 +245,27 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     onError: (e) => toast.error(errMsg(e, 'Redeschiderea a eșuat')),
   })
 
+  const holdMutation = useMutation({
+    mutationFn: () => buybackApi.hold(record.id, { reason: holdReason, note: holdNote || undefined }),
+    onSuccess: () => {
+      toast.success('Solicitare suspendată')
+      setHoldOpen(false)
+      setHoldReason('')
+      setHoldNote('')
+      invalidate()
+    },
+    onError: (e) => toast.error(errMsg(e, 'Suspendarea a eșuat')),
+  })
+
+  const resumeMutation = useMutation({
+    mutationFn: () => buybackApi.resume(record.id),
+    onSuccess: () => {
+      toast.success('Solicitare reluată')
+      invalidate()
+    },
+    onError: (e) => toast.error(errMsg(e, 'Reluarea a eșuat')),
+  })
+
   const offerDialogTitle = offerDialogType === 'final' ? 'Ofertă finală' : 'Ofertă inițială'
 
   return (
@@ -367,6 +401,18 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
             Schimbă status
           </Button>
         )}
+
+        {showHold && (
+          <Button size="sm" variant="outline" onClick={() => setHoldOpen(true)}>
+            Suspendă
+          </Button>
+        )}
+
+        {showResume && (
+          <Button size="sm" disabled={resumeMutation.isPending} onClick={() => resumeMutation.mutate()}>
+            Reia
+          </Button>
+        )}
       </CardContent>
 
       <StatusChangeDialog record={record} open={overrideOpen} onOpenChange={setOverrideOpen} />
@@ -478,6 +524,53 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
             </Button>
             <Button variant="destructive" disabled={cancelMutation.isPending} onClick={() => cancelMutation.mutate()}>
               Confirmă anularea
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Hold dialog */}
+      <Dialog
+        open={holdOpen}
+        onOpenChange={(o) => {
+          setHoldOpen(o)
+          if (!o) {
+            setHoldReason('')
+            setHoldNote('')
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Suspendă solicitarea</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Motiv</Label>
+              <Select value={holdReason} onValueChange={setHoldReason}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Alege motivul" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(opts?.hold_reasons ?? []).map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Notă (opțional)</Label>
+              <Textarea rows={3} value={holdNote} onChange={(e) => setHoldNote(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHoldOpen(false)}>
+              Renunță
+            </Button>
+            <Button disabled={!holdReason || holdMutation.isPending} onClick={() => holdMutation.mutate()}>
+              Suspendă
             </Button>
           </DialogFooter>
         </DialogContent>
