@@ -26,6 +26,19 @@ def _resolve_search_company_ids(is_admin, requested_company_id, allowed_ids):
     return sorted(allowed_ids)
 
 
+def _resolve_create_company(requested_company_id, is_admin, allowed_ids, home_company_id):
+    """Resolve the tenant company_id for a field-rep-created client.
+
+    Admin: the requested id (or None). Non-admin: the requested id only if it is
+    in their allowed set; otherwise their home company.
+    """
+    if is_admin:
+        return requested_company_id
+    if requested_company_id is not None and requested_company_id in allowed_ids:
+        return requested_company_id
+    return home_company_id
+
+
 @field_sales_bp.route('/api/field-sales/clients/<int:client_id>/360', methods=['GET'])
 @jwt_or_login_required
 @field_sales_required
@@ -172,6 +185,74 @@ def api_field_sales_client_update(client_id):
         return jsonify({'success': True, 'client': client})
     except Exception as e:
         logger.exception('Error updating client')
+        return jsonify({'success': False, 'error': _safe_error(e)}), 500
+
+
+@field_sales_bp.route('/api/field-sales/clients', methods=['POST'])
+@jwt_or_login_required
+@field_sales_required
+def api_field_sales_client_create():
+    """Create a client from the Field Sales app, tagged to the rep's tenant so
+    it is immediately visible in their scoped search. Reuses
+    crm.ClientRepository.create_from_form for the write. A light duplicate guard
+    returns an existing same-name client in the rep's tenant (duplicate=True)
+    rather than inserting a second record.
+    """
+    try:
+        data = request.get_json(silent=True) or {}
+        display_name = (data.get('display_name') or '').strip()
+        if not display_name:
+            return jsonify({'success': False, 'error': 'Numele este obligatoriu'}), 400
+
+        user = _get_current_user()
+        is_admin = getattr(user, 'role_id', None) == 1
+        allowed_ids = {c['id'] for c in _client_repo.get_allowed_companies(user.id, is_admin)}
+        home_company_id = getattr(user, 'company_id', None)
+
+        requested = data.get('company_id')
+        try:
+            requested = int(requested) if requested is not None else None
+        except (ValueError, TypeError):
+            requested = None
+        company_id = _resolve_create_company(requested, is_admin, allowed_ids, home_company_id)
+
+        # Duplicate guard: exact normalized-name match already in the rep's tenant.
+        key = display_name.lower().split()
+        existing = _client_repo.search_clients(
+            display_name, limit=20,
+            company_ids=None if is_admin else (sorted(allowed_ids) if allowed_ids else []),
+        )
+        dup = next((c for c in existing if (c.get('display_name') or '').lower().split() == key), None)
+        if dup:
+            return jsonify({'success': True, 'duplicate': True,
+                            'client': {'id': dup['id'], 'display_name': dup['display_name'], 'company_id': company_id}})
+
+        from crm.repositories.client_repository import ClientRepository
+        form = {
+            'display_name': display_name,
+            'client_type': data.get('client_type') or 'person',
+            'phone': data.get('phone'),
+            'email': data.get('email'),
+            'city': data.get('city'),
+            'region': data.get('region'),
+            'company_name': data.get('company_name'),
+            'cui': data.get('cui'),
+        }
+        created = ClientRepository().create_from_form(form)
+        if not created:
+            return jsonify({'success': False, 'error': 'Crearea clientului a eșuat'}), 400
+
+        client_id = created['id']
+        _client_repo.get_or_create_profile(client_id)
+        if company_id is not None:
+            _client_repo.set_profile_company(client_id, company_id)
+
+        return jsonify({'success': True,
+                        'client': {'id': client_id,
+                                   'display_name': created.get('display_name', display_name),
+                                   'company_id': company_id}}), 201
+    except Exception as e:
+        logger.exception('Error creating field sales client')
         return jsonify({'success': False, 'error': _safe_error(e)}), 500
 
 
