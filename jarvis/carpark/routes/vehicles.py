@@ -8,7 +8,7 @@ from flask import request, jsonify, abort, make_response
 from flask_login import login_required, current_user
 
 from carpark import carpark_bp
-from carpark.finance_guard import strip_finance_fields, FINANCE_VEHICLE_TABLE_FIELDS
+from carpark.finance_guard import strip_finance_fields, FINANCE_VEHICLE_TABLE_FIELDS, FINANCE_CONSIGNMENT_FIELDS
 from carpark.services.vehicle_service import VehicleService
 from core.organization.manager_utils import get_actable_company_ids
 from field_sales.repositories.client_fs_repository import ClientFSRepository
@@ -279,7 +279,13 @@ def get_vehicle(vehicle_id):
     # module-load time and keeps the repo patchable in tests.
     if vehicle.get('is_consignment'):
         from carpark.repositories.consignment_repository import ConsignmentRepository
-        vehicle['consignment'] = _serialize(ConsignmentRepository().get_by_vehicle(vehicle['id']))
+        consignment = _serialize(ConsignmentRepository().get_by_vehicle(vehicle['id']))
+        # SECURITY: the top-level strip_finance_fields above never touches the
+        # nested consignment dict — strip its money/structure fields (owner
+        # payout, commission, floor) for non-finance users here.
+        if consignment and not getattr(current_user, 'can_view_carpark_finance', False):
+            strip_finance_fields(consignment, FINANCE_CONSIGNMENT_FIELDS)
+        vehicle['consignment'] = consignment
     return jsonify({'vehicle': _serialize(vehicle)})
 
 

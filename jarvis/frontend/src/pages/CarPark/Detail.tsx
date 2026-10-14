@@ -640,7 +640,7 @@ export default function CarParkDetail() {
         </TabsList>
 
         <TabsContent value="details" className="mt-4">
-          <DetailsTab vehicle={vehicle} photos={photos} onPhotoClick={setLightboxIndex} canEdit={canEdit} />
+          <DetailsTab vehicle={vehicle} photos={photos} onPhotoClick={setLightboxIndex} canEdit={canEdit} canViewFinance={canViewFinance} />
         </TabsContent>
 
         <TabsContent value="vanzare" className="mt-4">
@@ -1590,7 +1590,7 @@ function PhotoLightbox({
 }
 
 // ── Details Tab ────────────────────────────────────────────
-function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Vehicle; photos: VehiclePhoto[]; onPhotoClick: (index: number) => void; canEdit: boolean }) {
+function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance }: { vehicle: Vehicle; photos: VehiclePhoto[]; onPhotoClick: (index: number) => void; canEdit: boolean; canViewFinance: boolean }) {
   // New pricing model: "Preț" = list_price; "Preț promoțional" = promotional_price.
   // The displayed price is the promo when set, else the list price.
   const pricePct = reductionPct(v.list_price, v.promotional_price)
@@ -1891,8 +1891,11 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit }: { vehicle: Ve
 
       {/* Custody/consignment agreement — present only when the vehicle was
           handed off from a failed (LOST) buyback record into CarPark custody
-          (is_consignment=true, source='CUSTODIE'); see carpark_vehicle_consignment. */}
-      {v.consignment && (
+          (is_consignment=true, source='CUSTODIE'); see carpark_vehicle_consignment.
+          Additionally gated on canViewFinance (defense-in-depth): the card shows
+          owner payout / commission / floor, which the backend already strips for
+          non-finance users. */}
+      {v.consignment && canViewFinance && (
         <Card className="p-4 space-y-3">
           <h3 className="text-sm font-semibold">Acord custodie</h3>
           <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">

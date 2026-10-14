@@ -234,13 +234,15 @@ class _CarparkUser(_User):
         self.can_view_carpark_finance = True
 
 
-def _get_vehicle(app, vehicle, *, consignment_return=None):
+def _get_vehicle(app, vehicle, *, consignment_return=None, can_view_finance=True):
     from carpark.routes import vehicles as vehicles_mod
     vehicle_service = MagicMock()
     vehicle_service.get_vehicle.return_value = vehicle
+    user = _CarparkUser(3)
+    user.can_view_carpark_finance = can_view_finance
     with app.test_request_context():
         with patch.object(vehicles_mod, '_vehicle_service', vehicle_service), \
-             patch.object(vehicles_mod, 'current_user', _CarparkUser(3)), \
+             patch.object(vehicles_mod, 'current_user', user), \
              patch('carpark.repositories.consignment_repository.ConsignmentRepository') as CR:
             CR.return_value.get_by_vehicle.return_value = consignment_return
             resp = vehicles_mod.get_vehicle(vehicle['id'] if vehicle else 1)
@@ -261,3 +263,25 @@ def test_carpark_vehicle_get_consignment_absent_when_not_consignment(app):
     body, CR = _get_vehicle(app, veh, consignment_return={'vehicle_id': 78})
     assert 'consignment' not in body['vehicle']
     CR.return_value.get_by_vehicle.assert_not_called()
+
+
+def test_carpark_vehicle_get_consignment_strips_finance_for_non_finance_user(app):
+    """SECURITY: a non-finance CarPark user still sees the consignment block
+    (it exists), but its money/structure fields (owner_price, min_sale_price,
+    commission_type, commission_value) are stripped; contract_number, dates and
+    currency survive."""
+    veh = {'id': 79, 'is_consignment': True, 'source': 'CUSTODIE'}
+    full = {
+        'vehicle_id': 79, 'owner_price': 12000.0, 'currency': 'EUR',
+        'commission_type': 'fixed', 'commission_value': 500.0,
+        'min_sale_price': 11000.0, 'contract_number': 'CS-9',
+        'agreement_date': '2026-10-14', 'expiry_date': '2027-01-01',
+    }
+    body, CR = _get_vehicle(app, veh, consignment_return=dict(full), can_view_finance=False)
+    cons = body['vehicle']['consignment']
+    assert cons is not None
+    for finance_key in ('owner_price', 'min_sale_price', 'commission_type', 'commission_value'):
+        assert finance_key not in cons
+    for kept_key in ('contract_number', 'agreement_date', 'expiry_date', 'currency'):
+        assert kept_key in cons
+    CR.return_value.get_by_vehicle.assert_called_once_with(79)
