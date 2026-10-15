@@ -2552,6 +2552,10 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
         setStep('success')
         queryClient.invalidateQueries({ queryKey: ['autovit', 'vehicle-status', vehicleId] })
         toast.success('Anunț publicat pe Autovit (draft)')
+        // Surface "already published → updated" + any dropped-param warnings.
+        if (res.warnings && res.warnings.length > 0) {
+          toast.info(res.warnings.join(' · '))
+        }
       } else {
         toast.error(res.error || 'Publicarea a eșuat')
       }
@@ -2590,6 +2594,18 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
           >
             Autovit: {autovitUi.label}
           </Badge>
+        )}
+        {autovitListing?.external_url && (
+          <a
+            href={autovitListing.external_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            title="Deschide anunțul publicat pe Autovit"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Vezi anunțul
+          </a>
         )}
       </div>
       <Dialog

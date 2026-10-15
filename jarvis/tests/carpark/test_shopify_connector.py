@@ -248,3 +248,14 @@ def test_channel_publish_failure_is_warning_not_publish_failure():
     out = conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
     assert out['success'] is True
     assert any('channel' in w.lower() for w in out['warnings'])
+
+
+def test_publish_warns_when_updating_already_published_listing():
+    # If the car already has a published Shopify product, re-publishing updates it
+    # in place (no duplicate) and must tell the user it was already live.
+    pub = FakePub()
+    pub._listing = {'id': 9, 'external_listing_id': 'gid://shopify/Product/55', 'status': 'published'}
+    conn = ShopifyConnector(FakeClient(), pub, platform_id=3)
+    out = conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
+    assert out['success'] is True
+    assert any('deja publicat' in w.lower() for w in out['warnings'])

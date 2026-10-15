@@ -171,6 +171,11 @@ class ShopifyConnector(BaseConnector):
         else:
             listing_data['published_at'] = datetime.now(timezone.utc)
             self.pub.create_listing(listing_data)
+        # Already-published signal: the car had a live product, so this was an
+        # in-place update (no duplicate) — tell the user rather than silently
+        # re-publishing over the existing listing.
+        if existing and existing.get('external_listing_id'):
+            warnings.insert(0, 'Produs deja publicat pe Shopify — anunțul existent a fost actualizat.')
         self._audit(vehicle['id'], 'publish', True, response_payload={'id': gid})
         return {'success': True, 'external_id': gid, 'external_url': url, 'warnings': warnings}
 
