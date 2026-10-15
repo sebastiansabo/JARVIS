@@ -17,6 +17,7 @@ from core.utils.api_helpers import api_login_required, admin_required
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.vehicle_photo_repository import VehiclePhotoRepository
 from carpark.repositories.autovit_listing_repository import AutovitListingRepository
+from carpark.services.photo_urls import public_photo_urls
 from carpark.routes.vehicles import (
     carpark_edit_required, carpark_required, _verify_vehicle_ownership, _serialize,
 )
@@ -480,11 +481,11 @@ def publish(account_id):
     """Publish (create or update) a vehicle's advert on Autovit.
 
     `dry_run=True` assembles + validates the advert payload and returns it
-    without any network call — no client is built. `draft=True` marks the
-    advert `status='disabled'` before create, so it's uploaded but not made
-    publicly live. Photos are intentionally NOT attached here (deferred
-    until the create contract is confirmed against the live API — see
-    client.upload_photos docstring).
+    without any network call — no client is built. Photos are attached as a
+    presigned-URL image collection; a photo failure is recorded on the
+    listing row (`last_error`) and in the response but never blocks the
+    advert. After the write, the advert is read back and any params Autovit
+    dropped are recorded the same way.
     """
     connector = _repo.get(account_id)
     if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
@@ -505,16 +506,11 @@ def publish(account_id):
     # Backfill location + contact from the account's own adverts if the config
     # didn't carry them (Autovit requires them on create).
     _fill_location_contact(client, advert)
-    # Best-effort photos: build an Autovit image collection from the vehicle's
-    # photos. Non-fatal — an advert is created fine without photos (as an unpaid
-    # draft), so a photo failure must never block the publish.
-    try:
-        photo_urls = _photo_repo.urls(vehicle['id'])
-        icid = client.create_image_collection(photo_urls) if photo_urls else None
-        if icid:
-            advert['image_collection_id'] = icid
-    except Exception as e:
-        logger.warning('Autovit image collection failed for vehicle %s: %s', vehicle['id'], e)
+    # Photos: non-fatal (an advert is created fine without them, as an unpaid
+    # draft) but NOT silent — a failure is recorded on the listing row and in
+    # the response so it shows up in JARVIS instead of as an empty gallery on
+    # Autovit's form.
+    photos = _attach_image_collection(client, advert, vehicle['id'])
 
     try:
         existing = _listing_repo.get(vehicle['id'], account_id)
@@ -530,17 +526,92 @@ def publish(account_id):
             ext_id = result.get('id')
             ext_url = result.get('url')
             ext_status = result.get('status') or 'active'
+
+        # Post-write verification: read the advert back and diff what we sent
+        # against what Autovit kept. Silently-dropped params are otherwise
+        # invisible (the create/update returns 2xx regardless).
+        verify = _verify_advert(client, ext_id, advert)
+
+        warnings = []
+        if photos['error']:
+            warnings.append(f"photos: {photos['error']}")
+        if verify['params_dropped']:
+            warnings.append('params_dropped: ' + ', '.join(verify['params_dropped']))
+        if verify['photos_remote'] is not None and photos['sent'] and \
+                verify['photos_remote'] < photos['sent']:
+            warnings.append(f"photos: sent {photos['sent']}, Autovit kept {verify['photos_remote']}")
+        last_error = '; '.join(warnings) if warnings else None
+
         _listing_repo.upsert(vehicle['id'], account_id,
                              external_advert_id=str(ext_id),
                              external_url=ext_url,
                              status=ext_status,
-                             last_error=None)
+                             last_error=last_error)
         return jsonify({'success': True, 'external_id': ext_id,
-                        'external_url': ext_url, 'status': ext_status})
+                        'external_url': ext_url, 'status': ext_status,
+                        'photos_sent': photos['sent'],
+                        'photos_ok': photos['error'] is None,
+                        'photos_remote': verify['photos_remote'],
+                        'params_dropped': verify['params_dropped'],
+                        'warnings': warnings})
     except Exception as e:
         logger.exception('Autovit publish failed for vehicle %s', vehicle['id'])
         _listing_repo.set_error(vehicle['id'], account_id, str(e))
         return jsonify({'success': False, 'error': str(e)}), 502
+
+
+def _attach_image_collection(client: AutovitClient, advert: dict, vehicle_id: int) -> dict:
+    """Build an Autovit image collection from the vehicle's photos and attach
+    its id to `advert`. Returns {'sent': n, 'error': str|None}.
+
+    carpark_vehicle_photos.url holds PRIVATE Spaces object keys, not URLs —
+    Autovit fetches images server-side and cannot read those, so every key is
+    presigned first (same fix Shopify got in connectors/shopify/connector.py).
+    Before this, every push sent raw keys, Autovit rejected the collection,
+    and the exception was downgraded to a log warning: 100% of JARVIS-published
+    adverts had zero photos and `success: true`.
+    """
+    try:
+        photo_urls = public_photo_urls(_photo_repo.urls(vehicle_id))
+    except Exception as e:
+        logger.warning('Autovit photo lookup failed for vehicle %s: %s', vehicle_id, e)
+        return {'sent': 0, 'error': f'photo lookup failed: {e}'}
+    if not photo_urls:
+        return {'sent': 0, 'error': None}
+    try:
+        icid = client.create_image_collection(photo_urls)
+    except Exception as e:
+        logger.warning('Autovit image collection failed for vehicle %s: %s', vehicle_id, e)
+        return {'sent': len(photo_urls), 'error': f'image collection rejected: {e}'}
+    if not icid:
+        return {'sent': len(photo_urls), 'error': 'image collection returned no id'}
+    advert['image_collection_id'] = icid
+    return {'sent': len(photo_urls), 'error': None}
+
+
+def _verify_advert(client: AutovitClient, advert_id, sent: dict) -> dict:
+    """GET the advert back from Autovit and report which `params` keys we sent
+    that Autovit did not keep, plus how many photos it holds.
+    Returns {'params_dropped': [..], 'photos_remote': int|None}. Never raises —
+    verification must not turn a successful publish into a 502."""
+    out = {'params_dropped': [], 'photos_remote': None}
+    if not advert_id:
+        return out
+    try:
+        remote = client.get_account_advert(str(advert_id)) or {}
+    except Exception as e:
+        logger.warning('Autovit post-publish verify failed for advert %s: %s', advert_id, e)
+        return out
+    remote_params = remote.get('params') or {}
+    sent_params = sent.get('params') or {}
+    out['params_dropped'] = sorted(k for k in sent_params if k not in remote_params)
+    photos = remote.get('photos') or remote.get('images')
+    if isinstance(photos, (list, dict)):
+        out['photos_remote'] = len(photos)
+    if out['params_dropped']:
+        logger.warning('Autovit kept advert %s but dropped params: %s',
+                       advert_id, out['params_dropped'])
+    return out
 
 
 @autovit_bp.route('/api/accounts/<int:account_id>/unpublish', methods=['POST'])
