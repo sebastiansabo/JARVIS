@@ -117,6 +117,8 @@ export const autovitApi = {
       external_url?: string
       error?: string
       missing?: string[]
+      warnings?: string[]
+      updated_existing?: boolean
     }>(`${BASE}/accounts/${accountId}/publish`, {
       vehicle_id: vehicleId,
       dry_run: options?.dryRun,

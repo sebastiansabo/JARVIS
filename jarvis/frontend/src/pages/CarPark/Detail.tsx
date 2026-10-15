@@ -2552,6 +2552,10 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
         setStep('success')
         queryClient.invalidateQueries({ queryKey: ['autovit', 'vehicle-status', vehicleId] })
         toast.success('Anunț publicat pe Autovit (draft)')
+        // Surface "already published → updated" + any dropped-param warnings.
+        if (res.warnings && res.warnings.length > 0) {
+          toast.info(res.warnings.join(' · '))
+        }
       } else {
         toast.error(res.error || 'Publicarea a eșuat')
       }

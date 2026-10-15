@@ -427,6 +427,25 @@ def test_publish_updates_existing_listing_via_update_advert(client):
                                        status="active", last_error=None)
 
 
+def test_publish_warns_already_published_without_polluting_last_error(client):
+    # Re-publishing a car that already has an advert updates it in place and
+    # surfaces an informational "already published" warning in the response —
+    # but that note must NOT be written to last_error (reserved for real faults).
+    existing = {"external_advert_id": "555", "external_url": "http://x/555"}
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client"), \
+         patch.object(r._listing_repo, "get", return_value=existing), \
+         patch.object(r._listing_repo, "upsert") as upsert:
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body['updated_existing'] is True
+        assert any('deja publicat' in w.lower() for w in body['warnings'])
+        # last_error stays None — the informational note is not a fault
+        assert upsert.call_args.kwargs['last_error'] is None
+
+
 def test_publish_creates_as_unpaid_draft_without_forcing_status(client):
     # Autovit creates every new advert in `unpaid` status (a private draft, not
     # visible on the marketplace) on its own — so we do NOT inject a bogus
