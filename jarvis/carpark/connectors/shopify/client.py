@@ -135,6 +135,38 @@ class ShopifyClient:
         node = data['productUpdate']
         return {'product': node.get('product'), 'userErrors': node.get('userErrors', [])}
 
+    _PUBLICATIONS = '''
+    query publications { publications(first: 50) { edges { node { id name } } } }'''
+
+    def list_publications(self) -> List[Dict[str, str]]:
+        """Every sales-channel publication the app can publish to — Online Store,
+        Google & YouTube, Facebook & Instagram, etc. Needs the read_publications
+        access scope. Returns [{'id','name'}, ...] ('' name tolerated)."""
+        data = self.graphql(self._PUBLICATIONS)
+        edges = ((data or {}).get('publications') or {}).get('edges') or []
+        return [{'id': n['id'], 'name': n.get('name', '')}
+                for e in edges if (n := e.get('node') or {}).get('id')]
+
+    _PUBLISHABLE_PUBLISH = '''
+    mutation publish($id: ID!, $input: [PublicationInput!]!) {
+      publishablePublish(id: $id, input: $input) {
+        userErrors { field message }
+      }
+    }'''
+
+    def publish_to_channels(self, publishable_gid: str,
+                            publication_ids: List[str]) -> Dict[str, Any]:
+        """Publish a product to the given sales-channel publications so it is live
+        on them (productSet creates it ACTIVE but published nowhere). Needs the
+        write_publications scope. Returns {'userErrors': [...]}."""
+        if not publication_ids:
+            return {'userErrors': []}
+        variables = {'id': publishable_gid,
+                     'input': [{'publicationId': pid} for pid in publication_ids]}
+        data = self.graphql(self._PUBLISHABLE_PUBLISH, variables)
+        node = (data or {}).get('publishablePublish') or {}
+        return {'userErrors': node.get('userErrors', [])}
+
     _PRODUCT_GET = '''
     query getProduct($id: ID!) {
       product(id: $id) { id status }
