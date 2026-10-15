@@ -146,6 +146,20 @@ class ShopifyConnector(BaseConnector):
 
         gid = result['id']
         url = result.get('preview_url') or self._admin_url(gid)
+        # Publish to every sales channel the store exposes (Online Store, Google &
+        # YouTube, Facebook & Instagram, ...). productSet creates the product ACTIVE
+        # but published to NO channel, so it stays invisible until this runs. Non-
+        # fatal: a channel failure (e.g. a missing write_publications scope) is a
+        # warning, not a publish failure — the product is already created.
+        try:
+            publications = self.client.list_publications()
+            if publications:
+                res = self.client.publish_to_channels(gid, [p['id'] for p in publications])
+                for e in (res.get('userErrors') or []):
+                    warnings.append(f"channel publish: {e.get('message')}")
+        except Exception as e:
+            logger.warning('shopify channel publish failed for vehicle %s: %s', vehicle['id'], e)
+            warnings.append(f'channel publish failed: {e}')
         listing_data = {
             'vehicle_id': vehicle['id'], 'platform_id': self.platform_id,
             'external_listing_id': gid, 'external_url': url,

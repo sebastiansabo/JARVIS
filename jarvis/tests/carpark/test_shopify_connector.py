@@ -10,6 +10,8 @@ class FakeClient:
                 'status': 'DRAFT', 'preview_url': 'https://x/preview', 'userErrors': []}
     def set_product_status(self, gid, status):
         self.status_calls.append((gid, status)); return {'product': {'id': gid, 'status': status}, 'userErrors': []}
+    def list_publications(self): return []
+    def publish_to_channels(self, gid, publication_ids): return {'userErrors': []}
 
 class FakePub:
     def __init__(self): self.created=[]; self.updated=[]; self._listing=None; self.logs=[]
@@ -209,3 +211,40 @@ def test_ensure_platform_creates_when_missing():
     p = P()
     pid = ensure_platform(p, 'cb6c17-2.myshopify.com')
     assert pid == 42 and p.rows[0]['platform_type'] == 'shopify'
+
+
+class PublicationsClient(FakeClient):
+    """Exposes two sales channels and records what the connector publishes to."""
+    def __init__(self):
+        super().__init__()
+        self.published_to = None
+    def list_publications(self):
+        return [{'id': 'gid://shopify/Publication/1', 'name': 'Online Store'},
+                {'id': 'gid://shopify/Publication/2', 'name': 'Google & YouTube'}]
+    def publish_to_channels(self, gid, publication_ids):
+        self.published_to = (gid, list(publication_ids))
+        return {'userErrors': []}
+
+
+def test_publish_activates_all_sales_channels():
+    # productSet creates the product ACTIVE but published to NO sales channel; the
+    # connector must publish it to every channel the store exposes (Online Store,
+    # Google & YouTube, Facebook & Instagram, ...).
+    client = PublicationsClient()
+    conn = ShopifyConnector(client, FakePub(), platform_id=3)
+    out = conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
+    assert out['success'] is True
+    assert client.published_to == ('gid://shopify/Product/55',
+                                   ['gid://shopify/Publication/1', 'gid://shopify/Publication/2'])
+
+
+def test_channel_publish_failure_is_warning_not_publish_failure():
+    # A channel-publish error must not fail the whole publish — the product is live;
+    # the failure surfaces as a warning (e.g. missing write_publications scope).
+    class FailChannels(PublicationsClient):
+        def publish_to_channels(self, gid, publication_ids):
+            raise RuntimeError('missing write_publications scope')
+    conn = ShopifyConnector(FailChannels(), FakePub(), platform_id=3)
+    out = conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
+    assert out['success'] is True
+    assert any('channel' in w.lower() for w in out['warnings'])
