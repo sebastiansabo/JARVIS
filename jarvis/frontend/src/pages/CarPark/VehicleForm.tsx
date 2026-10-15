@@ -1651,76 +1651,8 @@ export default function VehicleForm() {
       </Card>
         </TabsContent>
         <TabsContent value="comercial" className="space-y-4 pt-4">
-      {/* Preț de vânzare — first (list) selling price, required when adding a car.
-          Writes the same columns the profile "Fișă de preț" reads. */}
-      <Card className="p-4 space-y-3">
-        <h3 className="text-sm font-semibold">Preț de vânzare</h3>
-        <div className="grid gap-4 md:grid-cols-3">
-          <div className="space-y-1.5">
-            <Label>
-              Preț listă ({(form.price_currency as string) || 'EUR'})
-              <span className="text-red-500 ml-0.5">*</span>
-            </Label>
-            <Input
-              type="number"
-              step="0.01"
-              min={0}
-              value={inputVal(form.list_price)}
-              onChange={(e) => handleNumericChange('list_price', e.target.value)}
-              placeholder="ex. 45000"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Preț promo ({(form.price_currency as string) || 'EUR'})</Label>
-            <Input
-              type="number"
-              step="0.01"
-              min={0}
-              value={inputVal(form.promotional_price)}
-              onChange={(e) => handleNumericChange('promotional_price', e.target.value)}
-              placeholder="opțional"
-            />
-          </div>
-          <SelectField
-            label="Monedă"
-            name="price_currency"
-            value={(form.price_currency as string) || 'EUR'}
-            options={[
-              { value: 'EUR', label: 'EUR' },
-              { value: 'RON', label: 'RON' },
-            ]}
-            onChange={handleChange}
-          />
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Prețul de listă este obligatoriu la adăugarea unei mașini. Prețul critic și
-          versionarea prețului se gestionează ulterior din „Fișă de preț”.
-        </p>
-      </Card>
-      {/* Location & Source */}
-      <Card className="p-4 space-y-3">
-        <h3 className="text-sm font-semibold">Locație & Sursă</h3>
-        <div className="grid gap-4 md:grid-cols-3">
-          <SelectField
-            label="Locație"
-            name="location_id"
-            value={form.location_id != null ? String(form.location_id) : ''}
-            options={locationOptions}
-            onChange={(name, value) => handleNumericChange(name, value)}
-          />
-          <TextField label="Loc parcare" name="parking_spot" value={form.parking_spot as string} onChange={handleChange} placeholder="e.g. A-15" />
-          <SearchSelectField
-            label="Sursă"
-            name="source"
-            value={form.source as string}
-            options={[...VEHICLE_SOURCES]}
-            onChange={handleChange}
-            allowCustom
-            searchPlaceholder="Caută sursă..."
-          />
-        </div>
-      </Card>
-      {/* Achiziție — purchase cost basis (further sale-price versioning: profile Fișă de preț) */}
+      {/* Achiziție — purchase cost basis, shown first (sale price derives from it;
+          further sale-price versioning: profile Fișă de preț) */}
       <div className="grid gap-4">
         {/* Achiziție */}
         <Card className="p-4 space-y-3">
@@ -1782,6 +1714,90 @@ export default function VehicleForm() {
           </div>
         </Card>
       </div>
+      {/* Location & Source */}
+      <Card className="p-4 space-y-3">
+        <h3 className="text-sm font-semibold">Locație & Sursă</h3>
+        <div className="grid gap-4 md:grid-cols-3">
+          <SelectField
+            label="Locație"
+            name="location_id"
+            value={form.location_id != null ? String(form.location_id) : ''}
+            options={locationOptions}
+            onChange={(name, value) => handleNumericChange(name, value)}
+          />
+          <TextField label="Loc parcare" name="parking_spot" value={form.parking_spot as string} onChange={handleChange} placeholder="e.g. A-15" />
+          <SearchSelectField
+            label="Sursă"
+            name="source"
+            value={form.source as string}
+            options={[...VEHICLE_SOURCES]}
+            onChange={handleChange}
+            allowCustom
+            searchPlaceholder="Caută sursă..."
+          />
+        </div>
+      </Card>
+      {/* Preț de vânzare — the (list) selling price, shown after Achiziție. This is
+          always a GROSS/brut price; the "Preț include TVA" flag records whether VAT
+          is included, defaulting from the acquisition VAT regime. Writes the same
+          columns the profile "Fișă de preț" reads. */}
+      <Card className="p-4 space-y-3">
+        <h3 className="text-sm font-semibold">Preț de vânzare</h3>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label>
+              Preț listă ({(form.price_currency as string) || 'EUR'})
+              <span className="text-red-500 ml-0.5">*</span>
+            </Label>
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              value={inputVal(form.list_price)}
+              onChange={(e) => handleNumericChange('list_price', e.target.value)}
+              placeholder="ex. 45000"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Preț promo ({(form.price_currency as string) || 'EUR'})</Label>
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              value={inputVal(form.promotional_price)}
+              onChange={(e) => handleNumericChange('promotional_price', e.target.value)}
+              placeholder="opțional"
+            />
+          </div>
+          <SelectField
+            label="Monedă"
+            name="price_currency"
+            value={(form.price_currency as string) || 'EUR'}
+            options={[
+              { value: 'EUR', label: 'EUR' },
+              { value: 'RON', label: 'RON' },
+            ]}
+            onChange={handleChange}
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <CheckboxField
+            label="Preț include TVA"
+            name="price_includes_vat"
+            checked={form.price_includes_vat !== false}
+            onChange={(_n, checked) => setForm((prev) => ({ ...prev, price_includes_vat: checked }))}
+          />
+          <span className="text-xs text-muted-foreground">
+            {form.vat_deductible === false
+              ? 'Achiziție în regim de marjă (fără TVA deductibil) — prețul brut nu poartă TVA separat.'
+              : 'Achiziție cu TVA deductibil — prețul brut include TVA.'}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Prețul de listă este obligatoriu la adăugarea unei mașini. Prețul critic și
+          versionarea prețului se gestionează ulterior din „Fișă de preț”.
+        </p>
+      </Card>
       {/* Istoric preț — collapsed */}
       {isEdit && pricingHistory.length > 0 && (
         <Card className="p-4">
