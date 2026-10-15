@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from carpark.connectors.base_connector import BaseConnector
-from core.services import spaces_service
+from core.services import spaces_service  # noqa: F401 — kept: tests monkeypatch spaces_service.presigned_url here
+from carpark.services.photo_urls import public_photo_url
 from . import mapper
 
 logger = logging.getLogger('jarvis.carpark.shopify.connector')
@@ -33,9 +34,7 @@ def _photo_source(url: str) -> str:
     Presign keys into a time-limited GET URL; leave anything already a public
     http(s) source (or a legacy data: URL) untouched.
     """
-    if not url or url.startswith(('http://', 'https://', 'data:')):
-        return url
-    return spaces_service.presigned_url(url, expires=PHOTO_PRESIGN_TTL)
+    return public_photo_url(url, expires=PHOTO_PRESIGN_TTL)
 
 
 def _is_choice_error(user_errors: List[dict]) -> bool:

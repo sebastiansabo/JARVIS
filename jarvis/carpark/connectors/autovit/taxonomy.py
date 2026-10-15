@@ -202,6 +202,30 @@ def advert_to_vehicle(advert: Dict[str, Any]) -> Dict[str, Any]:
     return {k: val for k, val in v.items() if val is not None and val != ""}
 
 
+# Autovit's advert form takes first registration as day / month / year fields;
+# the OLX Group partner API (which Autovit's /api/open is) carries it as a
+# single "DD/MM/YYYY" string. Not yet verified against a live Autovit
+# response — publish with dry_run then draft=True and read the value back via
+# GET /account/adverts/{id} (the publish route now does this and stores any
+# dropped params in last_error).
+DATE_REGISTRATION_FORMAT = "%d/%m/%Y"
+
+
+def _format_date_registration(value: Any) -> str:
+    """carpark first_registration_date (date | ISO 'YYYY-MM-DD' str | None)
+    -> Autovit date_registration string, or '' when absent/unparseable."""
+    if not value:
+        return ""
+    if hasattr(value, "strftime"):
+        return value.strftime(DATE_REGISTRATION_FORMAT)
+    s = str(value).strip()[:10]
+    try:
+        from datetime import date
+        return date.fromisoformat(s).strftime(DATE_REGISTRATION_FORMAT)
+    except ValueError:
+        return ""
+
+
 def _label_to_slug(label: str) -> str:
     """'BMW' -> 'bmw'; 'Land Rover' -> 'land-rover'; 'Mercedes-Benz' -> 'mercedes-benz'.
 
@@ -269,6 +293,17 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[
         params["generation"] = str(vehicle["generation"])
     if vehicle.get("variant"):
         params["version"] = str(vehicle["variant"])
+    # Fields the pull side reads (advert_to_vehicle) but push never emitted —
+    # found empty on Autovit's form for cars published from JARVIS
+    # (2026-10-15: Audi Q5 WAUZZZ8R2HA085589 — "Data primei înmatriculări",
+    # "Norma de poluare", "Țara de origine" all blank despite being set here).
+    date_reg = _format_date_registration(vehicle.get("first_registration_date"))
+    if date_reg:
+        params["date_registration"] = date_reg
+    if vehicle.get("euro_standard"):
+        params["pollution_standard"] = str(vehicle["euro_standard"]).strip()
+    if vehicle.get("country_of_origin"):
+        params["country_origin"] = str(vehicle["country_of_origin"]).strip()
     # Condition flags as Autovit "1"/"0" (mirrors advert_to_vehicle's _flag read).
     for autovit_param, vehicle_key in (
         ("registered", "is_registered"),

@@ -313,6 +313,19 @@ def _set_user(monkeypatch, user):
     monkeypatch.setattr(vehicles_mod, 'current_user', user)
 
 
+_REAL_VERIFY_ADVERT = r._verify_advert  # captured before the autouse stub below
+
+
+@pytest.fixture(autouse=True)
+def no_photos_no_verify(monkeypatch):
+    """Default the publish side-paths to neutral: no photos on the vehicle and
+    a post-publish read-back that reports nothing dropped. Tests for those
+    paths override explicitly."""
+    monkeypatch.setattr(r._photo_repo, 'urls', lambda vid: [])
+    monkeypatch.setattr(r, '_verify_advert',
+                        lambda client, aid, sent: {'params_dropped': [], 'photos_remote': None})
+
+
 @pytest.fixture(autouse=True)
 def authenticated_user(monkeypatch):
     """Every test gets an authenticated user with carpark edit permission by
@@ -481,3 +494,113 @@ def test_unpublish_error_returns_502(client):
 
         assert resp.status_code == 502
         assert resp.get_json()["success"] is False
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Photos + post-publish verification (2026-10-15 fix: photos and several
+# params never reached Autovit; the failure was swallowed as a log warning).
+# ─────────────────────────────────────────────────────────────────────────
+
+from carpark.connectors.autovit import taxonomy as taxo
+from carpark.services import photo_urls as pu
+
+
+def test_public_photo_urls_presigns_private_keys_and_passes_http_through(monkeypatch):
+    monkeypatch.setattr(pu.spaces_service, 'presigned_url',
+                        lambda key, expires=0: f'https://signed/{key}?ttl={expires}')
+    out = pu.public_photo_urls(['private/carpark/7/a.jpg', 'https://cdn/x.jpg', '', 'data:image/png;base64,AA'])
+    assert out == ['https://signed/private/carpark/7/a.jpg?ttl=86400',
+                   'https://cdn/x.jpg', 'data:image/png;base64,AA']
+
+
+def test_publish_presigns_photo_keys_before_image_collection(client, monkeypatch):
+    monkeypatch.setattr(r._photo_repo, 'urls',
+                        lambda vid: ['private/carpark/7/1.jpg', 'private/carpark/7/2.jpg'])
+    monkeypatch.setattr(pu.spaces_service, 'presigned_url',
+                        lambda key, expires=0: f'https://signed/{key}')
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client") as bc, \
+         patch.object(r._listing_repo, "get", return_value=None), \
+         patch.object(r._listing_repo, "upsert") as upsert:
+        bc.return_value.create_image_collection.return_value = 'ic-1'
+        bc.return_value.create_advert.return_value = {"id": "9", "url": "http://x/9"}
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+
+        assert resp.status_code == 200
+        bc.return_value.create_image_collection.assert_called_once_with(
+            ['https://signed/private/carpark/7/1.jpg', 'https://signed/private/carpark/7/2.jpg'])
+        sent = bc.return_value.create_advert.call_args.args[0]
+        assert sent['image_collection_id'] == 'ic-1'
+        data = resp.get_json()
+        assert data['photos_sent'] == 2 and data['photos_ok'] is True
+        assert upsert.call_args.kwargs['last_error'] is None
+
+
+def test_publish_records_photo_failure_without_blocking_advert(client, monkeypatch):
+    monkeypatch.setattr(r._photo_repo, 'urls', lambda vid: ['https://cdn/1.jpg'])
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client") as bc, \
+         patch.object(r._listing_repo, "get", return_value=None), \
+         patch.object(r._listing_repo, "upsert") as upsert:
+        bc.return_value.create_image_collection.side_effect = RuntimeError("400 bad source")
+        bc.return_value.create_advert.return_value = {"id": "9", "url": "http://x/9"}
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+
+        assert resp.status_code == 200          # advert still created
+        data = resp.get_json()
+        assert data['success'] is True
+        assert data['photos_ok'] is False
+        assert any(w.startswith('photos:') for w in data['warnings'])
+        sent = bc.return_value.create_advert.call_args.args[0]
+        assert 'image_collection_id' not in sent
+        assert '400 bad source' in upsert.call_args.kwargs['last_error']
+
+
+def test_publish_reports_params_dropped_by_autovit(client, monkeypatch):
+    monkeypatch.setattr(r, '_verify_advert', _REAL_VERIFY_ADVERT)
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client") as bc, \
+         patch.object(r._listing_repo, "get", return_value=None), \
+         patch.object(r._listing_repo, "upsert") as upsert:
+        bc.return_value.create_advert.return_value = {"id": "9", "url": "http://x/9"}
+        # Autovit kept everything except body_type and color.
+        bc.return_value.get_account_advert.return_value = {
+            "id": "9", "params": {"vin": "x", "make": "skoda", "model": "kodiaq",
+                                  "year": 2019, "mileage": 9, "fuel_type": "diesel",
+                                  "price": {}, "is_imported_car": "0"},
+            "photos": [{"1": "a"}]}
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+
+        data = resp.get_json()
+        assert data['params_dropped'] == ['body_type', 'color']
+        assert data['photos_remote'] == 1
+        assert 'params_dropped: body_type, color' in upsert.call_args.kwargs['last_error']
+
+
+def test_verify_advert_never_raises():
+    c = MagicMock()
+    c.get_account_advert.side_effect = RuntimeError("boom")
+    assert r._verify_advert(c, "1", {"params": {"a": 1}}) == {'params_dropped': [], 'photos_remote': None}
+    assert r._verify_advert(c, None, {}) == {'params_dropped': [], 'photos_remote': None}
+
+
+def test_vehicle_to_advert_emits_registration_euro_and_origin():
+    from datetime import date
+    v = dict(VEHICLE, first_registration_date=date(2018, 3, 8),
+             euro_standard="Euro 6", country_of_origin="DE")
+    p = taxo.vehicle_to_advert(v, ACCOUNT)["params"]
+    assert p["date_registration"] == "08/03/2018"
+    assert p["pollution_standard"] == "Euro 6"
+    assert p["country_origin"] == "DE"
+
+
+def test_vehicle_to_advert_registration_accepts_iso_string_and_skips_garbage():
+    p = taxo.vehicle_to_advert(dict(VEHICLE, first_registration_date="2018-03-08"), ACCOUNT)["params"]
+    assert p["date_registration"] == "08/03/2018"
+    p = taxo.vehicle_to_advert(dict(VEHICLE, first_registration_date="n/a"), ACCOUNT)["params"]
+    assert "date_registration" not in p
+    p = taxo.vehicle_to_advert(VEHICLE, ACCOUNT)["params"]
+    assert "date_registration" not in p and "pollution_standard" not in p and "country_origin" not in p
