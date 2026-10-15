@@ -16,6 +16,27 @@ from .base_provider import BaseProvider
 
 logger = get_logger('jarvis.ai_agent.providers.claude')
 
+# Model families that reject non-default sampling params (temperature/top_p/top_k
+# return HTTP 400): Opus 4.7+, Sonnet 5, Fable 5, Mythos 5. Opus 4.6 / Sonnet 4.6
+# and older still accept them, so they are intentionally excluded here — leaving
+# those models backward-compatible.
+_SAMPLING_REJECT_PREFIXES = (
+    'claude-opus-4-8',
+    'claude-opus-4-7',
+    'claude-sonnet-5',
+    'claude-fable-5',
+    'claude-mythos-5',
+)
+
+
+def _model_rejects_sampling(model_name: str) -> bool:
+    """True if the model 400s on temperature/top_p/top_k.
+
+    temperature is the only sampling param this provider ever sends, so callers
+    gate the temperature field on this check.
+    """
+    return bool(model_name) and model_name.startswith(_SAMPLING_REJECT_PREFIXES)
+
 
 class ClaudeProvider(BaseProvider):
     """Anthropic Claude LLM provider."""
@@ -73,13 +94,15 @@ class ClaudeProvider(BaseProvider):
         try:
             client = anthropic.Anthropic(api_key=key)
 
-            # Build request parameters
+            # Build request parameters. temperature is sent only to models that
+            # accept it — Opus 4.7+/Sonnet 5/Fable 5/Mythos 5 reject it (400).
             request_params = {
                 'model': model_name,
                 'max_tokens': max_tokens,
-                'temperature': temperature,
                 'messages': formatted_messages,
             }
+            if not _model_rejects_sampling(model_name):
+                request_params['temperature'] = temperature
 
             # Add system message if present
             if system_content:
@@ -179,11 +202,12 @@ class ClaudeProvider(BaseProvider):
             request_params = {
                 'model': model_name,
                 'max_tokens': max_tokens,
-                'temperature': temperature,
                 'messages': formatted_messages,
                 'tools': tools,
                 'tool_choice': {"type": "any"},
             }
+            if not _model_rejects_sampling(model_name):
+                request_params['temperature'] = temperature
             if system_content:
                 request_params['system'] = system_content
 
@@ -320,9 +344,10 @@ class ClaudeProvider(BaseProvider):
             request_params = {
                 'model': model_name,
                 'max_tokens': max_tokens,
-                'temperature': temperature,
                 'messages': formatted_messages,
             }
+            if not _model_rejects_sampling(model_name):
+                request_params['temperature'] = temperature
             if system_content:
                 request_params['system'] = system_content
 
