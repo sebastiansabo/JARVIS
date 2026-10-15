@@ -16,15 +16,17 @@ const _foldRo = (s: string) =>
   s.trim().toLowerCase().replace(/ă|â/g, 'a').replace(/î/g, 'i')
     .replace(/ș|ş/g, 's').replace(/ț|ţ/g, 't')
 
+// Consemnație is unified under Custodie: the real consignment is modelled by
+// is_consignment / source=CUSTODIE, so the separate 'CON' category code is
+// redundant. Legacy 'CON' rows resolve to 'CUS'.
+const LEGACY_CATEGORY_MERGE: Record<string, string> = { CON: 'CUS' }
+
 const _CATEGORY_CODES = new Set(Object.keys(CATEGORY_LABELS))
-// Romanian label (folded) -> canonical code, built from CATEGORY_LABELS + a few
-// common spelling variants seen in imported/legacy data.
+// Romanian label (folded) -> canonical code. Custodie + Consemnație both -> CUS.
 const _CATEGORY_LABEL_TO_CODE: Record<string, string> = {
-  ...Object.fromEntries(
-    Object.entries(CATEGORY_LABELS).map(([code, label]) => [_foldRo(label), code]),
-  ),
-  consignatie: 'CON', consignative: 'CON',
-  'trade in': 'TI', tradein: 'TI',
+  nou: 'NEW', comanda: 'ORD', 'second hand': 'SH', 'test drive': 'TD',
+  custodie: 'CUS', consemnatie: 'CUS', consignatie: 'CUS', consignative: 'CUS',
+  showroom: 'SHR', 'display show': 'DSP', 'trade-in': 'TI', 'trade in': 'TI', tradein: 'TI',
 }
 
 // Resolve a stored category into a canonical dropdown code. carpark_vehicles can
@@ -37,6 +39,7 @@ export function normalizeCategory(stored: unknown): string {
   const raw = String(stored ?? '').trim()
   if (!raw) return ''
   const upper = raw.toUpperCase()
+  if (upper in LEGACY_CATEGORY_MERGE) return LEGACY_CATEGORY_MERGE[upper]
   if (_CATEGORY_CODES.has(upper)) return upper
   return _CATEGORY_LABEL_TO_CODE[_foldRo(raw)] ?? raw
 }

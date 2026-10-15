@@ -91,11 +91,15 @@ describe('normalizeCategory', () => {
   })
   test('maps Romanian labels (and diacritics) to codes', () => {
     expect(normalizeCategory('Custodie')).toBe('CUS')
-    expect(normalizeCategory('Consemnație')).toBe('CON')
-    expect(normalizeCategory('Consemnatie')).toBe('CON')
     expect(normalizeCategory('Second Hand')).toBe('SH')
     expect(normalizeCategory('Nou')).toBe('NEW')
     expect(normalizeCategory('Trade-In')).toBe('TI')
+  })
+  test('Consemnație (and legacy CON) unify under Custodie (CUS)', () => {
+    expect(normalizeCategory('Consemnație')).toBe('CUS')
+    expect(normalizeCategory('Consemnatie')).toBe('CUS')
+    expect(normalizeCategory('Consignație')).toBe('CUS')
+    expect(normalizeCategory('CON')).toBe('CUS')   // legacy code migrated
   })
   test('blank stays blank; unknown value is kept (never silently dropped)', () => {
     expect(normalizeCategory('')).toBe('')

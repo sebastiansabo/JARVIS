@@ -71,7 +71,9 @@ function inputVal(v: string | number | boolean | string[] | null | undefined): s
   return v
 }
 
-const CATEGORIES: VehicleCategory[] = ['NEW', 'ORD', 'SH', 'TD', 'CUS', 'SHR', 'DSP', 'CON', 'TI']
+// 'CON' (Consemnație) is intentionally omitted — unified under 'CUS' (Custodie).
+// It stays in the type/labels for legacy rows until the data migration lands.
+const CATEGORIES: VehicleCategory[] = ['NEW', 'ORD', 'SH', 'TD', 'CUS', 'SHR', 'DSP', 'TI']
 
 // ── Form field components ──────────────────────────────────
 function TextField({
