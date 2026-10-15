@@ -593,7 +593,9 @@ def test_vehicle_to_advert_emits_registration_euro_and_origin():
              euro_standard="Euro 6", country_of_origin="DE")
     p = taxo.vehicle_to_advert(v, ACCOUNT)["params"]
     assert p["date_registration"] == "08/03/2018"
-    assert p["pollution_standard"] == "Euro 6"
+    # euro_standard label is normalised to the Autovit slug before sending
+    # (raw "Euro 6" was silently dropped by Autovit → blank "Norma de poluare").
+    assert p["pollution_standard"] == "euro-6"
     assert p["country_origin"] == "DE"
 
 
