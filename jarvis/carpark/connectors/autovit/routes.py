@@ -514,7 +514,8 @@ def publish(account_id):
 
     try:
         existing = _listing_repo.get(vehicle['id'], account_id)
-        if existing and existing.get('external_advert_id'):
+        updated_existing = bool(existing and existing.get('external_advert_id'))
+        if updated_existing:
             client.update_advert(existing['external_advert_id'], advert)
             ext_id = existing['external_advert_id']
             ext_url = existing.get('external_url')
@@ -532,15 +533,20 @@ def publish(account_id):
         # invisible (the create/update returns 2xx regardless).
         verify = _verify_advert(client, ext_id, advert)
 
-        warnings = []
+        # Problems belong in last_error (the fault surface that drives the error
+        # badge). The "already published" note is informational — it goes to the
+        # response warnings (a toast) only, and must NOT pollute last_error.
+        problems = []
         if photos['error']:
-            warnings.append(f"photos: {photos['error']}")
+            problems.append(f"photos: {photos['error']}")
         if verify['params_dropped']:
-            warnings.append('params_dropped: ' + ', '.join(verify['params_dropped']))
+            problems.append('params_dropped: ' + ', '.join(verify['params_dropped']))
         if verify['photos_remote'] is not None and photos['sent'] and \
                 verify['photos_remote'] < photos['sent']:
-            warnings.append(f"photos: sent {photos['sent']}, Autovit kept {verify['photos_remote']}")
-        last_error = '; '.join(warnings) if warnings else None
+            problems.append(f"photos: sent {photos['sent']}, Autovit kept {verify['photos_remote']}")
+        last_error = '; '.join(problems) if problems else None
+        warnings = (['Anunț deja publicat pe Autovit — a fost actualizat.']
+                    if updated_existing else []) + problems
 
         _listing_repo.upsert(vehicle['id'], account_id,
                              external_advert_id=str(ext_id),
@@ -549,6 +555,7 @@ def publish(account_id):
                              last_error=last_error)
         return jsonify({'success': True, 'external_id': ext_id,
                         'external_url': ext_url, 'status': ext_status,
+                        'updated_existing': updated_existing,
                         'photos_sent': photos['sent'],
                         'photos_ok': photos['error'] is None,
                         'photos_remote': verify['photos_remote'],
