@@ -722,7 +722,7 @@ export const CATEGORY_LABELS: Record<VehicleCategory, string> = {
   CUS: 'Custodie',
   SHR: 'Showroom',
   DSP: 'Display Show',
-  CON: 'Consemnație',
+  CON: 'Custodie', // legacy code — Consemnație unified under Custodie (CUS)
   TI: 'Trade-In',
 }
 
