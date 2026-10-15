@@ -2591,6 +2591,18 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
             Autovit: {autovitUi.label}
           </Badge>
         )}
+        {autovitListing?.external_url && (
+          <a
+            href={autovitListing.external_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            title="Deschide anunțul publicat pe Autovit"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Vezi anunțul
+          </a>
+        )}
       </div>
       <Dialog
         open={open}
