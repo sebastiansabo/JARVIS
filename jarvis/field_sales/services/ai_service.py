@@ -1,6 +1,6 @@
 """AI services for Field Sales — note structuring and visit briefing.
 
-Uses Anthropic API (claude-sonnet-4-6) for:
+Uses Anthropic API (claude-opus-4-8) for:
   - Structuring raw visit notes into JSON
   - Generating pre-visit briefings from client 360 context
 """
@@ -18,7 +18,7 @@ except ImportError:
 
 logger = logging.getLogger('jarvis.field_sales.ai')
 
-_MODEL = 'claude-sonnet-4-6'
+_MODEL = 'claude-opus-4-8'
 
 _SENTIMENTS = {'positive', 'neutral', 'negative'}
 
@@ -162,7 +162,7 @@ Rules:
 - If a field has no data: null for scalars, [] for arrays.
 - sentiment must be one of positive, neutral, negative.
 - budget_eur and opportunity_value_eur are plain numbers (EUR), or null.
-- Detect language automatically but always output field names in English.
+- Translate ALL extracted text values into English regardless of the note's language — visit_summary, next_steps actions, objections, commitments_made, and risk_flags must be written in English. Keep proper nouns (people, company, and vehicle names) in their original form.
 - Preserve important details and numbers mentioned."""
 
     user_message = f"""{context_block}
