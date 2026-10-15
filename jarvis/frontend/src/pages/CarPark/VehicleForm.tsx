@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchSelect } from '@/components/shared/SearchSelect'
 import { DecodePreviewDialog } from './DecodePreviewDialog'
 import { syncCurrentPrice } from './vehicleFormPricing'
-import { findMissingRequiredFields } from './vehicleFormValidation'
+import { findMissingRequiredFields, isCustodyCategory, normalizeCategory, clearAcquisitionFields } from './vehicleFormValidation'
 import { toCanonical, netLeiFromCanonical, netLeiFromGrossEur, canonicalFromGrossEur } from './acquisitionCanonical'
 import { specFieldsToClear, usesFuelTank, usesBattery } from './vehicleSpecScope'
 import { deriveFabParts, fabToManufactureDate } from './vehicleFabricationDate'
@@ -425,6 +425,12 @@ export default function VehicleForm() {
         if (key in v) {
           populated[key] = (v as unknown as Record<string, string | number | boolean | null>)[key]
         }
+      }
+      // Tip stoc: the DB may hold a Romanian label or legacy text instead of a
+      // code, which the <Select> can't match → the field showed blank on Edit and
+      // had to be re-picked every time. Normalise to the canonical code.
+      if (populated.category != null) {
+        populated.category = normalizeCategory(populated.category as string)
       }
       // VAT: default the rate to 21% and (re)compute the LEI VAT value from the
       // reconstructed net LEI — NOT from the stored acquisition_price, which is
@@ -1006,7 +1012,11 @@ export default function VehicleForm() {
           promotional_price: existingData.vehicle.promotional_price,
         }
       : null
-    const finalPayload = syncCurrentPrice(payload, !!isEdit, previousPrices)
+    // Custody-type stock (Custodie/Consemnație) is never purchased — the
+    // Achiziție section is hidden, so clear any cost basis that might linger
+    // (e.g. from a category change) instead of persisting stale supplier/price.
+    const cleaned = isCustodyCategory(form.category as string) ? clearAcquisitionFields(payload) : payload
+    const finalPayload = syncCurrentPrice(cleaned, !!isEdit, previousPrices)
 
     if (isEdit) {
       updateMutation.mutate(finalPayload as Partial<Vehicle>)
@@ -1243,7 +1253,16 @@ export default function VehicleForm() {
             label="Tip stoc"
             name="category"
             value={form.category as string}
-            options={CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABELS[c] }))}
+            options={(() => {
+              const opts: { value: string; label: string }[] = CATEGORIES.map((c) => ({ value: c, label: CATEGORY_LABELS[c] }))
+              // Surface an unrecognised stored value as its own option so the
+              // field never renders blank (and silently loses the value) on Edit.
+              const cur = (form.category as string) || ''
+              if (cur && !CATEGORIES.includes(cur as VehicleCategory)) {
+                opts.push({ value: cur, label: cur })
+              }
+              return opts
+            })()}
             onChange={handleChange}
             required
           />
@@ -1651,8 +1670,10 @@ export default function VehicleForm() {
       </Card>
         </TabsContent>
         <TabsContent value="comercial" className="space-y-4 pt-4">
-      {/* Achiziție — purchase cost basis, shown first (sale price derives from it;
-          further sale-price versioning: profile Fișă de preț) */}
+      {/* Achiziție — purchase cost basis. Hidden for custody-type stock
+          (Custodie/Consemnație): the dealer never bought the car, so the whole
+          purchase section is irrelevant (and nulled on save). */}
+      {!isCustodyCategory(form.category as string) && (
       <div className="grid gap-4">
         {/* Achiziție */}
         <Card className="p-4 space-y-3">
@@ -1714,6 +1735,7 @@ export default function VehicleForm() {
           </div>
         </Card>
       </div>
+      )}
       {/* Location & Source */}
       <Card className="p-4 space-y-3">
         <h3 className="text-sm font-semibold">Locație & Sursă</h3>
