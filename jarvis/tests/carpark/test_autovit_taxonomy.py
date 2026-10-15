@@ -213,6 +213,80 @@ def test_advert_to_vehicle_pulls_euro_country_vintage():
     assert v["is_vintage"] is True
 
 
+def test_push_normalizes_romanian_and_variant_enum_values():
+    # carpark_vehicles stores a MIX of Autovit slugs, Romanian labels and short
+    # forms (manual entry / legacy import — see the 2026-10-15 data audit). Push
+    # must normalise each enum to the Autovit API slug, else Autovit silently
+    # drops the param and the advert field is blank (Transmisie / Opțiuni culoare).
+    v = {"brand": "Audi", "model": "A4",
+         "fuel_type": "Diesel", "transmission": "Automat",
+         "drive_type": "fwd", "body_type": "SUV", "color_exterior": "Negru"}
+    p = tx.vehicle_to_advert(v, {})["params"]
+    assert p["fuel_type"] == "diesel"
+    assert p["gearbox"] == "automatic"
+    assert p["transmission"] == "front-wheel"   # Autovit param "transmission" = drive
+    assert p["body_type"] == "suv"
+    assert p["color"] == "black"
+
+
+def test_push_normalizes_diacritic_labels():
+    v = {"brand": "Audi", "model": "A4",
+         "fuel_type": "Benzină", "transmission": "Manuală",
+         "drive_type": "awd", "color_exterior": "Gri"}
+    p = tx.vehicle_to_advert(v, {})["params"]
+    assert p["fuel_type"] == "petrol"
+    assert p["gearbox"] == "manual"
+    assert p["transmission"] == "all-wheel-permanent"
+    assert p["color"] == "gray"   # 'Gri' -> carpark 'grey' -> Autovit api 'gray'
+
+
+def test_push_normalizes_gearbox_variants():
+    for stored in ("dual-clutch", "cvt", "Automată"):
+        p = tx.vehicle_to_advert({"brand": "Audi", "model": "A4",
+                                  "transmission": stored}, {})["params"]
+        assert p["gearbox"] == "automatic", stored
+
+
+def test_push_drops_unmappable_enum_rather_than_sending_raw():
+    # A value that maps to no Autovit slug must be omitted (Autovit drops it
+    # anyway, and a bad REQUIRED param could 400 the whole create). Free-text
+    # colour degrades to 'other' (a real slug) so the car still shows a colour.
+    v = {"brand": "Audi", "model": "A4",
+         "transmission": "spaceship", "color_exterior": "Fjord Blue"}
+    p = tx.vehicle_to_advert(v, {})["params"]
+    assert "gearbox" not in p            # unmappable gearbox omitted, not sent raw
+    assert p["color"] == "other"         # free-text colour -> 'other'
+
+
+def test_push_normalizes_pollution_standard_label_to_slug():
+    # euro_standard holds both slugs ('euro-6d') and labels ('Euro 6d'); push
+    # must emit the Autovit slug for both. Exact wire format is confirmed by the
+    # publish read-back (_verify_advert params_dropped) — see DATE/euro notes.
+    def _poll(stored):
+        return tx.vehicle_to_advert({"brand": "Audi", "model": "A4",
+                                     "euro_standard": stored}, {})["params"].get("pollution_standard")
+    assert _poll("Euro 6d") == "euro-6d"
+    assert _poll("euro-6") == "euro-6"
+    assert _poll("Euro 5") == "euro-5"
+    # EVs have no pollution standard — don't send a bogus value.
+    assert _poll("N/A (EV)") is None
+
+
+def test_push_preserves_already_slug_values():
+    # Rows that already store Autovit slugs must pass through unchanged (no
+    # double-mapping, no regression for Autovit-imported cars).
+    v = {"brand": "Audi", "model": "A4",
+         "fuel_type": "plugin-hybrid", "transmission": "automatic",
+         "drive_type": "all-wheel-permanent", "body_type": "suv",
+         "color_exterior": "grey"}
+    p = tx.vehicle_to_advert(v, {})["params"]
+    assert p["fuel_type"] == "plugin-hybrid"
+    assert p["gearbox"] == "automatic"
+    assert p["transmission"] == "all-wheel-permanent"
+    assert p["body_type"] == "suv"
+    assert p["color"] == "gray"
+
+
 def test_validate_flags_missing_required():
     missing = tx.validate_for_publish({"category_id": 29, "params": {}})
     assert "params.make" in missing and "params.price" in missing

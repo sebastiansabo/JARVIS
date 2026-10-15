@@ -69,6 +69,95 @@ _REVERSE = {"color": {v: k for k, v in COLOR_MAP.items()}}
 _REVERSE["color"]["grey"] = "gray"
 _REVERSE["color"]["beige"] = "bej"
 
+
+# ── Push-side value normalisation ──────────────────────────────────────────
+# carpark_vehicles does NOT guarantee Autovit slugs: a 2026-10-15 data audit
+# found the enum columns hold a mix of slugs, Romanian labels ("Automat",
+# "Benzină", "Negru"), short forms ("fwd", "awd") and free text ("Fjord Blue").
+# vehicle_to_advert previously pushed these RAW, so Autovit silently dropped any
+# non-slug value and the advert field rendered blank. Each enum is now folded to
+# its API slug (accept slug OR known RO-label/alias; unmappable -> omit, except
+# colour which degrades to the real "other" slug so a colour still shows).
+
+def _fold(value: Any) -> str:
+    """lower + strip + strip Romanian diacritics, for tolerant matching."""
+    s = str(value).strip().lower()
+    for a, b in (("ă", "a"), ("â", "a"), ("î", "i"), ("ș", "s"), ("ş", "s"),
+                 ("ț", "t"), ("ţ", "t")):
+        s = s.replace(a, b)
+    return s
+
+
+# _fold()ed RO-label / common-variant -> Autovit API slug, per enum.
+_FUEL_ALIASES = {
+    "benzina": "petrol", "motorina": "diesel", "hibrid": "hybrid",
+    "hibrid plug-in": "plugin-hybrid", "mild hybrid benzina": "mild-hybrid-petrol",
+    "mild hybrid diesel": "mild-hybrid-diesel", "benzina + gpl": "petrol-lpg",
+    "benzina + cng": "petrol-cng", "hidrogen": "hydrogen", "etanol": "ethanol",
+}
+_GEARBOX_ALIASES = {
+    "manuala": "manual", "automata": "automatic", "automat": "automatic",
+    "cutie automata": "automatic", "dual-clutch": "automatic", "dsg": "automatic",
+    "cvt": "automatic", "semi-automata": "automatic", "tiptronic": "automatic",
+}
+_DRIVE_ALIASES = {
+    "fata (fwd)": "front-wheel", "fwd": "front-wheel", "fata": "front-wheel",
+    "spate (rwd)": "rear-wheel", "rwd": "rear-wheel", "spate": "rear-wheel",
+    "4x4 permanent (awd)": "all-wheel-permanent", "awd": "all-wheel-permanent",
+    "4x4": "all-wheel-permanent", "4wd": "all-wheel-permanent",
+    "4x4 permanent": "all-wheel-permanent", "4x4 automat": "all-wheel-auto",
+    "4x4 blocabil": "all-wheel-lock",
+}
+_BODY_ALIASES = {
+    "off-road (suv)": "suv", "break": "combi", "compacta": "compact",
+    "hatchback": "compact", "monovolum": "minivan", "masina de oras": "city-car",
+    "masina mica": "small-car", "pick-up": "pickup", "van / utilitara": "van",
+    "van/utilitara": "van", "utilitara": "van", "berlina": "sedan",
+}
+# RO label -> carpark canonical colour (then _REVERSE maps that to the API slug).
+_COLOR_ALIASES = {
+    "negru": "black", "alb": "white", "argintiu": "silver", "gri": "grey",
+    "albastru": "blue", "rosu": "red", "verde": "green", "maro": "brown",
+    "bej": "beige", "galben": "yellow", "portocaliu": "orange", "auriu": "gold",
+    "violet / mov": "violet", "mov": "violet", "bordo": "bordeaux", "roz": "pink",
+    "alta culoare": "other",
+}
+
+_FUEL_SLUGS = set(FUEL_MAP)
+_GEARBOX_SLUGS = set(GEARBOX_MAP)
+_DRIVE_SLUGS = set(DRIVE_MAP)
+_BODY_SLUGS = set(BODY_MAP) | set(BODY_MAP.values())
+_COLOR_SLUGS = set(COLOR_MAP.values())        # carpark canonical colours
+
+# Autovit pollution-standard slugs (mirror AUTOVIT_EURO_STANDARDS in
+# frontend/src/data/autovitData.ts). The exact wire value is confirmed per
+# publish via _verify_advert's params_dropped read-back; if Autovit turns out to
+# want a different form, flip these in one place. "N/A (EV)" & unknowns -> None.
+_EURO_SLUGS = {"euro-6d", "euro-6d-temp", "euro-6c", "euro-6", "euro-5",
+               "euro-4", "euro-3", "euro-2", "euro-1", "non-euro"}
+_EURO_ALIASES = {
+    "euro 6d": "euro-6d", "euro6d": "euro-6d", "euro 6d-temp": "euro-6d-temp",
+    "euro 6c": "euro-6c", "euro 6": "euro-6", "euro6": "euro-6",
+    "euro 5": "euro-5", "euro5": "euro-5", "euro 4": "euro-4", "euro4": "euro-4",
+    "euro 3": "euro-3", "euro 2": "euro-2", "euro 1": "euro-1",
+    "non euro": "non-euro", "noneuro": "non-euro",
+}
+
+
+def _norm_enum(value: Any, slugs: set, aliases: Dict[str, str],
+               default: Any = None) -> Any:
+    """carpark stored enum value -> Autovit slug. Accepts an exact slug
+    (case-insensitive) or a known RO-label/variant; returns `default` (usually
+    None, i.e. omit the param) when nothing matches. Absent/blank -> None."""
+    if value is None:
+        return None
+    key = _fold(value)
+    if not key:
+        return None
+    if key in slugs:
+        return key
+    return aliases.get(key, default)
+
 # Non-equipment core params we map explicitly; everything else that is a 0/1
 # flag becomes an equipment entry.
 _CORE_PARAMS = {
@@ -260,18 +349,29 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[
         params["year"] = vehicle["year_of_manufacture"]
     if vehicle.get("mileage_km") is not None:
         params["mileage"] = vehicle["mileage_km"]
-    if vehicle.get("fuel_type"):
-        params["fuel_type"] = vehicle["fuel_type"]
-    if vehicle.get("transmission"):
-        params["gearbox"] = vehicle["transmission"]
-    if vehicle.get("drive_type"):
-        # BUG-FIX-consistent: Autovit's param named "transmission" is drive
-        # type (4x4/FWD/RWD), not gearbox — see advert_to_vehicle above.
-        params["transmission"] = vehicle["drive_type"]
-    if vehicle.get("body_type"):
-        params["body_type"] = vehicle["body_type"]
-    if vehicle.get("color_exterior"):
-        params["color"] = _REVERSE["color"].get(vehicle["color_exterior"], vehicle["color_exterior"])
+    # Enums are normalised to Autovit slugs (the DB holds mixed slugs / RO labels
+    # / free text — see _norm_enum). Unmappable values are omitted rather than
+    # sent raw, so Autovit never silently drops the param.
+    fuel = _norm_enum(vehicle.get("fuel_type"), _FUEL_SLUGS, _FUEL_ALIASES)
+    if fuel:
+        params["fuel_type"] = fuel
+    gearbox = _norm_enum(vehicle.get("transmission"), _GEARBOX_SLUGS, _GEARBOX_ALIASES)
+    if gearbox:
+        params["gearbox"] = gearbox
+    # BUG-FIX-consistent: Autovit's param named "transmission" is drive type
+    # (4x4/FWD/RWD), not gearbox — see advert_to_vehicle above.
+    drive = _norm_enum(vehicle.get("drive_type"), _DRIVE_SLUGS, _DRIVE_ALIASES)
+    if drive:
+        params["transmission"] = drive
+    body = _norm_enum(vehicle.get("body_type"), _BODY_SLUGS, _BODY_ALIASES)
+    if body:
+        params["body_type"] = body
+    # Normalise to carpark canonical colour, then _REVERSE to the API slug
+    # (grey->gray, beige->bej). Free-text colour degrades to 'other'.
+    colour = _norm_enum(vehicle.get("color_exterior"), _COLOR_SLUGS, _COLOR_ALIASES,
+                        default="other")
+    if colour:
+        params["color"] = _REVERSE["color"].get(colour, colour)
     if vehicle.get("doors"):
         params["door_count"] = str(vehicle["doors"])
     if vehicle.get("engine_power_hp"):
@@ -300,8 +400,9 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[
     date_reg = _format_date_registration(vehicle.get("first_registration_date"))
     if date_reg:
         params["date_registration"] = date_reg
-    if vehicle.get("euro_standard"):
-        params["pollution_standard"] = str(vehicle["euro_standard"]).strip()
+    euro = _norm_enum(vehicle.get("euro_standard"), _EURO_SLUGS, _EURO_ALIASES)
+    if euro:
+        params["pollution_standard"] = euro
     if vehicle.get("country_of_origin"):
         params["country_origin"] = str(vehicle["country_of_origin"]).strip()
     # Condition flags as Autovit "1"/"0" (mirrors advert_to_vehicle's _flag read).
