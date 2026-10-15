@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Globe, Loader2, RefreshCw, Undo2 } from 'lucide-react'
+import { AlertTriangle, ExternalLink, Globe, Loader2, RefreshCw, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -169,6 +169,18 @@ export function ShopifyPublishControl({
             lastSync={listing?.last_sync}
             expiresAt={listing?.expires_at}
           />
+        )}
+        {isPublished && listing?.external_url && (
+          <a
+            href={listing.external_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            title="Deschide produsul publicat pe Shopify"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Vezi în magazin
+          </a>
         )}
         {canEdit && isPublished && (
           <Button
