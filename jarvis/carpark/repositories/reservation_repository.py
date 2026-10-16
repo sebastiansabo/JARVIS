@@ -43,11 +43,14 @@ class ReservationRepository(BaseRepository):
 
     def list_for_vehicle(self, vehicle_id: int) -> List[Dict[str, Any]]:
         """All reservations (any status) for a vehicle, most recent first —
-        used by the reservations history route."""
+        used by the reservations history route. Includes created_by_name (the
+        user who made the reservation) for the 'reserved by' banner/display."""
         return self.query_all('''
-            SELECT * FROM carpark_reservations
-            WHERE vehicle_id = %s
-            ORDER BY created_at DESC, id DESC
+            SELECT r.*, u.name AS created_by_name
+            FROM carpark_reservations r
+            LEFT JOIN users u ON u.id = r.created_by
+            WHERE r.vehicle_id = %s
+            ORDER BY r.created_at DESC, r.id DESC
         ''', (vehicle_id,))
 
     def active_for_vehicle(self, vehicle_id: int) -> Optional[Dict[str, Any]]:
