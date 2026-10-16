@@ -605,7 +605,10 @@ def _verify_advert(client: AutovitClient, advert_id, sent: dict) -> dict:
     if not advert_id:
         return out
     try:
-        remote = client.get_account_advert(str(advert_id)) or {}
+        # Short bound: the verify read-back is a diagnostic — it must never push
+        # the publish past the gateway's ~60s limit (→ 504). A timeout here just
+        # skips the params_dropped check; the advert is already created.
+        remote = client.get_account_advert(str(advert_id), timeout=8) or {}
     except Exception as e:
         logger.warning('Autovit post-publish verify failed for advert %s: %s', advert_id, e)
         return out

@@ -85,14 +85,18 @@ class AutovitClient:
         if method.upper() in ('POST', 'PUT'):
             headers.setdefault('Content-Type', 'application/json')
 
-        resp = requests.request(method, url, headers=headers, timeout=self.timeout, **kwargs)
+        # Per-call timeout override (e.g. a short bound for the non-essential
+        # post-publish verify read-back, so it can't push the whole publish past
+        # the gateway's ~60s limit → 504). Defaults to the client timeout.
+        req_timeout = kwargs.pop('timeout', self.timeout)
+        resp = requests.request(method, url, headers=headers, timeout=req_timeout, **kwargs)
 
         # Token expired mid-flight — retry once
         if resp.status_code == 401:
             self._token = None
             token = self._get_token()
             headers['Authorization'] = f'Bearer {token}'
-            resp = requests.request(method, url, headers=headers, timeout=self.timeout, **kwargs)
+            resp = requests.request(method, url, headers=headers, timeout=req_timeout, **kwargs)
 
         resp.raise_for_status()
         return resp
@@ -163,10 +167,12 @@ class AutovitClient:
         self._request('DELETE', f'/account/adverts/{advert_id}')
         return {'success': True}
 
-    def get_account_advert(self, advert_id: str) -> Dict[str, Any]:
+    def get_account_advert(self, advert_id: str, timeout: int = None) -> Dict[str, Any]:
         """Get one of THIS account's adverts — works for unpaid/draft adverts too,
-        unlike the public GET /adverts/{id} (which 404s for drafts)."""
-        return self._request('GET', f'/account/adverts/{advert_id}').json()
+        unlike the public GET /adverts/{id} (which 404s for drafts). `timeout`
+        allows a short bound for the non-critical post-publish verify read-back."""
+        kw = {'timeout': timeout} if timeout else {}
+        return self._request('GET', f'/account/adverts/{advert_id}', **kw).json()
 
     def create_image_collection(self, image_urls: list) -> Optional[str]:
         """Create an Autovit image collection from public image URLs; returns its
