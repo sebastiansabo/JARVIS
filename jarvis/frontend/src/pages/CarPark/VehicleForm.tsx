@@ -1651,7 +1651,7 @@ export default function VehicleForm() {
             rows={4}
           />
         </div>
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-4">
           <div className="space-y-1.5">
             <Label>Note</Label>
             <Textarea

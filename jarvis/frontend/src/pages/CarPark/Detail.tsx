@@ -1685,6 +1685,11 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance 
             <Field label="Înmatriculare" value={v.registration_number} />
             <Field label="Cod șasiu" value={v.chassis_code} />
             <Field label="Cod emisii" value={v.emission_code} />
+            {v.internal_notes && (
+              <div className="col-span-2">
+                <Field label="Note interne" value={v.internal_notes} />
+              </div>
+            )}
           </dl>
         </Card>
 
