@@ -139,6 +139,43 @@ class ShopifyClient:
         node = data['productUpdate']
         return {'product': node.get('product'), 'userErrors': node.get('userErrors', [])}
 
+    _PRODUCTS_WITH_SKU = '''
+    query products($after: String) {
+      products(first: 100, after: $after) {
+        edges { node {
+          id onlineStoreUrl handle
+          variants(first: 1) { edges { node { sku } } }
+        } }
+        pageInfo { hasNextPage endCursor }
+      }
+    }'''
+
+    def list_products_with_sku(self) -> List[Dict[str, Any]]:
+        """Every product in the store with its first variant's SKU (= VIN) and a
+        public URL. Used to reconcile already-published cars back to JARVIS by VIN.
+        Returns [{'id','sku','url'}, ...]; url is onlineStoreUrl or the storefront
+        /products/<handle> (never a preview/admin URL)."""
+        out: List[Dict[str, Any]] = []
+        after = None
+        while True:
+            data = self.graphql(self._PRODUCTS_WITH_SKU, {'after': after})
+            conn = (data or {}).get('products') or {}
+            for e in conn.get('edges', []) or []:
+                n = e.get('node') or {}
+                gid = n.get('id')
+                if not gid:
+                    continue
+                variants = ((n.get('variants') or {}).get('edges') or [])
+                sku = (variants[0].get('node') or {}).get('sku') if variants else None
+                url = n.get('onlineStoreUrl') or (
+                    f"https://{self.store_domain}/products/{n['handle']}" if n.get('handle') else None)
+                out.append({'id': gid, 'sku': sku, 'url': url})
+            pi = conn.get('pageInfo') or {}
+            if not pi.get('hasNextPage'):
+                break
+            after = pi.get('endCursor')
+        return out
+
     _PUBLICATIONS = '''
     query publications { publications(first: 50) { edges { node { id name } } } }'''
 

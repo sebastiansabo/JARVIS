@@ -20,6 +20,7 @@ from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.photo_repository import PhotoRepository
 from carpark.repositories.publishing_repository import PublishingRepository
 from carpark.connectors.listing_freshness import compute_listing_freshness
+from carpark.services import reconcile_service
 
 logger = logging.getLogger('jarvis.shopify.routes')
 
@@ -553,3 +554,22 @@ def publish_bulk():
     if truncated:
         response['total_eligible'] = total_eligible
     return jsonify(response)
+
+
+@shopify_bp.route('/api/reconcile', methods=['POST'])
+@carpark_edit_required
+def reconcile_shopify_listings():
+    """Scan the Shopify store's products, match SKU (= VIN) to local vehicles,
+    and link any already-published car not linked in JARVIS yet."""
+    connector = _get_single_account()
+    if not connector:
+        return jsonify({'success': False, 'error': 'Shopify is not configured'}), 400
+    platform_id = ensure_platform(_pub_repo, _parse_json(connector, 'config').get('store_domain', ''))
+    vehicles_by_vin = _vehicle_repo.vin_id_map()
+    try:
+        summary = reconcile_service.reconcile_shopify(
+            _build_client(connector), vehicles_by_vin, _pub_repo, platform_id)
+    except Exception as e:
+        logger.exception('Shopify reconcile failed')
+        return jsonify({'success': False, 'error': str(e)}), 502
+    return jsonify({'success': True, **summary})

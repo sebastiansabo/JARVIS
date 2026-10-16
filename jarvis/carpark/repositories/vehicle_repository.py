@@ -504,6 +504,15 @@ class VehicleRepository(BaseRepository):
             'SELECT id, company AS name FROM companies WHERE id = ANY(%s) ORDER BY company',
             (list(company_ids),))
 
+    def vin_id_map(self) -> Dict[str, int]:
+        """{VIN(uppercased): vehicle_id} for every active vehicle — used by the
+        listing reconcile to match external Autovit/Shopify listings back to
+        local cars by VIN."""
+        rows = self.query_all(
+            "SELECT id, UPPER(vin) AS vin FROM carpark_vehicles "
+            "WHERE deleted_at IS NULL AND vin IS NOT NULL AND vin <> ''")
+        return {r['vin']: r['id'] for r in rows}
+
     def list_brands(self, company_id: int) -> List[str]:
         """Car brands carried by a company (from the company_brands catalog),
         for the tenant-switcher brand selector."""
