@@ -130,6 +130,13 @@ export const autovitApi = {
       vehicle_id: vehicleId,
     }),
 
+  reconcile: () =>
+    api.post<{
+      success: boolean
+      totals: { scanned: number; matched: number; linked: number; already_linked: number; unmatched: number }
+      accounts: Array<{ account_id: number; name?: string; error?: string }>
+    }>(`${BASE}/reconcile`, {}),
+
   getStatus: async () => {
     const res = await api.get<{ success: boolean; data: AutovitStatus }>(`${BASE}/status`)
     return res.data

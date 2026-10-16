@@ -17,6 +17,7 @@ from core.utils.api_helpers import api_login_required, admin_required
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.vehicle_photo_repository import VehiclePhotoRepository
 from carpark.repositories.autovit_listing_repository import AutovitListingRepository
+from carpark.services import reconcile_service
 from carpark.services.photo_urls import public_photo_urls
 from carpark.routes.vehicles import (
     carpark_edit_required, carpark_required, _verify_vehicle_ownership, _serialize,
@@ -605,7 +606,10 @@ def _verify_advert(client: AutovitClient, advert_id, sent: dict) -> dict:
     if not advert_id:
         return out
     try:
-        remote = client.get_account_advert(str(advert_id)) or {}
+        # Short bound: the verify read-back is a diagnostic — it must never push
+        # the publish past the gateway's ~60s limit (→ 504). A timeout here just
+        # skips the params_dropped check; the advert is already created.
+        remote = client.get_account_advert(str(advert_id), timeout=8) or {}
     except Exception as e:
         logger.warning('Autovit post-publish verify failed for advert %s: %s', advert_id, e)
         return out
@@ -639,3 +643,29 @@ def unpublish(account_id):
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 502
+
+
+@autovit_bp.route('/api/reconcile', methods=['POST'])
+@admin_required  # cross-account bulk op (all dealer accounts) — admin-gated, not per-editor
+def reconcile_listings():
+    """Scan every CONNECTED Autovit account's active adverts and link any that
+    match a local vehicle by VIN but aren't linked yet — detects cars already
+    published on Autovit (outside JARVIS / lost link) and connects them."""
+    vehicles_by_vin = _vehicle_repo.vin_id_map()
+    totals = {'scanned': 0, 'matched': 0, 'linked': 0, 'already_linked': 0, 'unmatched': 0}
+    accounts = []
+    for acc in _repo.get_all_by_type(CONNECTOR_TYPE):
+        if (acc.get('status') or '') != 'connected':
+            continue
+        try:
+            summary = reconcile_service.reconcile_autovit_account(
+                _build_client(acc), acc['id'], vehicles_by_vin, _listing_repo)
+        except Exception as e:
+            logger.warning('Autovit reconcile failed for account %s: %s', acc.get('id'), e)
+            accounts.append({'account_id': acc['id'], 'name': acc.get('name'), 'error': str(e)})
+            continue
+        accounts.append({'account_id': acc['id'], 'name': acc.get('name'),
+                         'capped': summary['capped'], **{k: summary[k] for k in totals}})
+        for k in totals:
+            totals[k] += summary[k]
+    return jsonify({'success': True, 'totals': totals, 'accounts': accounts})

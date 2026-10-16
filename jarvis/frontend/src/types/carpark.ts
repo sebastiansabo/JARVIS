@@ -1239,6 +1239,7 @@ export interface DispoReservation {
   status: 'active' | 'cancelled' | 'converted' | (string & {})
   notes: string | null
   created_by: number | null
+  created_by_name: string | null // the user who made the reservation (joined)
   created_at: string
   updated_at: string
 }
