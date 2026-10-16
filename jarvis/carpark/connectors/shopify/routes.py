@@ -557,7 +557,7 @@ def publish_bulk():
 
 
 @shopify_bp.route('/api/reconcile', methods=['POST'])
-@carpark_edit_required
+@admin_required  # store-wide bulk op — admin-gated, mirrors account management
 def reconcile_shopify_listings():
     """Scan the Shopify store's products, match SKU (= VIN) to local vehicles,
     and link any already-published car not linked in JARVIS yet."""

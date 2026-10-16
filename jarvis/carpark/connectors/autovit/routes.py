@@ -646,8 +646,7 @@ def unpublish(account_id):
 
 
 @autovit_bp.route('/api/reconcile', methods=['POST'])
-@login_required
-@carpark_edit_required
+@admin_required  # cross-account bulk op (all dealer accounts) — admin-gated, not per-editor
 def reconcile_listings():
     """Scan every CONNECTED Autovit account's active adverts and link any that
     match a local vehicle by VIN but aren't linked yet — detects cars already
