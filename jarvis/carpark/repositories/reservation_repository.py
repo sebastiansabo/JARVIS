@@ -62,6 +62,27 @@ class ReservationRepository(BaseRepository):
             LIMIT 1
         ''', (vehicle_id,))
 
+    def active_list_for_vehicle(self, vehicle_id: int) -> List[Dict[str, Any]]:
+        """All active (status='active') reservations for a vehicle, earliest
+        first — used by the reserve flow to reject overlapping date ranges."""
+        return self.query_all('''
+            SELECT * FROM carpark_reservations
+            WHERE vehicle_id = %s AND status = 'active'
+            ORDER BY reservation_start ASC, id ASC
+        ''', (vehicle_id,))
+
+    def close_active_for_vehicle(self, vehicle_id: int, status: str) -> int:
+        """Set EVERY active reservation for a vehicle to `status` in one
+        statement, returning the number of rows closed. Used when a vehicle
+        leaves the reserved pool entirely (sold → 'converted', transferred →
+        'cancelled') so no sibling reservation is orphaned as 'active' now that
+        a vehicle may hold more than one."""
+        return self.execute('''
+            UPDATE carpark_reservations
+            SET status = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE vehicle_id = %s AND status = 'active'
+        ''', (status, vehicle_id))
+
     def set_status(self, reservation_id: int, status: str) -> Optional[Dict[str, Any]]:
         """Update a reservation's status. Returns the updated row."""
         return self.execute('''
