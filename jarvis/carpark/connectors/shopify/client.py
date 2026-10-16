@@ -104,7 +104,7 @@ class ShopifyClient:
     _PRODUCT_SET = '''
     mutation productSet($input: ProductSetInput!) {
       productSet(synchronous: true, input: $input) {
-        product { id handle status onlineStorePreviewUrl }
+        product { id handle status onlineStoreUrl onlineStorePreviewUrl }
         userErrors { field message }
       }
     }'''
@@ -115,7 +115,11 @@ class ShopifyClient:
             raise ShopifyError(f'unexpected productSet response: {data}')
         node = data['productSet']
         p = node.get('product') or {}
+        # onlineStoreUrl is the durable PUBLIC product URL (primary/custom domain),
+        # null until the product is live on the Online Store. onlineStorePreviewUrl
+        # is a temporary, gated preview — kept only as a diagnostic, not for links.
         return {'id': p.get('id'), 'handle': p.get('handle'), 'status': p.get('status'),
+                'online_store_url': p.get('onlineStoreUrl'),
                 'preview_url': p.get('onlineStorePreviewUrl'),
                 'userErrors': node.get('userErrors', [])}
 
@@ -169,16 +173,20 @@ class ShopifyClient:
 
     _PRODUCT_GET = '''
     query getProduct($id: ID!) {
-      product(id: $id) { id status }
+      product(id: $id) { id status handle onlineStoreUrl }
     }'''
 
     def get_product(self, product_gid: str) -> Optional[Dict[str, Any]]:
-        """Fetch a product by GID. Returns {'id','status'} if it still exists on
-        the store, or None if it was DELETED on Shopify (the `product` field comes
-        back null for a missing/deleted id). Used to reconcile a JARVIS listing
-        whose product was removed on the storefront."""
+        """Fetch a product by GID. Returns {'id','status','handle','online_store_url'}
+        if it still exists on the store, or None if it was DELETED on Shopify (the
+        `product` field comes back null for a missing/deleted id). Used to reconcile
+        a JARVIS listing (existence + refresh its public URL)."""
         data = self.graphql(self._PRODUCT_GET, {'id': product_gid})
-        return data.get('product')  # None → product no longer exists
+        p = data.get('product')  # None → product no longer exists
+        if not p:
+            return None
+        return {'id': p.get('id'), 'status': p.get('status'),
+                'handle': p.get('handle'), 'online_store_url': p.get('onlineStoreUrl')}
 
     _ATTR_VALUES = '''
     query attrValues {

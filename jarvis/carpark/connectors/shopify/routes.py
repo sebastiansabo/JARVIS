@@ -477,6 +477,13 @@ def verify_vehicle_status(vid):
         _pub_repo.update_listing(listing['id'],
                                  {'status': 'not_published', 'external_listing_id': None})
         listing = _pub_repo.get_listing_by_vehicle_platform(vid, platform_id)
+    else:
+        # Heal the stored link: rewrite a stale preview/admin URL to the durable
+        # public product URL so "Vezi în magazin" opens the live storefront page.
+        public_url = res.get('public_url')
+        if public_url and public_url != listing.get('external_url'):
+            _pub_repo.update_listing(listing['id'], {'external_url': public_url})
+            listing = _pub_repo.get_listing_by_vehicle_platform(vid, platform_id)
     freshness = compute_listing_freshness(listing, v_updated, datetime.now(timezone.utc))
     return jsonify({'success': True, 'listing': listing, 'freshness': freshness,
                     'vehicle_updated_at': v_updated, 'deleted_on_shopify': deleted})

@@ -79,6 +79,19 @@ class ShopifyConnector(BaseConnector):
         num = product_gid.rsplit('/', 1)[-1]
         return f'https://{self.client.store_domain}/admin/products/{num}'
 
+    def _public_url(self, product: Dict[str, Any]) -> str:
+        """Durable PUBLIC product URL for the 'Vezi în magazin' link — Shopify's
+        canonical onlineStoreUrl (reflects the primary/custom domain) when set,
+        else the storefront /products/<handle>. Never the temporary preview link
+        (its preview_key expires and it's gated) nor the admin URL."""
+        online = product.get('online_store_url')
+        if online:
+            return online
+        handle = product.get('handle')
+        if handle:
+            return f'https://{self.client.store_domain}/products/{handle}'
+        return self._admin_url(product.get('id') or '')  # absolute last resort
+
     def _audit(self, vehicle_id: int, action: str, success: bool,
                error_message: str = None, response_payload: dict = None) -> None:
         """Record one publish attempt in carpark_publishing_sync_log. Best-effort:
@@ -144,7 +157,7 @@ class ShopifyConnector(BaseConnector):
             return {'success': False, 'error': msg, 'warnings': warnings}
 
         gid = result['id']
-        url = result.get('preview_url') or self._admin_url(gid)
+        url = self._public_url(result)
         # Publish to every sales channel the store exposes (Online Store, Google &
         # YouTube, Facebook & Instagram, ...). productSet creates the product ACTIVE
         # but published to NO channel, so it stays invisible until this runs. Non-
@@ -190,7 +203,8 @@ class ShopifyConnector(BaseConnector):
         product = self.client.get_product(external_id)
         if not product:
             return {'exists': False, 'status': None}
-        return {'exists': True, 'status': product.get('status')}
+        return {'exists': True, 'status': product.get('status'),
+                'public_url': self._public_url(product)}
 
     def deactivate(self, external_id: str) -> Dict[str, Any]:
         res = self.client.set_product_status(external_id, 'ARCHIVED')

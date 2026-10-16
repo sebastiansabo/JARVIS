@@ -3,6 +3,7 @@ import carpark.connectors.shopify.connector as conn_mod
 from carpark.connectors.shopify.connector import ShopifyConnector, ensure_platform
 
 class FakeClient:
+    store_domain = 'teststore.myshopify.com'
     def __init__(self): self.status_calls = []; self.last_input = None
     def product_set(self, product_input):
         self.last_input = product_input
@@ -259,3 +260,38 @@ def test_publish_warns_when_updating_already_published_listing():
     out = conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
     assert out['success'] is True
     assert any('deja publicat' in w.lower() for w in out['warnings'])
+
+
+def test_publish_stores_public_url_not_preview_or_admin():
+    # external_url must be the durable public product URL (onlineStoreUrl),
+    # never the temporary preview link or the admin URL.
+    class PublicUrlClient(FakeClient):
+        def product_set(self, pi):
+            d = super().product_set(pi)
+            d['online_store_url'] = 'https://shop.example.com/products/bmw-x5'
+            return d
+    conn = ShopifyConnector(PublicUrlClient(), FakePub(), platform_id=3)
+    out = conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
+    assert out['external_url'] == 'https://shop.example.com/products/bmw-x5'
+
+
+def test_publish_falls_back_to_storefront_handle_url():
+    # No onlineStoreUrl (e.g. custom domain not resolved yet) → build the public
+    # storefront URL from the store domain + handle. Still not preview/admin.
+    conn = ShopifyConnector(FakeClient(), FakePub(), platform_id=3)  # handle='bmw-x5', no online_store_url
+    out = conn.publish(VEH, PHOTOS, field_map=FIELD_MAP, value_map=VALUE_MAP, config=CONFIG)
+    assert out['external_url'] == 'https://teststore.myshopify.com/products/bmw-x5'
+    assert '/admin/' not in out['external_url'] and 'preview' not in out['external_url']
+
+
+def test_verify_returns_public_url_for_refresh():
+    # verify() must return the current public URL so the route can heal a stored
+    # preview/admin link to the durable storefront URL.
+    class VerifyClient(FakeClient):
+        def get_product(self, gid):
+            return {'id': gid, 'status': 'ACTIVE', 'handle': 'bmw-x5',
+                    'online_store_url': 'https://shop.example.com/products/bmw-x5'}
+    conn = ShopifyConnector(VerifyClient(), FakePub(), platform_id=3)
+    res = conn.verify('gid://shopify/Product/55')
+    assert res['exists'] is True
+    assert res['public_url'] == 'https://shop.example.com/products/bmw-x5'
