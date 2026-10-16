@@ -100,8 +100,9 @@ import type { AutovitAccount } from '@/api/autovit'
 import { toast } from 'sonner'
 import { DocumenteTab } from './Detail/DocumenteTab'
 import { CronologieTab } from './Detail/CronologieTab'
-import { VanzareTab } from './Detail/VanzareTab'
-import { StatusStepper } from './Detail/StatusStepper'
+import { VanzareTab, buildDispoRow } from './Detail/VanzareTab'
+import { ReserveDialog } from './Dispo/ReserveDialog'
+import { SellDialog } from './Dispo/SellDialog'
 import { ShopifyPublishControl } from './Detail/ShopifyPublishControl'
 import { ListingScheduleSelect } from './Detail/ListingScheduleSelect'
 import { safeStatusTransitions } from './Dispo/statusTransitions'
@@ -511,6 +512,7 @@ export default function CarParkDetail() {
   // Status change dialog
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState('details')
+  const [dispoDialog, setDispoDialog] = useState<'reserve' | 'sell' | null>(null)
   const [newStatus, setNewStatus] = useState<string>('')
   const [statusNotes, setStatusNotes] = useState('')
 
@@ -576,9 +578,9 @@ export default function CarParkDetail() {
     <div className="space-y-6">
       {/* Header — status + key-info badges inline with the title */}
       <PageHeader
-        title={
-          <div className="flex flex-wrap items-center gap-2">
-            <span>{vehicle.brand} {vehicle.model}</span>
+        title={`${vehicle.brand} ${vehicle.model}`}
+        titleSuffix={
+          <div className="flex flex-wrap items-center gap-2 font-normal">
             <Badge variant="secondary" className={`text-sm ${STATUS_COLORS[vehicle.status] ?? ''}`}>
               {STATUS_LABELS[vehicle.status] ?? vehicle.status}
             </Badge>
@@ -589,9 +591,9 @@ export default function CarParkDetail() {
               </Badge>
             )}
             {vehicle.nr_stoc && (
-              <span className="text-sm font-normal text-muted-foreground">#{vehicle.nr_stoc}</span>
+              <span className="text-sm text-muted-foreground">#{vehicle.nr_stoc}</span>
             )}
-            <span className="text-sm font-normal text-muted-foreground">VIN: {vehicle.vin}</span>
+            <span className="text-sm text-muted-foreground">VIN: {vehicle.vin}</span>
           </div>
         }
         breadcrumbs={[
@@ -604,10 +606,10 @@ export default function CarParkDetail() {
                 reserve/sell Dispo actions (reservation close, PV de livrare) live. */}
             {canEdit && !['SOLD', 'DELIVERED'].includes(vehicle.status) && (
               <>
-                <Button variant="outline" size="sm" onClick={() => setActiveTab('vanzare')}>
+                <Button variant="outline" size="sm" onClick={() => setDispoDialog('reserve')}>
                   Rezervă
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setActiveTab('vanzare')}>
+                <Button variant="outline" size="sm" onClick={() => setDispoDialog('sell')}>
                   Vinde
                 </Button>
               </>
@@ -652,21 +654,6 @@ export default function CarParkDetail() {
         </div>
       )}
 
-      {/* Pipeline stepper */}
-      <StatusStepper status={vehicle.status} />
-
-      {/* Profitability summary */}
-      {profitData && <ProfitabilitySummary data={profitData} vehicle={vehicle} />}
-
-      {/* Internal note — surfaced right under the summary tiles so it's visible
-          on the first page without opening the editor. */}
-      {vehicle.internal_notes && (
-        <Card className="p-3">
-          <div className="text-xs font-medium text-muted-foreground mb-1">Note interne</div>
-          <p className="text-sm whitespace-pre-wrap">{vehicle.internal_notes}</p>
-        </Card>
-      )}
-
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="details">Detalii</TabsTrigger>
@@ -687,7 +674,7 @@ export default function CarParkDetail() {
         </TabsList>
 
         <TabsContent value="details" className="mt-4">
-          <DetailsTab vehicle={vehicle} photos={photos} onPhotoClick={setLightboxIndex} canEdit={canEdit} canViewFinance={canViewFinance} />
+          <DetailsTab vehicle={vehicle} photos={photos} onPhotoClick={setLightboxIndex} canEdit={canEdit} canViewFinance={canViewFinance} profitData={profitData} />
         </TabsContent>
 
         <TabsContent value="vanzare" className="mt-4">
@@ -745,6 +732,29 @@ export default function CarParkDetail() {
           <ModificationsTab modifications={modifications} />
         </TabsContent>
       </Tabs>
+
+      {/* Rezervă / Vinde — reuse the guarded Dispo reserve/sell modals. */}
+      {dispoDialog === 'reserve' && (
+        <ReserveDialog
+          row={buildDispoRow(vehicle, activeReservation)}
+          onClose={() => setDispoDialog(null)}
+          onSuccess={() => {
+            setDispoDialog(null)
+            queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', id] })
+            queryClient.invalidateQueries({ queryKey: ['carpark', 'reservations', id] })
+          }}
+        />
+      )}
+      {dispoDialog === 'sell' && (
+        <SellDialog
+          row={buildDispoRow(vehicle, activeReservation)}
+          onClose={() => setDispoDialog(null)}
+          onSuccess={() => {
+            setDispoDialog(null)
+            queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', id] })
+          }}
+        />
+      )}
 
       {/* Status Change Dialog */}
       <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
@@ -1637,7 +1647,7 @@ function PhotoLightbox({
 }
 
 // ── Details Tab ────────────────────────────────────────────
-function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance }: { vehicle: Vehicle; photos: VehiclePhoto[]; onPhotoClick: (index: number) => void; canEdit: boolean; canViewFinance: boolean }) {
+function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance, profitData }: { vehicle: Vehicle; photos: VehiclePhoto[]; onPhotoClick: (index: number) => void; canEdit: boolean; canViewFinance: boolean; profitData?: Profitability | null }) {
   // New pricing model: "Preț" = list_price; "Preț promoțional" = promotional_price.
   // The displayed price is the promo when set, else the list price.
   const pricePct = reductionPct(v.list_price, v.promotional_price)
@@ -1732,6 +1742,11 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance 
             <Field label="Înmatriculare" value={v.registration_number} />
             <Field label="Cod șasiu" value={v.chassis_code} />
             <Field label="Cod emisii" value={v.emission_code} />
+            {v.internal_notes && (
+              <div className="col-span-2">
+                <Field label="Note interne" value={v.internal_notes} />
+              </div>
+            )}
           </dl>
         </Card>
 
@@ -1782,6 +1797,9 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance 
           </dl>
         </Card>
       </div>
+
+      {/* Price/cost summary tiles — under the Picture / Identificare / Preț cards. */}
+      {profitData && <ProfitabilitySummary data={profitData} vehicle={v} />}
 
       {/* Technical + Cargo — single full-width card */}
       <EditableCard

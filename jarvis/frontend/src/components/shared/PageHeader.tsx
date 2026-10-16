@@ -11,13 +11,15 @@ interface Breadcrumb {
 
 interface PageHeaderProps {
   title: React.ReactNode
+  /** Rendered inline right after the title / last breadcrumb (e.g. status badges). */
+  titleSuffix?: React.ReactNode
   description?: React.ReactNode
   breadcrumbs?: Breadcrumb[]
   actions?: React.ReactNode
   search?: React.ReactNode
 }
 
-export function PageHeader({ title, description, breadcrumbs, actions, search }: PageHeaderProps) {
+export function PageHeader({ title, titleSuffix, description, breadcrumbs, actions, search }: PageHeaderProps) {
   const isMobile = useIsMobile()
 
   /* ── Mobile: stacked layout ── */
@@ -44,7 +46,10 @@ export function PageHeader({ title, description, breadcrumbs, actions, search }:
             </span>
           ))}
         </nav>
-        <h1 className="text-xl font-semibold tracking-tight truncate">{current.label}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-xl font-semibold tracking-tight truncate">{current.label}</h1>
+          {titleSuffix}
+        </div>
         {description && <div className="text-sm text-muted-foreground">{description}</div>}
         {(search || actions) && (
           <div className="flex items-center gap-2">
@@ -84,9 +89,10 @@ export function PageHeader({ title, description, breadcrumbs, actions, search }:
                 )}
               </span>
             )})}
+            {titleSuffix}
           </h1>
         ) : (
-          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">{title}</h1>
+          <h1 className="flex items-center gap-2 flex-wrap text-xl sm:text-2xl font-semibold tracking-tight">{title}{titleSuffix}</h1>
         )}
         {description && <p className="text-sm text-muted-foreground">{description}</p>}
       </div>

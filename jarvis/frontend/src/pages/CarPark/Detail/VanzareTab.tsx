@@ -61,7 +61,7 @@ type DialogKind = 'reserve' | 'sell' | 'deliver' | 'reopen' | null
 // Fields the dialogs never read (doc_types, supplier_payment_date, ...) get
 // inert placeholders; only what ReserveDialog/SellDialog/DeliverDialog/
 // ReopenDialog actually consult needs to be accurate.
-function buildDispoRow(vehicle: Vehicle, activeReservation: DispoReservation | null): DispoRow {
+export function buildDispoRow(vehicle: Vehicle, activeReservation: DispoReservation | null): DispoRow {
   return {
     id: vehicle.id,
     vin: vehicle.vin,
