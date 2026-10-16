@@ -233,9 +233,13 @@ export const AUTOVIT_SEATS = [
 
 // ── Vehicle Source (acquisition channel) ────────────────────
 export const VEHICLE_SOURCES = [
+  { value: 'dealer', label: 'Dealer' },
   { value: 'poro', label: 'PoRo' },
+  { value: 'comanda_extern', label: 'Comandă extern' },
   { value: 'buyback', label: 'Buyback' },
-  { value: 'irc', label: 'IRC (Comandă / Licitații)' },
+  { value: 'custodie', label: 'Custodie' },
+  { value: 'irc', label: 'IRC' },
+  { value: 'comanda_stoc', label: 'Comandă stoc' },
 ] as const
 
 // ── Acquisition cost-line types (predefined; custom values allowed) ──
