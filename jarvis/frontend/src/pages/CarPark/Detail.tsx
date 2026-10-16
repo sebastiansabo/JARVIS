@@ -134,6 +134,8 @@ import {
 import {
   VEHICLE_SOURCES, equipmentLabel, humanizeSlug,
   AUTOVIT_FUEL_TYPES, AUTOVIT_GEARBOX_TYPES, AUTOVIT_BODY_TYPES, AUTOVIT_COLORS,
+  AUTOVIT_DRIVE_TYPES, AUTOVIT_EURO_STANDARDS, AUTOVIT_INTERIOR_MATERIALS,
+  AUTOVIT_INTERIOR_COLORS, AUTOVIT_COLOR_FINISHES,
 } from '@/data/autovitData'
 
 // Map a stored enum slug (fuel/gearbox/body/color) to its Romanian label for
@@ -398,7 +400,18 @@ function EditableCard({
               key={f.key as string}
               def={f}
               value={draft[f.key as string]}
-              onChange={(val) => setDraft((p) => ({ ...p, [f.key as string]: val }))}
+              onChange={(val) => setDraft((p) => {
+                const next = { ...p, [f.key as string]: val }
+                // Putere HP ↔ kW: filling one computes the other (1 kW ≈ 1.35962 HP).
+                if (f.key === 'engine_power_hp') {
+                  const hp = Number(val)
+                  next.engine_power_kw = val === '' || Number.isNaN(hp) ? '' : Math.round(hp * 0.7355)
+                } else if (f.key === 'engine_power_kw') {
+                  const kw = Number(val)
+                  next.engine_power_hp = val === '' || Number.isNaN(kw) ? '' : Math.round(kw * 1.35962)
+                }
+                return next
+              })}
             />
           ))}
         </div>
@@ -1812,9 +1825,9 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance,
           { key: 'engine_power_hp', label: 'Putere (HP)', type: 'number' },
           { key: 'engine_power_kw', label: 'Putere (kW)', type: 'number' },
           { key: 'engine_torque_nm', label: 'Cuplu (Nm)', type: 'number' },
-          { key: 'drive_type', label: 'Tracțiune', type: 'text' },
+          { key: 'drive_type', label: 'Tracțiune', type: 'select', options: [...AUTOVIT_DRIVE_TYPES] },
           { key: 'co2_emissions', label: 'CO2 (g/km)', type: 'number' },
-          { key: 'euro_standard', label: 'Normă poluare', type: 'text' },
+          { key: 'euro_standard', label: 'Normă poluare', type: 'select', options: [...AUTOVIT_EURO_STANDARDS] },
           { key: 'fuel_consumption', label: 'Consum', type: 'text' },
           { key: 'seats', label: 'Locuri', type: 'number' },
           { key: 'fuel_tank_capacity_liters', label: 'Capacitate rezervor (L)', type: 'number' },
@@ -1825,9 +1838,9 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance,
           { key: 'consum_mixt', label: 'Consum mixt', type: 'number' },
           { key: 'norma_combustibil', label: 'Normă consum', type: 'text' },
           { key: 'norma_energie', label: 'Normă energie', type: 'text' },
-          { key: 'interior_material', label: 'Tapițerie', type: 'text' },
-          { key: 'color_interior', label: 'Culoare interior', type: 'text' },
-          { key: 'color_finish', label: 'Tip culoare', type: 'text' },
+          { key: 'interior_material', label: 'Tapițerie', type: 'select', options: [...AUTOVIT_INTERIOR_MATERIALS] },
+          { key: 'color_interior', label: 'Culoare interior', type: 'select', options: [...AUTOVIT_INTERIOR_COLORS] },
+          { key: 'color_finish', label: 'Tip culoare', type: 'select', options: [...AUTOVIT_COLOR_FINISHES] },
           ...(v.body_type === 'van'
             ? ([
                 { key: 'max_weight_kg', label: 'Masă maximă (kg)', type: 'number' },
@@ -1845,9 +1858,9 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance,
           <Field label="Motor" value={v.engine_displacement_cc ? `${v.engine_displacement_cc} cc` : null} />
           <Field label="Putere" value={v.engine_power_hp ? `${v.engine_power_hp} HP${v.engine_power_kw ? ` (${v.engine_power_kw} kW)` : ''}` : null} />
           <Field label="Cuplu" value={v.engine_torque_nm ? `${v.engine_torque_nm} Nm` : null} />
-          <Field label="Tracțiune" value={v.drive_type} />
+          <Field label="Tracțiune" value={specLabel(AUTOVIT_DRIVE_TYPES, v.drive_type)} />
           <Field label="CO2" value={v.co2_emissions ? `${v.co2_emissions} g/km` : null} />
-          <Field label="Normă poluare" value={v.euro_standard} />
+          <Field label="Normă poluare" value={specLabel(AUTOVIT_EURO_STANDARDS, v.euro_standard)} />
           <Field label="Consum" value={v.fuel_consumption} />
           <Field label="Locuri" value={v.seats} />
           <Field label="Capacitate rezervor" value={v.fuel_tank_capacity_liters != null ? `${v.fuel_tank_capacity_liters} L` : null} />
@@ -1858,9 +1871,9 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance,
           <Field label="Consum mixt" value={v.consum_mixt != null ? `${v.consum_mixt} l/100km` : null} />
           <Field label="Normă consum" value={v.norma_combustibil} />
           <Field label="Normă energie" value={v.norma_energie} />
-          <Field label="Tapițerie" value={v.interior_material} />
-          <Field label="Culoare interior" value={v.color_interior} />
-          <Field label="Tip culoare" value={v.color_finish} />
+          <Field label="Tapițerie" value={specLabel(AUTOVIT_INTERIOR_MATERIALS, v.interior_material)} />
+          <Field label="Culoare interior" value={specLabel(AUTOVIT_INTERIOR_COLORS, v.color_interior)} />
+          <Field label="Tip culoare" value={specLabel(AUTOVIT_COLOR_FINISHES, v.color_finish)} />
           {v.body_type === 'van' && (
             <>
               <Field label="Masă maximă" value={v.max_weight_kg != null ? `${v.max_weight_kg} kg` : null} />
