@@ -52,6 +52,7 @@ def _svc(vehicle=None):
     vehicle_service.update_vehicle.return_value = {'id': 1, 'status': 'UPDATED'}
     reservation_repo.create.return_value = {'id': 5, 'status': 'active'}
     reservation_repo.active_for_vehicle.return_value = None
+    reservation_repo.active_list_for_vehicle.return_value = []
     document_repo.has_type.return_value = True
 
     svc = DispoService(
@@ -141,6 +142,50 @@ def test_reserve_without_salesperson_skips_notify():
     mocks['notify_fn'].assert_not_called()
 
 
+# ── RESERVE: multiple reservations, no overlap, 3-day max ────────────────
+
+def test_reserve_rejects_overlapping_reservation():
+    svc, mocks = _svc()
+    mocks['reservation_repo'].active_list_for_vehicle.return_value = [
+        {'id': 3, 'reservation_start': date(2026, 11, 1), 'reservation_end': date(2026, 11, 4)},
+    ]
+    with pytest.raises(ValueError):
+        svc.reserve(1, COMPANY_ID, USER, {
+            'client_name': 'Ion', 'reservation_start': date(2026, 11, 2),
+            'reservation_end': date(2026, 11, 3)})
+    mocks['reservation_repo'].create.assert_not_called()
+    mocks['vehicle_service'].change_status.assert_not_called()
+
+
+def test_reserve_allows_second_nonoverlapping_reservation():
+    svc, mocks = _svc()
+    mocks['reservation_repo'].active_list_for_vehicle.return_value = [
+        {'id': 3, 'reservation_start': date(2026, 11, 1), 'reservation_end': date(2026, 11, 4)},
+    ]
+    svc.reserve(1, COMPANY_ID, USER, {
+        'client_name': 'Ana', 'reservation_start': date(2026, 11, 5),
+        'reservation_end': date(2026, 11, 7)})
+    mocks['reservation_repo'].create.assert_called_once()
+
+
+def test_reserve_rejects_span_over_three_days():
+    svc, mocks = _svc()
+    with pytest.raises(ValueError):
+        svc.reserve(1, COMPANY_ID, USER, {
+            'client_name': 'Ion', 'reservation_start': date(2026, 11, 1),
+            'reservation_end': date(2026, 11, 10)})
+    mocks['reservation_repo'].create.assert_not_called()
+
+
+def test_reserve_rejects_end_before_start():
+    svc, mocks = _svc()
+    with pytest.raises(ValueError):
+        svc.reserve(1, COMPANY_ID, USER, {
+            'client_name': 'Ion', 'reservation_start': date(2026, 11, 5),
+            'reservation_end': date(2026, 11, 1)})
+    mocks['reservation_repo'].create.assert_not_called()
+
+
 # ── CANCEL RESERVATION ───────────────────────────────────────────────────
 
 def test_cancel_reservation_requires_reason():
@@ -172,6 +217,22 @@ def test_cancel_reservation_restores_prior_status_from_history():
         1, 'LISTED', changed_by=42, notes='Client backed out', via_dispo_action=True)
 
 
+def test_cancel_reservation_keeps_reserved_when_other_active_remains():
+    """A car can hold several reservations. Cancelling one while others are
+    still active must cancel only that row and KEEP the car RESERVED — not
+    restore it to its pre-RESERVED status."""
+    svc, mocks = _svc(dict(BASE_VEHICLE, status='RESERVED'))
+    mocks['reservation_repo'].active_for_vehicle.return_value = {'id': 7}
+    mocks['reservation_repo'].active_list_for_vehicle.return_value = [
+        {'id': 7}, {'id': 8},
+    ]
+
+    svc.cancel_reservation(1, COMPANY_ID, USER, reason='Client backed out')
+
+    mocks['reservation_repo'].set_status.assert_called_once_with(7, 'cancelled')
+    mocks['vehicle_service'].change_status.assert_not_called()
+
+
 def test_cancel_reservation_keeps_reservation_active_if_status_restore_fails():
     """Restore the status BEFORE cancelling the reservation row: if change_status
     raises, the reservation must stay active (retryable) rather than being
@@ -199,16 +260,17 @@ def test_cancel_reservation_falls_back_to_ready_for_sale_when_no_history():
         1, 'READY_FOR_SALE', changed_by=42, notes='Client backed out', via_dispo_action=True)
 
 
-def test_reserve_blocked_when_active_reservation_exists():
-    """Idempotency: a vehicle with an active reservation must not get a SECOND
-    one (RESERVED→RESERVED is a valid same-status transition, so the transition
-    guard alone wouldn't catch it) — otherwise cancel/sell only close one row and
-    the other is orphaned active forever."""
+def test_reserve_blocked_when_new_reservation_overlaps_existing():
+    """Multiple reservations are allowed, but a new one whose date range
+    overlaps an existing active reservation is rejected (no row created)."""
     svc, mocks = _svc()
-    mocks['reservation_repo'].active_for_vehicle.return_value = {'id': 9, 'status': 'active'}
-    with pytest.raises(ValueError, match='rezervare activ'):
+    mocks['reservation_repo'].active_list_for_vehicle.return_value = [
+        {'id': 9, 'reservation_start': date(2026, 9, 1), 'reservation_end': date(2026, 9, 3)},
+    ]
+    with pytest.raises(ValueError, match='suprapune'):
         svc.reserve(1, COMPANY_ID, USER,
-                    {'client_name': 'Ion', 'reservation_end': '2026-09-01'})
+                    {'client_name': 'Ion', 'reservation_start': date(2026, 9, 2),
+                     'reservation_end': date(2026, 9, 3)})
     mocks['reservation_repo'].create.assert_not_called()
     mocks['vehicle_service'].change_status.assert_not_called()
 
@@ -331,7 +393,9 @@ def test_sell_with_confirm_low_margin_proceeds_and_closes_reservation_and_deacti
 
     mocks['vehicle_service'].change_status.assert_called_once_with(
         1, 'SOLD', changed_by=42, notes=ANY, via_dispo_action=True)
-    mocks['reservation_repo'].set_status.assert_called_once_with(9, 'converted')
+    # Selling closes ALL active reservations (a car may hold several) so none
+    # is orphaned as 'active' after the sale.
+    mocks['reservation_repo'].close_active_for_vehicle.assert_called_once_with(1, 'converted')
     mocks['publishing_service'].deactivate_all.assert_called_once_with(1)
     mocks['notify_fn'].assert_called_once()
     assert result['vehicle']['status'] == 'SOLD'
