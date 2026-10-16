@@ -32,7 +32,7 @@ _schema_repo = SchemaRepository()
 _pub_repo = PublishingRepository()
 
 DEFAULT_VENDOR = 'Autoworld'
-DEFAULT_TEMPLATE_SUFFIX = 'produs_servicii_stoc'
+DEFAULT_TEMPLATE_SUFFIX = 'produs_servicii_stoc_aap'
 
 CONNECTOR_TYPE = 'shopify'
 BULK_CAP = 250  # max vehicles auto-published when no explicit vehicle_ids are given

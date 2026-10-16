@@ -66,7 +66,7 @@ def test_publish_vehicle_calls_connector(client, monkeypatch):
     field_map, value_map, config = captured['args']
     assert field_map == [{'target_key': 'marca'}]
     assert value_map == {}
-    assert config == {'vendor': 'Autoworld', 'template_suffix': 'produs_servicii_stoc'}
+    assert config == {'vendor': 'Autoworld', 'template_suffix': 'produs_servicii_stoc_aap'}
 
 def test_publish_requires_configured_account(client, monkeypatch):
     monkeypatch.setattr(routes_mod._repo, 'get_all_by_type', lambda t: [])
