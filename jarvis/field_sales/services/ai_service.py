@@ -5,6 +5,7 @@ Uses Anthropic API (claude-opus-4-8) for:
   - Generating pre-visit briefings from client 360 context
 """
 
+import datetime
 import json
 import logging
 import math
@@ -164,6 +165,17 @@ Rules:
 - budget_eur and opportunity_value_eur are plain numbers (EUR), or null.
 - Translate ALL extracted text values into English regardless of the note's language — visit_summary, next_steps actions, objections, commitments_made, and risk_flags must be written in English. Keep proper nouns (people, company, and vehicle names) in their original form.
 - Preserve important details and numbers mentioned."""
+
+    today = datetime.date.today().isoformat()
+    system_prompt += (
+        f"\n- Today's date is {today} (ISO 8601). Use it to resolve relative or "
+        f'named date references in the note (e.g. "Friday", "next week", '
+        f'"end of the month", "in 10 days") into absolute YYYY-MM-DD values for '
+        f"follow_up_date and each next_steps deadline, computing from today's date. "
+        f"Resolve to a specific day only when the note makes it unambiguous; "
+        f"otherwise leave the field null. For decision_timeline, keep a short phrase "
+        f"but anchor its year to today's date."
+    )
 
     user_message = f"""{context_block}
 Raw visit note:

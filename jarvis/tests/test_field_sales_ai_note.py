@@ -79,3 +79,28 @@ def test_visit_brief_prompt_out_of_scope(monkeypatch):
     sys_lower = captured['system'].lower()
     assert 'write in english' in sys_lower          # existing brief instruction preserved
     assert 'translate' not in sys_lower             # note-only directive did not leak in
+
+
+def test_structure_visit_note_injects_today_for_relative_dates(monkeypatch):
+    """The note prompt must carry today's date and an instruction to resolve
+    relative/named date references ("Friday", "next week") into absolute
+    YYYY-MM-DD, so follow_up_date and next_steps deadlines aren't left null when
+    the note only mentions a relative day."""
+    import datetime
+
+    captured = {}
+
+    def fake_ask(prompt, system='', model=None, max_tokens=None, api_key=None):
+        captured['system'] = system
+        return json.dumps({'visit_summary': 'ok'})
+
+    monkeypatch.setattr(ai, '_AI_AVAILABLE', True)
+    monkeypatch.setattr(ai, 'ask', fake_ask)
+
+    ai.structure_visit_note('revin vineri cu o oferta')
+
+    today = datetime.date.today().isoformat()
+    sys_lower = captured['system'].lower()
+    assert today in captured['system']       # today's date injected verbatim (ISO)
+    assert "today's date" in sys_lower       # anchored instruction present
+    assert 'relative' in sys_lower           # tells the model to resolve relative refs
