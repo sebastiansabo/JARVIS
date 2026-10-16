@@ -129,7 +129,18 @@ import {
   type LinkedEntityType,
   ENTITY_TYPE_LABELS,
 } from '@/types/carpark'
-import { VEHICLE_SOURCES, equipmentLabel, humanizeSlug } from '@/data/autovitData'
+import {
+  VEHICLE_SOURCES, equipmentLabel, humanizeSlug,
+  AUTOVIT_FUEL_TYPES, AUTOVIT_GEARBOX_TYPES, AUTOVIT_BODY_TYPES, AUTOVIT_COLORS,
+} from '@/data/autovitData'
+
+// Map a stored enum slug (fuel/gearbox/body/color) to its Romanian label for
+// display, so the profile reads "Diesel / Off-road (SUV) / Automata / Negru"
+// instead of the raw slug. Falls back to humanizeSlug for anything unmapped.
+const specLabel = (
+  list: readonly { value: string; label: string }[],
+  value?: string | null,
+): string => (value ? (list.find((o) => o.value === value)?.label ?? humanizeSlug(value)) : '')
 
 // ── Status colors (shared with catalog) ────────────────────
 const STATUS_COLORS: Record<string, string> = {
@@ -491,6 +502,7 @@ export default function CarParkDetail() {
 
   // Status change dialog
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
+  const [activeTab, setActiveTab] = useState('details')
   const [newStatus, setNewStatus] = useState<string>('')
   const [statusNotes, setStatusNotes] = useState('')
 
@@ -554,23 +566,43 @@ export default function CarParkDetail() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header — status + key-info badges inline with the title */}
       <PageHeader
-        title={`${vehicle.brand} ${vehicle.model}`}
+        title={
+          <div className="flex flex-wrap items-center gap-2">
+            <span>{vehicle.brand} {vehicle.model}</span>
+            <Badge variant="secondary" className={`text-sm ${STATUS_COLORS[vehicle.status] ?? ''}`}>
+              {STATUS_LABELS[vehicle.status] ?? vehicle.status}
+            </Badge>
+            <Badge variant="outline">{CATEGORY_LABELS[vehicle.category] ?? vehicle.category}</Badge>
+            {vehicle.is_consignment && (
+              <Badge variant="outline" className="border-amber-500 text-amber-600 dark:text-amber-400">
+                Custodie
+              </Badge>
+            )}
+            {vehicle.nr_stoc && (
+              <span className="text-sm font-normal text-muted-foreground">#{vehicle.nr_stoc}</span>
+            )}
+            <span className="text-sm font-normal text-muted-foreground">VIN: {vehicle.vin}</span>
+          </div>
+        }
         breadcrumbs={[
           { label: 'CarPark', href: '/app/carpark' },
           { label: `${vehicle.brand} ${vehicle.model}` },
         ]}
         actions={
           <div className="flex items-center gap-2">
-            {canEdit && nextStatuses.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setStatusDialogOpen(true)}
-              >
-                Schimbă status
-              </Button>
+            {/* Rezervă / Vinde open the Vânzare tab, where the guarded
+                reserve/sell Dispo actions (reservation close, PV de livrare) live. */}
+            {canEdit && !['SOLD', 'DELIVERED'].includes(vehicle.status) && (
+              <>
+                <Button variant="outline" size="sm" onClick={() => setActiveTab('vanzare')}>
+                  Rezervă
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setActiveTab('vanzare')}>
+                  Vinde
+                </Button>
+              </>
             )}
             {canEdit && (
               <Button size="sm" asChild>
@@ -594,33 +626,22 @@ export default function CarParkDetail() {
         }
       />
 
-      {/* Status + Key Info Bar */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Badge
-          variant="secondary"
-          className={`text-sm ${STATUS_COLORS[vehicle.status] ?? ''}`}
-        >
-          {STATUS_LABELS[vehicle.status] ?? vehicle.status}
-        </Badge>
-        <Badge variant="outline">{CATEGORY_LABELS[vehicle.category] ?? vehicle.category}</Badge>
-        {vehicle.is_consignment && (
-          <Badge variant="outline" className="border-amber-500 text-amber-600 dark:text-amber-400">
-            Custodie
-          </Badge>
-        )}
-        {vehicle.nr_stoc && (
-          <span className="text-sm text-muted-foreground">#{vehicle.nr_stoc}</span>
-        )}
-        <span className="text-sm text-muted-foreground">VIN: {vehicle.vin}</span>
-      </div>
-
       {/* Pipeline stepper */}
       <StatusStepper status={vehicle.status} />
 
       {/* Profitability summary */}
       {profitData && <ProfitabilitySummary data={profitData} vehicle={vehicle} />}
 
-      <Tabs defaultValue="details">
+      {/* Internal note — surfaced right under the summary tiles so it's visible
+          on the first page without opening the editor. */}
+      {vehicle.internal_notes && (
+        <Card className="p-3">
+          <div className="text-xs font-medium text-muted-foreground mb-1">Note interne</div>
+          <p className="text-sm whitespace-pre-wrap">{vehicle.internal_notes}</p>
+        </Card>
+      )}
+
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="details">Detalii</TabsTrigger>
           <TabsTrigger value="vanzare">Vânzare</TabsTrigger>
@@ -1685,11 +1706,6 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance 
             <Field label="Înmatriculare" value={v.registration_number} />
             <Field label="Cod șasiu" value={v.chassis_code} />
             <Field label="Cod emisii" value={v.emission_code} />
-            {v.internal_notes && (
-              <div className="col-span-2">
-                <Field label="Note interne" value={v.internal_notes} />
-              </div>
-            )}
           </dl>
         </Card>
 
@@ -1720,11 +1736,11 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance 
           <dl className="grid grid-cols-2 gap-3">
             <Field label="An" value={v.year_of_manufacture} />
             <Field label="Rulaj" value={v.mileage_km > 0 ? formatKm(v.mileage_km) : '-'} />
-            <Field label="Combustibil" value={v.fuel_type} />
-            <Field label="Cutie de viteze" value={v.transmission} />
-            <Field label="Caroserie" value={v.body_type} />
+            <Field label="Combustibil" value={specLabel(AUTOVIT_FUEL_TYPES, v.fuel_type)} />
+            <Field label="Cutie de viteze" value={specLabel(AUTOVIT_GEARBOX_TYPES, v.transmission)} />
+            <Field label="Caroserie" value={specLabel(AUTOVIT_BODY_TYPES, v.body_type)} />
             <Field label="Putere" value={v.engine_power_hp ? `${v.engine_power_hp} HP` : null} />
-            <Field label="Culoare" value={v.color_exterior} />
+            <Field label="Culoare" value={specLabel(AUTOVIT_COLORS, v.color_exterior)} />
             <Field label="Portiere" value={v.doors} />
           </dl>
           <Separator />
