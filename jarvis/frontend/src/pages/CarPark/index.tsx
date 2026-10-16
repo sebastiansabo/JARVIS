@@ -10,9 +10,11 @@ import {
   ImageIcon,
   Loader2,
   UploadCloud,
+  Link2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { shopifyApi } from '@/api/shopify'
+import { autovitApi } from '@/api/autovit'
 import { mediaUrl } from '@/lib/media'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchInput } from '@/components/shared/SearchInput'
@@ -156,6 +158,30 @@ export default function CarPark() {
       const msg = (err as { data?: { error?: string } })?.data?.error || 'Publicare eșuată'
       toast.error(msg)
     },
+  })
+
+  // Reconcile: detect cars already published on Autovit/Shopify (outside JARVIS
+  // or with a lost link) and connect them by VIN. Runs both connectors.
+  const reconcileMutation = useMutation({
+    mutationFn: async () => {
+      const [av, sh] = await Promise.all([
+        autovitApi.reconcile().catch(() => null),
+        shopifyApi.reconcile().catch(() => null),
+      ])
+      return { av, sh }
+    },
+    onSuccess: ({ av, sh }) => {
+      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicles'] })
+      queryClient.invalidateQueries({ queryKey: ['shopify', 'status'] })
+      const avLinked = av?.totals?.linked ?? 0
+      const shLinked = sh?.linked ?? 0
+      if (avLinked + shLinked > 0) {
+        toast.success(`Conectate: Autovit ${avLinked}, Shopify ${shLinked}`)
+      } else {
+        toast.info('Niciun anunț nou de conectat')
+      }
+    },
+    onError: () => toast.error('Reconciliere eșuată'),
   })
 
   const [searchParams, setSearchParams] = useSearchParams()
@@ -415,6 +441,22 @@ export default function CarPark() {
                   <UploadCloud className="mr-1 h-4 w-4" />
                 )}
                 <span className="hidden lg:inline">Publică eligibile pe Shopify</span>
+              </Button>
+            )}
+            {canEdit && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => reconcileMutation.mutate()}
+                disabled={reconcileMutation.isPending}
+                title="Detectează mașini deja publicate pe Autovit/Shopify și le conectează automat (după VIN)"
+              >
+                {reconcileMutation.isPending ? (
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                ) : (
+                  <Link2 className="mr-1 h-4 w-4" />
+                )}
+                <span className="hidden lg:inline">Reconciliază anunțuri</span>
               </Button>
             )}
             {canEdit && (

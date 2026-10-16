@@ -66,6 +66,7 @@ export const shopifyApi = {
     vehicle_updated_at?: string | null
   }>(`${BASE}/vehicles/${vid}/status`),
   publishBulk: (vehicleIds?: number[]) => api.post<{ success: boolean; published: number; results: Array<{ vehicle_id: number; success: boolean; error?: string }> }>(`${BASE}/publish-bulk`, vehicleIds ? { vehicle_ids: vehicleIds } : {}),
+  reconcile: () => api.post<{ success: boolean; scanned: number; matched: number; linked: number; already_linked: number; unmatched: number }>(`${BASE}/reconcile`, {}),
   getSchema: () => api.get<SchemaPayload>(`${BASE}/schema`),
   saveSchema: (field_entries: Partial<FieldMapRow>[], value_entries: { dimension: string; source_value: string; ro_value: string }[]) =>
     api.post<{ success: boolean; saved: number }>(`${BASE}/schema`, { field_entries, value_entries }),
