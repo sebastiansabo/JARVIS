@@ -93,6 +93,7 @@ import { Switch } from '@/components/ui/switch'
 import { useAuthStore } from '@/stores/authStore'
 import { useCarParkStore } from '@/stores/carParkStore'
 import { carparkApi } from '@/api/carpark'
+import { carparkDispoApi } from '@/api/carparkDispo'
 import { carbackgroundApi } from '@/api/carbackground'
 import { autovitApi } from '@/api/autovit'
 import type { AutovitAccount } from '@/api/autovit'
@@ -490,6 +491,13 @@ export default function CarParkDetail() {
   })
 
   const vehicle = data?.vehicle
+  // Active reservation (who + client) for the persistent "Rezervat" banner.
+  const { data: reservationData } = useQuery({
+    queryKey: ['carpark', 'reservations', id],
+    queryFn: () => carparkDispoApi.getReservations(id),
+    enabled: !!id && vehicle?.status === 'RESERVED',
+  })
+  const activeReservation = reservationData?.reservations?.find((r) => r.status === 'active') ?? null
   const vehicleLinks = linksData?.links ?? []
   const history = historyData?.history ?? []
   const modifications = modsData?.modifications ?? []
@@ -625,6 +633,24 @@ export default function CarParkDetail() {
           </div>
         }
       />
+
+      {/* Reserved banner — persistent across all tabs while the car is reserved:
+          who reserved it and for which client. */}
+      {vehicle.status === 'RESERVED' && activeReservation && (
+        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 rounded-md border border-purple-300 bg-purple-50 px-4 py-2 text-sm dark:border-purple-800 dark:bg-purple-950/50">
+          <span className="font-semibold text-purple-800 dark:text-purple-200">Rezervat</span>
+          {activeReservation.created_by_name && (
+            <span>de <span className="font-medium">{activeReservation.created_by_name}</span></span>
+          )}
+          {activeReservation.client_name && (
+            <span>pentru <span className="font-medium">{activeReservation.client_name}</span>
+              {activeReservation.client_company ? ` (${activeReservation.client_company})` : ''}</span>
+          )}
+          {activeReservation.reservation_end && (
+            <span className="text-muted-foreground">· până la {formatDate(activeReservation.reservation_end)}</span>
+          )}
+        </div>
+      )}
 
       {/* Pipeline stepper */}
       <StatusStepper status={vehicle.status} />
