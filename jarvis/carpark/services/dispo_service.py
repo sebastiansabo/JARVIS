@@ -28,7 +28,7 @@ vehicle via VehicleRepository and checks vehicle['company_id'] before
 touching any document/reservation row for it.
 """
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from carpark.repositories.document_repository import DocumentRepository
@@ -37,6 +37,8 @@ from carpark.repositories.transfer_repository import TransferRepository
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.services.vehicle_service import VehicleService, is_valid_transition
 from carpark.services.publishing_service import PublishingService
+from carpark.services.reservation_rules import (
+    MAX_RESERVATION_DAYS, exceeds_max_duration, ends_before_start, find_conflict)
 from carpark.money import net_buy
 from core.notifications.notify import notify_user
 
@@ -167,12 +169,28 @@ class DispoService:
             raise ValueError('client_name or client_id is required to reserve a vehicle')
         if not data.get('reservation_end'):
             raise ValueError('reservation_end is required to reserve a vehicle')
-        # Idempotency: don't stack a second active reservation on a vehicle that
-        # already has one (RESERVED→RESERVED is a valid same-status transition, so
-        # the transition guard wouldn't catch it). A duplicate active row would be
-        # orphaned — cancel/sell only close one.
-        if self._reservation_repo.active_for_vehicle(vehicle_id):
-            raise ValueError('Vehiculul are deja o rezervare activă')
+
+        # A vehicle may hold MULTIPLE reservations, subject to two rules:
+        #  1. each spans at most MAX_RESERVATION_DAYS days;
+        #  2. their date ranges must not overlap.
+        # reservation_start defaults to now (mirrors the repo's CURRENT_TIMESTAMP
+        # default) so the duration/overlap math has a concrete lower bound.
+        effective_start = data.get('reservation_start') or datetime.now()
+        # Inverted-interval guard only when the caller explicitly supplied a
+        # start (the implicit now-start path tolerates a bare past end, as it
+        # always has); duration/overlap below still sanity-check that path.
+        if data.get('reservation_start') and ends_before_start(
+                data['reservation_start'], data.get('reservation_end')):
+            raise ValueError('Data de sfârșit nu poate fi înainte de data de început')
+        if exceeds_max_duration(effective_start, data.get('reservation_end')):
+            raise ValueError(f'Rezervarea poate fi de maxim {MAX_RESERVATION_DAYS} zile')
+
+        conflict = find_conflict(
+            effective_start, data.get('reservation_end'),
+            self._reservation_repo.active_list_for_vehicle(vehicle_id))
+        if conflict is not None:
+            raise ValueError('Există deja o rezervare care se suprapune cu acest interval')
+
         self._assert_transition_allowed(vehicle, 'RESERVED')
 
         reservation_data = {
@@ -217,10 +235,23 @@ class DispoService:
         if not reservation:
             raise ValueError('No active reservation to cancel')
 
-        # Restore the pre-RESERVED status FIRST, then cancel the reservation row.
-        # If the status change fails, the reservation stays active (the whole
-        # action is retryable) instead of being cancelled while the vehicle is
-        # stuck in RESERVED with no reservation — the old order bricked the car.
+        # A car may hold several reservations. Only restore the pre-RESERVED
+        # status when THIS is the last active one — otherwise the car must stay
+        # RESERVED for the remaining bookings.
+        others_remain = any(
+            r.get('id') != reservation['id']
+            for r in self._reservation_repo.active_list_for_vehicle(vehicle_id))
+
+        if others_remain:
+            cancelled = self._reservation_repo.set_status(reservation['id'], 'cancelled')
+            self._notify_vehicle_contacts(vehicle, 'Rezervare anulată', message=reason)
+            return {'vehicle': vehicle, 'reservation': cancelled}
+
+        # Last reservation: restore the pre-RESERVED status FIRST, then cancel
+        # the reservation row. If the status change fails, the reservation stays
+        # active (the whole action is retryable) instead of being cancelled
+        # while the vehicle is stuck in RESERVED with no reservation — the old
+        # order bricked the car.
         prior_status = self._prior_status_before_reserved(vehicle_id)
         updated_vehicle = self._vehicle_service.change_status(
             vehicle_id, prior_status, changed_by=_uid(user), notes=reason,
@@ -286,9 +317,9 @@ class DispoService:
             vehicle_id, 'SOLD', changed_by=_uid(user), notes='Vehicle sold',
             via_dispo_action=True)
 
-        active_reservation = self._reservation_repo.active_for_vehicle(vehicle_id)
-        if active_reservation:
-            self._reservation_repo.set_status(active_reservation['id'], 'converted')
+        # Close every active reservation (a car may hold several) so none is
+        # left orphaned as 'active' after the sale.
+        self._reservation_repo.close_active_for_vehicle(vehicle_id, 'converted')
 
         self._publishing_service.deactivate_all(vehicle_id)
 
@@ -513,11 +544,10 @@ class DispoService:
             },
             updated_by=_uid(user), updated_by_name=_uname(user))
 
-        # Fresh intake: no reservation or live listing should survive the
-        # move to the new owner.
-        active_reservation = self._reservation_repo.active_for_vehicle(vehicle_id)
-        if active_reservation:
-            self._reservation_repo.set_status(active_reservation['id'], 'cancelled')
+        # Fresh intake: no reservation or live listing should survive the move
+        # to the new owner. Close ALL active reservations (a car may hold
+        # several) so none is orphaned cross-company.
+        self._reservation_repo.close_active_for_vehicle(vehicle_id, 'cancelled')
 
         self._publishing_service.deactivate_all(vehicle_id)
 
