@@ -173,6 +173,17 @@ function formatDate(d: string | null): string {
   return new Date(d).toLocaleDateString('ro-RO')
 }
 
+// Server timestamps (e.g. last_sync) come back as naive UTC isoformat (no zone);
+// a plain `new Date` would read them as local and skew the time. Parse as UTC and
+// render in Romania time.
+function formatRoDateTime(d: string | null): string {
+  if (!d) return '-'
+  const iso = /[Zz]|[+-]\d\d:?\d\d$/.test(d) ? d : d + 'Z'
+  return new Date(iso).toLocaleString('ro-RO', {
+    timeZone: 'Europe/Bucharest', dateStyle: 'short', timeStyle: 'short',
+  })
+}
+
 function formatKm(km: number): string {
   return new Intl.NumberFormat('ro-RO').format(km) + ' km'
 }
@@ -2678,8 +2689,17 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
     active: { label: 'Publicat', variant: 'default' },
     unpaid: { label: 'Draft (neplătit)', variant: 'secondary' },
     inactive: { label: 'Inactiv', variant: 'outline' },
+    moderation: { label: 'În moderare', variant: 'secondary' },
+    expired: { label: 'Expirat', variant: 'outline' },
+    disabled: { label: 'Dezactivat', variant: 'outline' },
+    removed_by_user: { label: 'Retras de pe Autovit', variant: 'outline' },
+    removed_by_moderator: { label: 'Eliminat de Autovit', variant: 'destructive' },
     error: { label: 'Eroare', variant: 'destructive' },
   }
+  // An advert the user/moderator removed on Autovit no longer exists there, so
+  // "publishing" re-creates it (the backend recreates on a removed/404 advert).
+  const autovitLive = !!autovitListing?.external_advert_id &&
+    !String(autovitListing?.status ?? '').startsWith('removed')
   const autovitUi = autovitListing
     ? autovitStatusUi[autovitListing.status] ?? { label: autovitListing.status, variant: 'outline' as const }
     : null
@@ -2689,7 +2709,7 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
       <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" className="min-w-[11rem]" onClick={() => setOpen(true)}>
           <Send className="mr-1.5 h-3.5 w-3.5" />
-          {autovitListing?.external_advert_id ? 'Actualizează pe Autovit' : 'Publică pe Autovit'}
+          {autovitLive ? 'Actualizează pe Autovit' : 'Publică pe Autovit'}
         </Button>
         {autovitListing && autovitUi && (
           <Badge
@@ -2715,7 +2735,7 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
         )}
         {autovitListing?.last_sync && (
           <span className="text-[10px] text-muted-foreground" title="Ultima verificare a statusului Autovit">
-            verificat {new Date(autovitListing.last_sync).toLocaleString('ro-RO', { dateStyle: 'short', timeStyle: 'short' })}
+            verificat {formatRoDateTime(autovitListing.last_sync)}
           </span>
         )}
         {autovitListing?.external_url && (
