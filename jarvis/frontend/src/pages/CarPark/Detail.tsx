@@ -30,6 +30,7 @@ import {
   Unlink,
   Upload,
   Send,
+  RefreshCw,
   ShoppingBag,
   AlertTriangle,
   Loader2,
@@ -2661,6 +2662,15 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
     },
   })
 
+  const verifyStatusMutation = useMutation({
+    mutationFn: () => autovitApi.verifyStatus(vehicleId),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['autovit', 'vehicle-status', vehicleId] })
+      toast.success(res.refreshed > 0 ? 'Status Autovit actualizat' : 'Niciun anunț de verificat')
+    },
+    onError: () => toast.error('Verificarea statusului a eșuat'),
+  })
+
   const params = (advert?.params as Record<string, unknown>) || {}
   const price = params.price as { '1'?: number; currency?: string } | undefined
 
@@ -2676,10 +2686,10 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
 
   return (
     <>
-      <div className="flex items-center gap-2">
-        <Button size="sm" variant="outline" className="w-44" onClick={() => setOpen(true)}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="outline" className="min-w-[11rem]" onClick={() => setOpen(true)}>
           <Send className="mr-1.5 h-3.5 w-3.5" />
-          Publică pe Autovit
+          {autovitListing?.external_advert_id ? 'Actualizează pe Autovit' : 'Publică pe Autovit'}
         </Button>
         {autovitListing && autovitUi && (
           <Badge
@@ -2689,6 +2699,24 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
           >
             Autovit: {autovitUi.label}
           </Badge>
+        )}
+        {autovitListing?.external_advert_id && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            onClick={() => verifyStatusMutation.mutate()}
+            disabled={verifyStatusMutation.isPending}
+            title="Reîmprospătează statusul din Autovit"
+          >
+            <RefreshCw className={`mr-1 h-3.5 w-3.5 ${verifyStatusMutation.isPending ? 'animate-spin' : ''}`} />
+            Verifică status
+          </Button>
+        )}
+        {autovitListing?.last_sync && (
+          <span className="text-[10px] text-muted-foreground" title="Ultima verificare a statusului Autovit">
+            verificat {new Date(autovitListing.last_sync).toLocaleString('ro-RO', { dateStyle: 'short', timeStyle: 'short' })}
+          </span>
         )}
         {autovitListing?.external_url && (
           <a
