@@ -463,6 +463,47 @@ def test_publish_updates_existing_listing_via_update_advert(client):
                                        status="active", last_error=None)
 
 
+def test_publish_recreates_when_listing_status_removed(client):
+    """A listing whose status is removed_* (ad deleted on Autovit) is re-created,
+    not updated — updating a removed advert 400s on Autovit."""
+    existing = {"external_advert_id": "555", "external_url": "http://x/555",
+                "status": "removed_by_user"}
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client") as bc, \
+         patch.object(r._listing_repo, "get", return_value=existing), \
+         patch.object(r._listing_repo, "upsert"):
+        bc.return_value.create_advert.return_value = {"id": "999", "url": "http://x/999"}
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+
+        assert resp.status_code == 200
+        assert resp.get_json()["external_id"] == "999"
+        bc.return_value.create_advert.assert_called_once()
+        bc.return_value.update_advert.assert_not_called()
+
+
+def test_publish_falls_back_to_create_when_update_400s(client):
+    """If Autovit 400s an update (advert gone), publish recreates instead of
+    surfacing a server error."""
+    import requests
+    existing = {"external_advert_id": "555", "external_url": "http://x/555", "status": "active"}
+    err = requests.HTTPError()
+    err.response = type("R", (), {"status_code": 400})()
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client") as bc, \
+         patch.object(r._listing_repo, "get", return_value=existing), \
+         patch.object(r._listing_repo, "upsert"):
+        bc.return_value.update_advert.side_effect = err
+        bc.return_value.create_advert.return_value = {"id": "999", "url": "http://x/999"}
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+
+        assert resp.status_code == 200
+        assert resp.get_json()["external_id"] == "999"
+        bc.return_value.update_advert.assert_called_once()
+        bc.return_value.create_advert.assert_called_once()
+
+
 def test_publish_warns_already_published_without_polluting_last_error(client):
     # Re-publishing a car that already has an advert updates it in place and
     # surfaces an informational "already published" warning in the response —
