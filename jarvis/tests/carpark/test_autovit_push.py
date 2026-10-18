@@ -242,10 +242,11 @@ def test_create_image_collection_posts_numeric_keyed_and_returns_id():
 
         req.assert_called_once()
         assert req.call_args.args == ("POST", "/imageCollections")
-        # Autovit expects images keyed by number, not a flat list.
+        # Autovit's body is a flat 1-indexed map of position -> URL string, with
+        # NO "images" wrapper and NO {"source": url} nesting — any non-numeric key
+        # returns 400 "All keys must be numbers".
         assert req.call_args.kwargs["json"] == {
-            "images": {"1": {"source": "http://img/1.jpg"},
-                       "2": {"source": "http://img/2.jpg"}}}
+            "1": "http://img/1.jpg", "2": "http://img/2.jpg"}
         assert out == "821"
 
 
