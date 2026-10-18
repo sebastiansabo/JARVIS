@@ -659,7 +659,11 @@ def publish(account_id):
                         'params_dropped': verify['params_dropped'],
                         'warnings': warnings})
     except Exception as e:
-        logger.exception('Autovit publish failed for vehicle %s', vehicle['id'])
+        # Capture Autovit's actual rejection reason (the HTTPError response body) —
+        # str(e) is just "400 Bad Request for url ...", which isn't actionable.
+        body = getattr(getattr(e, 'response', None), 'text', '') or ''
+        logger.exception('Autovit publish failed for vehicle %s | autovit_body=%s',
+                         vehicle['id'], body[:800])
         _listing_repo.set_error(vehicle['id'], account_id, str(e))
         return jsonify({'success': False, 'error': str(e)}), 502
 
