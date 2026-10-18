@@ -5,6 +5,7 @@ and retrieving advert data from Autovit.
 """
 import json
 import logging
+import time
 
 from flask import request, jsonify
 from flask_login import login_required, current_user
@@ -459,10 +460,14 @@ def _fill_location_contact(client, advert):
     if not (need_loc or need_contact):
         return
     try:
-        results = (client.get_adverts(page=1) or {}).get('results') or []
+        # Short bounds: this backfill is best-effort and runs inside the publish
+        # flow — it must not eat into the ~60s gateway budget (→ 504). On timeout
+        # the advert is just left without location/contact (create may then fail
+        # loudly, which is better than a silent 504).
+        results = (client.get_adverts(page=1, timeout=6) or {}).get('results') or []
         if not results:
             return
-        src = client.get_advert(str(results[0].get('id')))
+        src = client.get_advert(str(results[0].get('id')), timeout=6)
     except Exception:
         return
     if need_loc:
@@ -504,14 +509,23 @@ def publish(account_id):
         return jsonify({'success': True, 'dry_run': True, 'advert': advert})
 
     client = _build_client(connector)
+    # 504-guard: a single publish chains several sequential Autovit calls (token,
+    # location/contact backfill, image collection, create/update, verify). At the
+    # default 15s each they can sum past DO's ~60s gateway limit → 504. Cap the
+    # per-call timeout to 10s here (the best-effort backfill and the verify are
+    # bounded even shorter at their call sites) so the worst case stays ~<55s.
+    client.timeout = 10
+    _t0 = time.monotonic()
     # Backfill location + contact from the account's own adverts if the config
     # didn't carry them (Autovit requires them on create).
     _fill_location_contact(client, advert)
+    _t_fill = time.monotonic()
     # Photos: non-fatal (an advert is created fine without them, as an unpaid
     # draft) but NOT silent — a failure is recorded on the listing row and in
     # the response so it shows up in JARVIS instead of as an empty gallery on
     # Autovit's form.
     photos = _attach_image_collection(client, advert, vehicle['id'])
+    _t_photos = time.monotonic()
 
     try:
         existing = _listing_repo.get(vehicle['id'], account_id)
@@ -528,11 +542,19 @@ def publish(account_id):
             ext_id = result.get('id')
             ext_url = result.get('url')
             ext_status = result.get('status') or 'active'
+        _t_write = time.monotonic()
 
         # Post-write verification: read the advert back and diff what we sent
         # against what Autovit kept. Silently-dropped params are otherwise
         # invisible (the create/update returns 2xx regardless).
         verify = _verify_advert(client, ext_id, advert)
+        # Per-stage timing — surfaces which leg is slow when a publish flirts
+        # with the gateway limit (the whole reason for the bounds above).
+        logger.info(
+            'Autovit publish timing vehicle=%s update=%s fill=%.1fs photos=%.1fs '
+            'write=%.1fs verify=%.1fs total=%.1fs', vehicle['id'], updated_existing,
+            _t_fill - _t0, _t_photos - _t_fill, _t_write - _t_photos,
+            time.monotonic() - _t_write, time.monotonic() - _t0)
 
         # Problems belong in last_error (the fault surface that drives the error
         # badge). The "already published" note is informational — it goes to the
