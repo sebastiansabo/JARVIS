@@ -9,7 +9,7 @@ import {
   Eye,
   ImageIcon,
   Loader2,
-  Link2,
+  RefreshCw,
   ShoppingBag,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -438,14 +438,14 @@ export default function CarPark() {
                 variant="outline"
                 onClick={() => reconcileMutation.mutate()}
                 disabled={reconcileMutation.isPending}
-                title="Detectează mașini deja publicate pe Autovit/Shopify și le conectează automat (după VIN)"
+                aria-label="Reconciliază anunțuri"
+                title="Reconciliază anunțuri — detectează mașini deja publicate pe Autovit/Shopify și le conectează (după VIN)"
               >
                 {reconcileMutation.isPending ? (
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Link2 className="mr-1 h-4 w-4" />
+                  <RefreshCw className="h-4 w-4" />
                 )}
-                <span className="hidden lg:inline">Reconciliază anunțuri</span>
               </Button>
             )}
             {canEdit && (
