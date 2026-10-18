@@ -2609,6 +2609,7 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
   const [advert, setAdvert] = useState<Record<string, unknown> | null>(null)
   const [missing, setMissing] = useState<string[]>([])
   const [externalUrl, setExternalUrl] = useState<string | null>(null)
+  const [publishOutcome, setPublishOutcome] = useState<{ updated: boolean; status?: string } | null>(null)
 
   const queryClient = useQueryClient()
   const { data: accounts = [], isLoading: accountsLoading } = useQuery({
@@ -2632,6 +2633,7 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
     setAdvert(null)
     setMissing([])
     setExternalUrl(null)
+    setPublishOutcome(null)
   }
 
   const previewMutation = useMutation({
@@ -2656,9 +2658,13 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
     onSuccess: (res) => {
       if (res.success) {
         setExternalUrl(res.external_url || null)
+        setPublishOutcome({ updated: !!res.updated_existing, status: res.status })
         setStep('success')
         queryClient.invalidateQueries({ queryKey: ['autovit', 'vehicle-status', vehicleId] })
-        toast.success('Anunț publicat pe Autovit (draft)')
+        toast.success(res.updated_existing
+          ? 'Anunț actualizat pe Autovit'
+          : res.status === 'active' ? 'Anunț publicat (activ) pe Autovit'
+          : 'Anunț publicat ca draft pe Autovit')
         // Surface "already published → updated" + any dropped-param warnings.
         if (res.warnings && res.warnings.length > 0) {
           toast.info(res.warnings.join(' · '))
@@ -2836,7 +2842,13 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
 
           {step === 'success' && (
             <div className="space-y-3 py-2">
-              <p className="text-sm">Anunțul a fost publicat ca draft pe Autovit.</p>
+              <p className="text-sm">
+                {publishOutcome?.updated
+                  ? 'Anunțul existent a fost actualizat pe Autovit.'
+                  : publishOutcome?.status === 'active'
+                    ? 'Anunțul a fost publicat (activ) pe Autovit.'
+                    : 'Anunțul a fost publicat ca draft (neplătit) pe Autovit.'}
+              </p>
               {externalUrl && (
                 <a
                   href={externalUrl}
