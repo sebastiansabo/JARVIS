@@ -349,6 +349,42 @@ def test_unpublish_requires_edit_permission(client, monkeypatch):
     assert resp.status_code == 403
 
 
+def test_verify_status_requires_edit_permission(client, monkeypatch):
+    _set_user(monkeypatch, FakeUser(can_edit_carpark=False))
+    resp = client.post('/autovit/api/vehicles/7/verify-status', json={})
+    assert resp.status_code == 403
+
+
+def test_verify_status_writes_live_status_to_listing(client, monkeypatch):
+    """Verifică status reads the live advert and persists its real status —
+    the fix for a paid/active ad still showing as draft (unpaid) in JARVIS."""
+    monkeypatch.setattr(r, '_verify_vehicle_ownership', lambda vid: (VEHICLE, None))
+    monkeypatch.setattr(r._listing_repo, 'list_by_vehicle',
+                        lambda vid: [{'external_advert_id': 'A1', 'account_id': 1,
+                                      'external_url': 'http://old', 'status': 'unpaid'}])
+    monkeypatch.setattr(r._repo, 'get', lambda aid: ACCOUNT)
+
+    class _FakeClient:
+        def get_account_advert(self, advert_id, timeout=None):
+            return {'status': 'active', 'url': 'http://live'}
+
+    monkeypatch.setattr(r, '_build_client', lambda conn: _FakeClient())
+
+    recorded = {}
+
+    def _fake_upsert(vehicle_id, account_id, **fields):
+        recorded.update(fields, vehicle_id=vehicle_id, account_id=account_id)
+        return {}
+
+    monkeypatch.setattr(r._listing_repo, 'upsert', _fake_upsert)
+
+    resp = client.post('/autovit/api/vehicles/7/verify-status', json={})
+    assert resp.status_code == 200
+    assert resp.get_json()['refreshed'] == 1
+    assert recorded['status'] == 'active'
+    assert recorded['external_url'] == 'http://live'
+
+
 def test_publish_account_not_found_returns_404(client):
     with patch.object(r._repo, "get", return_value=None):
         resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
