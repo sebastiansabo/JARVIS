@@ -7,6 +7,7 @@ listings to local vehicles by VIN and report which ones to link — the pure
 matcher here is platform-agnostic; the orchestration (paging a connector's
 listings, writing the link rows) lives in the routes/service that owns I/O.
 """
+import time
 from typing import Any, Dict, List
 
 
@@ -43,6 +44,45 @@ def match_by_vin(external_items: List[Dict[str, Any]],
 def _advert_vin(advert: Dict[str, Any]) -> str:
     """Autovit advert -> normalised VIN from its params (or '')."""
     return _norm_vin((advert.get('params') or {}).get('vin'))
+
+
+def find_active_advert_by_vin(client, vin: str, page_cap: int = 5,
+                              detail_cap: int = 3, timeout: int = 4,
+                              deadline_s: float = 12.0):
+    """Find one ACTIVE Autovit advert on the account whose VIN matches `vin`.
+
+    Returns ``(external_id, external_url)`` of the first match, else ``(None,
+    None)``. Early-exits on the first match. Bounded for use INSIDE the publish
+    request so it can't blow the ~60s gateway: at most `page_cap` pages and
+    `detail_cap` per-advert detail lookups each with a short `timeout`, AND a
+    hard `deadline_s` wall-clock budget (the per-call timeouts alone don't cap
+    the total). VIN is read from the list result when present, else a bounded
+    `get_advert`.
+
+    Lets publish adopt+update an already-live ad by VIN instead of creating a
+    duplicate (e.g. the local link was lost/removed but the ad is still up).
+    """
+    target = _norm_vin(vin)
+    if not target:
+        return None, None
+    start = time.monotonic()
+    detail_calls = 0
+    page, total_pages = 1, 1
+    while page <= min(total_pages, page_cap):
+        if time.monotonic() - start > deadline_s:
+            break
+        data = client.get_adverts(page=page, status='active', timeout=timeout) or {}
+        total_pages = data.get('total_pages', 1) or 1
+        for ad in data.get('results', []) or []:
+            v = _advert_vin(ad)
+            if (not v and ad.get('id') and detail_calls < detail_cap
+                    and time.monotonic() - start <= deadline_s):
+                detail_calls += 1
+                v = _advert_vin(client.get_advert(str(ad['id']), timeout=timeout) or {})
+            if v and v == target:
+                return str(ad.get('id')), ad.get('url')
+        page += 1
+    return None, None
 
 
 def reconcile_autovit_account(client, account_id: int, vehicles_by_vin: Dict[str, int],
