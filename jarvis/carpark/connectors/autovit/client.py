@@ -173,6 +173,11 @@ class AutovitClient:
         self._request('DELETE', f'/account/adverts/{advert_id}')
         return {'success': True}
 
+    def get_category(self, category_id: int, timeout: int = 10) -> Dict[str, Any]:
+        """Fetch a category's live schema (its parameters, value dictionaries and
+        formats) — the authoritative taxonomy for mapping/validation."""
+        return self._request('GET', f'/categories/{category_id}', timeout=timeout).json()
+
     def get_account_advert(self, advert_id: str, timeout: int = None) -> Dict[str, Any]:
         """Get one of THIS account's adverts — works for unpaid/draft adverts too,
         unlike the public GET /adverts/{id} (which 404s for drafts). `timeout`
