@@ -185,15 +185,18 @@ class AutovitClient:
         id for use as `image_collection_id` on an advert (or None if no URLs).
 
         Photos are optional for advert creation, so callers should treat a
-        failure here as non-fatal. Autovit expects images keyed by number:
-        ``{"images": {"1": {"source": url}, ...}}``.
+        failure here as non-fatal. Autovit's imageCollections body is a FLAT,
+        1-indexed map of position -> URL string — NOT wrapped in "images" and NOT
+        nested as ``{"source": url}``. Any non-numeric key (e.g. "images" or
+        "source") is rejected with 400 "All keys must be numbers".
+        ``{"1": url1, "2": url2, ...}``
         """
         if not image_urls:
             return None
-        images = {str(i + 1): {'source': u} for i, u in enumerate(image_urls) if u}
+        images = {str(i + 1): u for i, u in enumerate(image_urls) if u}
         if not images:
             return None
-        resp = self._request('POST', '/imageCollections', json={'images': images})
+        resp = self._request('POST', '/imageCollections', json=images)
         return str(resp.json().get('id')) if resp.ok else None
 
 
