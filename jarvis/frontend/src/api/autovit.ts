@@ -148,4 +148,13 @@ export const autovitApi = {
     )
     return res.listings
   },
+
+  // Re-read the live advert status from Autovit and persist it (bumps last_sync).
+  verifyStatus: async (vehicleId: number) => {
+    const res = await api.post<{ success: boolean; refreshed: number; listings: AutovitListing[] }>(
+      `${BASE}/vehicles/${vehicleId}/verify-status`,
+      {},
+    )
+    return res
+  },
 }

@@ -248,6 +248,51 @@ def vehicle_autovit_status(vehicle_id):
     return jsonify({'success': True, 'listings': [_serialize(dict(l)) for l in listings]})
 
 
+@autovit_bp.route('/api/vehicles/<int:vehicle_id>/verify-status', methods=['POST'])
+@login_required
+@carpark_edit_required
+def verify_vehicle_status(vehicle_id):
+    """Refresh each stored Autovit listing's status from the LIVE advert.
+
+    JARVIS publishes a draft (status 'unpaid'); once the user pays/activates the
+    ad on Autovit.ro it goes 'active', but JARVIS never learned — the chip stayed
+    'Draft (neplătit)'. This reads the live advert per listing and writes back its
+    real status (upsert bumps last_sync), so the chip and its refresh date reflect
+    reality. Powers the Detail 'Verifică status' button.
+    """
+    _, err = _verify_vehicle_ownership(vehicle_id)
+    if err:
+        return err
+    refreshed = 0
+    for listing in _listing_repo.list_by_vehicle(vehicle_id):
+        ext_id = listing.get('external_advert_id')
+        account_id = listing.get('account_id')
+        if not (ext_id and account_id):
+            continue
+        connector = _repo.get(account_id)
+        if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
+            continue
+        try:
+            # Bounded like the publish flow — a status refresh must not hang.
+            # Cap client.timeout so the token fetch is bounded too (not just the read).
+            client = _build_client(connector)
+            client.timeout = 10
+            live = client.get_account_advert(str(ext_id), timeout=10) or {}
+        except Exception as e:
+            logger.warning('Autovit verify-status read failed (vehicle %s advert %s): %s',
+                           vehicle_id, ext_id, e)
+            continue
+        status = live.get('status')
+        if status:
+            _listing_repo.upsert(vehicle_id, account_id, status=status,
+                                 external_url=live.get('url') or listing.get('external_url'),
+                                 last_error=None)
+            refreshed += 1
+    listings = _listing_repo.list_by_vehicle(vehicle_id)
+    return jsonify({'success': True, 'refreshed': refreshed,
+                    'listings': [_serialize(dict(l)) for l in listings]})
+
+
 # ── Adverts (future) ──
 
 @autovit_bp.route('/api/accounts/<int:account_id>/adverts', methods=['GET'])
