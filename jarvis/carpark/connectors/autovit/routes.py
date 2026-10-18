@@ -656,7 +656,14 @@ def _attach_image_collection(client: AutovitClient, advert: dict, vehicle_id: in
     try:
         icid = client.create_image_collection(photo_urls)
     except Exception as e:
-        logger.warning('Autovit image collection failed for vehicle %s: %s', vehicle_id, e)
+        # A bare "400 Bad Request" isn't actionable — capture Autovit's actual
+        # rejection reason (the HTTPError response body) plus a sample source URL
+        # (host/path/query shape) so the real cause is diagnosable from the logs.
+        body = getattr(getattr(e, 'response', None), 'text', '') or ''
+        sample = photo_urls[0] if photo_urls else ''
+        logger.warning(
+            'Autovit image collection failed for vehicle %s: %s | autovit_body=%s | sample_source=%s',
+            vehicle_id, e, body[:600], sample[:220])
         return {'sent': len(photo_urls), 'error': f'image collection rejected: {e}'}
     if not icid:
         return {'sent': len(photo_urls), 'error': 'image collection returned no id'}
