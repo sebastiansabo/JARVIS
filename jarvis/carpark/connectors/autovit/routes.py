@@ -250,6 +250,26 @@ def vehicle_autovit_status(vehicle_id):
     return jsonify({'success': True, 'listings': [_serialize(dict(l)) for l in listings]})
 
 
+@autovit_bp.route('/api/accounts/<int:account_id>/category-taxonomy', methods=['GET'])
+@login_required
+@carpark_required
+def category_taxonomy(account_id):
+    """Diagnostic: fetch the live Autovit cars-category parameter schema so param
+    formats (e.g. date_registration) and derived fields (e.g. title) can be
+    verified against what we send. Logs it (grep-able) and returns the JSON."""
+    connector = _repo.get(account_id)
+    if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
+        return jsonify({'success': False, 'error': 'Account not found'}), 404
+    try:
+        cat = _build_client(connector).get_category(taxonomy.CARS_CATEGORY_ID) or {}
+    except Exception as e:
+        logger.exception('Autovit category-taxonomy fetch failed')
+        return jsonify({'success': False, 'error': str(e)}), 502
+    logger.info('Autovit category %s taxonomy: %s',
+                taxonomy.CARS_CATEGORY_ID, json.dumps(cat)[:4000])
+    return jsonify({'success': True, 'category': cat})
+
+
 @autovit_bp.route('/api/vehicles/<int:vehicle_id>/verify-status', methods=['POST'])
 @login_required
 @carpark_edit_required
