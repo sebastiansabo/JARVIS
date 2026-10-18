@@ -7,6 +7,8 @@ import json
 import logging
 import time
 
+import requests
+
 from flask import request, jsonify
 from flask_login import login_required, current_user
 
@@ -574,10 +576,23 @@ def publish(account_id):
 
     try:
         existing = _listing_repo.get(vehicle['id'], account_id)
-        updated_existing = bool(existing and existing.get('external_advert_id'))
+        ext_id = existing.get('external_advert_id') if existing else None
+        # An advert the user/moderator removed on Autovit can't be updated — the
+        # PUT returns 400 ("Bad Request"). Treat a known-removed listing as gone
+        # and create a fresh advert instead of failing the publish.
+        removed_on_autovit = bool(existing) and str(existing.get('status') or '').startswith('removed')
+        updated_existing = bool(ext_id) and not removed_on_autovit
         if updated_existing:
-            client.update_advert(existing['external_advert_id'], advert)
-            ext_id = existing['external_advert_id']
+            try:
+                client.update_advert(ext_id, advert)
+            except requests.HTTPError as e:
+                code = getattr(e.response, 'status_code', None)
+                if code not in (400, 404, 410):
+                    raise
+                # Advert gone/invalid on Autovit — recreate rather than surface a 400.
+                logger.info('Autovit update of advert %s returned %s; recreating', ext_id, code)
+                updated_existing = False
+        if updated_existing:
             ext_url = existing.get('external_url')
             ext_status = 'active'
         else:
