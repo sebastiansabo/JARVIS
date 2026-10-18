@@ -594,9 +594,26 @@ export default function CarParkDetail() {
         title={`${vehicle.brand} ${vehicle.model}`}
         titleSuffix={
           <div className="flex flex-wrap items-center gap-2 font-normal">
-            <Badge variant="secondary" className={`text-sm ${STATUS_COLORS[vehicle.status] ?? ''}`}>
-              {STATUS_LABELS[vehicle.status] ?? vehicle.status}
-            </Badge>
+            {canEdit && nextStatuses.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setStatusDialogOpen(true)}
+                title="Schimbă statusul"
+                className="group rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Badge
+                  variant="secondary"
+                  className={`text-sm cursor-pointer transition group-hover:ring-2 group-hover:ring-ring/40 ${STATUS_COLORS[vehicle.status] ?? ''}`}
+                >
+                  {STATUS_LABELS[vehicle.status] ?? vehicle.status}
+                  <Pencil className="h-3 w-3 opacity-60" />
+                </Badge>
+              </button>
+            ) : (
+              <Badge variant="secondary" className={`text-sm ${STATUS_COLORS[vehicle.status] ?? ''}`}>
+                {STATUS_LABELS[vehicle.status] ?? vehicle.status}
+              </Badge>
+            )}
             <Badge variant="outline">{CATEGORY_LABELS[vehicle.category] ?? vehicle.category}</Badge>
             {vehicle.is_consignment && (
               <Badge variant="outline" className="border-amber-500 text-amber-600 dark:text-amber-400">
