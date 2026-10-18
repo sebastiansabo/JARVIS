@@ -105,7 +105,15 @@ CATALOG_SELECT = """
      WHERE p.vehicle_id = v.id AND p.deleted_at IS NULL
      ORDER BY p.sort_order, p.id LIMIT 1) AS primary_photo_url,
     (SELECT COUNT(*) FROM carpark_vehicle_photos p
-     WHERE p.vehicle_id = v.id AND p.deleted_at IS NULL) AS photo_count
+     WHERE p.vehicle_id = v.id AND p.deleted_at IS NULL) AS photo_count,
+    -- Per-platform publish flags for the list's "Publicat" icon column.
+    EXISTS(SELECT 1 FROM carpark_autovit_listings al
+           WHERE al.vehicle_id = v.id AND al.external_advert_id IS NOT NULL
+             AND al.status NOT IN ('error', 'removed_by_user', 'removed_by_moderator')
+           ) AS autovit_published,
+    EXISTS(SELECT 1 FROM carpark_vehicle_listings vl
+           WHERE vl.vehicle_id = v.id AND vl.external_listing_id IS NOT NULL
+             AND vl.status = 'published') AS shopify_published
 """
 
 
