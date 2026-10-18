@@ -10,6 +10,7 @@ import {
   ImageIcon,
   Loader2,
   Link2,
+  ShoppingBag,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { shopifyApi } from '@/api/shopify'
@@ -117,6 +118,22 @@ type CarparkCol = {
 const CARPARK_COLUMNS: CarparkCol[] = [
   { key: 'category', label: 'Tip stoc', render: (v) => <CategoryBadge category={v.category} /> },
   { key: 'status', label: 'Status', render: (v) => <VehicleStatusBadge status={v.status} /> },
+  {
+    key: 'published', label: 'Publicat', headClassName: 'text-center', cellClassName: 'text-center',
+    render: (v) => (
+      <div className="flex items-center justify-center gap-1.5">
+        {v.autovit_published && (
+          <span title="Publicat pe Autovit"><Car className="h-4 w-4 text-blue-600 dark:text-blue-400" /></span>
+        )}
+        {v.shopify_published && (
+          <span title="Publicat pe Autoworld"><ShoppingBag className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /></span>
+        )}
+        {!v.autovit_published && !v.shopify_published && (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </div>
+    ),
+  },
   { key: 'year', label: 'Year', sortKey: 'year_of_manufacture', cellClassName: 'tabular-nums', render: (v) => v.year_of_manufacture ?? '-' },
   { key: 'mileage', label: 'Mileage', sortKey: 'mileage_km', cellClassName: 'tabular-nums text-sm', render: (v) => (v.mileage_km > 0 ? formatKm(v.mileage_km) : '-') },
   { key: 'fuel', label: 'Fuel', cellClassName: 'text-sm', render: (v) => v.fuel_type ?? '-' },
@@ -181,7 +198,7 @@ export default function CarPark() {
 
   // Column visibility + order (persisted to localStorage)
   const { visibleColumns, setVisibleColumns, defaultColumns } = useColumnState(
-    'carpark.listCols.v1', CARPARK_COL_KEYS, CARPARK_COL_KEYS,
+    'carpark.listCols.v2', CARPARK_COL_KEYS, CARPARK_COL_KEYS,
   )
   const visibleColDefs = useMemo(
     () => visibleColumns.map((k) => CARPARK_COLUMNS.find((c) => c.key === k)).filter(Boolean) as CarparkCol[],
