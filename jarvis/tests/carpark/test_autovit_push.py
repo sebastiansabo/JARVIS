@@ -315,6 +315,7 @@ def _set_user(monkeypatch, user):
 
 
 _REAL_VERIFY_ADVERT = r._verify_advert  # captured before the autouse stub below
+_REAL_FIND_BY_VIN = r.reconcile_service.find_active_advert_by_vin  # autouse stubs the module attr
 
 
 @pytest.fixture(autouse=True)
@@ -325,6 +326,14 @@ def no_photos_no_verify(monkeypatch):
     monkeypatch.setattr(r._photo_repo, 'urls', lambda vid: [])
     monkeypatch.setattr(r, '_verify_advert',
                         lambda client, aid, sent: {'params_dropped': [], 'photos_remote': None})
+
+
+@pytest.fixture(autouse=True)
+def no_vin_adopt(monkeypatch):
+    """Default the publish create-path VIN-dedup scan to 'no live ad found', so
+    create-path tests create as before. The adopt test overrides this."""
+    monkeypatch.setattr(r.reconcile_service, 'find_active_advert_by_vin',
+                        lambda client, vin, **kw: (None, None))
 
 
 @pytest.fixture(autouse=True)
@@ -502,6 +511,44 @@ def test_publish_falls_back_to_create_when_update_400s(client):
         assert resp.status_code == 200
         assert resp.get_json()["external_id"] == "999"
         bc.return_value.update_advert.assert_called_once()
+        bc.return_value.create_advert.assert_called_once()
+
+
+def test_publish_adopts_live_advert_by_vin_instead_of_creating(client, monkeypatch):
+    """No local link, but a live Autovit ad with the same VIN exists → adopt +
+    update it (connect/reconcile), NOT create a duplicate."""
+    monkeypatch.setattr(r.reconcile_service, "find_active_advert_by_vin",
+                        lambda client, vin, **kw: ("555", "http://x/555"))
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client") as bc, \
+         patch.object(r._listing_repo, "get", return_value=None), \
+         patch.object(r._listing_repo, "upsert") as upsert:
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["external_id"] == "555"
+        assert data["updated_existing"] is True
+        assert any("deja publicat" in w.lower() for w in data.get("warnings", []))
+        bc.return_value.update_advert.assert_called_once_with("555", ANY)
+        bc.return_value.create_advert.assert_not_called()
+        # The listing is connected to the adopted advert.
+        assert upsert.call_args.kwargs["external_advert_id"] == "555"
+
+
+def test_publish_creates_when_no_live_vin_match(client):
+    """No local link and no live same-VIN ad → create a new advert."""
+    with patch.object(r._repo, "get", return_value=ACCOUNT), \
+         patch.object(r._vehicle_repo, "get_by_id", return_value=VEHICLE), \
+         patch.object(r, "_build_client") as bc, \
+         patch.object(r._listing_repo, "get", return_value=None), \
+         patch.object(r._listing_repo, "upsert"):
+        bc.return_value.create_advert.return_value = {"id": "999", "url": "http://x/999"}
+        resp = client.post('/autovit/api/accounts/1/publish', json={"vehicle_id": 7})
+
+        assert resp.status_code == 200
+        assert resp.get_json()["external_id"] == "999"
         bc.return_value.create_advert.assert_called_once()
 
 
@@ -703,3 +750,67 @@ def test_vehicle_to_advert_registration_accepts_iso_string_and_skips_garbage():
     assert "date_registration" not in p
     p = taxo.vehicle_to_advert(VEHICLE, ACCOUNT)["params"]
     assert "date_registration" not in p and "pollution_standard" not in p and "country_origin" not in p
+
+
+# ── find_active_advert_by_vin (publish VIN-dedup scan) ──
+
+def test_find_active_advert_by_vin_matches_and_early_exits():
+    seen_pages = []
+
+    class FakeClient:
+        def get_adverts(self, page=1, status=None, timeout=None):
+            seen_pages.append(page)
+            if page == 1:
+                return {"total_pages": 3, "results": [
+                    {"id": 1, "url": "u1", "params": {"vin": "WAUZZZ111"}},
+                    {"id": 2, "url": "u2", "params": {"vin": "  wauzzz222 "}}]}
+            return {"total_pages": 3, "results": []}
+
+        def get_advert(self, advert_id, timeout=None):
+            return {}
+
+    assert _REAL_FIND_BY_VIN(FakeClient(), "WAUZZZ222") == ("2", "u2")
+    assert seen_pages == [1]  # early-exit: never paged past the match
+
+
+def test_find_active_advert_by_vin_no_match_returns_none():
+    class FakeClient:
+        def get_adverts(self, page=1, status=None, timeout=None):
+            return {"total_pages": 1, "results": [{"id": 9, "url": "u9", "params": {"vin": "OTHER"}}]}
+
+        def get_advert(self, advert_id, timeout=None):
+            return {}
+
+    assert _REAL_FIND_BY_VIN(FakeClient(), "TARGET") == (None, None)
+
+
+def test_find_active_advert_by_vin_falls_back_to_get_advert_when_list_lacks_vin():
+    """When the list payload omits VIN, it does a bounded get_advert per advert."""
+    detail_ids = []
+
+    class FakeClient:
+        def get_adverts(self, page=1, status=None, timeout=None):
+            return {"total_pages": 1, "results": [{"id": 10, "url": "u10"}, {"id": 11, "url": "u11"}]}
+
+        def get_advert(self, advert_id, timeout=None):
+            detail_ids.append(advert_id)
+            return {"params": {"vin": "FOUND" if advert_id == "11" else "NOPE"}}
+
+    assert _REAL_FIND_BY_VIN(FakeClient(), "found") == ("11", "u11")
+    assert detail_ids == ["10", "11"]  # detail lookup per VIN-less advert, in order
+
+
+def test_find_active_advert_by_vin_caps_detail_lookups():
+    """`detail_cap` bounds how many get_advert fallbacks fire (504 guard)."""
+    calls = []
+
+    class FakeClient:
+        def get_adverts(self, page=1, status=None, timeout=None):
+            return {"total_pages": 1, "results": [{"id": i} for i in range(10)]}
+
+        def get_advert(self, advert_id, timeout=None):
+            calls.append(advert_id)
+            return {}  # never carries a VIN → never matches
+
+    assert _REAL_FIND_BY_VIN(FakeClient(), "x", detail_cap=2) == (None, None)
+    assert len(calls) == 2  # capped at detail_cap
