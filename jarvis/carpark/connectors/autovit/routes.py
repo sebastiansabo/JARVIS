@@ -710,6 +710,11 @@ def _verify_advert(client: AutovitClient, advert_id, sent: dict) -> dict:
         logger.warning('Autovit post-publish verify failed for advert %s: %s', advert_id, e)
         return out
     remote_params = remote.get('params') or {}
+    # Diagnostic: did Autovit apply our title on update, or keep/auto-derive its
+    # own? (OTOMOTO often derives the displayed title from brand/model/params.)
+    if remote.get('title') != sent.get('title'):
+        logger.info('Autovit title advert=%s NOT applied: sent=%r remote=%r',
+                    advert_id, sent.get('title'), remote.get('title'))
     sent_params = sent.get('params') or {}
     out['params_dropped'] = sorted(k for k in sent_params if k not in remote_params)
     photos = remote.get('photos') or remote.get('images')
