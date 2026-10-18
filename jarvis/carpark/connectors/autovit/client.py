@@ -115,24 +115,30 @@ class AutovitClient:
             'total_adverts': data.get('total_elements', 0),
         }
 
-    def get_adverts(self, page: int = 1, status: str = None) -> Dict[str, Any]:
+    def get_adverts(self, page: int = 1, status: str = None,
+                    timeout: int = None) -> Dict[str, Any]:
         """List adverts for this dealer account.
 
         Args:
             page: Page number (1-based).
             status: Filter by status (e.g. 'active', 'disabled', 'removed_by_user').
+            timeout: Per-call timeout override (e.g. a short bound when this read
+                is a best-effort step inside the publish flow). Defaults to the
+                client timeout.
 
         Returns: {results, total_elements, total_pages, current_page, ...}
         """
         params: Dict[str, Any] = {'page': page}
         if status:
             params['status'] = status
-        resp = self._request('GET', '/adverts/', params=params)
+        kw = {'timeout': timeout} if timeout else {}
+        resp = self._request('GET', '/adverts/', params=params, **kw)
         return resp.json()
 
-    def get_advert(self, advert_id: str) -> Dict[str, Any]:
-        """Get single advert details."""
-        resp = self._request('GET', f'/adverts/{advert_id}')
+    def get_advert(self, advert_id: str, timeout: int = None) -> Dict[str, Any]:
+        """Get single advert details. `timeout` optionally bounds the read."""
+        kw = {'timeout': timeout} if timeout else {}
+        resp = self._request('GET', f'/adverts/{advert_id}', **kw)
         return resp.json()
 
     # ── Push (write) methods — Autovit "account" API (password grant) ──

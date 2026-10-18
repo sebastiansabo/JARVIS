@@ -9,7 +9,6 @@ import {
   Eye,
   ImageIcon,
   Loader2,
-  UploadCloud,
   Link2,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -147,18 +146,6 @@ export default function CarPark() {
   const user = useAuthStore((s) => s.user)
   const canEdit = user?.can_edit_carpark ?? false
   const queryClient = useQueryClient()
-
-  const publishBulkMutation = useMutation({
-    mutationFn: () => shopifyApi.publishBulk(),
-    onSuccess: (res) => {
-      queryClient.invalidateQueries({ queryKey: ['shopify', 'status'] })
-      toast.success(`${res.published} publicate`)
-    },
-    onError: (err: unknown) => {
-      const msg = (err as { data?: { error?: string } })?.data?.error || 'Publicare eșuată'
-      toast.error(msg)
-    },
-  })
 
   // Reconcile: detect cars already published on Autovit/Shopify (outside JARVIS
   // or with a lost link) and connect them by VIN. Runs both connectors.
@@ -428,21 +415,6 @@ export default function CarPark() {
                 ))}
               </SelectContent>
             </Select>
-            {canEdit && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => publishBulkMutation.mutate()}
-                disabled={publishBulkMutation.isPending}
-              >
-                {publishBulkMutation.isPending ? (
-                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                ) : (
-                  <UploadCloud className="mr-1 h-4 w-4" />
-                )}
-                <span className="hidden lg:inline">Publică eligibile pe Shopify</span>
-              </Button>
-            )}
             {canEdit && (
               <Button
                 size="sm"
