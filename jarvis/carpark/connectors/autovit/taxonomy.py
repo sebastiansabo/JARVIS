@@ -397,9 +397,11 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[
     # found empty on Autovit's form for cars published from JARVIS
     # (2026-10-15: Audi Q5 WAUZZZ8R2HA085589 — "Data primei înmatriculări",
     # "Norma de poluare", "Țara de origine" all blank despite being set here).
-    date_reg = _format_date_registration(vehicle.get("first_registration_date"))
-    if date_reg:
-        params["date_registration"] = date_reg
+    # date_registration is deliberately NOT sent: Autovit rejects our value with
+    # 400 {"message":"Wrong format on 'date_registration'"} and the expected
+    # format is unconfirmed (undocumented in the OTOMOTO/OLX spec). On an UPDATE
+    # Autovit keeps the ad's existing registration date, so nothing is lost;
+    # re-enable with the correct format once it's confirmed against a live advert.
     euro = _norm_enum(vehicle.get("euro_standard"), _EURO_SLUGS, _EURO_ALIASES)
     if euro:
         params["pollution_standard"] = euro
