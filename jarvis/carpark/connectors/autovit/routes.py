@@ -596,12 +596,26 @@ def publish(account_id):
             ext_url = existing.get('external_url')
             ext_status = 'active'
         else:
-            # New adverts are created in Autovit's `unpaid` status — a private
-            # draft, not visible on the marketplace until paid/activated.
-            result = client.create_advert(advert) or {}
-            ext_id = result.get('id')
-            ext_url = result.get('url')
-            ext_status = result.get('status') or 'active'
+            # VIN-dedup: before creating, check whether a live Autovit ad with
+            # this vehicle's VIN already exists on the account. If so, adopt +
+            # update it (connect/reconcile the listing) instead of posting a
+            # duplicate — covers the case where the local link was lost/removed
+            # but the ad is still up.
+            adopted_id, adopted_url = reconcile_service.find_active_advert_by_vin(
+                client, vehicle.get('vin'))
+            if adopted_id:
+                logger.info('Autovit: adopting live advert %s by VIN for vehicle %s '
+                            '(no duplicate)', adopted_id, vehicle['id'])
+                client.update_advert(adopted_id, advert)
+                ext_id, ext_url, ext_status = adopted_id, adopted_url, 'active'
+                updated_existing = True
+            else:
+                # New adverts are created in Autovit's `unpaid` status — a private
+                # draft, not visible on the marketplace until paid/activated.
+                result = client.create_advert(advert) or {}
+                ext_id = result.get('id')
+                ext_url = result.get('url')
+                ext_status = result.get('status') or 'active'
         _t_write = time.monotonic()
 
         # Post-write verification: read the advert back and diff what we sent

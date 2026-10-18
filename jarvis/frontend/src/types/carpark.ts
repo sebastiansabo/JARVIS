@@ -45,6 +45,8 @@ export interface VehicleCatalogItem {
   stationary_days: number
   primary_photo_url: string | null
   photo_count: number
+  autovit_published: boolean
+  shopify_published: boolean
 }
 
 export interface Vehicle extends VehicleCatalogItem {
