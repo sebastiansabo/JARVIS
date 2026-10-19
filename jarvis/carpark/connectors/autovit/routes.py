@@ -6,6 +6,7 @@ and retrieving advert data from Autovit.
 import json
 import logging
 import time
+from typing import Optional
 
 import requests
 
@@ -14,6 +15,9 @@ from flask_login import login_required, current_user
 
 from . import autovit_bp
 from . import taxonomy
+from . import taxonomy_map
+from . import taxonomy_sync
+from .taxonomy_repository import AutovitTaxonomyRepository
 from .client import AutovitClient, AutovitAuthError, PRODUCTION_URL, SANDBOX_URL
 from core.connectors.repositories.connector_repository import ConnectorRepository
 from core.utils.api_helpers import api_login_required, admin_required
@@ -32,6 +36,7 @@ _repo = ConnectorRepository()
 _vehicle_repo = VehicleRepository()
 _photo_repo = VehiclePhotoRepository()
 _listing_repo = AutovitListingRepository()
+_taxonomy_repo = AutovitTaxonomyRepository()
 
 CONNECTOR_TYPE = 'autovit'
 
@@ -515,6 +520,174 @@ def import_all(account_id):
     return jsonify({'success': True, **summary})
 
 
+# ── Taxonomy Mapping (Autovit Taxonomy Mapping project, Task 6) ──
+#
+# GET exposes the synced live-vocabulary cache (Task 5's `pull_taxonomy`
+# output) + the editable CarPark-value -> Autovit-code map (Task 3's
+# `get_map()`, flattened to a JSON-safe row list — its native shape keys on
+# a `(source_value, make)` TUPLE, which `jsonify` cannot encode as a dict
+# key) + the dimension registry, for the taxonomy admin UI. The other two
+# routes are the admin actions that keep the map/cache current.
+
+def _dimensions_payload() -> dict:
+    """{dimension: {kind, param, required}} — the registry
+    (`taxonomy_map.DIMENSIONS`) plus which dimensions block publish when
+    unmapped (`taxonomy_map.REQUIRED_DIMENSIONS`)."""
+    return {
+        dim: {'kind': kind, 'param': param_name,
+              'required': dim in taxonomy_map.REQUIRED_DIMENSIONS}
+        for dim, (kind, param_name) in taxonomy_map.DIMENSIONS.items()
+    }
+
+
+def _map_rows(tmap: dict) -> list:
+    """Flatten `AutovitTaxonomyRepository.get_map()`'s {dimension:
+    {(source_value, make): {target_code, target_label}}} shape into a flat,
+    JSON-safe row list: [{dimension, source_value, make, target_code,
+    target_label}, ...]."""
+    rows = []
+    for dimension, entries in (tmap or {}).items():
+        for (source_value, make), target in entries.items():
+            rows.append({
+                'dimension': dimension,
+                'source_value': source_value,
+                'make': make,
+                'target_code': (target or {}).get('target_code'),
+                'target_label': (target or {}).get('target_label'),
+            })
+    return rows
+
+
+# carpark_vehicles column feeding each SIMPLE (single source column, not
+# make-scoped, not equipment) dimension — mirrors taxonomy.vehicle_to_advert,
+# the authoritative vehicle-field -> dimension wiring (`gearbox` reads the
+# `transmission` column; the *Autovit param* named "transmission" is instead
+# where the `drive` dimension's resolved code is EMITTED — see
+# taxonomy_map.DIMENSIONS — two different things sharing a name).
+# `air_conditioning_type`/`alloy_wheels_type` are intentionally excluded:
+# no corresponding carpark_vehicles column exists to source them from.
+_SOURCE_COLUMNS = {
+    'fuel_type': 'fuel_type',
+    'body_type': 'body_type',
+    'color': 'color_exterior',
+    'gearbox': 'transmission',
+    'drive': 'drive_type',
+    'pollution_standard': 'euro_standard',
+}
+
+
+def _source_row(tmap: dict, cache_rows: list, dimension: str,
+                source_value: str, make: Optional[str] = None) -> dict:
+    """One admin-UI row for a single CarPark source value: its current
+    resolved Autovit target (fold-aware `taxonomy_map.resolve`, same lookup
+    the publish path uses) plus top-N auto-suggest candidates
+    (`taxonomy_sync.suggest`, pure/no I/O) ranked against the synced cache."""
+    hit = taxonomy_map.resolve(tmap, dimension, source_value, make) or {}
+    suggestions = taxonomy_sync.suggest(cache_rows, dimension, source_value, make)
+    return {
+        'source_value': source_value,
+        'target_code': hit.get('target_code'),
+        'target_label': hit.get('target_label'),
+        'suggestions': [{'target_code': code, 'target_label': label, 'score': score}
+                        for code, label, score in suggestions],
+    }
+
+
+def _sources_payload(tmap: dict, cache_rows: list) -> dict:
+    """{dimension: [source_row, ...]} — every distinct, in-use CarPark value
+    that needs an Autovit mapping, per dimension, each annotated with its
+    current target + suggestions (`_source_row` above). `model` rows are
+    additionally scoped/annotated by `make`/`resolved_make_code` (the
+    RESOLVED Autovit make code for that CarPark brand — Task 3's make-
+    scoping rule for `model`, mirrored here so the UI resolves/suggests
+    model codes the same way the publish path does)."""
+    distinct = _taxonomy_repo.distinct_source_values(_SOURCE_COLUMNS)
+    sources = {
+        dimension: [_source_row(tmap, cache_rows, dimension, value)
+                    for value in values]
+        for dimension, values in distinct.items()
+    }
+
+    sources['equipment'] = [_source_row(tmap, cache_rows, 'equipment', value)
+                            for value in _taxonomy_repo.distinct_equipment()]
+
+    makes = _taxonomy_repo.distinct_source_values({'make': 'brand'})['make']
+    sources['make'] = [_source_row(tmap, cache_rows, 'make', value) for value in makes]
+
+    model_rows = []
+    for item in _taxonomy_repo.distinct_models():
+        brand, model_value = item['make'], item['value']
+        make_hit = taxonomy_map.resolve(tmap, 'make', brand) or {}
+        resolved_make_code = make_hit.get('target_code')
+        row = _source_row(tmap, cache_rows, 'model', model_value, resolved_make_code)
+        row['make'] = brand
+        row['resolved_make_code'] = resolved_make_code
+        model_rows.append(row)
+    sources['model'] = model_rows
+
+    return sources
+
+
+@autovit_bp.route('/api/taxonomy', methods=['GET'])
+@carpark_required
+def get_taxonomy():
+    """Taxonomy admin UI data: synced cache + editable map + dimension
+    registry + per-dimension distinct CarPark values needing a mapping
+    (current target + auto-suggest candidates). Read-only — reachable by
+    any CarPark user."""
+    cache = _taxonomy_repo.get_cache()
+    tmap = _taxonomy_repo.get_map()
+    return jsonify({'success': True, 'cache': cache, 'map': _map_rows(tmap),
+                    'dimensions': _dimensions_payload(),
+                    'sources': _sources_payload(tmap, cache)})
+
+
+@autovit_bp.route('/api/taxonomy/sync', methods=['POST'])
+@admin_required
+def sync_taxonomy():
+    """Pull Autovit's LIVE category-29 taxonomy (parameters + makes + every
+    make's models) and fully replace `carpark_autovit_taxonomy_cache`.
+
+    SECURITY: @admin_required — a full sync is O(makes) network round-trips
+    against the account's own credentials; gated the same as test-connection.
+    """
+    data = request.get_json(silent=True) or {}
+    account_id = data.get('account_id')
+    if not account_id:
+        return jsonify({'success': False, 'error': 'account_id is required'}), 400
+    connector = _repo.get(account_id)
+    if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
+        return jsonify({'success': False, 'error': 'Account not found'}), 404
+    try:
+        client = _build_client(connector)
+        rows = taxonomy_sync.pull_taxonomy(client)
+        _taxonomy_repo.replace_cache(rows)
+    except Exception as e:
+        logger.exception('Autovit taxonomy sync failed for account %s', account_id)
+        return jsonify({'success': False, 'error': str(e)}), 502
+    by_dimension = {}
+    for row in rows:
+        by_dimension[row['dimension']] = by_dimension.get(row['dimension'], 0) + 1
+    return jsonify({'success': True, 'synced': len(rows), 'by_dimension': by_dimension})
+
+
+@autovit_bp.route('/api/taxonomy/map', methods=['PUT'])
+@admin_required
+def upsert_taxonomy_map():
+    """Create/update a single CarPark-value -> Autovit-code mapping row."""
+    data = request.get_json(silent=True) or {}
+    dimension = data.get('dimension')
+    source_value = data.get('source_value')
+    if not dimension or source_value in (None, ''):
+        return jsonify({'success': False,
+                        'error': 'dimension and source_value are required'}), 400
+    uid = getattr(current_user, 'id', None)
+    _taxonomy_repo.upsert(dimension, source_value, data.get('make'),
+                         data.get('target_code'), data.get('target_label'),
+                         updated_by=uid)
+    return jsonify({'success': True})
+
+
 # ── Push: publish / unpublish a vehicle to Autovit (Task 8) ──
 
 def _fill_location_contact(client, advert):
@@ -547,6 +720,34 @@ def _fill_location_contact(client, advert):
                              'phones': c.get('phones') or c.get('phone_numbers') or []}
 
 
+def _autovit_error_message(body: str) -> str:
+    """Parse Autovit's rejection body (`{"error":{"type","message","details":
+    {"params.model":"Valoare incorecta", ...}}}`, confirmed live) into an
+    actionable RO message naming the offending field(s) + Autovit's own
+    complaint — `str(e)` alone is just "400 Bad Request for url ...", which
+    names neither.
+
+    Never raises: an empty/unparseable/shapeless body degrades to a generic
+    note rather than blowing up the already-failed publish's error path.
+    """
+    try:
+        data = json.loads(body) if body else {}
+    except (json.JSONDecodeError, TypeError):
+        return 'Autovit a respins cererea (răspuns neinterpretabil).'
+    err = (data or {}).get('error') or {}
+    details = err.get('details') or {}
+    if isinstance(details, dict) and details:
+        parts = []
+        for key, val in details.items():
+            field = str(key).rsplit('.', 1)[-1]
+            parts.append(f'câmp «{field}» invalid ({val})')
+        return 'Autovit: ' + '; '.join(parts) + '.'
+    msg = err.get('message') or err.get('type')
+    if msg:
+        return f'Autovit: {msg}'
+    return 'Autovit a respins cererea.'
+
+
 @autovit_bp.route('/api/accounts/<int:account_id>/publish', methods=['POST'])
 @login_required
 @carpark_edit_required
@@ -568,12 +769,32 @@ def publish(account_id):
     if not vehicle:
         return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
 
-    advert = taxonomy.vehicle_to_advert(vehicle, connector)
+    # Preload the DB-confirmed CarPark -> Autovit map ONCE and hand it to
+    # vehicle_to_advert — every enum/equipment value is resolved against it
+    # (Task 3); a miss is omitted from `params` (never raw-sent, since
+    # Autovit silently drops anything that isn't one of its exact codes)
+    # and reported back in `unmapped` as "<dimension>:<source_value>".
+    tmap = _taxonomy_repo.get_map()
+    advert, unmapped = taxonomy.vehicle_to_advert(vehicle, connector, tmap)
+    # An unmapped value in a REQUIRED dimension (make/model/body_type/
+    # fuel_type/color) would doom the Autovit call to a 400 anyway — block
+    # BEFORE spending the network round-trip, with a message naming exactly
+    # what needs mapping (vs. Autovit's own opaque rejection).
+    unmapped_required = [u for u in unmapped
+                         if u.split(':', 1)[0] in taxonomy_map.REQUIRED_DIMENSIONS]
+    if unmapped_required:
+        return jsonify({
+            'success': False,
+            'error': ('Nu se poate publica: valori nemapate pentru Autovit la '
+                      'câmp(uri) obligatorii — ' + ', '.join(unmapped_required) +
+                      '. Mapează-le în Setări → Taxonomie Autovit înainte de publicare.'),
+            'unmapped_required': unmapped_required,
+        }), 422
     missing = taxonomy.validate_for_publish(advert)
     if missing:
         return jsonify({'success': False, 'error': 'Missing required fields', 'missing': missing}), 400
     if body.get('dry_run'):
-        return jsonify({'success': True, 'dry_run': True, 'advert': advert})
+        return jsonify({'success': True, 'dry_run': True, 'advert': advert, 'unmapped': unmapped})
 
     client = _build_client(connector)
     # 504-guard: a single publish chains several sequential Autovit calls (token,
@@ -665,6 +886,11 @@ def publish(account_id):
         if verify['photos_remote'] is not None and photos['sent'] and \
                 verify['photos_remote'] < photos['sent']:
             problems.append(f"photos: sent {photos['sent']}, Autovit kept {verify['photos_remote']}")
+        if unmapped:
+            # Non-required unmapped values (equipment, etc.) didn't block the
+            # publish, but a dropped value is still a fault worth surfacing —
+            # same treatment as params_dropped/photos above.
+            problems.append('unmapped: ' + ', '.join(unmapped))
         last_error = '; '.join(problems) if problems else None
         warnings = (['Anunț deja publicat pe Autovit — a fost actualizat.']
                     if updated_existing else []) + problems
@@ -681,6 +907,7 @@ def publish(account_id):
                         'photos_ok': photos['error'] is None,
                         'photos_remote': verify['photos_remote'],
                         'params_dropped': verify['params_dropped'],
+                        'unmapped': unmapped,
                         'warnings': warnings})
     except Exception as e:
         # Capture Autovit's actual rejection reason (the HTTPError response body) —
@@ -688,8 +915,12 @@ def publish(account_id):
         body = getattr(getattr(e, 'response', None), 'text', '') or ''
         logger.exception('Autovit publish failed for vehicle %s | autovit_body=%s',
                          vehicle['id'], body[:800])
-        _listing_repo.set_error(vehicle['id'], account_id, str(e))
-        return jsonify({'success': False, 'error': str(e)}), 502
+        # A body means Autovit actually responded with a structured rejection —
+        # parse it into something a non-engineer can act on. No body (e.g. a
+        # network/timeout/mock error) falls back to the plain str(e).
+        msg = _autovit_error_message(body) if body else str(e)
+        _listing_repo.set_error(vehicle['id'], account_id, msg)
+        return jsonify({'success': False, 'error': msg}), 502
 
 
 def _attach_image_collection(client: AutovitClient, advert: dict, vehicle_id: int) -> dict:
@@ -783,6 +1014,7 @@ def unpublish(account_id):
         return jsonify({'success': False, 'error': str(e)}), 502
 
 
+
 @autovit_bp.route('/api/accounts/<int:account_id>/delete-advert', methods=['POST'])
 @login_required
 @carpark_edit_required
@@ -804,7 +1036,6 @@ def delete_advert(account_id):
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 502
-
 
 @autovit_bp.route('/api/reconcile', methods=['POST'])
 @admin_required  # cross-account bulk op (all dealer accounts) — admin-gated, not per-editor

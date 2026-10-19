@@ -50,6 +50,57 @@ export interface AutovitAdvertsResponse {
   current_page: number
 }
 
+// ── Taxonomy mapping (Settings → Connectors → Autovit → Taxonomy) ──
+
+export interface AutovitTaxonomySuggestion {
+  target_code: string
+  target_label: string | null
+  score: number
+}
+
+/** One admin-UI row: a distinct, in-use CarPark value for a dimension, its
+ * current resolved Autovit target (if any), and ranked auto-suggest
+ * candidates. `make`/`resolved_make_code` are only present on `model` rows
+ * (make-scoped — Task 3's rule). */
+export interface AutovitTaxonomySourceRow {
+  source_value: string
+  target_code: string | null
+  target_label: string | null
+  suggestions: AutovitTaxonomySuggestion[]
+  make?: string | null
+  resolved_make_code?: string | null
+}
+
+export interface AutovitTaxonomyCacheRow {
+  dimension: string
+  code: string
+  ro_label: string | null
+  param_type: string | null
+  make: string | null
+  options: Record<string, unknown> | null
+}
+
+export interface AutovitTaxonomyMapRow {
+  dimension: string
+  source_value: string
+  make: string | null
+  target_code: string | null
+  target_label: string | null
+}
+
+export interface AutovitTaxonomyDimensionMeta {
+  kind: string
+  param: string | null
+  required: boolean
+}
+
+export interface AutovitTaxonomyData {
+  cache: AutovitTaxonomyCacheRow[]
+  map: AutovitTaxonomyMapRow[]
+  dimensions: Record<string, AutovitTaxonomyDimensionMeta>
+  sources: Record<string, AutovitTaxonomySourceRow[]>
+}
+
 const BASE = '/autovit/api'
 
 export const autovitApi = {
@@ -165,4 +216,25 @@ export const autovitApi = {
     )
     return res
   },
+
+  // ── Taxonomy mapping ──
+
+  getTaxonomy: () =>
+    api.get<{ success: boolean } & AutovitTaxonomyData>(`${BASE}/taxonomy`),
+
+  syncTaxonomy: (accountId: number) =>
+    api.post<{
+      success: boolean
+      synced?: number
+      by_dimension?: Record<string, number>
+      error?: string
+    }>(`${BASE}/taxonomy/sync`, { account_id: accountId }),
+
+  saveTaxonomyMap: (data: {
+    dimension: string
+    source_value: string
+    make?: string | null
+    target_code: string | null
+    target_label?: string | null
+  }) => api.put<{ success: boolean; error?: string }>(`${BASE}/taxonomy/map`, data),
 }

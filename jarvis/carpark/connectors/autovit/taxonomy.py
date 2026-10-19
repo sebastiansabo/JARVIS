@@ -3,7 +3,9 @@
 Slug maps mirror frontend/src/data/autovitData.ts. API advert `params` use
 lowercase slugs; a few differ from JARVIS canonical values (gray→grey, bej→beige).
 """
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
+
+from . import taxonomy_map as _taxonomy_map
 
 CARS_CATEGORY_ID = 29
 
@@ -329,47 +331,77 @@ def _label_to_slug(label: str) -> str:
 REQUIRED_PARAMS = ("make", "model", "year", "mileage", "fuel_type", "price", "body_type", "color")
 
 
-def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[str, Any]:
-    """CarPark vehicle + Autovit account config -> Autovit advert payload (push).
+def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any],
+                      taxonomy_map: Dict[str, Dict[Tuple[Any, Optional[str]], dict]]
+                      ) -> Tuple[Dict[str, Any], List[str]]:
+    """CarPark vehicle + Autovit account config + taxonomy map -> (advert, unmapped).
 
-    Inverse of advert_to_vehicle for the fields both directions share. Pure:
-    no I/O, no network calls — just dict shaping.
+    Every CarPark enum/equipment value is resolved against the DB-confirmed
+    `taxonomy_map` (Tasks 1-3) via `taxonomy_map.resolve()`/`emit()` — no
+    alias-table guessing. `_norm_enum`/`_label_to_slug` (kept below, used by
+    Task 4's seed and `advert_to_vehicle`) are no longer called from this
+    function, and equipment is no longer pushed via a raw loop over every
+    0/1-ish param: a miss is OMITTED from `params` (never raw-sent, since
+    Autovit silently drops anything that isn't one of its exact codes) and
+    recorded in `unmapped` as `"<dimension>:<source_value>"`.
+
+    `model` is resolved SCOPED by the RESOLVED Autovit make code: `make` is
+    resolved first, and its `target_code` (e.g. 'Audi' -> 'audi') becomes
+    the make key for the `model` lookup. If `make` misses (or is absent),
+    `model` is reported unmapped too — never resolved against the raw
+    CarPark brand or falling back to some other make's entry.
+
+    Pure: no I/O, no network calls — just dict shaping over the map it's
+    handed.
     """
     cfg = (account or {}).get("config", {}) or {}
     params: Dict[str, Any] = {}
+    unmapped: List[str] = []
+
+    def _emit(dimension: str, source_value: Any,
+              make: Optional[str] = None) -> Optional[str]:
+        """Resolve `source_value` under `dimension` (+ `make` for the
+        make-scoped `model` dimension) and emit it into `params` on a hit;
+        record a miss in `unmapped` and return None. A blank/absent
+        source_value is skipped silently (nothing to resolve)."""
+        if source_value is None or source_value == "":
+            return None
+        hit = _taxonomy_map.resolve(taxonomy_map, dimension, source_value, make)
+        if hit is None:
+            unmapped.append(f"{dimension}:{source_value}")
+            return None
+        _taxonomy_map.emit(params, dimension, hit["target_code"])
+        return hit["target_code"]
+
     if vehicle.get("vin"):
         params["vin"] = vehicle["vin"]
-    if vehicle.get("brand"):
-        params["make"] = _label_to_slug(vehicle["brand"])
+
+    resolved_make = _emit("make", vehicle.get("brand"))
     if vehicle.get("model"):
-        params["model"] = _label_to_slug(vehicle["model"])
+        if resolved_make is not None:
+            _emit("model", vehicle["model"], make=resolved_make)
+        else:
+            # make is absent/unmapped -> model can't be scoped; report it
+            # unmapped rather than guessing (no cross-make fallback).
+            unmapped.append(f"model:{vehicle['model']}")
+
     if vehicle.get("year_of_manufacture"):
         params["year"] = vehicle["year_of_manufacture"]
     if vehicle.get("mileage_km") is not None:
         params["mileage"] = vehicle["mileage_km"]
-    # Enums are normalised to Autovit slugs (the DB holds mixed slugs / RO labels
-    # / free text — see _norm_enum). Unmappable values are omitted rather than
-    # sent raw, so Autovit never silently drops the param.
-    fuel = _norm_enum(vehicle.get("fuel_type"), _FUEL_SLUGS, _FUEL_ALIASES)
-    if fuel:
-        params["fuel_type"] = fuel
-    gearbox = _norm_enum(vehicle.get("transmission"), _GEARBOX_SLUGS, _GEARBOX_ALIASES)
-    if gearbox:
-        params["gearbox"] = gearbox
+
+    _emit("fuel_type", vehicle.get("fuel_type"))
+    _emit("gearbox", vehicle.get("transmission"))
     # BUG-FIX-consistent: Autovit's param named "transmission" is drive type
-    # (4x4/FWD/RWD), not gearbox — see advert_to_vehicle above.
-    drive = _norm_enum(vehicle.get("drive_type"), _DRIVE_SLUGS, _DRIVE_ALIASES)
-    if drive:
-        params["transmission"] = drive
-    body = _norm_enum(vehicle.get("body_type"), _BODY_SLUGS, _BODY_ALIASES)
-    if body:
-        params["body_type"] = body
-    # Normalise to carpark canonical colour, then _REVERSE to the API slug
-    # (grey->gray, beige->bej). Free-text colour degrades to 'other'.
-    colour = _norm_enum(vehicle.get("color_exterior"), _COLOR_SLUGS, _COLOR_ALIASES,
-                        default="other")
-    if colour:
-        params["color"] = _REVERSE["color"].get(colour, colour)
+    # (4x4/FWD/RWD), not gearbox — see advert_to_vehicle above; the `drive`
+    # dimension's emit-kind (taxonomy_map.DIMENSIONS) writes to that param.
+    _emit("drive", vehicle.get("drive_type"))
+    _emit("body_type", vehicle.get("body_type"))
+    _emit("color", vehicle.get("color_exterior"))
+    _emit("pollution_standard", vehicle.get("euro_standard"))
+    _emit("air_conditioning_type", vehicle.get("air_conditioning_type"))
+    _emit("alloy_wheels_type", vehicle.get("alloy_wheels_type"))
+
     if vehicle.get("doors"):
         params["door_count"] = str(vehicle["doors"])
     if vehicle.get("engine_power_hp"):
@@ -396,9 +428,6 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[
     date_reg = _format_date_registration(vehicle.get("first_registration_date"))
     if date_reg:
         params["date_registration"] = date_reg
-    euro = _norm_enum(vehicle.get("euro_standard"), _EURO_SLUGS, _EURO_ALIASES)
-    if euro:
-        params["pollution_standard"] = euro
     if vehicle.get("country_of_origin"):
         params["country_origin"] = str(vehicle["country_of_origin"]).strip()
     # Condition flags as Autovit "1"/"0" (mirrors advert_to_vehicle's _flag read).
@@ -413,16 +442,23 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[
             params[autovit_param] = "1" if vehicle[vehicle_key] else "0"
     if vehicle.get("has_accident_history") is not None:
         params["no_accident"] = "0" if vehicle["has_accident_history"] else "1"
-    # Equipment → Autovit "<slug>"="1" params, from BOTH sources: the legacy JSONB
-    # `equipment` dict (Autovit-imported cars) AND the form's `equipment_options`
-    # TEXT[] slug array (the editor's Dotări) — previously only the dict was pushed,
-    # so form-entered equipment never reached Autovit.
-    for k, val in (vehicle.get("equipment") or {}).items():
-        if val is True:
-            params[k] = "1"
+
+    # Equipment: source values = UNNEST(equipment_options) ∪ truthy keys of
+    # the `equipment` JSONB dict (both the editor's Dotări TEXT[] and the
+    # legacy Autovit-imported flag dict feed the SAME 'equipment' dimension
+    # resolve — not make-scoped, so `make=None`). A hit emits
+    # params[<target_code>]="1" (taxonomy_map's 'flag' emit-kind); a miss is
+    # omitted and reported, never raw-sent.
+    equip_values = set()
     for slug in (vehicle.get("equipment_options") or []):
         if slug:
-            params[str(slug)] = "1"
+            equip_values.add(str(slug))
+    for k, val in (vehicle.get("equipment") or {}).items():
+        if val is True:
+            equip_values.add(str(k))
+    for source_value in sorted(equip_values):
+        _emit("equipment", source_value)
+
     # Create-only conditional param Autovit requires for cars: not in the
     # category "required" list, but POST /account/adverts rejects its absence
     # ("params.is_imported_car ... obligatoriu"). Verified live 2026-09-09.
@@ -447,7 +483,7 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[
     if person or phones:
         # Autovit expects `contact.phones` (array), not `phone_numbers`.
         advert["contact"] = {"person": person or "", "phones": phones}
-    return advert
+    return advert, unmapped
 
 
 def validate_for_publish(advert: Dict[str, Any]) -> List[str]:

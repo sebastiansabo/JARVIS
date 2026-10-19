@@ -25,6 +25,11 @@ SANDBOX_URL = 'https://autovit.fixeads.com/api/open'
 
 TOKEN_TTL_BUFFER = 300  # refresh 5 min before expiry
 
+# Cars category id — mirrors `taxonomy.CARS_CATEGORY_ID`. Kept as a private
+# literal here (not imported) to avoid this low-level HTTP client depending
+# on the higher-level taxonomy/mapping module.
+_CARS_CATEGORY_ID = 29
+
 
 class AutovitClient:
     """Low-level HTTP client for a single Autovit dealer account."""
@@ -177,6 +182,26 @@ class AutovitClient:
         """Fetch a category's live schema (its parameters, value dictionaries and
         formats) — the authoritative taxonomy for mapping/validation."""
         return self._request('GET', f'/categories/{category_id}', timeout=timeout).json()
+
+    def get_makes(self, timeout: int = 10) -> Dict[str, Any]:
+        """Fetch every make (brand) Autovit recognises for the Cars category
+        (id 29, see `taxonomy.CARS_CATEGORY_ID` — duplicated as a literal here
+        rather than imported, so this low-level HTTP client doesn't depend on
+        the higher-level taxonomy/mapping module).
+
+        Returns `{slug: {ro, en}}` — the response's `options` dict unwrapped,
+        e.g. `{"audi": {"en": "Audi", "ro": "Audi"}, ...}`.
+        """
+        resp = self._request('GET', f'/categories/{_CARS_CATEGORY_ID}/makes', timeout=timeout)
+        return (resp.json() or {}).get('options', {})
+
+    def get_models(self, make: str, timeout: int = 10) -> Dict[str, Any]:
+        """Fetch every model under `make` for the Cars category — `{slug:
+        {ro, en}}` (the response's `options` dict unwrapped), e.g.
+        `/categories/29/models/audi` -> {"a6": {...}, "a6-avant-e-tron": {...}, ...}`.
+        """
+        resp = self._request('GET', f'/categories/{_CARS_CATEGORY_ID}/models/{make}', timeout=timeout)
+        return (resp.json() or {}).get('options', {})
 
     def get_account_advert(self, advert_id: str, timeout: int = None) -> Dict[str, Any]:
         """Get one of THIS account's adverts — works for unpaid/draft adverts too,

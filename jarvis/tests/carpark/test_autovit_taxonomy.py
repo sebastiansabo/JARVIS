@@ -1,4 +1,5 @@
 from carpark.connectors.autovit import taxonomy as tx
+from carpark.connectors.autovit.taxonomy_map import fold
 
 SAMPLE = {
     "title": "Skoda Kodiaq Style", "description": "desc",
@@ -100,6 +101,11 @@ def test_co2_missing_is_absent():
 
 
 def test_vehicle_to_advert_builds_slugs_and_price():
+    # Task 3 rewrite: vehicle_to_advert now resolves every dimension through
+    # an explicit taxonomy_map (no more in-function alias normalisation) and
+    # returns (advert, unmapped) — see test_autovit_vehicle_to_advert.py for
+    # the dedicated map-resolution coverage. This test keeps asserting the
+    # non-dimension shape (category_id, price, vin, contact...) is unchanged.
     vehicle = {"vin": "TMBJK7NS0K8000001", "brand": "Skoda", "model": "Kodiaq",
                "year_of_manufacture": 2019, "mileage_km": 90000,
                "fuel_type": "diesel", "transmission": "automatic",
@@ -110,7 +116,20 @@ def test_vehicle_to_advert_builds_slugs_and_price():
                "listing_title": "Skoda Kodiaq", "listing_description": "d"}
     account = {"config": {"city_id": 52953, "region_id": 2,
                           "contact_person": "ATW", "phone": "0371521912"}}
-    ad = tx.vehicle_to_advert(vehicle, account)
+    # Map keys are folded (lowercase) — resolve() folds the vehicle's
+    # raw-cased brand/model ("Skoda"/"Kodiaq") the same way a DB-backed map
+    # (written through upsert()/the seed) already is.
+    tmap = {
+        'make': {('skoda', None): {'target_code': 'skoda', 'target_label': 'Skoda'}},
+        'model': {('kodiaq', 'skoda'): {'target_code': 'kodiaq', 'target_label': 'Kodiaq'}},
+        'fuel_type': {('diesel', None): {'target_code': 'diesel', 'target_label': 'Diesel'}},
+        'gearbox': {('automatic', None): {'target_code': 'automatic', 'target_label': 'Automatic'}},
+        'drive': {('all-wheel-auto', None): {'target_code': 'all-wheel-auto', 'target_label': 'AWD auto'}},
+        'body_type': {('suv', None): {'target_code': 'suv', 'target_label': 'SUV'}},
+        'color': {('grey', None): {'target_code': 'gray', 'target_label': 'Gray'}},
+    }
+    ad, unmapped = tx.vehicle_to_advert(vehicle, account, tmap)
+    assert unmapped == []
     assert ad["category_id"] == 29
     assert ad["new_used"] == "used"
     p = ad["params"]
@@ -127,24 +146,34 @@ def test_vehicle_to_advert_builds_slugs_and_price():
     assert p["is_imported_car"] == "0"
 
 
+_EQUIP_TMAP = {
+    'equipment': {
+        ('apple_carplay', None): {'target_code': 'apple_carplay', 'target_label': 'CarPlay'},
+        ('led_lights', None): {'target_code': 'led_lights', 'target_label': 'LED'},
+        ('esp', None): {'target_code': 'esp', 'target_label': 'ESP'},
+    },
+}
+
+
 def test_vehicle_to_advert_pushes_equipment_options():
     # Form-entered equipment lives in equipment_options (TEXT[] of Autovit slugs);
-    # each must become an Autovit "<slug>"="1" param. Previously only the JSONB
+    # each must become an Autovit "<slug>"="1" param (resolved through the map's
+    # 'equipment' dimension — Task 3 rewrite). Previously only the JSONB
     # `equipment` dict was pushed, so form-entered dotări never reached Autovit.
-    ad = tx.vehicle_to_advert(
+    ad, unmapped = tx.vehicle_to_advert(
         {"brand": "Audi", "model": "A4", "equipment_options": ["apple_carplay", "led_lights"]},
-        {},
+        {}, _EQUIP_TMAP,
     )
     assert ad["params"].get("apple_carplay") == "1"
     assert ad["params"].get("led_lights") == "1"
 
 
 def test_vehicle_to_advert_merges_equipment_dict_and_options():
-    ad = tx.vehicle_to_advert(
+    ad, unmapped = tx.vehicle_to_advert(
         {"brand": "Audi", "model": "A4",
          "equipment": {"esp": True, "abs": False},
          "equipment_options": ["apple_carplay"]},
-        {},
+        {}, _EQUIP_TMAP,
     )
     p = ad["params"]
     assert p.get("esp") == "1"            # JSONB True flag still pushed
@@ -160,7 +189,7 @@ def test_vehicle_to_advert_enriches_optional_params():
          "seats": 5, "co2_emissions": 120, "generation": "B9", "variant": "2.0 TDI",
          "is_registered": True, "is_first_owner": True, "has_service_book": True,
          "has_tuning": False, "is_vintage": False, "has_accident_history": False}
-    p = tx.vehicle_to_advert(v, {})["params"]
+    p = tx.vehicle_to_advert(v, {}, {})[0]["params"]
     assert p["nr_seats"] == 5
     assert p["co2_emissions"] == 120
     assert p["generation"] == "B9"
@@ -175,7 +204,7 @@ def test_vehicle_to_advert_enriches_optional_params():
 
 def test_vehicle_to_advert_omits_absent_optional_params():
     # A sparse vehicle must not force empty/None optional params onto the advert.
-    p = tx.vehicle_to_advert({"brand": "Audi", "model": "A4"}, {})["params"]
+    p = tx.vehicle_to_advert({"brand": "Audi", "model": "A4"}, {}, {})[0]["params"]
     for k in ("nr_seats", "co2_emissions", "generation", "version",
               "registered", "original_owner", "service_record", "tuning",
               "historical_vehicle", "no_accident"):
@@ -183,14 +212,18 @@ def test_vehicle_to_advert_omits_absent_optional_params():
 
 
 def test_vehicle_to_advert_color_reverse_map():
-    # PUSH: carpark canonical color -> live Autovit api slug. Only grey/beige
-    # differ from identity (grey->gray, beige->bej); everything else is 1:1.
-    def _color(c):
-        return tx.vehicle_to_advert({"color_exterior": c}, {})["params"]["color"]
-    assert _color("grey") == "gray"
-    assert _color("beige") == "bej"
-    assert _color("black") == "black"
-    assert _color("red") == "red"
+    # PUSH: carpark canonical color -> live Autovit api slug, resolved through
+    # an explicit map entry (Task 3 rewrite — no more built-in _REVERSE
+    # lookup inside vehicle_to_advert). Only grey/beige differ from identity
+    # (grey->gray, beige->bej); everything else is 1:1 — this asserts the
+    # map-driven wiring reproduces the same real-slug values either way.
+    def _color(c, target):
+        tmap = {'color': {(c, None): {'target_code': target, 'target_label': target}}}
+        return tx.vehicle_to_advert({"color_exterior": c}, {}, tmap)[0]["params"]["color"]
+    assert _color("grey", "gray") == "gray"
+    assert _color("beige", "bej") == "bej"
+    assert _color("black", "black") == "black"
+    assert _color("red", "red") == "red"
 
 
 def test_advert_to_vehicle_color_pull_map():
@@ -215,13 +248,26 @@ def test_advert_to_vehicle_pulls_euro_country_vintage():
 
 def test_push_normalizes_romanian_and_variant_enum_values():
     # carpark_vehicles stores a MIX of Autovit slugs, Romanian labels and short
-    # forms (manual entry / legacy import — see the 2026-10-15 data audit). Push
-    # must normalise each enum to the Autovit API slug, else Autovit silently
-    # drops the param and the advert field is blank (Transmisie / Opțiuni culoare).
+    # forms (manual entry / legacy import — see the 2026-10-15 data audit).
+    # Task 3 rewrite: vehicle_to_advert no longer normalises these itself —
+    # it resolves each RAW source value through an explicit taxonomy_map
+    # entry (seeded from exactly this kind of alias by Task 4). This test
+    # keeps asserting the dimension-to-param WIRING (gearbox, drive->
+    # "transmission" param, body_type, color, fuel_type) is correct end to end.
     v = {"brand": "Audi", "model": "A4",
          "fuel_type": "Diesel", "transmission": "Automat",
          "drive_type": "fwd", "body_type": "SUV", "color_exterior": "Negru"}
-    p = tx.vehicle_to_advert(v, {})["params"]
+    # Map keys are folded (lowercase) — resolve() folds the raw-cased
+    # lookup values ("Diesel"/"Automat"/"SUV"/"Negru") the same way a
+    # DB-backed map already is.
+    tmap = {
+        'fuel_type': {('diesel', None): {'target_code': 'diesel', 'target_label': 'Diesel'}},
+        'gearbox': {('automat', None): {'target_code': 'automatic', 'target_label': 'Automat'}},
+        'drive': {('fwd', None): {'target_code': 'front-wheel', 'target_label': 'FWD'}},
+        'body_type': {('suv', None): {'target_code': 'suv', 'target_label': 'SUV'}},
+        'color': {('negru', None): {'target_code': 'black', 'target_label': 'Black'}},
+    }
+    p = tx.vehicle_to_advert(v, {}, tmap)[0]["params"]
     assert p["fuel_type"] == "diesel"
     assert p["gearbox"] == "automatic"
     assert p["transmission"] == "front-wheel"   # Autovit param "transmission" = drive
@@ -233,53 +279,84 @@ def test_push_normalizes_diacritic_labels():
     v = {"brand": "Audi", "model": "A4",
          "fuel_type": "Benzină", "transmission": "Manuală",
          "drive_type": "awd", "color_exterior": "Gri"}
-    p = tx.vehicle_to_advert(v, {})["params"]
+    # Map keys are folded (lowercase + diacritics stripped) — resolve()
+    # folds the raw diacritic lookup values the same way.
+    tmap = {
+        'fuel_type': {('benzina', None): {'target_code': 'petrol', 'target_label': 'Petrol'}},
+        'gearbox': {('manuala', None): {'target_code': 'manual', 'target_label': 'Manual'}},
+        'drive': {('awd', None): {'target_code': 'all-wheel-permanent', 'target_label': 'AWD'}},
+        'color': {('gri', None): {'target_code': 'gray', 'target_label': 'Gray'}},
+    }
+    p = tx.vehicle_to_advert(v, {}, tmap)[0]["params"]
     assert p["fuel_type"] == "petrol"
     assert p["gearbox"] == "manual"
     assert p["transmission"] == "all-wheel-permanent"
-    assert p["color"] == "gray"   # 'Gri' -> carpark 'grey' -> Autovit api 'gray'
+    assert p["color"] == "gray"   # 'Gri' maps directly to the Autovit api slug 'gray'
 
 
 def test_push_normalizes_gearbox_variants():
     for stored in ("dual-clutch", "cvt", "Automată"):
+        # Map key is folded — resolve() folds `stored` the same way a
+        # DB-backed map already is (a no-op for the already-lowercase-ASCII
+        # variants, but required for "Automată"'s diacritic).
+        tmap = {'gearbox': {(fold(stored), None): {'target_code': 'automatic', 'target_label': 'Automatic'}}}
         p = tx.vehicle_to_advert({"brand": "Audi", "model": "A4",
-                                  "transmission": stored}, {})["params"]
+                                  "transmission": stored}, {}, tmap)[0]["params"]
         assert p["gearbox"] == "automatic", stored
 
 
 def test_push_drops_unmappable_enum_rather_than_sending_raw():
-    # A value that maps to no Autovit slug must be omitted (Autovit drops it
-    # anyway, and a bad REQUIRED param could 400 the whole create). Free-text
-    # colour degrades to 'other' (a real slug) so the car still shows a colour.
+    # A value with no map entry must be omitted (Autovit drops it anyway, and
+    # a bad REQUIRED param could 400 the whole create) and reported in
+    # `unmapped` — never raw-sent. Task 3 rewrite: an unmapped miss is no
+    # longer degraded to a default (the old 'other' color fallback lived in
+    # the removed _norm_enum call); Task 6's publish route is where a
+    # REQUIRED-dimension miss like this blocks the publish pre-flight.
     v = {"brand": "Audi", "model": "A4",
          "transmission": "spaceship", "color_exterior": "Fjord Blue"}
-    p = tx.vehicle_to_advert(v, {})["params"]
+    advert, unmapped = tx.vehicle_to_advert(v, {}, {})
+    p = advert["params"]
     assert "gearbox" not in p            # unmappable gearbox omitted, not sent raw
-    assert p["color"] == "other"         # free-text colour -> 'other'
+    assert "color" not in p              # unmappable color omitted, not sent raw
+    assert "gearbox:spaceship" in unmapped
+    assert "color:Fjord Blue" in unmapped
 
 
 def test_push_normalizes_pollution_standard_label_to_slug():
-    # euro_standard holds both slugs ('euro-6d') and labels ('Euro 6d'); push
-    # must emit the Autovit slug for both. Exact wire format is confirmed by the
-    # publish read-back (_verify_advert params_dropped) — see DATE/euro notes.
-    def _poll(stored):
+    # euro_standard holds both slugs ('euro-6d') and labels ('Euro 6d'); each
+    # resolves through an explicit map entry to the Autovit slug. Exact wire
+    # format is confirmed by the publish read-back (_verify_advert
+    # params_dropped) — see DATE/euro notes.
+    def _poll(stored, target=None):
+        # Map key is folded — resolve() folds `stored` the same way a
+        # DB-backed map already is.
+        tmap = {'pollution_standard': {(fold(stored), None): {'target_code': target, 'target_label': target}}} \
+            if target else {}
         return tx.vehicle_to_advert({"brand": "Audi", "model": "A4",
-                                     "euro_standard": stored}, {})["params"].get("pollution_standard")
-    assert _poll("Euro 6d") == "euro-6d"
-    assert _poll("euro-6") == "euro-6"
-    assert _poll("Euro 5") == "euro-5"
-    # EVs have no pollution standard — don't send a bogus value.
+                                     "euro_standard": stored}, {}, tmap)[0]["params"].get("pollution_standard")
+    assert _poll("Euro 6d", "euro-6d") == "euro-6d"
+    assert _poll("euro-6", "euro-6") == "euro-6"
+    assert _poll("Euro 5", "euro-5") == "euro-5"
+    # EVs have no pollution standard / no map entry — don't send a bogus value.
     assert _poll("N/A (EV)") is None
 
 
 def test_push_preserves_already_slug_values():
     # Rows that already store Autovit slugs must pass through unchanged (no
-    # double-mapping, no regression for Autovit-imported cars).
+    # double-mapping, no regression for Autovit-imported cars) — an identity
+    # map entry resolves each slug to itself (color's real wire quirk aside).
     v = {"brand": "Audi", "model": "A4",
          "fuel_type": "plugin-hybrid", "transmission": "automatic",
          "drive_type": "all-wheel-permanent", "body_type": "suv",
          "color_exterior": "grey"}
-    p = tx.vehicle_to_advert(v, {})["params"]
+    tmap = {
+        'fuel_type': {('plugin-hybrid', None): {'target_code': 'plugin-hybrid', 'target_label': 'PHEV'}},
+        'gearbox': {('automatic', None): {'target_code': 'automatic', 'target_label': 'Automatic'}},
+        'drive': {('all-wheel-permanent', None): {'target_code': 'all-wheel-permanent', 'target_label': 'AWD'}},
+        'body_type': {('suv', None): {'target_code': 'suv', 'target_label': 'SUV'}},
+        'color': {('grey', None): {'target_code': 'gray', 'target_label': 'Gray'}},
+    }
+    p = tx.vehicle_to_advert(v, {}, tmap)[0]["params"]
     assert p["fuel_type"] == "plugin-hybrid"
     assert p["gearbox"] == "automatic"
     assert p["transmission"] == "all-wheel-permanent"
