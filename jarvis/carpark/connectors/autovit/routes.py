@@ -250,6 +250,26 @@ def vehicle_autovit_status(vehicle_id):
     return jsonify({'success': True, 'listings': [_serialize(dict(l)) for l in listings]})
 
 
+@autovit_bp.route('/api/accounts/<int:account_id>/category-taxonomy', methods=['GET'])
+@login_required
+@carpark_required
+def category_taxonomy(account_id):
+    """Diagnostic: fetch the live Autovit cars-category parameter schema so param
+    formats (e.g. date_registration) and derived fields (e.g. title) can be
+    verified against what we send. Logs it (grep-able) and returns the JSON."""
+    connector = _repo.get(account_id)
+    if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
+        return jsonify({'success': False, 'error': 'Account not found'}), 404
+    try:
+        cat = _build_client(connector).get_category(taxonomy.CARS_CATEGORY_ID) or {}
+    except Exception as e:
+        logger.exception('Autovit category-taxonomy fetch failed')
+        return jsonify({'success': False, 'error': str(e)}), 502
+    logger.info('Autovit category %s taxonomy: %s',
+                taxonomy.CARS_CATEGORY_ID, json.dumps(cat)[:4000])
+    return jsonify({'success': True, 'category': cat})
+
+
 @autovit_bp.route('/api/vehicles/<int:vehicle_id>/verify-status', methods=['POST'])
 @login_required
 @carpark_edit_required
@@ -615,13 +635,17 @@ def publish(account_id):
                 result = client.create_advert(advert) or {}
                 ext_id = result.get('id')
                 ext_url = result.get('url')
-                ext_status = result.get('status') or 'active'
+                ext_status = result.get('status') or 'unpaid'
         _t_write = time.monotonic()
 
         # Post-write verification: read the advert back and diff what we sent
         # against what Autovit kept. Silently-dropped params are otherwise
         # invisible (the create/update returns 2xx regardless).
         verify = _verify_advert(client, ext_id, advert)
+        # Prefer the status Autovit actually reports (read back) over our guess —
+        # a create lands 'unpaid'; an active ad updated in place stays 'active'.
+        if verify.get('status_remote'):
+            ext_status = verify['status_remote']
         # Per-stage timing — surfaces which leg is slow when a publish flirts
         # with the gateway limit (the whole reason for the bounds above).
         logger.info(
@@ -707,9 +731,10 @@ def _attach_image_collection(client: AutovitClient, advert: dict, vehicle_id: in
 def _verify_advert(client: AutovitClient, advert_id, sent: dict) -> dict:
     """GET the advert back from Autovit and report which `params` keys we sent
     that Autovit did not keep, plus how many photos it holds.
-    Returns {'params_dropped': [..], 'photos_remote': int|None}. Never raises —
-    verification must not turn a successful publish into a 502."""
-    out = {'params_dropped': [], 'photos_remote': None}
+    Returns {'params_dropped': [..], 'photos_remote': int|None, 'status_remote':
+    str|None}. Never raises — verification must not turn a successful publish
+    into a 502."""
+    out = {'params_dropped': [], 'photos_remote': None, 'status_remote': None}
     if not advert_id:
         return out
     try:
@@ -721,6 +746,12 @@ def _verify_advert(client: AutovitClient, advert_id, sent: dict) -> dict:
         logger.warning('Autovit post-publish verify failed for advert %s: %s', advert_id, e)
         return out
     remote_params = remote.get('params') or {}
+    out['status_remote'] = remote.get('status')
+    # Diagnostic: did Autovit apply our title on update, or keep/auto-derive its
+    # own? (OTOMOTO often derives the displayed title from brand/model/params.)
+    if remote.get('title') != sent.get('title'):
+        logger.info('Autovit title advert=%s NOT applied: sent=%r remote=%r',
+                    advert_id, sent.get('title'), remote.get('title'))
     sent_params = sent.get('params') or {}
     out['params_dropped'] = sorted(k for k in sent_params if k not in remote_params)
     photos = remote.get('photos') or remote.get('images')
