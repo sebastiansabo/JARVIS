@@ -126,8 +126,15 @@ export const autovitApi = {
       draft: options?.draft,
     }),
 
+  // Deactivate (disable, reversible) the vehicle's Autovit advert.
   unpublish: (accountId: number, vehicleId: number) =>
     api.post<{ success: boolean; error?: string }>(`${BASE}/accounts/${accountId}/unpublish`, {
+      vehicle_id: vehicleId,
+    }),
+
+  // Permanently delete the vehicle's Autovit advert (re-publish creates a new one).
+  deleteAdvert: (accountId: number, vehicleId: number) =>
+    api.post<{ success: boolean; error?: string }>(`${BASE}/accounts/${accountId}/delete-advert`, {
       vehicle_id: vehicleId,
     }),
 

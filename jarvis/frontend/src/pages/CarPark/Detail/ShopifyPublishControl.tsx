@@ -157,9 +157,6 @@ export function ShopifyPublishControl({
     previewMutation.isPending || publishMutation.isPending ||
     unpublishMutation.isPending || verifyMutation.isPending
 
-  const onPrimaryClick = () =>
-    isPublished ? unpublishMutation.mutate() : previewMutation.mutate()
-
   return (
     <>
       <div className="flex items-center gap-2">
@@ -198,23 +195,53 @@ export function ShopifyPublishControl({
             )}
           </Button>
         )}
-        {canEdit && (
+        {canEdit && !isPublished && (
           <Button
             size="sm"
-            variant={isPublished ? 'outline' : 'default'}
+            variant="default"
             className="w-44"
             disabled={isMutating || isLoading}
-            onClick={onPrimaryClick}
+            onClick={() => previewMutation.mutate()}
           >
             {isMutating ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-            ) : isPublished ? (
-              <Undo2 className="mr-1.5 h-3.5 w-3.5" />
             ) : (
               <Globe className="mr-1.5 h-3.5 w-3.5" />
             )}
-            {isPublished ? 'Retrage' : 'Publică pe Shopify'}
+            Publică pe Shopify
           </Button>
+        )}
+        {canEdit && isPublished && (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={isMutating || isLoading}
+              onClick={() => previewMutation.mutate()}
+              title="Actualizează produsul pe Autoworld.ro cu datele curente"
+            >
+              {previewMutation.isPending || publishMutation.isPending ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              Actualizează
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={isMutating || isLoading}
+              onClick={() => unpublishMutation.mutate()}
+              title="Retrage produsul de pe Autoworld.ro"
+            >
+              {unpublishMutation.isPending ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Undo2 className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              Retrage
+            </Button>
+          </>
         )}
       </div>
 

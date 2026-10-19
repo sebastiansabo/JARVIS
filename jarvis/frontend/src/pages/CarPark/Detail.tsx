@@ -2602,7 +2602,7 @@ function advertField(params: Record<string, unknown>, key: string): string {
   return v === undefined || v === null || v === '' ? '—' : String(v)
 }
 
-function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
+function AutovitPublishAction({ vehicleId, canEdit }: { vehicleId: number; canEdit: boolean }) {
   const [open, setOpen] = useState(false)
   const [accountId, setAccountId] = useState('')
   const [step, setStep] = useState<'select' | 'preview' | 'missing' | 'success'>('select')
@@ -2688,6 +2688,31 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
     onError: () => toast.error('Verificarea statusului a eșuat'),
   })
 
+  const refreshStatus = () =>
+    queryClient.invalidateQueries({ queryKey: ['autovit', 'vehicle-status', vehicleId] })
+  const autovitErr = (e: unknown, fallback: string) =>
+    toast.error((e as { data?: { error?: string } })?.data?.error || fallback)
+
+  // Deactivate = disable on Autovit (reversible — re-publishing reactivates).
+  const deactivateMutation = useMutation({
+    mutationFn: () => autovitApi.unpublish(Number(autovitListing?.account_id), vehicleId),
+    onSuccess: (res) => {
+      if (res.success) { refreshStatus(); toast.success('Anunț dezactivat pe Autovit') }
+      else toast.error(res.error || 'Dezactivarea a eșuat')
+    },
+    onError: (e) => autovitErr(e, 'Dezactivarea a eșuat'),
+  })
+
+  // Delete = permanent removal on Autovit (re-publishing creates a new advert).
+  const deleteMutation = useMutation({
+    mutationFn: () => autovitApi.deleteAdvert(Number(autovitListing?.account_id), vehicleId),
+    onSuccess: (res) => {
+      if (res.success) { refreshStatus(); toast.success('Anunț șters de pe Autovit') }
+      else toast.error(res.error || 'Ștergerea a eșuat')
+    },
+    onError: (e) => autovitErr(e, 'Ștergerea a eșuat'),
+  })
+
   const params = (advert?.params as Record<string, unknown>) || {}
   const price = params.price as { '1'?: number; currency?: string } | undefined
 
@@ -2738,6 +2763,33 @@ function AutovitPublishAction({ vehicleId }: { vehicleId: number }) {
             <RefreshCw className={`mr-1 h-3.5 w-3.5 ${verifyStatusMutation.isPending ? 'animate-spin' : ''}`} />
             Verifică status
           </Button>
+        )}
+        {canEdit && autovitLive && (
+          <>
+            <Button
+              size="sm" variant="ghost" className="h-7 w-7 p-0"
+              onClick={() => deactivateMutation.mutate()}
+              disabled={deactivateMutation.isPending}
+              title="Dezactivează anunțul pe Autovit (reversibil)"
+            >
+              {deactivateMutation.isPending
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <PowerOff className="h-3.5 w-3.5" />}
+            </Button>
+            <Button
+              size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+              onClick={() => {
+                if (window.confirm('Ștergi definitiv anunțul de pe Autovit? Acțiunea este ireversibilă — republicarea va crea un anunț nou.'))
+                  deleteMutation.mutate()
+              }}
+              disabled={deleteMutation.isPending}
+              title="Șterge definitiv anunțul de pe Autovit"
+            >
+              {deleteMutation.isPending
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Trash2 className="h-3.5 w-3.5" />}
+            </Button>
+          </>
         )}
         {autovitListing?.last_sync && (
           <span className="text-[10px] text-muted-foreground" title="Ultima verificare a statusului Autovit">
@@ -3027,7 +3079,7 @@ function ListingsTab({
                   </p>
                 </div>
               </div>
-              <AutovitPublishAction vehicleId={vehicleId} />
+              <AutovitPublishAction vehicleId={vehicleId} canEdit={canEdit} />
             </div>
 
             {/* Shopify */}

@@ -783,6 +783,29 @@ def unpublish(account_id):
         return jsonify({'success': False, 'error': str(e)}), 502
 
 
+@autovit_bp.route('/api/accounts/<int:account_id>/delete-advert', methods=['POST'])
+@login_required
+@carpark_edit_required
+def delete_advert(account_id):
+    """Permanently delete a vehicle's Autovit advert (vs unpublish, which only
+    deactivates/disables it). Re-publishing afterwards creates a NEW advert.
+    Marks the listing removed_by_user so the chip flips to "Retras" → "Publică"."""
+    connector = _repo.get(account_id)
+    if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
+        return jsonify({'success': False, 'error': 'Account not found'}), 404
+    body = request.get_json(silent=True) or {}
+    listing = _listing_repo.get(body.get('vehicle_id'), account_id)
+    if not listing or not listing.get('external_advert_id'):
+        return jsonify({'success': False, 'error': 'No listing to delete'}), 404
+    try:
+        _build_client(connector).delete_advert(listing['external_advert_id'])
+        _listing_repo.upsert(body['vehicle_id'], account_id,
+                             status='removed_by_user', last_error=None)
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 502
+
+
 @autovit_bp.route('/api/reconcile', methods=['POST'])
 @admin_required  # cross-account bulk op (all dealer accounts) — admin-gated, not per-editor
 def reconcile_listings():
