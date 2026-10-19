@@ -39,7 +39,8 @@ export const carparkApi = {
   getCompanies: () =>
     api.get<{ companies: { id: number; name: string }[] }>('/api/carpark/companies'),
 
-  getBrands: (companyId: number) =>
+  // companyId 'all' => brands across every company the caller may view.
+  getBrands: (companyId: number | 'all') =>
     api.get<{ brands: string[] }>(`/api/carpark/brands/${companyId}`),
 
   // ── Catalog ──────────────────────────────────────────────
@@ -49,7 +50,7 @@ export const carparkApi = {
     perPage = 25,
     sort = 'acquisition_date',
     order = 'desc',
-    companyId?: number | null,
+    companyId?: number | 'all' | null,
     brand?: string,
   ) => {
     const params: Record<string, string> = {
@@ -66,13 +67,13 @@ export const carparkApi = {
     return api.get<PaginatedResponse<VehicleCatalogItem>>('/api/carpark/vehicles', params)
   },
 
-  getStatusCounts: (companyId?: number | null) =>
+  getStatusCounts: (companyId?: number | 'all' | null) =>
     api.get<{ counts: StatusCount[] }>(
       '/api/carpark/vehicles/status-counts',
       companyId != null ? { company_id: String(companyId) } : undefined,
     ),
 
-  getFilterOptions: (companyId?: number | null) =>
+  getFilterOptions: (companyId?: number | 'all' | null) =>
     api.get<FilterOptions>(
       '/api/carpark/vehicles/filter-options',
       companyId != null ? { company_id: String(companyId) } : undefined,
