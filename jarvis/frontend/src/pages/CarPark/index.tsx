@@ -132,19 +132,35 @@ const CARPARK_COLUMNS: CarparkCol[] = [
   { key: 'status', label: 'Status', render: (v) => <VehicleStatusBadge status={v.status} /> },
   {
     key: 'published', label: 'Publicat', headClassName: 'text-center', cellClassName: 'text-center',
-    render: (v) => (
-      <div className="flex items-center justify-center gap-1.5">
-        {v.autovit_published && (
-          <span title="Publicat pe Autovit"><AutovitLogo className="h-4 w-4" title="Publicat pe Autovit" /></span>
-        )}
-        {v.shopify_published && (
-          <span title="Publicat pe Autoworld.ro"><AutoworldLogo className="h-4 w-4" title="Publicat pe Autoworld.ro" /></span>
-        )}
-        {!v.autovit_published && !v.shopify_published && (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </div>
-    ),
+    render: (v) => {
+      // Each published-marketplace logo links to the live ad when its URL is
+      // known; still shows (non-clickable) if published without a stored URL.
+      const pin = (published: boolean, url: string | null, Logo: typeof AutovitLogo, label: string) => {
+        if (!published) return null
+        const logo = <Logo className="h-4 w-4" title={label} />
+        return url ? (
+          <a
+            href={url} target="_blank" rel="noopener noreferrer"
+            title={`${label} — vezi anunțul`}
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex hover:opacity-80"
+          >
+            {logo}
+          </a>
+        ) : (
+          <span title={label}>{logo}</span>
+        )
+      }
+      return (
+        <div className="flex items-center justify-center gap-1.5">
+          {pin(v.autovit_published, v.autovit_url, AutovitLogo, 'Publicat pe Autovit')}
+          {pin(v.shopify_published, v.shopify_url, AutoworldLogo, 'Publicat pe Autoworld.ro')}
+          {!v.autovit_published && !v.shopify_published && (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </div>
+      )
+    },
   },
   { key: 'year', label: 'Year', sortKey: 'year_of_manufacture', cellClassName: 'tabular-nums', render: (v) => v.year_of_manufacture ?? '-' },
   { key: 'mileage', label: 'Mileage', sortKey: 'mileage_km', cellClassName: 'tabular-nums text-sm', render: (v) => (v.mileage_km > 0 ? formatKm(v.mileage_km) : '-') },

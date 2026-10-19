@@ -137,14 +137,24 @@ CATALOG_SELECT = """
      ORDER BY p.sort_order, p.id LIMIT 1) AS primary_photo_url,
     (SELECT COUNT(*) FROM carpark_vehicle_photos p
      WHERE p.vehicle_id = v.id AND p.deleted_at IS NULL) AS photo_count,
-    -- Per-platform publish flags for the list's "Publicat" icon column.
+    -- Per-platform publish flags + live-ad URLs for the list's "Publicat" icon column
+    -- (the icons link to the ad on each marketplace).
     EXISTS(SELECT 1 FROM carpark_autovit_listings al
            WHERE al.vehicle_id = v.id AND al.external_advert_id IS NOT NULL
              AND al.status NOT IN ('error', 'removed_by_user', 'removed_by_moderator')
            ) AS autovit_published,
+    (SELECT al.external_url FROM carpark_autovit_listings al
+           WHERE al.vehicle_id = v.id AND al.external_advert_id IS NOT NULL
+             AND al.status NOT IN ('error', 'removed_by_user', 'removed_by_moderator')
+             AND al.external_url IS NOT NULL
+           ORDER BY al.id DESC LIMIT 1) AS autovit_url,
     EXISTS(SELECT 1 FROM carpark_vehicle_listings vl
            WHERE vl.vehicle_id = v.id AND vl.external_listing_id IS NOT NULL
-             AND vl.status = 'published') AS shopify_published
+             AND vl.status = 'published') AS shopify_published,
+    (SELECT vl.external_url FROM carpark_vehicle_listings vl
+           WHERE vl.vehicle_id = v.id AND vl.external_listing_id IS NOT NULL
+             AND vl.status = 'published' AND vl.external_url IS NOT NULL
+           ORDER BY vl.id DESC LIMIT 1) AS shopify_url
 """
 
 
