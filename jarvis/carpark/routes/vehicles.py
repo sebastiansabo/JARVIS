@@ -156,6 +156,23 @@ def _acting_company_id():
     return getattr(current_user, 'company_id', None)
 
 
+def _all_companies_scope():
+    """Company ids for the 'Toate Companiile' catalog view. Returns:
+      None   -> no company filter (Admin: every company)
+      [ids]  -> the non-Admin's actable set (own + org-responsable companies),
+                sorted; falls back to [own] when that set is empty, [] only if
+                the user has no company at all.
+    Mirrors the scope of /api/carpark/companies, so 'all' aggregates exactly the
+    companies already offered in the tenant switcher — no new exposure."""
+    if getattr(current_user, 'can_access_settings', False):
+        return None
+    ids = get_actable_company_ids(current_user.id)
+    if not ids:
+        own = getattr(current_user, 'company_id', None)
+        return [own] if own else []
+    return sorted(ids)
+
+
 def _verify_vehicle_ownership(vehicle_id):
     """Fetch a vehicle by id. Returns (vehicle_dict, None) if it exists, or
     (None, error_response) if it doesn't. Exists-only: no company check —
@@ -215,10 +232,14 @@ def list_vehicles():
         if val:
             filters[key] = val
 
-    # Acting-company scoping (permissive tenant switcher — see design doc)
-    cid = _acting_company_id()
-    if cid:
-        filters['company_id'] = str(cid)
+    # Acting-company scoping (permissive tenant switcher — see design doc).
+    # company_id=all => aggregate across every company the caller may view.
+    if request.args.get('company_id') == 'all':
+        filters['company_ids'] = _all_companies_scope()
+    else:
+        cid = _acting_company_id()
+        if cid:
+            filters['company_id'] = str(cid)
 
     try:
         result = _vehicle_service.get_catalog(filters, page, per_page, sort_by, sort_dir)
@@ -241,8 +262,10 @@ def list_vehicles():
 @carpark_required
 def vehicle_status_counts():
     """Vehicle counts per status for catalog tabs."""
-    cid = _acting_company_id()
-    counts = _vehicle_service.get_status_counts(cid)
+    if request.args.get('company_id') == 'all':
+        counts = _vehicle_service.get_status_counts(company_ids=_all_companies_scope())
+    else:
+        counts = _vehicle_service.get_status_counts(_acting_company_id())
     return jsonify({'counts': _serialize(counts)})
 
 
@@ -251,8 +274,10 @@ def vehicle_status_counts():
 @carpark_required
 def vehicle_filter_options():
     """Distinct values for filter dropdowns (brands, fuel types, body types)."""
-    cid = _acting_company_id()
-    options = _vehicle_service.get_filter_options(cid)
+    if request.args.get('company_id') == 'all':
+        options = _vehicle_service.get_filter_options(company_ids=_all_companies_scope())
+    else:
+        options = _vehicle_service.get_filter_options(_acting_company_id())
     return jsonify(options)
 
 
@@ -678,10 +703,18 @@ def list_companies():
     return jsonify({'companies': _serialize(companies)})
 
 
-@carpark_bp.route('/brands/<int:company_id>', methods=['GET'])
+@carpark_bp.route('/brands/<company_id>', methods=['GET'])
 @login_required
 @carpark_required
 def list_brands(company_id):
-    """Car brands carried by a company, for the tenant-switcher brand selector."""
-    brands = _vehicle_service.get_brands(company_id)
+    """Car brands for the tenant-switcher brand selector. company_id='all' returns
+    the brand union across every company the caller may view (Toate Companiile)."""
+    if company_id == 'all':
+        brands = _vehicle_service.get_brands(company_ids=_all_companies_scope())
+    else:
+        try:
+            cid = int(company_id)
+        except (TypeError, ValueError):
+            abort(404)
+        brands = _vehicle_service.get_brands(cid)
     return jsonify({'brands': brands})

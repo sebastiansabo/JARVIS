@@ -109,6 +109,95 @@ def test_list_vehicles_falls_back_to_user_company_id(client, monkeypatch):
 
 
 # ═══════════════════════════════════════════════
+# list_vehicles / status-counts / filter-options / brands: "Toate Companiile"
+# (company_id=all) — aggregate across every company the caller may view.
+# None => no filter (Admin: all companies); [ids] => IN (non-Admin actable set).
+# ═══════════════════════════════════════════════
+
+def test_list_vehicles_all_companies_non_admin_scopes_to_actable(client, monkeypatch):
+    """?company_id=all scopes a non-Admin's catalog to exactly their actable set
+    (sorted), passed as filters['company_ids'] — never an unbounded query."""
+    _login(client, monkeypatch, uid=91020, company_id=1)
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', lambda _u: {11, 1, 4})
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_catalog',
+                            return_value={'vehicles': [], 'total': 0}) as get_catalog:
+        r = client.get('/api/carpark/vehicles?company_id=all')
+    assert r.status_code == 200
+    filters = get_catalog.call_args.args[0]
+    assert filters['company_ids'] == [1, 4, 11]
+    assert 'company_id' not in filters
+
+
+def test_list_vehicles_all_companies_admin_no_filter(client, monkeypatch):
+    """?company_id=all for an Admin => company_ids is None (no company filter =>
+    every company)."""
+    _login(client, monkeypatch, uid=91021, company_id=1, can_access_settings=True)
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_catalog',
+                            return_value={'vehicles': [], 'total': 0}) as get_catalog:
+        r = client.get('/api/carpark/vehicles?company_id=all')
+    assert r.status_code == 200
+    filters = get_catalog.call_args.args[0]
+    assert filters['company_ids'] is None
+
+
+def test_list_vehicles_all_companies_empty_actable_falls_back_to_own(client, monkeypatch):
+    """A non-Admin with no actable set still sees their own company under
+    'all' (never an empty/unbounded scope)."""
+    _login(client, monkeypatch, uid=91024, company_id=7)
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', lambda _u: set())
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_catalog',
+                            return_value={'vehicles': [], 'total': 0}) as get_catalog:
+        r = client.get('/api/carpark/vehicles?company_id=all')
+    assert r.status_code == 200
+    assert get_catalog.call_args.args[0]['company_ids'] == [7]
+
+
+def test_status_counts_all_companies_non_admin_scopes(client, monkeypatch):
+    """Status-count tabs honor 'all' so their numbers match the aggregated list."""
+    _login(client, monkeypatch, uid=91022, company_id=1)
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', lambda _u: {4, 1})
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_status_counts',
+                            return_value=[]) as gsc:
+        r = client.get('/api/carpark/vehicles/status-counts?company_id=all')
+    assert r.status_code == 200
+    assert gsc.call_args.kwargs.get('company_ids') == [1, 4]
+
+
+def test_filter_options_all_companies_non_admin_scopes(client, monkeypatch):
+    """Filter dropdowns honor 'all' so their options reflect the aggregated list."""
+    _login(client, monkeypatch, uid=91025, company_id=1)
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', lambda _u: {4, 1})
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_filter_options',
+                            return_value={'brands': [], 'fuel_types': [], 'body_types': []}) as gfo:
+        r = client.get('/api/carpark/vehicles/filter-options?company_id=all')
+    assert r.status_code == 200
+    assert gfo.call_args.kwargs.get('company_ids') == [1, 4]
+
+
+def test_brands_all_companies_returns_scoped_union(client, monkeypatch):
+    """/brands/all returns the brand union across the caller's actable set."""
+    _login(client, monkeypatch, uid=91023, company_id=1)
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', lambda _u: {4, 1})
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_brands',
+                            return_value=['Audi', 'BMW']) as gb:
+        r = client.get('/api/carpark/brands/all')
+    assert r.status_code == 200
+    assert r.get_json()['brands'] == ['Audi', 'BMW']
+    assert gb.call_args.kwargs.get('company_ids') == [1, 4]
+
+
+def test_brands_numeric_company_still_works(client, monkeypatch):
+    """The original /brands/<id> path keeps single-company behavior."""
+    _login(client, monkeypatch, uid=91026, company_id=1)
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_brands',
+                            return_value=['Audi']) as gb:
+        r = client.get('/api/carpark/brands/11')
+    assert r.status_code == 200
+    assert r.get_json()['brands'] == ['Audi']
+    assert gb.call_args.args[0] == 11
+
+
+# ═══════════════════════════════════════════════
 # create_vehicle: request body company_id wins over the user's own, subject
 # to authorization
 # ═══════════════════════════════════════════════

@@ -30,6 +30,11 @@ interface CarParkState extends DataTableState<CatalogFilters>, ColumnState {
   /** Tenant switcher: acting company (null = use the current user's own company). */
   selectedCompanyId: number | null
   setSelectedCompanyId: (companyId: number | null) => void
+  /** Tenant switcher: "Toate Companiile" — aggregate the catalog across every
+   * company the user may view. Only the list page reads this; when true it
+   * overrides selectedCompanyId for the list/counts/filters/brands queries. */
+  allCompanies: boolean
+  setAllCompanies: (all: boolean) => void
   /** Tenant switcher: brand narrowing within the acting company ('' = All). */
   selectedBrand: string
   setSelectedBrand: (brand: string) => void
@@ -37,6 +42,7 @@ interface CarParkState extends DataTableState<CatalogFilters>, ColumnState {
 
 // ---- Tenant switcher persistence (mirrors loadColumns/saveColumns above) ----
 const SELECTED_COMPANY_KEY = 'carpark-selected-company-id'
+const ALL_COMPANIES_KEY = 'carpark-all-companies'
 const SELECTED_BRAND_KEY = 'carpark-selected-brand'
 
 function loadSelectedCompanyId(): number | null {
@@ -56,6 +62,23 @@ function saveSelectedCompanyId(companyId: number | null) {
   try {
     if (companyId == null) localStorage.removeItem(SELECTED_COMPANY_KEY)
     else localStorage.setItem(SELECTED_COMPANY_KEY, String(companyId))
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadAllCompanies(): boolean {
+  try {
+    return localStorage.getItem(ALL_COMPANIES_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function saveAllCompanies(all: boolean) {
+  try {
+    if (all) localStorage.setItem(ALL_COMPANIES_KEY, '1')
+    else localStorage.removeItem(ALL_COMPANIES_KEY)
   } catch {
     /* ignore */
   }
@@ -101,6 +124,11 @@ export const useCarParkStore = create<CarParkState>((set) => ({
   setSelectedCompanyId: (companyId) => {
     saveSelectedCompanyId(companyId)
     set({ selectedCompanyId: companyId })
+  },
+  allCompanies: loadAllCompanies(),
+  setAllCompanies: (all) => {
+    saveAllCompanies(all)
+    set({ allCompanies: all })
   },
   selectedBrand: loadSelectedBrand(),
   setSelectedBrand: (brand) => {

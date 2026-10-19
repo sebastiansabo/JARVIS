@@ -212,18 +212,29 @@ export default function CarPark() {
   const setSort = useCarParkStore((s) => s.setSort)
   const selectedCompanyId = useCarParkStore((s) => s.selectedCompanyId)
   const setSelectedCompanyId = useCarParkStore((s) => s.setSelectedCompanyId)
+  const allCompanies = useCarParkStore((s) => s.allCompanies)
+  const setAllCompanies = useCarParkStore((s) => s.setAllCompanies)
   const selectedBrand = useCarParkStore((s) => s.selectedBrand)
   const setSelectedBrand = useCarParkStore((s) => s.setSelectedBrand)
 
   // Tenant switcher: acting company (defaults to the current user's own company)
   const effectiveCompanyId = selectedCompanyId ?? user?.company_id ?? null
+  // What the list / counts / filters / brands queries are scoped to: either a
+  // single company, or 'all' (Toate Companiile — aggregate across every company
+  // the user may view). 'all' overrides the single-company selection.
+  const companyScope: number | 'all' | null = allCompanies ? 'all' : effectiveCompanyId
 
   const handleCompanyChange = useCallback(
-    (companyId: number) => {
-      setSelectedCompanyId(companyId)
+    (value: number | 'all') => {
+      if (value === 'all') {
+        setAllCompanies(true)
+      } else {
+        setAllCompanies(false)
+        setSelectedCompanyId(value)
+      }
       setSelectedBrand('')
     },
-    [setSelectedCompanyId, setSelectedBrand],
+    [setAllCompanies, setSelectedCompanyId, setSelectedBrand],
   )
 
   // Active status tab from URL
@@ -256,28 +267,28 @@ export default function CarPark() {
   const companies = companiesData?.companies ?? []
 
   const { data: brandsData } = useQuery({
-    queryKey: ['carpark', 'brands', effectiveCompanyId],
-    queryFn: () => carparkApi.getBrands(effectiveCompanyId as number),
-    enabled: effectiveCompanyId != null,
+    queryKey: ['carpark', 'brands', companyScope],
+    queryFn: () => carparkApi.getBrands(companyScope as number | 'all'),
+    enabled: companyScope != null,
     staleTime: 60_000,
   })
   const brands = brandsData?.brands ?? []
 
   // ── Data fetching ──────────────────────────────────────
   const { data: catalogData, isLoading } = useQuery({
-    queryKey: ['carpark', 'catalog', activeFilters, page, perPage, sort, order, effectiveCompanyId, selectedBrand],
-    queryFn: () => carparkApi.getCatalog(activeFilters, page, perPage, sort, order, effectiveCompanyId, selectedBrand),
+    queryKey: ['carpark', 'catalog', activeFilters, page, perPage, sort, order, companyScope, selectedBrand],
+    queryFn: () => carparkApi.getCatalog(activeFilters, page, perPage, sort, order, companyScope, selectedBrand),
   })
 
   const { data: statusCountsData } = useQuery({
-    queryKey: ['carpark', 'status-counts', effectiveCompanyId],
-    queryFn: () => carparkApi.getStatusCounts(effectiveCompanyId),
+    queryKey: ['carpark', 'status-counts', companyScope],
+    queryFn: () => carparkApi.getStatusCounts(companyScope),
     staleTime: 30_000,
   })
 
   const { data: filterOptions } = useQuery({
-    queryKey: ['carpark', 'filter-options', effectiveCompanyId],
-    queryFn: () => carparkApi.getFilterOptions(effectiveCompanyId),
+    queryKey: ['carpark', 'filter-options', companyScope],
+    queryFn: () => carparkApi.getFilterOptions(companyScope),
     staleTime: 60_000,
   })
 
@@ -385,13 +396,14 @@ export default function CarPark() {
           <div className="flex items-center gap-2">
             {companies.length > 1 && effectiveCompanyId != null && (
               <Select
-                value={String(effectiveCompanyId)}
-                onValueChange={(v) => handleCompanyChange(Number(v))}
+                value={allCompanies ? 'all' : String(effectiveCompanyId)}
+                onValueChange={(v) => handleCompanyChange(v === 'all' ? 'all' : Number(v))}
               >
                 <SelectTrigger className="w-40 sm:w-48">
                   <SelectValue placeholder="Companie" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="all">Toate Companiile</SelectItem>
                   {companies.map((c) => (
                     <SelectItem key={c.id} value={String(c.id)}>
                       {c.name}

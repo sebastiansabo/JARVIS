@@ -7,7 +7,7 @@ import logging
 from typing import Optional, Dict, Any, List
 
 from carpark.audit_diff import value_changed
-from carpark.repositories.vehicle_repository import VehicleRepository
+from carpark.repositories.vehicle_repository import VehicleRepository, _NO_SCOPE
 from carpark.repositories.photo_repository import PhotoRepository
 from carpark.repositories.cost_repository import CostRepository
 from carpark.repositories.cost_line_repository import CostLineRepository
@@ -75,13 +75,17 @@ class VehicleService:
         per_page = min(per_page, 100)  # Cap at 100
         return self._repo.get_catalog(filters, page, per_page, sort_by, sort_dir)
 
-    def get_status_counts(self, company_id: int = None) -> List[Dict[str, Any]]:
-        """Vehicle counts per status for catalog tabs."""
-        return self._repo.get_status_counts(company_id)
+    def get_status_counts(self, company_id: int = None,
+                          company_ids=_NO_SCOPE) -> List[Dict[str, Any]]:
+        """Vehicle counts per status for catalog tabs. company_ids = the
+        multi-company 'Toate Companiile' scope (None=all, []=none, [ids]=IN)."""
+        return self._repo.get_status_counts(company_id, company_ids=company_ids)
 
-    def get_filter_options(self, company_id: int = None) -> Dict[str, List]:
-        """Distinct filter values for dropdowns."""
-        return self._repo.get_filter_options(company_id)
+    def get_filter_options(self, company_id: int = None,
+                          company_ids=_NO_SCOPE) -> Dict[str, List]:
+        """Distinct filter values for dropdowns. company_ids = the multi-company
+        'Toate Companiile' scope (None=all, []=none, [ids]=IN)."""
+        return self._repo.get_filter_options(company_id, company_ids=company_ids)
 
     # ── SINGLE VEHICLE ──
 
@@ -296,9 +300,11 @@ class VehicleService:
         """Companies for the tenant-switcher selector (None = all)."""
         return self._repo.list_companies(company_ids)
 
-    def get_brands(self, company_id: int) -> List[str]:
-        """Car brands carried by a company, for the tenant-switcher brand selector."""
-        return self._repo.list_brands(company_id)
+    def get_brands(self, company_id: int = None,
+                   company_ids=_NO_SCOPE) -> List[str]:
+        """Car brands for the tenant-switcher brand selector. company_ids = the
+        multi-company 'Toate Companiile' scope (None=all, []=none, [ids]=IN)."""
+        return self._repo.list_brands(company_id, company_ids=company_ids)
 
     # ── COSTS ──
 

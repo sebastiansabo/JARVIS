@@ -23,6 +23,37 @@ def _adapt_jsonb(column: str, value: Any) -> Any:
     return value
 
 
+# Sentinel: "no multi-company scope supplied" — distinct from company_ids=None,
+# which deliberately means "every company" (the Admin 'Toate Companiile' view).
+_NO_SCOPE = object()
+
+
+def _company_scope_clause(column: str, company_id=None, company_ids=_NO_SCOPE):
+    """Build a company-scope SQL WHERE fragment for the catalog family of
+    queries (list / status-counts / filter-options / brands).
+
+    `company_ids`, when supplied (i.e. not `_NO_SCOPE`), takes precedence and
+    encodes the 'Toate Companiile' scope:
+      None   -> no filter (every company — Admin picking Toate Companiile)
+      []     -> '1 = 0' (caller may view no company — returns nothing)
+      [ids]  -> 'col IN (%s, ...)'
+    Otherwise `company_id` keeps the original single-company behavior:
+      truthy -> 'col = %s'; falsy -> no filter.
+
+    Returns (clause_or_None, params_list).
+    """
+    if company_ids is not _NO_SCOPE:
+        if company_ids is None:
+            return None, []
+        if not company_ids:
+            return '1 = 0', []
+        placeholders = ', '.join(['%s'] * len(company_ids))
+        return f'{column} IN ({placeholders})', [int(i) for i in company_ids]
+    if company_id:
+        return f'{column} = %s', [int(company_id)]
+    return None, []
+
+
 # Fields safe for client-submitted updates (whitelist)
 VEHICLE_UPDATABLE_FIELDS = {
     'vin', 'identification_number', 'registration_number', 'chassis_code',
@@ -188,10 +219,16 @@ class VehicleRepository(BaseRepository):
             where_clauses.append('v.mileage_km <= %s')
             params.append(int(filters['km_max']))
 
-        # Company scope
-        if filters.get('company_id'):
-            where_clauses.append('v.company_id = %s')
-            params.append(int(filters['company_id']))
+        # Company scope — a single company_id, or the multi-company
+        # 'Toate Companiile' scope via company_ids (None=all, []=none, [ids]=IN).
+        scope_clause, scope_params = _company_scope_clause(
+            'v.company_id',
+            company_id=filters.get('company_id'),
+            company_ids=filters.get('company_ids', _NO_SCOPE),
+        )
+        if scope_clause:
+            where_clauses.append(scope_clause)
+            params.extend(scope_params)
 
         # Location
         if filters.get('location_id'):
@@ -384,27 +421,36 @@ class VehicleRepository(BaseRepository):
 
     # ── AGGREGATES ──
 
-    def get_status_counts(self, company_id: int = None) -> List[Dict[str, Any]]:
-        """Count vehicles per status (for catalog tabs)."""
+    def get_status_counts(self, company_id: int = None,
+                          company_ids=_NO_SCOPE) -> List[Dict[str, Any]]:
+        """Count vehicles per status (for catalog tabs). company_ids encodes the
+        multi-company 'Toate Companiile' scope (None=all, []=none, [ids]=IN)."""
         sql = '''
             SELECT status, COUNT(*) as count
             FROM carpark_vehicles
             WHERE deleted_at IS NULL
         '''
         params = []
-        if company_id:
-            sql += ' AND company_id = %s'
-            params.append(company_id)
+        scope_clause, scope_params = _company_scope_clause(
+            'company_id', company_id=company_id, company_ids=company_ids)
+        if scope_clause:
+            sql += f' AND {scope_clause}'
+            params.extend(scope_params)
         sql += ' GROUP BY status ORDER BY status'
         return self.query_all(sql, tuple(params))
 
-    def get_filter_options(self, company_id: int = None) -> Dict[str, List]:
-        """Distinct values for filter dropdowns (single query)."""
+    def get_filter_options(self, company_id: int = None,
+                          company_ids=_NO_SCOPE) -> Dict[str, List]:
+        """Distinct values for filter dropdowns (single query). company_ids
+        encodes the multi-company 'Toate Companiile' scope (None=all, []=none,
+        [ids]=IN)."""
         where = 'WHERE deleted_at IS NULL'
         params = []
-        if company_id:
-            where += ' AND company_id = %s'
-            params.append(company_id)
+        scope_clause, scope_params = _company_scope_clause(
+            'company_id', company_id=company_id, company_ids=company_ids)
+        if scope_clause:
+            where += f' AND {scope_clause}'
+            params.extend(scope_params)
 
         rows = self.query_all(f'''
             SELECT 'brand' AS kind, brand AS val FROM carpark_vehicles {where} AND brand IS NOT NULL
@@ -521,15 +567,20 @@ class VehicleRepository(BaseRepository):
             "WHERE deleted_at IS NULL AND vin IS NOT NULL AND vin <> ''")
         return {r['vin']: r['id'] for r in rows}
 
-    def list_brands(self, company_id: int) -> List[str]:
-        """Car brands carried by a company (from the company_brands catalog),
-        for the tenant-switcher brand selector."""
+    def list_brands(self, company_id: int = None,
+                    company_ids=_NO_SCOPE) -> List[str]:
+        """Car brands (from the company_brands catalog) for the tenant-switcher
+        brand selector. company_ids encodes the multi-company 'Toate Companiile'
+        scope (None=all, []=none, [ids]=IN); otherwise a single company_id."""
+        scope_clause, params = _company_scope_clause(
+            'cb.company_id', company_id=company_id, company_ids=company_ids)
+        where = f'WHERE {scope_clause}' if scope_clause else ''
         rows = self.query_all(
-            '''SELECT DISTINCT b.name
+            f'''SELECT DISTINCT b.name
                FROM company_brands cb
                JOIN brands b ON b.id = cb.brand_id
-               WHERE cb.company_id = %s
+               {where}
                ORDER BY b.name''',
-            (company_id,),
+            tuple(params),
         )
         return [r['name'] for r in (rows or [])]
