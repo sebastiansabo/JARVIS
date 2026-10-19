@@ -453,7 +453,7 @@ def test_publish_creates_new_listing_and_upserts(client):
         bc.return_value.update_advert.assert_not_called()
         upsert.assert_called_once_with(7, 1, external_advert_id="999",
                                        external_url="http://x/999",
-                                       status="active", last_error=None)
+                                       status="unpaid", last_error=None)
 
 
 def test_publish_updates_existing_listing_via_update_advert(client):
@@ -731,27 +731,26 @@ def test_verify_advert_never_raises():
     assert r._verify_advert(c, None, {}) == {'params_dropped': [], 'photos_remote': None}
 
 
-def test_vehicle_to_advert_emits_euro_and_origin_but_not_date_registration():
+def test_vehicle_to_advert_emits_registration_euro_and_origin():
     from datetime import date
     v = dict(VEHICLE, first_registration_date=date(2018, 3, 8),
              euro_standard="Euro 6", country_of_origin="DE")
     p = taxo.vehicle_to_advert(v, ACCOUNT)["params"]
-    # date_registration is dropped — Autovit 400s on its (unconfirmed) format.
-    assert "date_registration" not in p
+    # date_registration is YYYY-MM-DD (DD/MM/YYYY was rejected 400 "Wrong format").
+    assert p["date_registration"] == "2018-03-08"
     # euro_standard label is normalised to the Autovit slug before sending
     # (raw "Euro 6" was silently dropped by Autovit → blank "Norma de poluare").
     assert p["pollution_standard"] == "euro-6"
     assert p["country_origin"] == "DE"
 
 
-def test_vehicle_to_advert_never_emits_date_registration():
-    """date_registration is never sent (Autovit rejects the format), whatever the
-    first_registration_date value is."""
-    for val in ("2018-03-08", "n/a", None):
-        p = taxo.vehicle_to_advert(dict(VEHICLE, first_registration_date=val), ACCOUNT)["params"]
-        assert "date_registration" not in p
+def test_vehicle_to_advert_registration_iso_and_skips_garbage():
+    p = taxo.vehicle_to_advert(dict(VEHICLE, first_registration_date="2018-03-08"), ACCOUNT)["params"]
+    assert p["date_registration"] == "2018-03-08"
+    p = taxo.vehicle_to_advert(dict(VEHICLE, first_registration_date="n/a"), ACCOUNT)["params"]
+    assert "date_registration" not in p
     p = taxo.vehicle_to_advert(VEHICLE, ACCOUNT)["params"]
-    assert "pollution_standard" not in p and "country_origin" not in p
+    assert "date_registration" not in p and "pollution_standard" not in p and "country_origin" not in p
 
 
 # ── find_active_advert_by_vin (publish VIN-dedup scan) ──
