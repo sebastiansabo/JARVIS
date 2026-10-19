@@ -107,13 +107,25 @@ function formatKm(km: number): string {
 }
 
 // ── Toggleable table columns (thumbnail, Vehicle, and actions stay fixed) ──
+// Context passed to each cell renderer: lets the Location column surface the
+// owning company when the "Toate Companiile" (all-companies) view is active.
+type CarparkRenderCtx = {
+  allCompanies: boolean
+  companyName: (companyId: number | null) => string | null
+}
 type CarparkCol = {
   key: string
   label: string
   sortKey?: string
   headClassName?: string
   cellClassName?: string
-  render: (v: VehicleCatalogItem) => ReactNode
+  render: (v: VehicleCatalogItem, ctx: CarparkRenderCtx) => ReactNode
+}
+
+// Trim the legal-form suffix so long tenant names fit the narrow Location cell
+// ("Autoworld PREMIUM S.R.L." -> "Autoworld PREMIUM"); the full name stays in title.
+function shortCompany(name: string): string {
+  return name.replace(/[\s,]*S\.?\s*R\.?\s*L\.?\s*$/i, '').trim() || name
 }
 const CARPARK_COLUMNS: CarparkCol[] = [
   { key: 'category', label: 'Tip stoc', render: (v) => <CategoryBadge category={v.category} /> },
@@ -151,7 +163,20 @@ const CARPARK_COLUMNS: CarparkCol[] = [
       </span>
     ),
   },
-  { key: 'location', label: 'Location', cellClassName: 'text-sm text-muted-foreground truncate max-w-[120px]', render: (v) => v.location_text ?? '-' },
+  {
+    key: 'location', label: 'Location',
+    cellClassName: 'text-sm text-muted-foreground truncate max-w-[160px]',
+    render: (v, ctx) => {
+      const company = ctx.allCompanies ? ctx.companyName(v.company_id) : null
+      if (!company) return v.location_text ?? '-'
+      return (
+        <div className="truncate" title={v.location_text ? `${company} · ${v.location_text}` : company}>
+          <span className="text-foreground">{shortCompany(company)}</span>
+          {v.location_text && <span className="text-muted-foreground"> · {v.location_text}</span>}
+        </div>
+      )
+    },
+  },
 ]
 const CARPARK_COL_KEYS = CARPARK_COLUMNS.map((c) => c.key)
 
@@ -265,6 +290,21 @@ export default function CarPark() {
     staleTime: 60_000,
   })
   const companies = companiesData?.companies ?? []
+
+  // id -> company name, so the Location column can show each car's owning
+  // company in the "Toate Companiile" view (cars already carry company_id).
+  const companyNameById = useMemo(() => {
+    const m = new Map<number, string>()
+    for (const c of companies) m.set(c.id, c.name)
+    return m
+  }, [companies])
+  const renderCtx = useMemo<CarparkRenderCtx>(
+    () => ({
+      allCompanies,
+      companyName: (id) => (id != null ? companyNameById.get(id) ?? null : null),
+    }),
+    [allCompanies, companyNameById],
+  )
 
   const { data: brandsData } = useQuery({
     queryKey: ['carpark', 'brands', companyScope],
@@ -561,7 +601,7 @@ export default function CarPark() {
           }
         />
       ) : isMobile ? (
-        <MobileCardList items={items} />
+        <MobileCardList items={items} ctx={renderCtx} />
       ) : (
         <Card>
           <Table>
@@ -581,7 +621,7 @@ export default function CarPark() {
             </TableHeader>
             <TableBody>
               {items.map((v) => (
-                <VehicleRow key={v.id} vehicle={v} columns={visibleColDefs} />
+                <VehicleRow key={v.id} vehicle={v} columns={visibleColDefs} ctx={renderCtx} />
               ))}
             </TableBody>
           </Table>
@@ -635,7 +675,7 @@ export default function CarPark() {
 }
 
 // ── Table row ────────────────────────────────────────────────
-function VehicleRow({ vehicle: v, columns }: { vehicle: VehicleCatalogItem; columns: CarparkCol[] }) {
+function VehicleRow({ vehicle: v, columns, ctx }: { vehicle: VehicleCatalogItem; columns: CarparkCol[]; ctx: CarparkRenderCtx }) {
   return (
     <TableRow className="group">
       {/* Thumbnail */}
@@ -678,7 +718,7 @@ function VehicleRow({ vehicle: v, columns }: { vehicle: VehicleCatalogItem; colu
       {/* Toggleable columns */}
       {columns.map((col) => (
         <TableCell key={col.key} className={col.cellClassName}>
-          {col.render(v)}
+          {col.render(v, ctx)}
         </TableCell>
       ))}
 
@@ -695,7 +735,7 @@ function VehicleRow({ vehicle: v, columns }: { vehicle: VehicleCatalogItem; colu
 }
 
 // ── Mobile card list ─────────────────────────────────────────
-function MobileCardList({ items }: { items: VehicleCatalogItem[] }) {
+function MobileCardList({ items, ctx }: { items: VehicleCatalogItem[]; ctx: CarparkRenderCtx }) {
   return (
     <div className="space-y-2">
       {items.map((v) => (
@@ -730,6 +770,9 @@ function MobileCardList({ items }: { items: VehicleCatalogItem[] }) {
                   {v.year_of_manufacture && <span>{v.year_of_manufacture}</span>}
                   {v.mileage_km > 0 && <span>{formatKm(v.mileage_km)}</span>}
                   {v.fuel_type && <span>{v.fuel_type}</span>}
+                  {ctx.allCompanies && ctx.companyName(v.company_id) && (
+                    <span className="text-foreground">{shortCompany(ctx.companyName(v.company_id)!)}</span>
+                  )}
                 </div>
                 <div className="mt-1 flex items-center justify-between">
                   {v.current_price != null ? (
