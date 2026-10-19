@@ -10,9 +10,9 @@ import {
   ImageIcon,
   Loader2,
   RefreshCw,
-  ShoppingBag,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { AutovitLogo, AutoworldLogo } from '@/components/icons/MarketplaceLogos'
 import { shopifyApi } from '@/api/shopify'
 import { autovitApi } from '@/api/autovit'
 import { mediaUrl } from '@/lib/media'
@@ -135,10 +135,10 @@ const CARPARK_COLUMNS: CarparkCol[] = [
     render: (v) => (
       <div className="flex items-center justify-center gap-1.5">
         {v.autovit_published && (
-          <span title="Publicat pe Autovit"><Car className="h-4 w-4 text-blue-600 dark:text-blue-400" /></span>
+          <span title="Publicat pe Autovit"><AutovitLogo className="h-4 w-4" title="Publicat pe Autovit" /></span>
         )}
         {v.shopify_published && (
-          <span title="Publicat pe Autoworld"><ShoppingBag className="h-4 w-4 text-emerald-600 dark:text-emerald-400" /></span>
+          <span title="Publicat pe Autoworld.ro"><AutoworldLogo className="h-4 w-4" title="Publicat pe Autoworld.ro" /></span>
         )}
         {!v.autovit_published && !v.shopify_published && (
           <span className="text-muted-foreground">—</span>
