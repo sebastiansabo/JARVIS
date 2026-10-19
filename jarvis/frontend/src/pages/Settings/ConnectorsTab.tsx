@@ -1722,6 +1722,11 @@ function AutovitSection() {
             </span>
           )}
           <StatusBadge status={connectedCount > 0 ? 'active' : totalCount > 0 ? 'inactive' : 'inactive'} />
+          {accounts.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => navigate('autovit/taxonomy')}>
+              <ExternalLink className="mr-1 h-3 w-3" /> Taxonomy mapping
+            </Button>
+          )}
         </div>
       </div>
 

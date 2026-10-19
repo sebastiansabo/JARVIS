@@ -713,6 +713,60 @@ def create_schema_carpark(conn, cursor):
         )
     ''')
 
+    # --- Autovit connector: synced cache of Autovit's live category-29 taxonomy
+    # (equipment flags + select enums + make-scoped models). `make` is NULL for
+    # every non-model dimension; populated for models since Autovit model slugs
+    # are make-scoped (same label can mean different things under two makes). ---
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_autovit_taxonomy_cache (
+            id         SERIAL PRIMARY KEY,
+            dimension  VARCHAR(40) NOT NULL,
+            code       TEXT        NOT NULL,
+            ro_label   TEXT,
+            param_type VARCHAR(20),
+            make       VARCHAR(60),
+            options    JSONB,
+            synced_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(dimension, code, make)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_catc_dimension ON carpark_autovit_taxonomy_cache(dimension)')
+
+    # --- Autovit connector: CarPark<->Autovit taxonomy value mapping (editable
+    # overrides on top of the cache). `make` scopes the model dimension; NULL
+    # for every other dimension. ---
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_autovit_taxonomy_map (
+            id            SERIAL PRIMARY KEY,
+            dimension     VARCHAR(40) NOT NULL,
+            source_value  TEXT        NOT NULL,
+            make          VARCHAR(60),
+            target_code   TEXT,
+            target_label  TEXT,
+            is_active     BOOLEAN DEFAULT TRUE,
+            updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_by    INTEGER,
+            UNIQUE(dimension, source_value, make)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_catm_dimension ON carpark_autovit_taxonomy_map(dimension)')
+
+    # One-time seed of carpark_autovit_taxonomy_map from the curated alias
+    # tables in carpark/connectors/autovit/taxonomy.py (Task 4 of the Autovit
+    # Taxonomy Mapping project), so today's working enum coverage
+    # (benzină->petrol, 4x4->all-wheel-permanent, grey->gray, bej->bej,
+    # euro aliases, ...) survives the publish path no longer calling
+    # _norm_enum directly. Guarded on "table empty" so it only ever fires
+    # once — admin edits made afterwards via the taxonomy UI are never
+    # clobbered by a later app boot re-running schema init. Imported locally
+    # (not at module level) to keep this migrations module's import surface
+    # minimal, matching the rest of this file (raw SQL only).
+    cursor.execute('SELECT 1 FROM carpark_autovit_taxonomy_map LIMIT 1')
+    if cursor.fetchone() is None:
+        from carpark.connectors.autovit.taxonomy_seed import seed_map
+        seed_map(cursor)
+        conn.commit()
+
     # ── Pricing History ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS carpark_pricing_history (

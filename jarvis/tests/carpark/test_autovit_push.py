@@ -318,6 +318,39 @@ _REAL_VERIFY_ADVERT = r._verify_advert  # captured before the autouse stub below
 _REAL_FIND_BY_VIN = r.reconcile_service.find_active_advert_by_vin  # autouse stubs the module attr
 
 
+def _map_entry(target_code, target_label=None):
+    return {'target_code': target_code, 'target_label': target_label or target_code}
+
+
+def _resolving_taxonomy_map():
+    """A literal taxonomy_map (AutovitTaxonomyRepository.get_map()'s shape)
+    that resolves every dimension VEHICLE actually carries (brand Skoda,
+    model Kodiaq, fuel_type diesel, body_type suv, color_exterior grey) —
+    Task 6 wired publish() to preload the real map and block on an unmapped
+    REQUIRED dimension (taxonomy_map.REQUIRED_DIMENSIONS), so every publish
+    test below needs a map that resolves VEHICLE cleanly unless it's
+    specifically exercising the unmapped path (which overrides this)."""
+    # Map keys are folded (lowercase) — resolve() folds VEHICLE's raw-cased
+    # brand/model ("Skoda"/"Kodiaq") the same way a DB-backed map (written
+    # through upsert()/the seed) already is.
+    return {
+        'make': {('skoda', None): _map_entry('skoda', 'Skoda')},
+        'model': {('kodiaq', 'skoda'): _map_entry('kodiaq', 'Kodiaq')},
+        'fuel_type': {('diesel', None): _map_entry('diesel')},
+        'body_type': {('suv', None): _map_entry('suv')},
+        'color': {('grey', None): _map_entry('gray')},
+    }
+
+
+@pytest.fixture(autouse=True)
+def resolving_taxonomy_map(monkeypatch):
+    """Default every publish test to a taxonomy map that fully resolves
+    VEHICLE — see `_resolving_taxonomy_map`'s docstring. Tests exercising
+    the unmapped/422 or unmapped/reported paths (Task 6) override this via
+    `monkeypatch.setattr(r._taxonomy_repo, 'get_map', ...)`."""
+    monkeypatch.setattr(r._taxonomy_repo, 'get_map', _resolving_taxonomy_map)
+
+
 @pytest.fixture(autouse=True)
 def no_photos_no_verify(monkeypatch):
     """Default the publish side-paths to neutral: no photos on the vehicle and
@@ -735,7 +768,9 @@ def test_vehicle_to_advert_emits_registration_euro_and_origin():
     from datetime import date
     v = dict(VEHICLE, first_registration_date=date(2018, 3, 8),
              euro_standard="Euro 6", country_of_origin="DE")
-    p = taxo.vehicle_to_advert(v, ACCOUNT)["params"]
+    tmap = {'pollution_standard': {('euro 6', None): _map_entry('euro-6')}}
+    advert, unmapped = taxo.vehicle_to_advert(v, ACCOUNT, tmap)
+    p = advert["params"]
     # date_registration is YYYY-MM-DD (DD/MM/YYYY was rejected 400 "Wrong format").
     assert p["date_registration"] == "2018-03-08"
     # euro_standard label is normalised to the Autovit slug before sending
@@ -745,11 +780,14 @@ def test_vehicle_to_advert_emits_registration_euro_and_origin():
 
 
 def test_vehicle_to_advert_registration_iso_and_skips_garbage():
-    p = taxo.vehicle_to_advert(dict(VEHICLE, first_registration_date="2018-03-08"), ACCOUNT)["params"]
+    advert, _ = taxo.vehicle_to_advert(dict(VEHICLE, first_registration_date="2018-03-08"), ACCOUNT, {})
+    p = advert["params"]
     assert p["date_registration"] == "2018-03-08"
-    p = taxo.vehicle_to_advert(dict(VEHICLE, first_registration_date="n/a"), ACCOUNT)["params"]
+    advert, _ = taxo.vehicle_to_advert(dict(VEHICLE, first_registration_date="n/a"), ACCOUNT, {})
+    p = advert["params"]
     assert "date_registration" not in p
-    p = taxo.vehicle_to_advert(VEHICLE, ACCOUNT)["params"]
+    advert, _ = taxo.vehicle_to_advert(VEHICLE, ACCOUNT, {})
+    p = advert["params"]
     assert "date_registration" not in p and "pollution_standard" not in p and "country_origin" not in p
 
 
