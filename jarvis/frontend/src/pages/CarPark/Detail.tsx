@@ -3440,7 +3440,11 @@ function ProfitabilitySummary({ data, vehicle }: { data: Profitability; vehicle:
   const totalCosts = costLinesEur + recordedCostsEur
   const landedTotalEur = landedCostEur + recordedCostsEur
   const totalRevenues = data.total_revenues
-  const sellPrice = Number(vehicle.promotional_price ?? vehicle.list_price) || 0
+  // Selling price = the active (discounted) price, i.e. promotional_price if set
+  // else current_price — the value published to Shopify/Autovit and shown in the
+  // list. NOT list_price (the higher catalog "Preț listă"), which left cars with
+  // no promo showing an inflated "Preț vânzare" (and skewed the margin).
+  const sellPrice = Number(vehicle.promotional_price ?? vehicle.current_price) || 0
   const income = totalRevenues > 0 ? totalRevenues : sellPrice
   // Marjă = VAT-adjusted profit net, via the same engine as the Fișă de preț.
   const engineParams: EngineParams = { regime, vatRate, landedCostEur: landedTotalEur, purchaseGrossEur, inputVatEur }
