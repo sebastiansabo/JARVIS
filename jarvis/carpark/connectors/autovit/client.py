@@ -185,7 +185,8 @@ class AutovitClient:
         kw = {'timeout': timeout} if timeout else {}
         return self._request('GET', f'/account/adverts/{advert_id}', **kw).json()
 
-    def create_image_collection(self, image_urls: list) -> Optional[str]:
+    def create_image_collection(self, image_urls: list,
+                                timeout: int = 20) -> Optional[str]:
         """Create an Autovit image collection from public image URLs; returns its
         id for use as `image_collection_id` on an advert (or None if no URLs).
 
@@ -195,13 +196,19 @@ class AutovitClient:
         nested as ``{"source": url}``. Any non-numeric key (e.g. "images" or
         "source") is rejected with 400 "All keys must be numbers".
         ``{"1": url1, "2": url2, ...}``
+
+        Autovit FETCHES each URL server-side during this POST, so a slow origin
+        (our presigned Spaces links) makes it slow — hence a longer `timeout`
+        than the rest of the publish flow. `X-Bulk-Error: per_item` tells Autovit
+        to skip a single bad/slow image instead of failing the whole batch.
         """
         if not image_urls:
             return None
         images = {str(i + 1): u for i, u in enumerate(image_urls) if u}
         if not images:
             return None
-        resp = self._request('POST', '/imageCollections', json=images)
+        resp = self._request('POST', '/imageCollections', json=images,
+                              timeout=timeout, headers={'X-Bulk-Error': 'per_item'})
         return str(resp.json().get('id')) if resp.ok else None
 
 

@@ -635,13 +635,17 @@ def publish(account_id):
                 result = client.create_advert(advert) or {}
                 ext_id = result.get('id')
                 ext_url = result.get('url')
-                ext_status = result.get('status') or 'active'
+                ext_status = result.get('status') or 'unpaid'
         _t_write = time.monotonic()
 
         # Post-write verification: read the advert back and diff what we sent
         # against what Autovit kept. Silently-dropped params are otherwise
         # invisible (the create/update returns 2xx regardless).
         verify = _verify_advert(client, ext_id, advert)
+        # Prefer the status Autovit actually reports (read back) over our guess —
+        # a create lands 'unpaid'; an active ad updated in place stays 'active'.
+        if verify.get('status_remote'):
+            ext_status = verify['status_remote']
         # Per-stage timing — surfaces which leg is slow when a publish flirts
         # with the gateway limit (the whole reason for the bounds above).
         logger.info(
@@ -727,9 +731,10 @@ def _attach_image_collection(client: AutovitClient, advert: dict, vehicle_id: in
 def _verify_advert(client: AutovitClient, advert_id, sent: dict) -> dict:
     """GET the advert back from Autovit and report which `params` keys we sent
     that Autovit did not keep, plus how many photos it holds.
-    Returns {'params_dropped': [..], 'photos_remote': int|None}. Never raises —
-    verification must not turn a successful publish into a 502."""
-    out = {'params_dropped': [], 'photos_remote': None}
+    Returns {'params_dropped': [..], 'photos_remote': int|None, 'status_remote':
+    str|None}. Never raises — verification must not turn a successful publish
+    into a 502."""
+    out = {'params_dropped': [], 'photos_remote': None, 'status_remote': None}
     if not advert_id:
         return out
     try:
@@ -741,6 +746,7 @@ def _verify_advert(client: AutovitClient, advert_id, sent: dict) -> dict:
         logger.warning('Autovit post-publish verify failed for advert %s: %s', advert_id, e)
         return out
     remote_params = remote.get('params') or {}
+    out['status_remote'] = remote.get('status')
     # Diagnostic: did Autovit apply our title on update, or keep/auto-derive its
     # own? (OTOMOTO often derives the displayed title from brand/model/params.)
     if remote.get('title') != sent.get('title'):

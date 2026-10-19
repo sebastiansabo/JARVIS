@@ -291,13 +291,11 @@ def advert_to_vehicle(advert: Dict[str, Any]) -> Dict[str, Any]:
     return {k: val for k, val in v.items() if val is not None and val != ""}
 
 
-# Autovit's advert form takes first registration as day / month / year fields;
-# the OLX Group partner API (which Autovit's /api/open is) carries it as a
-# single "DD/MM/YYYY" string. Not yet verified against a live Autovit
-# response — publish with dry_run then draft=True and read the value back via
-# GET /account/adverts/{id} (the publish route now does this and stores any
-# dropped params in last_error).
-DATE_REGISTRATION_FORMAT = "%d/%m/%Y"
+# Autovit's /api/open (OLX Group "Motors" engine) carries first registration in
+# `params` as a YEAR-FIRST dashed string, "YYYY-MM-DD" — confirmed via the
+# Standvirtual/OTOMOTO open-API spec example value "2003-3-01". The old
+# "DD/MM/YYYY" was rejected with 400 "Wrong format on 'date_registration'".
+DATE_REGISTRATION_FORMAT = "%Y-%m-%d"
 
 
 def _format_date_registration(value: Any) -> str:
@@ -393,15 +391,11 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any]) -> Dict[
         params["generation"] = str(vehicle["generation"])
     if vehicle.get("variant"):
         params["version"] = str(vehicle["variant"])
-    # Fields the pull side reads (advert_to_vehicle) but push never emitted —
-    # found empty on Autovit's form for cars published from JARVIS
-    # (2026-10-15: Audi Q5 WAUZZZ8R2HA085589 — "Data primei înmatriculări",
-    # "Norma de poluare", "Țara de origine" all blank despite being set here).
-    # date_registration is deliberately NOT sent: Autovit rejects our value with
-    # 400 {"message":"Wrong format on 'date_registration'"} and the expected
-    # format is unconfirmed (undocumented in the OTOMOTO/OLX spec). On an UPDATE
-    # Autovit keeps the ad's existing registration date, so nothing is lost;
-    # re-enable with the correct format once it's confirmed against a live advert.
+    # date_registration — sent in YYYY-MM-DD (see DATE_REGISTRATION_FORMAT);
+    # the earlier DD/MM/YYYY value 400'd "Wrong format on 'date_registration'".
+    date_reg = _format_date_registration(vehicle.get("first_registration_date"))
+    if date_reg:
+        params["date_registration"] = date_reg
     euro = _norm_enum(vehicle.get("euro_standard"), _EURO_SLUGS, _EURO_ALIASES)
     if euro:
         params["pollution_standard"] = euro
