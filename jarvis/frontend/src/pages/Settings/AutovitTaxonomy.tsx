@@ -1,18 +1,19 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Loader2, RefreshCw, Tags } from 'lucide-react'
+import { Check, ChevronsUpDown, Loader2, RefreshCw, Sparkles, Tags } from 'lucide-react'
 import { toast } from 'sonner'
 import { PageHeader } from '@/components/shared/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
@@ -26,6 +27,8 @@ import {
 } from '@/components/ui/table'
 import { autovitApi } from '@/api/autovit'
 import type { AutovitTaxonomyCacheRow, AutovitTaxonomySourceRow } from '@/api/autovit'
+
+type Opt = { code: string; label: string | null }
 
 // Render order for the per-dimension sections — make/model first (they gate
 // every publish), then the other REQUIRED dims, then optional equipment.
@@ -65,13 +68,13 @@ function useOptions(
   const makeCode = dimension === 'model' ? row.resolved_make_code : undefined
   return useMemo(() => {
     const seen = new Set<string>()
-    const suggested: { code: string; label: string | null }[] = []
+    const suggested: Opt[] = []
     for (const s of row.suggestions) {
       if (seen.has(s.target_code)) continue
       seen.add(s.target_code)
       suggested.push({ code: s.target_code, label: s.target_label })
     }
-    const rest: { code: string; label: string | null }[] = []
+    const rest: Opt[] = []
     for (const c of cache) {
       if (c.dimension !== dimension) continue
       if (dimension === 'model' && c.make !== makeCode) continue
@@ -82,6 +85,104 @@ function useOptions(
     return { suggested, rest }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row.suggestions, cache, dimension, makeCode])
+}
+
+// Searchable combobox: type to filter the Autovit codes/labels, suggestions
+// pinned on top. (shadcn Select can't search; cmdk isn't installed — built from
+// Popover + Input + ScrollArea.)
+function CodeCombobox({
+  value,
+  valueLabel,
+  suggested,
+  rest,
+  disabled,
+  onSelect,
+}: {
+  value: string | null
+  valueLabel?: string | null
+  suggested: Opt[]
+  rest: Opt[]
+  disabled?: boolean
+  onSelect: (code: string, label: string | null) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  // Prefer the matching cache/suggestion option; fall back to the stored
+  // target_label so a mapped value still shows before the cache is synced.
+  const current = useMemo(() => {
+    const hit = [...suggested, ...rest].find((o) => o.code === value)
+    if (hit) return hit
+    return value ? { code: value, label: valueLabel ?? null } : null
+  }, [suggested, rest, value, valueLabel])
+  const match = (o: Opt) => {
+    if (!q.trim()) return true
+    const hay = `${o.label ?? ''} ${o.code}`.toLowerCase()
+    return q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w))
+  }
+  const fSug = suggested.filter(match)
+  const fRest = rest.filter(match)
+  const pick = (o: Opt) => {
+    onSelect(o.code, o.label)
+    setOpen(false)
+    setQ('')
+  }
+  const Item = ({ o }: { o: Opt }) => (
+    <button
+      type="button"
+      onClick={() => pick(o)}
+      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+    >
+      <Check className={`h-3.5 w-3.5 shrink-0 ${o.code === value ? 'opacity-100' : 'opacity-0'}`} />
+      <span className="truncate">{formatOption(o.code, o.label)}</span>
+    </button>
+  )
+
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQ('') }}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          role="combobox"
+          disabled={disabled}
+          className="w-full justify-between font-normal"
+        >
+          <span className="truncate">
+            {current ? formatOption(current.code, current.label)
+              : <span className="text-muted-foreground">Selectează cod Autovit...</span>}
+          </span>
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[min(34rem,90vw)] p-0" align="start">
+        <div className="border-b p-2">
+          <Input
+            autoFocus
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Caută cod Autovit..."
+            className="h-8"
+          />
+        </div>
+        <ScrollArea className="max-h-72">
+          <div className="p-1">
+            {fSug.length > 0 && (
+              <>
+                <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Sugestii</div>
+                {fSug.map((o) => <Item key={`s-${o.code}`} o={o} />)}
+                <div className="my-1 h-px bg-border" />
+              </>
+            )}
+            <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Toate valorile</div>
+            {fSug.length === 0 && fRest.length === 0 ? (
+              <div className="px-2 py-3 text-center text-xs text-muted-foreground">Niciun rezultat</div>
+            ) : (
+              fRest.map((o) => <Item key={`r-${o.code}`} o={o} />)
+            )}
+          </div>
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
+  )
 }
 
 function TaxonomyRow({
@@ -101,7 +202,7 @@ function TaxonomyRow({
 }) {
   const mapped = !!row.target_code
   const { suggested, rest } = useOptions(row, dimension, cache)
-  const allOptions = [...suggested, ...rest]
+  const top = !mapped && suggested.length > 0 ? suggested[0] : null
 
   return (
     <TableRow>
@@ -111,42 +212,33 @@ function TaxonomyRow({
           {!mapped && <Badge variant="destructive">Nemapat</Badge>}
         </div>
       </TableCell>
-      <TableCell className="min-w-[260px]">
+      <TableCell className="min-w-[320px]">
         <div className="flex items-center gap-2">
-          <Select
-            value={row.target_code ?? undefined}
-            onValueChange={(v) => {
-              const opt = allOptions.find((o) => o.code === v)
-              onSave(v, opt?.label ?? null)
-            }}
+          <CodeCombobox
+            value={row.target_code ?? null}
+            valueLabel={row.target_label}
+            suggested={suggested}
+            rest={rest}
             disabled={saving}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Selectează cod Autovit..." />
-            </SelectTrigger>
-            <SelectContent>
-              {suggested.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>Sugestii</SelectLabel>
-                  {suggested.map((o) => (
-                    <SelectItem key={o.code} value={o.code}>
-                      {formatOption(o.code, o.label)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              )}
-              <SelectGroup>
-                <SelectLabel>Toate valorile</SelectLabel>
-                {rest.map((o) => (
-                  <SelectItem key={o.code} value={o.code}>
-                    {formatOption(o.code, o.label)}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+            onSelect={(code, label) => onSave(code, label)}
+          />
+          {top && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="shrink-0 whitespace-nowrap"
+              onClick={() => onSave(top.code, top.label)}
+              disabled={saving}
+              title={`Acceptă sugestia: ${formatOption(top.code, top.label)}`}
+            >
+              {saving
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                : <Check className="mr-1 h-3.5 w-3.5" />}
+              <span className="max-w-[140px] truncate">{top.label ?? top.code}</span>
+            </Button>
+          )}
           {mapped && (
-            <Button size="sm" variant="ghost" onClick={onClear} disabled={saving}>
+            <Button size="sm" variant="ghost" className="shrink-0" onClick={onClear} disabled={saving}>
               Șterge
             </Button>
           )}
@@ -259,6 +351,7 @@ export default function AutovitTaxonomy() {
   const qc = useQueryClient()
   const [accountId, setAccountId] = useState<string>('')
   const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const [bulkDim, setBulkDim] = useState<string | null>(null)
 
   const { data, isLoading } = useQuery({
     queryKey: ['autovit', 'taxonomy'],
@@ -318,6 +411,31 @@ export default function AutovitTaxonomy() {
       target_code: targetCode,
       target_label: targetLabel,
     })
+  }
+
+  // Bulk-accept the top suggestion for every still-unmapped row in a dimension.
+  // Fires the saves in parallel, then refreshes once (avoids a per-row refetch storm).
+  async function acceptAllSuggestions(dimension: string, rows: AutovitTaxonomySourceRow[]) {
+    const targets = rows.filter((r) => !r.target_code && r.suggestions.length > 0)
+    if (targets.length === 0) return
+    setBulkDim(dimension)
+    try {
+      await Promise.all(
+        targets.map((r) => autovitApi.saveTaxonomyMap({
+          dimension,
+          source_value: r.source_value,
+          make: dimension === 'model' ? r.resolved_make_code ?? null : null,
+          target_code: r.suggestions[0].target_code,
+          target_label: r.suggestions[0].target_label,
+        })),
+      )
+      toast.success(`${targets.length} sugestii acceptate`)
+    } catch (err) {
+      toast.error((err as { data?: { error?: string } })?.data?.error || 'Acceptarea sugestiilor a eșuat')
+    } finally {
+      setBulkDim(null)
+      qc.invalidateQueries({ queryKey: ['autovit', 'taxonomy'] })
+    }
   }
 
   if (isLoading) {
@@ -381,12 +499,32 @@ export default function AutovitTaxonomy() {
 
       {DIMENSION_ORDER.map((dim) => {
         const rows = sources[dim] ?? []
+        const suggestable = rows.filter((r) => !r.target_code && r.suggestions.length > 0).length
+        const unmapped = rows.filter((r) => !r.target_code).length
         return (
           <div key={dim} className="rounded-lg border p-5 space-y-3">
             <div className="flex items-center gap-2">
               <Tags className="h-4 w-4 text-muted-foreground" />
               <h3 className="text-sm font-semibold">{formatDimLabel(dim)}</h3>
-              <span className="text-xs text-muted-foreground">({rows.length} valori)</span>
+              <span className="text-xs text-muted-foreground">
+                ({rows.length} valori{unmapped > 0 ? `, ${unmapped} nemapate` : ''})
+              </span>
+              <div className="ml-auto">
+                {suggestable > 0 && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => acceptAllSuggestions(dim, rows)}
+                    disabled={bulkDim === dim}
+                    title="Acceptă sugestia de top pentru toate valorile nemapate care au una"
+                  >
+                    {bulkDim === dim
+                      ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
+                    Acceptă sugestiile ({suggestable})
+                  </Button>
+                )}
+              </div>
             </div>
             {dim === 'model' ? (
               <ModelTable
