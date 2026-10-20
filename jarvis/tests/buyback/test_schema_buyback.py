@@ -60,6 +60,23 @@ def test_records_has_market_price_column(require_real_db):
         release_db(conn)
 
 
+def test_records_has_seller_identity_columns(require_real_db):
+    """Seller legal identity for the purchase/consignație contract — person
+    CNP + CI, company reg/IBAN/legal-rep, universal address."""
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        create_schema_buyback(conn, cur)
+        conn.commit()
+        cur.execute("""SELECT column_name FROM information_schema.columns
+                       WHERE table_name='buyback_records'""")
+        cols = {r[0] if not isinstance(r, dict) else r['column_name'] for r in cur.fetchall()}
+        assert {'seller_address', 'seller_cnp', 'seller_ci_serie', 'seller_ci_number',
+                'seller_reg_no', 'seller_iban', 'seller_legal_rep'}.issubset(cols)
+    finally:
+        release_db(conn)
+
+
 def test_buyback_company_config_table_exists(require_real_db):
     conn = get_db()
     try:
