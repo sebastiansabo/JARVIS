@@ -1622,6 +1622,9 @@ export default function VehicleForm() {
             }}
             placeholder="Se completează automat din specificații"
           />
+          <p className="text-[11px] text-muted-foreground">
+            Apare ca titlu pe Autoworld.ro. Pe Autovit, titlul anunțului e generat automat (marcă + model + versiune).
+          </p>
         </div>
         <div className="space-y-1.5">
           <div className="flex items-center justify-between gap-2">
