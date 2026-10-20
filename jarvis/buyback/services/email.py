@@ -111,6 +111,12 @@ def build_offer_email(record: dict, offer: dict, dealer: dict, advisor: dict = N
         pairs.append(('VIN', vin))
     if amount_eur is not None:
         pairs.append(('Sumă ofertă', f'{amount_eur} €'))
+    # Retail/market value the acquisition team researched — shown so the seller
+    # sees the below-market offer is a wholesale buyback price. Retail ONLY: the
+    # margin/difference is never disclosed.
+    market_price = record.get('market_price_eur')
+    if market_price is not None:
+        pairs.append(('Preț de piață', f'{market_price} €'))
     if valid_until:
         pairs.append(('Valabilă până la', str(valid_until)))
     if dealer.get('phone'):

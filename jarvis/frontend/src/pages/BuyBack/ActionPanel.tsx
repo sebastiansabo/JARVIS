@@ -5,7 +5,6 @@ import { buybackApi } from '@/api/buyback'
 import { usePermissions } from './usePermissions'
 import StatusChangeDialog from './StatusChangeDialog'
 import { pickLatestOffer } from './offerUtils'
-import { fmtEur } from './buybackVinHistory'
 import type { BuybackRecord, BuybackOffer, CustodyAgreementInput } from '@/types/buyback'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -177,6 +176,14 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   const [offerVat, setOfferVat] = useState('')
   const [offerValidUntil, setOfferValidUntil] = useState('')
   const [offerNotes, setOfferNotes] = useState('')
+  // Preț Piață (retail) — the acquisition team researches/sets it when posting
+  // the offer; pre-filled from the record when the dialog opens.
+  const [offerMarketPrice, setOfferMarketPrice] = useState('')
+  useEffect(() => {
+    if (offerDialogType) {
+      setOfferMarketPrice(record.market_price_eur != null ? String(record.market_price_eur) : '')
+    }
+  }, [offerDialogType, record.market_price_eur])
 
   // ── hold / resume ──
   const [holdOpen, setHoldOpen] = useState(false)
@@ -195,6 +202,7 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     setOfferVat('')
     setOfferValidUntil('')
     setOfferNotes('')
+    setOfferMarketPrice('')
   }
 
   const postOfferMutation = useMutation({
@@ -205,6 +213,7 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
         vat_status: offerVat || undefined,
         valid_until: offerValidUntil || undefined,
         notes: offerNotes || undefined,
+        market_price_eur: offerMarketPrice.trim() !== '' ? Number(offerMarketPrice) : undefined,
       }),
     onSuccess: () => {
       toast.success('Oferta a fost postată')
@@ -597,14 +606,18 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
             <div className="space-y-1">
               <Label className="text-xs">Sumă (€)</Label>
               <Input type="number" inputMode="numeric" min={0} value={offerAmount} onChange={(e) => setOfferAmount(e.target.value)} />
-              {(record.market_price_eur != null || record.client_asking_price_eur != null) && (
-                <p className="text-xs text-muted-foreground">
-                  {[
-                    record.market_price_eur != null ? `Preț Piață: ${fmtEur(record.market_price_eur)}` : null,
-                    record.client_asking_price_eur != null ? `Preț cerut: ${fmtEur(record.client_asking_price_eur)}` : null,
-                  ].filter(Boolean).join(' · ')}
-                </p>
-              )}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Preț Piață — valoare de piață (€)</Label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={offerMarketPrice}
+                onChange={(e) => setOfferMarketPrice(e.target.value)}
+                placeholder="Valoare de piață (retail)"
+              />
+              <p className="text-xs text-muted-foreground">Apare pe oferta trimisă vânzătorului.</p>
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Status TVA</Label>

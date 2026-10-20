@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 vi.mock('@/api/buyback', () => ({
@@ -30,6 +30,7 @@ vi.mock('@/hooks/useAuth', () => ({
 }))
 
 import ActionPanel from './ActionPanel'
+import { buybackApi } from '@/api/buyback'
 import type { BuybackRecord, BuybackOffer } from '@/types/buyback'
 
 function renderPanel(
@@ -63,13 +64,25 @@ describe('ActionPanel permission gating', () => {
     expect(screen.queryByText(/Postează ofertă/)).not.toBeInTheDocument()
   })
 
-  it('offer dialog shows Preț Piață + Preț cerut as an informative reference', async () => {
+  it('offer dialog has an editable Preț Piață input pre-filled from the record', async () => {
     renderPanel('PENDING_EVALUATION', { 'buyback.offer.manage': true },
-      { record: { market_price_eur: 21500, client_asking_price_eur: 23000 } })
+      { record: { id: 5, market_price_eur: 21500 } })
     fireEvent.click(screen.getByText(/Postează ofertă inițială/))
-    expect(await screen.findByText(/Preț Piață/)).toBeInTheDocument()
-    expect(screen.getByText(/21\.500/)).toBeInTheDocument()   // market price, ro-RO
-    expect(screen.getByText(/23\.000/)).toBeInTheDocument()   // asking price
+    // acquisition sets/confirms the researched retail value here; pre-filled
+    expect(await screen.findByDisplayValue('21500')).toBeInTheDocument()
+  })
+
+  it('posts the offer including the edited Preț Piață (retail)', async () => {
+    renderPanel('PENDING_EVALUATION', { 'buyback.offer.manage': true },
+      { record: { id: 5, market_price_eur: 21500 } })
+    fireEvent.click(screen.getByText(/Postează ofertă inițială/))
+    const spinners = await screen.findAllByRole('spinbutton')  // [0]=Sumă, [1]=Preț Piață
+    fireEvent.change(spinners[0], { target: { value: '9000' } })
+    fireEvent.click(screen.getByText('Trimite oferta'))
+    await waitFor(() => expect(buybackApi.postOffer).toHaveBeenCalled())
+    expect(buybackApi.postOffer).toHaveBeenCalledWith(5, expect.objectContaining({
+      amount_eur: 9000, market_price_eur: 21500,
+    }))
   })
 
   it('INITIAL_OFFER + record.edit shows Accept/Decline', () => {

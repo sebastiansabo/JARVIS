@@ -84,6 +84,10 @@ def build_vehicle_sheet_pdf(record: dict) -> bytes:
     ]
     if record.get('has_damage') and record.get('damage_details'):
         rows.append(('Detalii daune', record.get('damage_details')))
+    # Retail value (Pret de piata) so the attached sheet carries the same
+    # reference as the offer email. Retail only — never the margin.
+    if record.get('market_price_eur') is not None:
+        rows.append(('Pret de piata (EUR)', record.get('market_price_eur')))
 
     table_data = [
         [_ascii(label), Paragraph(_ptext(val), styles['Normal'])]
