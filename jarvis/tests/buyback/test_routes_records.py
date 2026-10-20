@@ -102,6 +102,43 @@ def test_create_rejects_non_numeric_market_price_as_400(client, as_role):
     assert r.status_code == 400, r.get_json()
 
 
+_SELLER_ID = {
+    'seller_address': 'Str. Exemplu 1, Cluj', 'seller_cnp': '1234567890123',
+    'seller_ci_serie': 'CJ', 'seller_ci_number': '123456',
+    'seller_reg_no': 'J12/345/2020', 'seller_iban': 'RO49AAAA1B31007593840000',
+    'seller_legal_rep': 'Pop Ion',
+}
+
+
+def test_create_persists_seller_identity(client, as_role):
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(**_SELLER_ID))
+    assert r.status_code == 201, r.get_json()
+    rec = r.get_json()['record']
+    for k, v in _SELLER_ID.items():
+        assert rec[k] == v
+
+
+def test_update_persists_seller_identity(client, as_role):
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    r = client.put(f'/api/buyback/records/{rid}', json={'seller_cnp': '9999999999999'})
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()['record']['seller_cnp'] == '9999999999999'
+
+
+def test_create_rejects_dict_seller_cnp_as_400(client, as_role):
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(seller_cnp={'x': 1}))
+    assert r.status_code == 400, r.get_json()
+
+
+def test_sensitive_seller_fields_are_pii_redacted():
+    from buyback.routes.records import _PII_LOG_FIELDS
+    assert {'seller_cnp', 'seller_ci_serie', 'seller_ci_number',
+            'seller_iban', 'seller_address'}.issubset(_PII_LOG_FIELDS)
+
+
 def test_create_response_includes_vin_in_carpark_flag(client, as_role):
     as_role('Admin', 1)
     r = client.post('/api/buyback/records', json=_payload())
