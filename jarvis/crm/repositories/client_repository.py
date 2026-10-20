@@ -12,6 +12,7 @@ class ClientRepository(BaseRepository):
     _UPDATABLE = {
         'display_name', 'name_normalized', 'client_type', 'phone', 'phone_raw',
         'email', 'street', 'city', 'region', 'company_name', 'cui', 'responsible',
+        'cnp', 'nr_reg',
     }
 
     def update(self, client_id, fields):
