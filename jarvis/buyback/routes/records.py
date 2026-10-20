@@ -31,6 +31,8 @@ _CREATE_FIELDS = (
     'brand_id', 'acquisition_type', 'is_trade_in', 'advisor_id', 'advisor_name',
     'client_type', 'vat_status', 'client_id',
     'seller_name', 'seller_email', 'seller_phone', 'seller_cui',
+    'seller_address', 'seller_cnp', 'seller_ci_serie', 'seller_ci_number',
+    'seller_reg_no', 'seller_iban', 'seller_legal_rep',
     'brand', 'model', 'variant', 'equipment',
     'mileage_km', 'engine_capacity_cm3',
     'fuel_type', 'transmission', 'gearbox',
@@ -325,7 +327,9 @@ def export_record_pdf(record_id):
 
 
 # Seller contact / fiscal-id fields — redacted (length only) in failure logs.
-_PII_LOG_FIELDS = frozenset({'seller_name', 'seller_email', 'seller_phone', 'seller_cui'})
+_PII_LOG_FIELDS = frozenset({'seller_name', 'seller_email', 'seller_phone', 'seller_cui',
+                             'seller_address', 'seller_cnp', 'seller_ci_serie',
+                             'seller_ci_number', 'seller_iban', 'seller_legal_rep'})
 
 
 def _intake_write_failed(action, data, exc):
