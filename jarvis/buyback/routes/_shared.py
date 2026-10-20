@@ -249,7 +249,7 @@ def serialize_photos(photos):
 # ValueError the route can catch and 400 on.
 
 _INTAKE_INT_FIELDS = ('mileage_km', 'engine_capacity_cm3', 'keys_count', 'general_condition')
-_INTAKE_NUMERIC_FIELDS = ('client_asking_price_eur', 'reconditioning_cost_eur')
+_INTAKE_NUMERIC_FIELDS = ('client_asking_price_eur', 'market_price_eur', 'reconditioning_cost_eur')
 _INTAKE_DATE_FIELDS = ('manufacture_date', 'first_registration_date')
 _INTAKE_BOOL_FIELDS = ('has_damage', 'is_trade_in', 'service_history_uptodate', 'extra_wheels')
 # Scalar-only text fields — a dict/list here would otherwise reach psycopg2's

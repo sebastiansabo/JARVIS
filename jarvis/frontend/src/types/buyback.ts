@@ -49,6 +49,7 @@ export interface BuybackRecord {
   damage_details: string | null
   general_condition: number | null
   client_asking_price_eur: number | null
+  market_price_eur: number | null
   client_source: string | null
   other_details: string | null
   drive_folder_link: string | null
@@ -75,6 +76,30 @@ export interface BuybackRecord {
   created_at: string
   updated_at: string
   closed_at: string | null
+  // List-only: this VIN was already evaluated in another record within the
+  // caller's Autoworld company family (the "Revenit" / repeat-buyback flag).
+  // Absent on the detail payload (get_by_id does a plain SELECT *).
+  is_repeat?: boolean
+}
+
+// A prior buyback evaluation for a VIN (cross-company, within the Autoworld
+// family) — returned by GET /records/vin-history, with the most recent offer
+// attached. Powers the intake "evaluat anterior" warning + detail history panel.
+export interface VinHistoryEntry {
+  id: number
+  record_code: string
+  company_id: number
+  company_name: string | null
+  advisor_name: string | null
+  status: BuybackStatus
+  created_at: string
+  client_asking_price_eur: number | null
+  market_price_eur: number | null
+  purchase_price_eur: number | null
+  last_offer_eur: number | null
+  last_offer_type: string | null
+  last_offer_vat: string | null
+  last_offer_at: string | null
 }
 
 export interface BuybackOffer {

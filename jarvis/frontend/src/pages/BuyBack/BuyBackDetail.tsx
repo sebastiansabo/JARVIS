@@ -152,6 +152,19 @@ export default function BuyBackDetail() {
   })
   const L = makeLabelers(optsData)
 
+  // Prior buyback evaluations for this VIN across the Autoworld family
+  // (repeat detection). Keyed off the loaded record's VIN; excludes this
+  // record so it never lists itself. Read before the early returns to keep
+  // hook order stable.
+  const recordVin = data?.record?.vin
+  const { data: vinHistoryData } = useQuery({
+    queryKey: ['buyback-vin-history', recordVin, recordId],
+    queryFn: () => buybackApi.getVinHistory(recordVin as string, undefined, recordId),
+    enabled: !!recordVin,
+    staleTime: 60_000,
+  })
+  const priorEvaluations = vinHistoryData?.history ?? []
+
   if (isLoading) return <DetailSkeleton />
 
   if (isError || !data) {
@@ -325,6 +338,7 @@ export default function BuyBackDetail() {
           </CardHeader>
           <CardContent className="grid grid-cols-2 gap-3">
             <Field label="Preț cerut" value={fmtEur(record.client_asking_price_eur)} />
+            <Field label="Preț Piață" value={fmtEur(record.market_price_eur)} />
             <Field
               label="Ofertă curentă"
               value={
@@ -339,6 +353,40 @@ export default function BuyBackDetail() {
             <Field label="Cost recondiționare" value={fmtEur(record.reconditioning_cost_eur)} />
           </CardContent>
         </Card>
+
+        {priorEvaluations.length > 0 && (
+          <Card className="border-amber-300 dark:border-amber-800">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                Istoric BuyBack (același VIN)
+                <Badge
+                  variant="outline"
+                  className="border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                >
+                  Revenit
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {priorEvaluations.map((h) => (
+                <div
+                  key={h.id}
+                  className="rounded-md border p-2 text-sm flex flex-wrap items-center gap-x-3 gap-y-0.5"
+                >
+                  <span className="font-medium">{h.company_name || '—'}</span>
+                  <span className="text-xs text-muted-foreground">{fmtDate(h.created_at)}</span>
+                  {h.advisor_name && (
+                    <span className="text-xs text-muted-foreground">· {h.advisor_name}</span>
+                  )}
+                  <span className="ml-auto whitespace-nowrap">
+                    Ultima ofertă: <span className="font-medium">{fmtEur(h.last_offer_eur)}</span>
+                  </span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
         {(record.status === 'LOST' || record.status === 'CONSIGNAT') && record.carpark_vehicle_id && (
           <Card>

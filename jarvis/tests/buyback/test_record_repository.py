@@ -12,6 +12,7 @@ localhost/defaultdb never collide with leftover rows from a previous run.
 import os
 
 from buyback.repositories.record_repository import RecordRepository
+from database import get_db, get_cursor, release_db
 
 
 def _code(prefix='BB-TEST'):
@@ -146,3 +147,181 @@ def test_delete_removes_row_and_returns_rowcount(require_real_db):
 def test_delete_missing_id_returns_zero(require_real_db):
     repo = RecordRepository()
     assert repo.delete(999999999) == 0
+
+
+# ── group_company_ids: the Autoworld corporate family for cross-company VIN history ──
+
+def _mk_company(cur, cid, parent=None):
+    cur.execute(
+        'INSERT INTO companies (id, company, parent_company_id) VALUES (%s, %s, %s) '
+        'ON CONFLICT (id) DO NOTHING',
+        (cid, f'BB Test Co {cid}', parent),
+    )
+
+
+def test_group_company_ids_returns_parent_family(require_real_db):
+    """A VIN seen at any sibling under the same parent must be discoverable:
+    group_company_ids(child) = {parent} ∪ all children of that parent, and an
+    unrelated company (different/no parent) is excluded."""
+    repo = RecordRepository()
+    base = 950000 + int.from_bytes(os.urandom(2), 'big')
+    parent, child1, child2, unrelated = base, base + 1, base + 2, base + 3
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        _mk_company(cur, parent, None)
+        _mk_company(cur, child1, parent)
+        _mk_company(cur, child2, parent)
+        _mk_company(cur, unrelated, None)
+        conn.commit()
+
+        fam = set(repo.group_company_ids(child1))
+        assert {parent, child1, child2} <= fam
+        assert unrelated not in fam
+        # querying by the parent itself yields the same family
+        assert set(repo.group_company_ids(parent)) == fam
+    finally:
+        cur = get_cursor(conn)
+        cur.execute('DELETE FROM companies WHERE id = ANY(%s)',
+                    ([parent, child1, child2, unrelated],))
+        conn.commit()
+        release_db(conn)
+
+
+def test_group_company_ids_unknown_company_falls_back_to_self(require_real_db):
+    """A company_id with no companies row still scopes to itself (never widens
+    to all companies)."""
+    repo = RecordRepository()
+    missing = 980000 + int.from_bytes(os.urandom(2), 'big')
+    assert set(repo.group_company_ids(missing)) == {missing}
+
+
+# ── market_price_eur (Preț Piață) persists through update + list ──
+
+def test_update_sets_market_price(require_real_db):
+    repo = RecordRepository()
+    rec = repo.create(_base())
+    updated = repo.update(rec['id'], {'market_price_eur': 21500})
+    assert float(updated['market_price_eur']) == 21500.0
+
+
+def test_list_includes_market_price(require_real_db):
+    repo = RecordRepository()
+    cid = 960000 + int.from_bytes(os.urandom(2), 'big')
+    rec = repo.create(_base(company_id=cid, market_price_eur=18000))
+    rows, _ = repo.list(company_id=cid, per_page=100)
+    row = next(r for r in rows if r['record_code'] == rec['record_code'])
+    assert float(row['market_price_eur']) == 18000.0
+
+
+# ── vin_history: cross-company prior buyback evaluations for a VIN ──
+
+def _add_offer(cur, record_id, amount, offer_type='initial', vat='no_vat'):
+    cur.execute(
+        'INSERT INTO buyback_offers (record_id, offer_type, amount_eur, vat_status) '
+        'VALUES (%s, %s, %s, %s)',
+        (record_id, offer_type, amount, vat),
+    )
+
+
+def test_vin_history_returns_prior_with_latest_offer(require_real_db):
+    """A prior record for the same VIN surfaces with its MOST RECENT offer
+    (the 'ultima ofertă' Norbert wants), the evaluating company, and advisor."""
+    repo = RecordRepository()
+    cid = 962000 + int.from_bytes(os.urandom(2), 'big')
+    vin = _vin()
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        prior = repo.create(_base(company_id=cid, vin=vin, advisor_name='Arthur'))
+        _add_offer(cur, prior['id'], 9000, 'initial')
+        _add_offer(cur, prior['id'], 8500, 'final')
+        conn.commit()
+
+        hist = repo.vin_history(vin, [cid])
+        assert len(hist) == 1
+        h = hist[0]
+        assert h['id'] == prior['id']
+        assert h['advisor_name'] == 'Arthur'
+        assert float(h['last_offer_eur']) == 8500.0  # latest offer, not the initial
+        assert h['last_offer_type'] == 'final'
+        assert 'company_name' in h
+    finally:
+        cur = get_cursor(conn)
+        cur.execute('DELETE FROM buyback_records WHERE id = %s', (prior['id'],))
+        conn.commit()
+        release_db(conn)
+
+
+def test_vin_history_excludes_self_and_out_of_group(require_real_db):
+    """Only prior records in the caller's company family count; the current
+    record (exclude_record_id) and any same-VIN record in an unrelated company
+    are not returned."""
+    repo = RecordRepository()
+    base = 961000 + int.from_bytes(os.urandom(2), 'big')
+    parent, c1, c2, outside = base, base + 1, base + 2, base + 3
+    vin = _vin()
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        _mk_company(cur, parent, None)
+        _mk_company(cur, c1, parent)
+        _mk_company(cur, c2, parent)
+        _mk_company(cur, outside, None)
+        conn.commit()
+
+        prior = repo.create(_base(company_id=c1, vin=vin))        # sibling in group
+        current = repo.create(_base(company_id=c2, vin=vin))      # "current" record
+        foreign = repo.create(_base(company_id=outside, vin=vin))  # unrelated company
+
+        group = repo.group_company_ids(c2)
+        hist = repo.vin_history(vin, group, exclude_record_id=current['id'])
+        ids = {h['id'] for h in hist}
+        assert prior['id'] in ids
+        assert current['id'] not in ids   # excluded self
+        assert foreign['id'] not in ids   # out of group
+    finally:
+        cur = get_cursor(conn)
+        cur.execute('DELETE FROM buyback_records WHERE company_id = ANY(%s)',
+                    ([c1, c2, outside],))
+        cur.execute('DELETE FROM companies WHERE id = ANY(%s)',
+                    ([parent, c1, c2, outside],))
+        conn.commit()
+        release_db(conn)
+
+
+def test_vin_history_blank_vin_returns_empty(require_real_db):
+    repo = RecordRepository()
+    assert repo.vin_history('', [1]) == []
+    assert repo.vin_history(None, [1]) == []
+
+
+# ── list(): is_repeat flag (the digital 'yellow highlight') ──
+
+def test_list_flags_is_repeat_for_vin_seen_in_group(require_real_db):
+    repo = RecordRepository()
+    base = 963000 + int.from_bytes(os.urandom(2), 'big')
+    parent, c1, c2 = base, base + 1, base + 2
+    vin = _vin()
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        _mk_company(cur, parent, None)
+        _mk_company(cur, c1, parent)
+        _mk_company(cur, c2, parent)
+        conn.commit()
+        repo.create(_base(company_id=c1, vin=vin))          # prior eval at sibling c1
+        current = repo.create(_base(company_id=c2, vin=vin))  # same VIN, now at c2
+        fresh = repo.create(_base(company_id=c2, vin=_vin()))  # unique VIN → not a repeat
+
+        group = repo.group_company_ids(c2)
+        rows, _ = repo.list(company_id=c2, per_page=100, repeat_scope_ids=group)
+        by_id = {r['id']: r for r in rows}
+        assert by_id[current['id']]['is_repeat'] is True
+        assert by_id[fresh['id']]['is_repeat'] is False
+    finally:
+        cur = get_cursor(conn)
+        cur.execute('DELETE FROM buyback_records WHERE company_id = ANY(%s)', ([c1, c2],))
+        cur.execute('DELETE FROM companies WHERE id = ANY(%s)', ([parent, c1, c2],))
+        conn.commit()
+        release_db(conn)

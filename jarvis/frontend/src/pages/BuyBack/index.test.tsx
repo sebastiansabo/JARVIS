@@ -18,7 +18,9 @@ vi.mock('@/api/buyback', () => ({
             seller_name: 'Ion',
             advisor_name: 'Maria',
             client_asking_price_eur: 10000,
+            market_price_eur: null,
             purchase_price_eur: 9500,
+            is_repeat: false,
             created_at: '2026-09-24',
           },
           {
@@ -31,7 +33,9 @@ vi.mock('@/api/buyback', () => ({
             seller_name: 'Vlad',
             advisor_name: 'Ana',
             client_asking_price_eur: 8000,
+            market_price_eur: 21500,
             purchase_price_eur: null,
+            is_repeat: true,
             created_at: '2026-10-12',
           },
         ],
@@ -81,6 +85,17 @@ describe('BuyBack list page', () => {
     expect(screen.getByText('Achiziționat')).toBeInTheDocument()
     // purchase_price_eur (9500) renders in the "Preț achiziție €" column, ro-RO formatted
     expect(screen.getByText((9500).toLocaleString('ro-RO'))).toBeInTheDocument()
+  })
+
+  it('flags a repeat-VIN record with a "Revenit" badge and shows its Preț Piață', async () => {
+    auth.role = 'Admin'
+    auth.permissions = {}
+    wrap(<BuyBack />)
+    // Audi A4 is PENDING_EVALUATION → Active tab (default); it carries is_repeat.
+    expect(await screen.findByText('Audi A4')).toBeInTheDocument()
+    expect(screen.getByText(/revenit/i)).toBeInTheDocument()
+    // market_price_eur (21500) renders in the new "Preț Piață €" column.
+    expect(screen.getByText((21500).toLocaleString('ro-RO'))).toBeInTheDocument()
   })
 
   it('a non-admin hold-permission holder gets "Suspendă" but NOT the admin-only items', async () => {

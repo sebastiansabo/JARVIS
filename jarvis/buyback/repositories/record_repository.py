@@ -35,7 +35,7 @@ _LIST_COLUMNS = (
     'r.manufacture_date, r.first_registration_date, '
     'r.service_history_uptodate, r.extra_wheels, r.keys_count, '
     'r.has_damage, r.general_condition, '
-    'r.client_asking_price_eur, r.client_source, '
+    'r.client_asking_price_eur, r.market_price_eur, r.client_source, '
     'r.drive_folder_link, r.target_vehicle_text, '
     'r.target_carpark_vehicle_id, r.crm_deal_id, '
     'r.inspection_report_key, r.inspection_rating, r.reconditioning_cost_eur, '
@@ -46,7 +46,8 @@ _LIST_COLUMNS = (
     'r.hold_prior_status, r.hold_reason, r.hold_note, r.held_at, r.held_by'
 )
 
-_SORT_WHITELIST = {'created_at', 'record_code', 'vin', 'status', 'brand', 'client_asking_price_eur'}
+_SORT_WHITELIST = {'created_at', 'record_code', 'vin', 'status', 'brand',
+                   'client_asking_price_eur', 'market_price_eur'}
 
 # Columns a generic update() may set. Deliberately excludes id, record_code,
 # company_id, created_at, created_by (identity/immutable) and status (which
@@ -63,7 +64,7 @@ _UPDATABLE_COLUMNS = {
     'manufacture_date', 'first_registration_date',
     'service_history_uptodate', 'extra_wheels', 'keys_count',
     'has_damage', 'damage_details', 'general_condition',
-    'client_asking_price_eur', 'client_source',
+    'client_asking_price_eur', 'market_price_eur', 'client_source',
     'other_details', 'drive_folder_link',
     'target_vehicle_text', 'target_carpark_vehicle_id', 'crm_deal_id',
     'inspection_report_key', 'inspection_rating', 'reconditioning_cost_eur',
@@ -92,9 +93,69 @@ class RecordRepository(BaseRepository):
         """Full row (SELECT *) — includes the heavy text blobs the list view omits."""
         return self.query_one('SELECT * FROM buyback_records WHERE id = %s', (id,))
 
+    def group_company_ids(self, company_id) -> list:
+        """Every company id in the same corporate family as `company_id`: the
+        root parent (one level up via `parent_company_id`, or the company
+        itself when it has no parent) plus every company sharing that root.
+
+        This is the scope for cross-company buyback VIN-history — a car
+        evaluated at one Autoworld dealership (e.g. International) must surface
+        when the same VIN reappears at a sibling (e.g. Premium). Falls back to
+        `[company_id]` when the company row is unknown, so the scope can never
+        silently widen to all companies."""
+        rows = self.query_all(
+            'WITH target AS ('
+            '  SELECT COALESCE(parent_company_id, id) AS root'
+            '  FROM companies WHERE id = %s'
+            ') '
+            'SELECT c.id FROM companies c, target t '
+            'WHERE c.id = t.root OR c.parent_company_id = t.root',
+            (company_id,),
+        )
+        return [r['id'] for r in rows] or [company_id]
+
+    def vin_history(self, vin, company_ids, exclude_record_id=None) -> list:
+        """Prior buyback evaluations for `vin` across `company_ids` (the caller's
+        corporate family — see group_company_ids), newest first, each with its
+        MOST RECENT offer attached (amount/type/vat/date). Powers the
+        'been to buyback before' signal: a car evaluated at one dealership
+        surfaces when the same VIN reappears at a sibling.
+
+        VIN is matched case/space-insensitively. A blank VIN or empty
+        company_ids returns [] (never a cross-tenant scan). `exclude_record_id`
+        drops the record being viewed/created so a record never lists itself.
+        """
+        norm = str(vin or '').strip()
+        if not norm or not company_ids:
+            return []
+        params = [norm, list(company_ids)]
+        exclude_sql = ''
+        if exclude_record_id is not None:
+            exclude_sql = ' AND r.id <> %s'
+            params.append(exclude_record_id)
+        return self.query_all(
+            'SELECT r.id, r.record_code, r.company_id, co.company AS company_name, '
+            '       r.advisor_name, r.status, r.created_at, '
+            '       r.client_asking_price_eur, r.market_price_eur, r.purchase_price_eur, '
+            '       o.amount_eur AS last_offer_eur, o.offer_type AS last_offer_type, '
+            '       o.vat_status AS last_offer_vat, o.created_at AS last_offer_at '
+            'FROM buyback_records r '
+            'LEFT JOIN companies co ON co.id = r.company_id '
+            'LEFT JOIN LATERAL ('
+            '    SELECT amount_eur, offer_type, vat_status, created_at '
+            '    FROM buyback_offers WHERE record_id = r.id '
+            '    ORDER BY created_at DESC, id DESC LIMIT 1'
+            ') o ON TRUE '
+            'WHERE r.vin IS NOT NULL AND UPPER(TRIM(r.vin)) = UPPER(%s) '
+            '  AND r.company_id = ANY(%s)'
+            f'{exclude_sql} '
+            'ORDER BY r.created_at DESC',
+            tuple(params),
+        )
+
     def list(self, company_id=None, status=None, acquisition_type=None, q=None,
              date_from=None, date_to=None, page=1, per_page=25,
-             sort_by='created_at', sort_dir='DESC'):
+             sort_by='created_at', sort_dir='DESC', repeat_scope_ids=None):
         """Paginated, filtered list. Returns (rows, total).
 
         `q` is an ILIKE substring match over brand/model/vin/record_code and
@@ -152,15 +213,36 @@ class RecordRepository(BaseRepository):
         total = count_row['total'] if count_row else 0
 
         offset = (page - 1) * per_page
+        # is_repeat: does this VIN appear in ANOTHER record within the caller's
+        # company family (the digital equivalent of their Excel yellow
+        # highlight)? Scoped to `repeat_scope_ids` (group_company_ids) when
+        # given; otherwise compared across all records. The ANY(%s) sits in the
+        # SELECT clause, so its param is bound BEFORE the WHERE params.
+        repeat_params = []
+        if repeat_scope_ids:
+            repeat_scope_sql = ' AND r2.company_id = ANY(%s)'
+            repeat_params = [list(repeat_scope_ids)]
+        else:
+            # No explicit family scope supplied → fall back to the row's OWN
+            # company, never a cross-tenant "exists anywhere" oracle. Keeps a
+            # future caller that forgets the arg from leaking a repeat flag
+            # across unrelated tenants.
+            repeat_scope_sql = ' AND r2.company_id = r.company_id'
+        is_repeat_expr = (
+            'EXISTS(SELECT 1 FROM buyback_records r2 '
+            "WHERE r2.vin IS NOT NULL AND TRIM(r2.vin) <> '' "
+            'AND UPPER(TRIM(r2.vin)) = UPPER(TRIM(r.vin)) '
+            f'AND r2.id <> r.id{repeat_scope_sql}) AS is_repeat'
+        )
         data_sql = (
-            f'SELECT {_LIST_COLUMNS}, co.company AS company_name '
+            f'SELECT {_LIST_COLUMNS}, co.company AS company_name, {is_repeat_expr} '
             f'FROM buyback_records r '
             f'LEFT JOIN companies co ON co.id = r.company_id'
             f'{where_sql} '
             f'ORDER BY r.{sort_by} {sort_dir} '
             f'LIMIT %s OFFSET %s'
         )
-        data_params = params + [per_page, offset]
+        data_params = repeat_params + params + [per_page, offset]
         rows = self.query_all(data_sql, tuple(data_params))
 
         return rows, total

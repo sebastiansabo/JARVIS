@@ -22,6 +22,7 @@ vi.mock('@/api/buyback', () => ({
           status: 'INITIAL_OFFER',
           seller_name: 'Dan',
           client_asking_price_eur: 12000,
+          market_price_eur: 9000,
         },
         offers: [{ id: 1, offer_type: 'initial', amount_eur: 11000, client_decision: 'pending', created_at: '2026-09-24' }],
         photos: [],
@@ -32,6 +33,28 @@ vi.mock('@/api/buyback', () => ({
     exportPdf,
     // ActionPanel mounts unconditionally and fires this on render regardless of status.
     getLookupOptions: vi.fn(() => Promise.resolve({})),
+    getVinHistory: vi.fn(() =>
+      Promise.resolve({
+        history: [
+          {
+            id: 99,
+            record_code: 'BB-OLD',
+            company_id: 10,
+            company_name: 'Autoworld International',
+            advisor_name: 'Arthur',
+            status: 'FINAL_OFFER',
+            created_at: '2026-10-14',
+            client_asking_price_eur: 10000,
+            market_price_eur: 9500,
+            purchase_price_eur: null,
+            last_offer_eur: 8500,
+            last_offer_type: 'final',
+            last_offer_vat: 'no_vat',
+            last_offer_at: '2026-10-14',
+          },
+        ],
+      })
+    ),
   },
 }))
 
@@ -60,6 +83,18 @@ describe('BuyBackDetail', () => {
     expect(await screen.findByText('Audi A4')).toBeInTheDocument()
     expect(screen.getByText('Ofertă inițială')).toBeInTheDocument()
     expect(screen.getByText('BB-Y')).toBeInTheDocument()
+  })
+
+  it('shows Preț Piață and a prior-VIN history panel when the car was evaluated before', async () => {
+    wrap('/app/buyback/5')
+    await screen.findByText('Audi A4')
+    // Preț Piață field (market_price_eur = 9000)
+    expect(screen.getByText('Preț Piață')).toBeInTheDocument()
+    expect(screen.getByText((9000).toLocaleString('ro-RO') + ' €')).toBeInTheDocument()
+    // History panel from the prior evaluation at International
+    expect(await screen.findByText('Istoric BuyBack (același VIN)')).toBeInTheDocument()
+    expect(screen.getByText('Autoworld International')).toBeInTheDocument()
+    expect(screen.getByText((8500).toLocaleString('ro-RO') + ' €')).toBeInTheDocument()
   })
 
   it('inline-edits the Vehicul card and PUTs the record (even at a non-PENDING status)', async () => {

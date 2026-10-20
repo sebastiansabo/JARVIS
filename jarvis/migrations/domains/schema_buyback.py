@@ -33,7 +33,8 @@ def create_schema_buyback(conn, cursor):
             manufacture_date DATE, first_registration_date DATE,
             service_history_uptodate BOOLEAN, extra_wheels BOOLEAN, keys_count SMALLINT,
             has_damage BOOLEAN, damage_details TEXT, general_condition SMALLINT,
-            client_asking_price_eur NUMERIC(12,2), client_source VARCHAR(100),
+            client_asking_price_eur NUMERIC(12,2), market_price_eur NUMERIC(12,2),
+            client_source VARCHAR(100),
             other_details TEXT, drive_folder_link TEXT,
             target_vehicle_text TEXT, target_carpark_vehicle_id BIGINT, crm_deal_id BIGINT,
             inspection_report_key TEXT, inspection_rating SMALLINT,
@@ -81,6 +82,21 @@ def create_schema_buyback(conn, cursor):
                 WHERE dropdown_type = 'buyback_hold_reason' AND value = %s
             )
         ''', (_value, _value, _sort, _value))
+
+    # ── Preț Piață: the dealer's own market-value estimate for the car,
+    # recorded at intake alongside the owner's asking price
+    # (client_asking_price_eur) and distinct from the final purchase price.
+    # Idempotent ADD COLUMN for EXISTING deployments (fresh DBs already have it
+    # from the CREATE above); the information_schema guard makes it a no-op once
+    # present.
+    cursor.execute('''
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                WHERE table_name='buyback_records' AND column_name='market_price_eur') THEN
+                ALTER TABLE buyback_records ADD COLUMN market_price_eur NUMERIC(12,2);
+            END IF;
+        END $$;
+    ''')
 
     # equipment is declared TEXT above (fresh DBs). This widens EXISTING
     # deployments where it was still VARCHAR(200): the intake form stores every

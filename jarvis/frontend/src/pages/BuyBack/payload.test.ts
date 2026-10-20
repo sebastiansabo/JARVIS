@@ -12,6 +12,12 @@ describe('buildCreatePayload', () => {
     expect('variant' in p).toBe(false)               // empty optional omitted
     expect(p.has_damage).toBe(true)
   })
+  it('coerces market_price_eur (Preț Piață) to a number, omits it when blank', () => {
+    const p = buildCreatePayload({ vin: 'X', brand: 'A', model: 'B', market_price_eur: '21500' } as any)
+    expect(p.market_price_eur).toBe(21500)
+    const blank = buildCreatePayload({ vin: 'X', brand: 'A', model: 'B', market_price_eur: '' } as any)
+    expect('market_price_eur' in blank).toBe(false)
+  })
   it('never emits a non-whitelisted key', () => {
     const p = buildCreatePayload({ vin: 'X', brand: 'A', model: 'B', hacker_field: 1 } as any)
     expect('hacker_field' in p).toBe(false)

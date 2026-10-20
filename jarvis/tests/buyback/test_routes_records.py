@@ -86,6 +86,22 @@ def test_create_and_list_scoped(client, as_role):
     assert any(r2['id'] == rec['id'] for r2 in lst['records'])
 
 
+def test_create_persists_market_price(client, as_role):
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(market_price_eur=21500))
+    assert r.status_code == 201, r.get_json()
+    rec = r.get_json()['record']
+    assert float(rec['market_price_eur']) == 21500.0
+
+
+def test_create_rejects_non_numeric_market_price_as_400(client, as_role):
+    # A badly-typed market_price_eur must be coerced/rejected at validate_intake
+    # (clean 400), never reach the NUMERIC column and surface as a raw 500.
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(market_price_eur='abc'))
+    assert r.status_code == 400, r.get_json()
+
+
 def test_create_response_includes_vin_in_carpark_flag(client, as_role):
     as_role('Admin', 1)
     r = client.post('/api/buyback/records', json=_payload())
@@ -125,6 +141,42 @@ def test_create_survives_raising_notification(client, as_role, monkeypatch):
     r = client.post('/api/buyback/records', json=_payload())
     assert r.status_code == 201, r.get_json()
     assert r.get_json()['success'] is True
+
+
+# ── VIN history (repeat-buyback detection) ──────────────────────────────
+
+def test_vin_history_route_returns_prior_and_respects_exclude(client, as_role):
+    as_role('Admin', 1)
+    vin = _vin()
+    a = client.post('/api/buyback/records', json=_payload(vin=vin)).get_json()['record']
+    b = client.post('/api/buyback/records', json=_payload(vin=vin)).get_json()['record']
+
+    res = client.get(
+        f'/api/buyback/records/vin-history?vin={vin}&company_id=1&exclude_id={b["id"]}')
+    assert res.status_code == 200, res.get_json()
+    ids = {h['id'] for h in res.get_json()['history']}
+    assert a['id'] in ids       # the prior evaluation surfaces
+    assert b['id'] not in ids   # the excluded "current" record does not
+
+
+def test_vin_history_route_blank_vin_is_empty(client, as_role):
+    as_role('Admin', 1)
+    res = client.get('/api/buyback/records/vin-history?vin=&company_id=1')
+    assert res.status_code == 200
+    assert res.get_json()['history'] == []
+
+
+def test_list_marks_is_repeat_for_duplicate_vin(client, as_role):
+    as_role('Admin', 1)
+    vin = _vin()
+    client.post('/api/buyback/records', json=_payload(vin=vin))
+    dup = client.post('/api/buyback/records', json=_payload(vin=vin)).get_json()['record']
+    uniq = client.post('/api/buyback/records', json=_payload()).get_json()['record']
+
+    lst = client.get('/api/buyback/records?company_id=1&per_page=1000').get_json()
+    by_id = {r['id']: r for r in lst['records']}
+    assert by_id[dup['id']]['is_repeat'] is True
+    assert by_id[uniq['id']]['is_repeat'] is False
 
 
 def test_list_own_scope_ignores_foreign_company_param(client, as_role):
