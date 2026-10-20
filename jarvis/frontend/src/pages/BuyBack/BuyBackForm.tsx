@@ -997,6 +997,50 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
               <Input value={form.seller_cui} onChange={(e) => set('seller_cui', e.target.value)} placeholder="CUI (dacă firmă)" />
             </div>
           </div>
+
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold">Date vânzător</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs">Adresă</Label>
+                <Input value={form.seller_address} onChange={(e) => set('seller_address', e.target.value)} placeholder="Stradă, nr., oraș, județ" />
+              </div>
+              {form.client_type !== 'company' && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">CNP</Label>
+                    <Input value={form.seller_cnp} onChange={(e) => set('seller_cnp', e.target.value)} maxLength={13} placeholder="13 cifre" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">CI serie</Label>
+                      <Input value={form.seller_ci_serie} onChange={(e) => set('seller_ci_serie', e.target.value.toUpperCase())} maxLength={10} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">CI număr</Label>
+                      <Input value={form.seller_ci_number} onChange={(e) => set('seller_ci_number', e.target.value)} maxLength={20} />
+                    </div>
+                  </div>
+                </>
+              )}
+              {form.client_type === 'company' && (
+                <>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Nr. reg. com.</Label>
+                    <Input value={form.seller_reg_no} onChange={(e) => set('seller_reg_no', e.target.value)} placeholder="J12/345/2020" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">IBAN</Label>
+                    <Input value={form.seller_iban} onChange={(e) => set('seller_iban', e.target.value.toUpperCase())} maxLength={34} />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label className="text-xs">Reprezentant legal</Label>
+                    <Input value={form.seller_legal_rep} onChange={(e) => set('seller_legal_rep', e.target.value)} />
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
