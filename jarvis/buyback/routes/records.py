@@ -37,7 +37,7 @@ _CREATE_FIELDS = (
     'manufacture_date', 'first_registration_date',
     'service_history_uptodate', 'extra_wheels', 'keys_count',
     'has_damage', 'damage_details', 'general_condition',
-    'client_asking_price_eur', 'client_source',
+    'client_asking_price_eur', 'market_price_eur', 'client_source',
     'other_details', 'drive_folder_link',
     'target_vehicle_text', 'target_carpark_vehicle_id', 'crm_deal_id',
 )
@@ -171,6 +171,10 @@ def list_records():
         # empty page rather than leaking every tenant's records.
         return jsonify({'records': [], 'total': 0, 'page': page, 'per_page': per_page})
 
+    # Group-wide repeat detection: flag rows whose VIN was already evaluated at
+    # any sibling company in the same Autoworld family (the digital "yellow
+    # highlight" from the sales team's old Excel).
+    repeat_scope = _shared.records_repo.group_company_ids(company_id) if company_id else None
     rows, total = _shared.records_repo.list(
         company_id=company_id,
         status=request.args.get('status'),
@@ -181,6 +185,7 @@ def list_records():
         page=page, per_page=per_page,
         sort_by=request.args.get('sort_by', 'created_at'),
         sort_dir=request.args.get('sort_dir', 'DESC'),
+        repeat_scope_ids=repeat_scope,
     )
     return jsonify({
         'records': _shared._serialize(rows),
@@ -188,6 +193,37 @@ def list_records():
         'page': page,
         'per_page': per_page,
     })
+
+
+# ═══════════════════════════════════════════════
+# VIN HISTORY (repeat-buyback detection)
+# ═══════════════════════════════════════════════
+
+@buyback_bp.route('/records/vin-history', methods=['GET'])
+@login_required
+@v2_permission_required('buyback', 'record', 'view')
+def vin_history():
+    """Prior buyback evaluations for a VIN across the caller's Autoworld
+    company family — powers the intake "evaluat anterior" warning and the
+    detail-page history panel. `exclude_id` drops the record being viewed so
+    it never lists itself. Scoped through the SAME `_list_scoped_company_id`
+    boundary as LIST, so no caller can read history for a tenant they can't
+    otherwise see. A blank VIN or an unresolved company yields an empty list
+    (never a cross-tenant scan)."""
+    vin = (request.args.get('vin') or '').strip()
+    company_id, allowed = _list_scoped_company_id()
+    if not vin or not allowed or company_id is None:
+        return jsonify({'history': []})
+
+    exclude_id = request.args.get('exclude_id')
+    try:
+        exclude_id = int(exclude_id) if exclude_id not in (None, '') else None
+    except (TypeError, ValueError):
+        exclude_id = None
+
+    group = _shared.records_repo.group_company_ids(company_id)
+    history = _shared.records_repo.vin_history(vin, group, exclude_record_id=exclude_id)
+    return jsonify({'history': _shared._serialize(history)})
 
 
 # ═══════════════════════════════════════════════

@@ -15,6 +15,11 @@ describe('buybackApi', () => {
     buybackApi.createRecord({ vin: 'X', brand: 'A', model: 'B' } as any)
     expect(api.post).toHaveBeenCalledWith('/api/buyback/records', expect.objectContaining({ vin: 'X' }))
   })
+  it('getVinHistory hits /api/buyback/records/vin-history with vin + exclude_id', () => {
+    buybackApi.getVinHistory('WBA123', 3, 99)
+    expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/api\/buyback\/records\/vin-history\?.*vin=WBA123/))
+    expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/exclude_id=99/))
+  })
   it('postOffer + decision + finalize hit the right paths', () => {
     buybackApi.postOffer(5, { offer_type: 'initial', amount_eur: 9000 })
     expect(api.post).toHaveBeenCalledWith('/api/buyback/records/5/offers', expect.any(Object))

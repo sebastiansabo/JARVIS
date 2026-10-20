@@ -43,6 +43,23 @@ def test_records_has_company_and_status_columns(require_real_db):
         release_db(conn)
 
 
+def test_records_has_market_price_column(require_real_db):
+    """Preț Piață — the dealer's own market-value estimate, distinct from the
+    seller's asking price (client_asking_price_eur) and the final purchase
+    price (purchase_price_eur)."""
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        create_schema_buyback(conn, cur)
+        conn.commit()
+        cur.execute("""SELECT column_name FROM information_schema.columns
+                       WHERE table_name='buyback_records'""")
+        cols = {r[0] if not isinstance(r, dict) else r['column_name'] for r in cur.fetchall()}
+        assert 'market_price_eur' in cols
+    finally:
+        release_db(conn)
+
+
 def test_buyback_company_config_table_exists(require_real_db):
     conn = get_db()
     try:

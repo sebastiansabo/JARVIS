@@ -22,6 +22,7 @@ import { telemetry } from '@/lib/telemetry'
 import { cn, useDebounce } from '@/lib/utils'
 import { fileToCompressedDataUrl } from '@/lib/imageCompress'
 import { loadDraft, saveDraft, clearDraft, isDraftDirty } from './buybackDraft'
+import { vinHistoryWarning } from './buybackVinHistory'
 import { AUTOVIT_EQUIPMENT, AUTOVIT_BRANDS, AUTOVIT_MODELS } from '@/data/autovitData'
 import { Autocomplete, norm } from '@/components/shared/Autocomplete'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -148,6 +149,7 @@ export interface BuyBackFormState {
   crm_deal_id?: number | null
   // Client expectations
   client_asking_price_eur?: string | number
+  market_price_eur?: string | number
   client_source?: string
   other_details?: string
   drive_folder_link?: string
@@ -189,6 +191,7 @@ const emptyForm: BuyBackFormState = {
   target_carpark_vehicle_id: null,
   crm_deal_id: null,
   client_asking_price_eur: '',
+  market_price_eur: '',
   client_source: '',
   other_details: '',
   drive_folder_link: '',
@@ -236,6 +239,7 @@ function recordToForm(r: BuybackRecord): BuyBackFormState {
     target_carpark_vehicle_id: r.target_carpark_vehicle_id ?? null,
     crm_deal_id: r.crm_deal_id ?? null,
     client_asking_price_eur: n(r.client_asking_price_eur),
+    market_price_eur: n(r.market_price_eur),
     client_source: s(r.client_source),
     other_details: s(r.other_details),
     drive_folder_link: s(r.drive_folder_link),
@@ -277,6 +281,7 @@ export interface CreatePayload {
   damage_details?: string
   general_condition?: number
   client_asking_price_eur?: number
+  market_price_eur?: number
   client_source?: string
   other_details?: string
   drive_folder_link?: string
@@ -350,6 +355,12 @@ export function buildCreatePayload(form: BuyBackFormState): CreatePayload {
   if (price !== undefined && price !== null && String(price).trim() !== '') {
     const n = Number(price)
     if (!Number.isNaN(n)) payload.client_asking_price_eur = n
+  }
+
+  const marketPrice = form.market_price_eur
+  if (marketPrice !== undefined && marketPrice !== null && String(marketPrice).trim() !== '') {
+    const n = Number(marketPrice)
+    if (!Number.isNaN(n)) payload.market_price_eur = n
   }
 
   for (const field of BOOLEAN_FIELDS) {
@@ -466,6 +477,20 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
   const vinValid = VIN_RE.test(vinValue)
   const vinTouched = attempted || form.vin.length > 0
   const canSubmit = form.brand.trim() !== '' && form.model.trim() !== '' && vinValid
+
+  // Repeat-buyback lookup: once the VIN is valid, check whether this car was
+  // already evaluated at any sibling Autoworld dealership (group-wide). Debounced
+  // so we don't query on every keystroke; in edit mode the record excludes
+  // itself. Best-effort — a lookup failure just means no banner.
+  const debouncedVin = useDebounce(vinValid ? vinValue : '', 400)
+  const vinHistoryQuery = useQuery({
+    queryKey: ['buyback-vin-history', debouncedVin, editId],
+    queryFn: () => buybackApi.getVinHistory(debouncedVin, undefined, editId ?? undefined),
+    enabled: debouncedVin.length === 17,
+    staleTime: 60_000,
+  })
+  const priorEvaluations = vinHistoryQuery.data?.history ?? []
+  const vinWarning = vinHistoryWarning(priorEvaluations)
 
   // ── Echipare (equipment): store selected AUTOVIT values as a comma-joined
   //    string in form.equipment; round-trips cleanly via this Set. ──
@@ -1042,6 +1067,14 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
               {vinTouched && !vinValid && (
                 <p className="text-xs text-destructive">VIN invalid — trebuie să aibă exact 17 caractere (fără I, O, Q).</p>
               )}
+              {vinWarning && (
+                <p
+                  className="rounded-md border border-amber-400 bg-amber-50 px-2 py-1.5 text-xs text-amber-800 dark:bg-amber-950 dark:text-amber-200"
+                  title="Acest VIN a mai fost evaluat la BuyBack în grup"
+                >
+                  ⚠️ {vinWarning}
+                </p>
+              )}
             </div>
           </div>
 
@@ -1309,6 +1342,17 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
                 value={form.client_asking_price_eur}
                 onChange={(e) => set('client_asking_price_eur', e.target.value)}
                 placeholder="9500"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Preț Piață (€)</Label>
+              <Input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                value={form.market_price_eur}
+                onChange={(e) => set('market_price_eur', e.target.value)}
+                placeholder="Estimare valoare de piață"
               />
             </div>
             <div className="space-y-1.5">

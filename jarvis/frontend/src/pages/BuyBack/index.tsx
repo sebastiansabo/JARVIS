@@ -59,7 +59,7 @@ function lingersOnActive(r: { status: string; closed_at: string | null; bought_a
 // ── Sorting (client-side, over the loaded set) ──
 type SortKey =
   | 'record_code' | 'vehicle' | 'vin' | 'seller_name'
-  | 'client_asking_price_eur' | 'purchase_price_eur' | 'status' | 'advisor_name' | 'created_at'
+  | 'client_asking_price_eur' | 'market_price_eur' | 'purchase_price_eur' | 'status' | 'advisor_name' | 'created_at'
 
 // Lifecycle progression order so sorting by Status is meaningful, not alphabetical.
 // CONSIGNMENT_OFFER sits alongside the other awaiting-decision offer states;
@@ -75,6 +75,7 @@ function sortValue(r: BuybackRecord, key: SortKey): string | number | null {
     case 'created_at': return new Date(r.created_at).getTime()
     case 'status': return STATUS_ORDER[r.status] ?? 99
     case 'client_asking_price_eur': return r.client_asking_price_eur
+    case 'market_price_eur': return r.market_price_eur
     case 'purchase_price_eur': return r.purchase_price_eur
     default: return r[key] as string | null
   }
@@ -108,6 +109,7 @@ const COLUMNS: { key: SortKey; label: string; align?: 'right' }[] = [
   { key: 'vin', label: 'VIN' },
   { key: 'seller_name', label: 'Vânzător' },
   { key: 'client_asking_price_eur', label: 'Preț cerut €', align: 'right' },
+  { key: 'market_price_eur', label: 'Preț Piață €', align: 'right' },
   { key: 'purchase_price_eur', label: 'Preț achiziție €', align: 'right' },
   { key: 'status', label: 'Status' },
   { key: 'advisor_name', label: 'Consilier' },
@@ -575,10 +577,26 @@ export default function BuyBack() {
                   >
                     <TableCell className="font-mono text-xs">{r.record_code}</TableCell>
                     <TableCell className="text-sm font-medium">{`${r.brand} ${r.model}`}</TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{r.vin}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5">
+                        {r.vin}
+                        {r.is_repeat && (
+                          <Badge
+                            variant="outline"
+                            className="border-amber-400 bg-amber-50 text-amber-700 text-[10px] px-1 py-0 dark:bg-amber-950 dark:text-amber-300"
+                            title="Acest VIN a mai fost evaluat la BuyBack"
+                          >
+                            Revenit
+                          </Badge>
+                        )}
+                      </span>
+                    </TableCell>
                     <TableCell className="text-sm">{r.seller_name || '—'}</TableCell>
                     <TableCell className="text-right text-sm whitespace-nowrap">
                       {r.client_asking_price_eur != null ? r.client_asking_price_eur.toLocaleString('ro-RO') : '—'}
+                    </TableCell>
+                    <TableCell className="text-right text-sm whitespace-nowrap">
+                      {r.market_price_eur != null ? r.market_price_eur.toLocaleString('ro-RO') : '—'}
                     </TableCell>
                     <TableCell className="text-right text-sm whitespace-nowrap">
                       {r.purchase_price_eur != null ? r.purchase_price_eur.toLocaleString('ro-RO') : '—'}

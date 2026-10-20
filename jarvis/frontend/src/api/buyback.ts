@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { BuybackRecord, BuybackOffer, BuybackPhoto, BuybackEvent, BuybackConfig, ConsignmentAgreement, CustodyAgreementInput } from '../types/buyback'
+import type { BuybackRecord, BuybackOffer, BuybackPhoto, BuybackEvent, BuybackConfig, ConsignmentAgreement, CustodyAgreementInput, VinHistoryEntry } from '../types/buyback'
 
 const BASE = '/api/buyback'
 
@@ -26,6 +26,13 @@ export const buybackApi = {
   }) =>
     api.get<{ records: BuybackRecord[]; total: number; page: number; per_page: number }>(
       `${BASE}/records${qs(params ?? {})}`
+    ),
+
+  // Prior buyback evaluations for a VIN across the caller's Autoworld family
+  // (repeat-buyback detection). `excludeId` drops the record being viewed.
+  getVinHistory: (vin: string, companyId?: number, excludeId?: number) =>
+    api.get<{ history: VinHistoryEntry[] }>(
+      `${BASE}/records/vin-history${qs({ vin, company_id: companyId, exclude_id: excludeId })}`
     ),
 
   getRecord: (id: number) =>
