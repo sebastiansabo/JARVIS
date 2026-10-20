@@ -19,7 +19,7 @@ When a seller **accepts the final BuyBack offer** (record → `BOUGHT`), automat
 | Seller legal identity | **Collect full ID** (person: CNP + CI serie/nr + address; company: nr. reg + IBAN + reprezentant legal) |
 | Template granularity | **Per company × brand** |
 | Signature | **Digital** — captured at acceptance, embedded in the PDF |
-| Scope now | **Purchase contract only** (final-offer accept). Consignment/custody deferred. |
+| Scope now | **Two contract types: purchase (contract de cumpărare) + consignație** — purchase on final-offer accept (→ BOUGHT), consignație on consignment-offer accept (→ CONSIGNAT). Custody deferred. **Legal body text is user-provided** via the Settings editor; we build the engine + token set, not the legal wording. |
 | Architecture | **Approach B** — BuyBack owns its contract subsystem; reuse only pure helpers/patterns from the Test-Drive engine (no cross-module coupling, no risk to live TD contracts). |
 
 ## 3. What is reused (no new build)
@@ -45,7 +45,7 @@ Wired into `_CREATE_FIELDS`, `_UPDATABLE_COLUMNS`, serialization, and `_INTAKE_T
 id BIGSERIAL PK,
 company_id BIGINT NOT NULL,
 brand_id BIGINT,                       -- NULL = company-wide default
-document_type VARCHAR(20) NOT NULL DEFAULT 'purchase',
+document_type VARCHAR(20) NOT NULL DEFAULT 'purchase',   -- 'purchase' | 'consignment'
 title VARCHAR(255),
 body_template TEXT,                    -- legal text with {tokens}
 general_conditions TEXT,
@@ -63,6 +63,7 @@ Add `'contract'` to the `_DOC_TYPES` whitelists (`photo_repository.py`, `routes/
 
 - `buyback/services/contract_template.py` — copied pure `render_contract_template(template, context)`; whitelist tokens:
   `client_name, client_type, client_cnp, client_ci, client_address, client_cui, client_reg_no, client_iban, client_legal_rep, company_name, company_address, company_reg_no, company_vat, company_iban, company_bank, company_administrator, brand, model, vin, mileage, first_registration, manufacture_date, price, price_words, contract_date, advisor_name`.
+  **Consignație-only tokens** (from the consignment agreement): `owner_price, commission, min_sale_price, agreement_date, expiry_date, contract_number`. The context builder supplies the superset; the user's template uses whatever tokens its type needs. The full token list ships as inline help in the Settings editor.
 - `buyback/services/contract_pdf.py` — context builder (record + CRM fallback + `companies` legal cols + accepted offer amount + signature image) → reportlab: title, substituted `body_template`, `general_conditions`, a two-party block with the **embedded seller signature image** and a dealer signature line (signatory = `companies.administrator`). Unicode TTF registered for diacritics.
 - `price` = the **accepted final offer's `amount_eur`** (at accept-time `purchase_price_eur` is still NULL; it's stamped later at finalize). Optional `price_words` (RO number-to-words) — **confirm if legally required**.
 
@@ -74,6 +75,8 @@ Add `'contract'` to the `_DOC_TYPES` whitelists (`photo_repository.py`, `routes/
    - **Best-effort**: wrapped + swallowed so a generation/email failure **never** blocks the accept/`BOUGHT` (mirrors `notify_owner`/`send_offer_email`).
    - **Skip + warn** (don't fail) when no active template is configured or required seller fields are missing; surface a non-blocking warning in the response + telemetry.
 3. **Regenerate** on the car page: `POST /records/<id>/contract` re-renders and replaces the `'contract'` document (reusing the stored signature, or re-signing). Gated `record.edit`.
+
+**Consignație trigger**: the same accept action on a **consignment** offer (`offer_type='consignment'` → `CONSIGNAT`, the existing Propune consignație flow) fires the **same generator** with `document_type='consignment'` and the consignment-agreement tokens. Signature captured the same way. One generator, template chosen by type.
 
 ## 7. CarPark carry-over (fixes a latent bug)
 
@@ -101,12 +104,13 @@ Add `'contract'` to the `_DOC_TYPES` whitelists (`photo_repository.py`, `routes/
 
 - **P1 — Seller legal identity**: columns + "Date vânzător" sub-form (person/company conditional) + CRM sync. Independent, immediately useful.
 - **P2 — CarPark document carry-over fix**: independent, fixes the latent gallery-corruption bug.
-- **P3 — Template engine + Settings zone + renderer + manual "Generează contract" button** on the car page (no auto-trigger yet). Lets you configure templates and generate on demand.
-- **P4 — Accept-time signature capture + auto-generate + deliver**. Wires it to the "Client a acceptat" action.
+- **P3 — Template engine + Settings zone + renderer + manual "Generează contract" button** on the car page (no auto-trigger yet). Supports both `document_type`s. Lets you configure per-company×brand×type templates (you author the text) and generate on demand.
+- **P4 — Purchase auto-generate**: accept-time signature capture + auto-generate the **purchase** contract on final-offer accept + deliver.
+- **P5 — Consignație auto-generate**: same signature + generator wired to the **consignment**-offer accept (→ CONSIGNAT), using the consignment template + tokens.
 
 ## 11. Out of scope (now)
 
-Consignment/custody contracts (future template types); dealer-side digital signature; certified e-signature / qualified timestamping; bulk regeneration.
+Custody (LOST→consignment finance) contract; dealer-side digital signature; certified e-signature / qualified timestamping; bulk regeneration.
 
 ## 12. Open items / risks
 
