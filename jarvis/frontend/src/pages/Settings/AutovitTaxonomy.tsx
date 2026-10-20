@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Select,
@@ -89,7 +88,7 @@ function useOptions(
 
 // Searchable combobox: type to filter the Autovit codes/labels, suggestions
 // pinned on top. (shadcn Select can't search; cmdk isn't installed — built from
-// Popover + Input + ScrollArea.)
+// Popover + Input + a scrollable list.)
 function CodeCombobox({
   value,
   valueLabel,
@@ -163,8 +162,7 @@ function CodeCombobox({
             className="h-8"
           />
         </div>
-        <ScrollArea className="max-h-72">
-          <div className="p-1">
+        <div className="max-h-72 overflow-y-auto p-1">
             {fSug.length > 0 && (
               <>
                 <div className="px-2 py-1 text-xs font-medium text-muted-foreground">Sugestii</div>
@@ -178,8 +176,7 @@ function CodeCombobox({
             ) : (
               fRest.map((o) => <Item key={`r-${o.code}`} o={o} />)
             )}
-          </div>
-        </ScrollArea>
+        </div>
       </PopoverContent>
     </Popover>
   )
