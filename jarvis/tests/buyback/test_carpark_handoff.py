@@ -566,3 +566,37 @@ def test_carry_photos_requests_only_gallery(monkeypatch):
     monkeypatch.setattr(ch._shared.photos_repo, 'get_by_record', fake_get)
     ch._carry_photos(1, 2)
     assert seen['ptype'] == 'gallery'
+
+
+def _doc_rows():
+    return [
+        {'id': 1, 'url': 'private/buyback/5/img.jpg', 'photo_type': 'gallery', 'caption': None},
+        {'id': 2, 'url': 'private/buyback/5/doc-a.pdf', 'photo_type': 'document', 'caption': 'CIV'},
+        {'id': 3, 'url': 'private/buyback/5/con.pdf', 'photo_type': 'contract', 'caption': None},
+    ]
+
+
+def test_carry_documents_routes_only_docs_with_correct_mime(monkeypatch):
+    import buyback.services.carpark_handoff as ch
+    from carpark.repositories.document_repository import DocumentRepository
+    monkeypatch.setattr(ch._shared.photos_repo, 'get_by_record', lambda rid, ptype=None: _doc_rows())
+    monkeypatch.setattr(ch.spaces_service, 'fetch', lambda key: (b'%PDF-1.4 data', 'application/pdf'))
+    monkeypatch.setattr(ch.spaces_service, 'upload', lambda data, key, ct: None)
+    created = []
+    monkeypatch.setattr(DocumentRepository, 'create',
+                        lambda self, vid, data: created.append((vid, data)) or data)
+    ch._carry_documents(5, 99)
+    assert [d['document_type'] for _, d in created] == ['document', 'contract']
+    assert all(vid == 99 for vid, _ in created)
+    assert all(d['file_url'].startswith('private/carpark/99/') and d['file_url'].endswith('.pdf')
+               for _, d in created)
+    assert all(d['mime_type'] == 'application/pdf' for _, d in created)
+
+
+def test_carry_documents_swallows_a_failing_document(monkeypatch):
+    import buyback.services.carpark_handoff as ch
+    monkeypatch.setattr(ch._shared.photos_repo, 'get_by_record', lambda rid, ptype=None: _doc_rows())
+    def boom(key):
+        raise RuntimeError('spaces down')
+    monkeypatch.setattr(ch.spaces_service, 'fetch', boom)
+    ch._carry_documents(5, 99)  # must not raise
