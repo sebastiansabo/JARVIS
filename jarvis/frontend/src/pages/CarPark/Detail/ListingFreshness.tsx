@@ -13,21 +13,28 @@ const LABELS: Record<Freshness, { text: string; cls: string }> = {
   moderation:    { text: 'În moderare',          cls: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
 }
 
-const rel = (iso?: string | null) => {
+export const formatListingTime = (iso?: string | null) => {
   if (!iso) return null
   const d = new Date(iso)
   return new Intl.DateTimeFormat('ro-RO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).format(d)
 }
 
+// Just the colored status pill. Rendered inline (alongside the "Auto" pill) in
+// the publish row, so it must stay a single element — keep the sync/expiry meta
+// out of here, or it breaks the one-line pill baseline.
+export function FreshnessBadge({ freshness }: { freshness: Freshness }) {
+  const l = LABELS[freshness]
+  return <Badge variant="secondary" className={`font-normal ${l.cls}`}>{l.text}</Badge>
+}
+
 export function ListingFreshness({ freshness, lastSync, expiresAt }: {
   freshness: Freshness; lastSync?: string | null; expiresAt?: string | null
 }) {
-  const l = LABELS[freshness]
   return (
     <div className="flex flex-col items-end gap-0.5">
-      <Badge variant="secondary" className={`font-normal ${l.cls}`}>{l.text}</Badge>
-      {lastSync && <span className="text-[11px] text-muted-foreground">Ultima sincronizare: {rel(lastSync)}</span>}
-      {expiresAt && freshness === 'expired' && <span className="text-[11px] text-muted-foreground">Expirat: {rel(expiresAt)}</span>}
+      <FreshnessBadge freshness={freshness} />
+      {lastSync && <span className="text-[11px] text-muted-foreground">Ultima sincronizare: {formatListingTime(lastSync)}</span>}
+      {expiresAt && freshness === 'expired' && <span className="text-[11px] text-muted-foreground">Expirat: {formatListingTime(expiresAt)}</span>}
     </div>
   )
 }

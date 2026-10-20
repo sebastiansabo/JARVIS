@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ListingFreshness, type Freshness } from './ListingFreshness'
+import { FreshnessBadge, formatListingTime, type Freshness } from './ListingFreshness'
 import { publishPrimaryAction } from './publishState'
 
 // Solid background colors for the primary action — tone 'muted' deliberately
@@ -81,7 +81,7 @@ export function PlatformPublishRow({
       <div className="flex items-center gap-3">
         <div className="flex flex-col items-end gap-0.5">
           <div className="flex items-center gap-1.5">
-            <ListingFreshness freshness={freshness} lastSync={lastSync} />
+            <FreshnessBadge freshness={freshness} />
             <Badge
               variant="secondary"
               className={
@@ -93,6 +93,11 @@ export function PlatformPublishRow({
               Auto
             </Badge>
           </div>
+          {lastSync && (
+            <span className="text-[11px] text-muted-foreground">
+              Ultima sincronizare: {formatListingTime(lastSync)}
+            </span>
+          )}
           {freshness === 'stale' && autoEnabled && (
             <span className="text-[11px] text-muted-foreground">se actualizează automat</span>
           )}
