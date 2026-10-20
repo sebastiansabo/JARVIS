@@ -116,6 +116,11 @@ def _carry_photos(record_id, veh_id):
 
 
 _DOC_PHOTO_TYPES = ('document', 'civ', 'talon', 'contract')
+# Map a buyback photo_type to the CarPark document vocabulary
+# (carpark/routes/documents.py::VALID_DOCUMENT_TYPES) so the carried document
+# classifies correctly (badge label + Dispo checklist). civ/talon are shared.
+_DOC_TYPE_MAP = {'civ': 'civ', 'talon': 'talon',
+                 'document': 'altele', 'contract': 'contract_achizitie'}
 
 
 def _carry_documents(record_id, veh_id):
@@ -140,7 +145,7 @@ def _carry_documents(record_id, veh_id):
             new_key = f'private/carpark/{veh_id}/doc-{uuid4().hex}.{ext}'
             spaces_service.upload(data, new_key, content_type or 'application/octet-stream')
             repo.create(veh_id, {
-                'document_type': d.get('photo_type') or 'document',
+                'document_type': _DOC_TYPE_MAP.get(d.get('photo_type'), 'altele'),
                 'title': d.get('caption') or (d.get('photo_type') or 'document'),
                 'file_url': new_key,
                 'mime_type': content_type or None,

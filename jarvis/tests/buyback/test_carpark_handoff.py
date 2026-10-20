@@ -586,7 +586,8 @@ def test_carry_documents_routes_only_docs_with_correct_mime(monkeypatch):
     monkeypatch.setattr(DocumentRepository, 'create',
                         lambda self, vid, data: created.append((vid, data)) or data)
     ch._carry_documents(5, 99)
-    assert [d['document_type'] for _, d in created] == ['document', 'contract']
+    # document rows only (not gallery), mapped to the CarPark document vocabulary
+    assert [d['document_type'] for _, d in created] == ['altele', 'contract_achizitie']
     assert all(vid == 99 for vid, _ in created)
     assert all(d['file_url'].startswith('private/carpark/99/') and d['file_url'].endswith('.pdf')
                for _, d in created)

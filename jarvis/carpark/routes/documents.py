@@ -33,6 +33,7 @@ from flask_login import login_required, current_user
 
 from carpark import carpark_bp
 from carpark.repositories.document_repository import DocumentRepository
+from carpark.services.photo_urls import public_photo_url
 from carpark.repositories.dispo_repository import DispoRepository
 from carpark.services.dispo_service import DispoService
 from carpark.routes.vehicles import (
@@ -80,6 +81,21 @@ _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
 # DOCUMENTS — LIST
 # ═══════════════════════════════════════════════
 
+def _with_openable_urls(documents):
+    """Presign any private Spaces key stored in `file_url` into a time-limited
+    GET URL so the document is openable in the UI. Documents carried from
+    BuyBack on hand-off store a private key (private/carpark/<veh>/doc-...);
+    native uploads store an http(s) Drive link, which passes through unchanged
+    (as do data: URIs and empty values)."""
+    out = []
+    for d in documents:
+        d = dict(d)
+        if d.get('file_url'):
+            d['file_url'] = public_photo_url(d['file_url'])
+        out.append(d)
+    return out
+
+
 @carpark_bp.route('/vehicles/<int:vehicle_id>/documents', methods=['GET'])
 @login_required
 @carpark_required
@@ -90,7 +106,7 @@ def list_vehicle_documents(vehicle_id):
         return err
     try:
         documents = _document_repo.list_for_vehicle(vehicle_id)
-        return jsonify({'documents': _serialize(documents)})
+        return jsonify({'documents': _serialize(_with_openable_urls(documents))})
     except Exception as e:
         logger.error(f'List documents failed for vehicle {vehicle_id}: {e}', exc_info=True)
         return jsonify({'error': 'Internal error'}), 500
