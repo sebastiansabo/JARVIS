@@ -63,6 +63,15 @@ describe('ActionPanel permission gating', () => {
     expect(screen.queryByText(/Postează ofertă/)).not.toBeInTheDocument()
   })
 
+  it('offer dialog shows Preț Piață + Preț cerut as an informative reference', async () => {
+    renderPanel('PENDING_EVALUATION', { 'buyback.offer.manage': true },
+      { record: { market_price_eur: 21500, client_asking_price_eur: 23000 } })
+    fireEvent.click(screen.getByText(/Postează ofertă inițială/))
+    expect(await screen.findByText(/Preț Piață/)).toBeInTheDocument()
+    expect(screen.getByText(/21\.500/)).toBeInTheDocument()   // market price, ro-RO
+    expect(screen.getByText(/23\.000/)).toBeInTheDocument()   // asking price
+  })
+
   it('INITIAL_OFFER + record.edit shows Accept/Decline', () => {
     renderPanel('INITIAL_OFFER', { 'buyback.record.edit': true })
     expect(screen.getByText(/Client a acceptat/)).toBeInTheDocument()

@@ -5,6 +5,7 @@ import { buybackApi } from '@/api/buyback'
 import { usePermissions } from './usePermissions'
 import StatusChangeDialog from './StatusChangeDialog'
 import { pickLatestOffer } from './offerUtils'
+import { fmtEur } from './buybackVinHistory'
 import type { BuybackRecord, BuybackOffer, CustodyAgreementInput } from '@/types/buyback'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -596,6 +597,14 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
             <div className="space-y-1">
               <Label className="text-xs">Sumă (€)</Label>
               <Input type="number" inputMode="numeric" min={0} value={offerAmount} onChange={(e) => setOfferAmount(e.target.value)} />
+              {(record.market_price_eur != null || record.client_asking_price_eur != null) && (
+                <p className="text-xs text-muted-foreground">
+                  {[
+                    record.market_price_eur != null ? `Preț Piață: ${fmtEur(record.market_price_eur)}` : null,
+                    record.client_asking_price_eur != null ? `Preț cerut: ${fmtEur(record.client_asking_price_eur)}` : null,
+                  ].filter(Boolean).join(' · ')}
+                </p>
+              )}
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Status TVA</Label>
