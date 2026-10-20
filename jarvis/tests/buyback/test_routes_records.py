@@ -154,11 +154,19 @@ def test_sync_client_contact_pushes_cnp_regno_legalrep(monkeypatch):
     assert 'ci_serie' not in captured and 'seller_ci_serie' not in captured
 
 
-def test_crm_client_update_accepts_cnp_and_nr_reg():
-    # The seller-identity CRM sync is only effective if the CRM repo actually
-    # persists these columns rather than silently dropping them.
+def test_crm_client_update_persists_cnp_and_nr_reg(require_real_db):
+    # Round-trip the LIVE ClientRepository.update() end-to-end: a shadowed or
+    # wrong whitelist must not let the seller-identity sync silently drop cnp.
     from crm.repositories.client_repository import ClientRepository
-    assert {'cnp', 'nr_reg'}.issubset(ClientRepository._UPDATABLE)
+    repo = ClientRepository()
+    client = repo.create_from_form({'display_name': 'BB CRM Test', 'client_type': 'person'})
+    try:
+        repo.update(client['id'], {'cnp': '1234567890123', 'nr_reg': 'J12/9/2020'})
+        got = repo.get_by_id(client['id'])
+        assert got['cnp'] == '1234567890123'
+        assert got['nr_reg'] == 'J12/9/2020'
+    finally:
+        repo.delete(client['id'])
 
 
 def test_create_response_includes_vin_in_carpark_flag(client, as_role):

@@ -12,7 +12,6 @@ class ClientRepository(BaseRepository):
     _UPDATABLE = {
         'display_name', 'name_normalized', 'client_type', 'phone', 'phone_raw',
         'email', 'street', 'city', 'region', 'company_name', 'cui', 'responsible',
-        'cnp', 'nr_reg',
     }
 
     def update(self, client_id, fields):
@@ -326,7 +325,7 @@ class ClientRepository(BaseRepository):
     _EDITABLE = {
         'display_name', 'client_type', 'phone', 'email', 'street',
         'city', 'region', 'country', 'company_name', 'responsible', 'nr_reg',
-        'cui', 'is_blacklisted', 'contact_person', 'eurofib_konto_debit',
+        'cui', 'cnp', 'is_blacklisted', 'contact_person', 'eurofib_konto_debit',
         'driver_license_number',
     }
 
