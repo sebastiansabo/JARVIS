@@ -11,6 +11,7 @@ from flask_login import current_user
 from . import shopify_bp
 from .client import ShopifyClient, ShopifyAuthError
 from .connector import ShopifyConnector, ensure_platform
+from ..cadence import ensure_auto_schedule
 from . import taxonomy
 from .taxonomy_repository import TaxonomyMapRepository
 from .schema_repository import SchemaRepository
@@ -389,6 +390,17 @@ def publish_vehicle(vid):
     value_map = _schema_repo.get_value_map()
     config = _config(connector)
     result = conn.publish(vehicle, photos, field_map, value_map, config)
+    if result.get('success'):
+        # Task 7: default this car to a 1h auto-update schedule unless it
+        # already has one (a user's explicit Manual/other choice is never
+        # overridden — see ensure_auto_schedule's docstring).
+        # Best-effort: a transient DB error here must never turn an already-
+        # successful publish into a reported failure (mirrors
+        # _reconcile_best_effort above).
+        try:
+            ensure_auto_schedule(vid, 'shopify', datetime.now(timezone.utc))
+        except Exception as e:
+            logger.warning('auto-schedule creation failed for vehicle %s: %s', vid, e)
     return jsonify(result), (200 if result.get('success') else 400)
 
 

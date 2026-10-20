@@ -6,9 +6,8 @@ and retrieving advert data from Autovit.
 import json
 import logging
 import time
+from datetime import datetime, timezone
 from typing import Optional
-
-import requests
 
 from flask import request, jsonify
 from flask_login import login_required, current_user
@@ -19,13 +18,15 @@ from . import taxonomy_map
 from . import taxonomy_sync
 from .taxonomy_repository import AutovitTaxonomyRepository
 from .client import AutovitClient, AutovitAuthError, PRODUCTION_URL, SANDBOX_URL
+from .freshness import compute_autovit_freshness
+from .service import republish_vehicle
+from ..cadence import ensure_auto_schedule
 from core.connectors.repositories.connector_repository import ConnectorRepository
 from core.utils.api_helpers import api_login_required, admin_required
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.vehicle_photo_repository import VehiclePhotoRepository
 from carpark.repositories.autovit_listing_repository import AutovitListingRepository
 from carpark.services import reconcile_service
-from carpark.services.photo_urls import public_photo_urls
 from carpark.routes.vehicles import (
     carpark_edit_required, carpark_required, _verify_vehicle_ownership, _serialize,
 )
@@ -251,8 +252,15 @@ def vehicle_autovit_status(vehicle_id):
     _, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err
-    listings = _listing_repo.list_by_vehicle(vehicle_id)
-    return jsonify({'success': True, 'listings': [_serialize(dict(l)) for l in listings]})
+    vehicle = _vehicle_repo.get_by_id(vehicle_id)
+    now = datetime.now(timezone.utc)
+    v_updated = vehicle.get('updated_at') if vehicle else None
+    listings = []
+    for l in _listing_repo.list_by_vehicle(vehicle_id):
+        d = dict(l)
+        d['freshness'] = compute_autovit_freshness(d, v_updated, now)
+        listings.append(_serialize(d))
+    return jsonify({'success': True, 'listings': listings})
 
 
 @autovit_bp.route('/api/accounts/<int:account_id>/category-taxonomy', methods=['GET'])
@@ -315,9 +323,15 @@ def verify_vehicle_status(vehicle_id):
                                  external_url=live.get('url') or listing.get('external_url'),
                                  last_error=None)
             refreshed += 1
-    listings = _listing_repo.list_by_vehicle(vehicle_id)
-    return jsonify({'success': True, 'refreshed': refreshed,
-                    'listings': [_serialize(dict(l)) for l in listings]})
+    vehicle = _vehicle_repo.get_by_id(vehicle_id)
+    now = datetime.now(timezone.utc)
+    v_updated = vehicle.get('updated_at') if vehicle else None
+    listings = []
+    for l in _listing_repo.list_by_vehicle(vehicle_id):
+        d = dict(l)
+        d['freshness'] = compute_autovit_freshness(d, v_updated, now)
+        listings.append(_serialize(d))
+    return jsonify({'success': True, 'refreshed': refreshed, 'listings': listings})
 
 
 # ── Adverts (future) ──
@@ -754,6 +768,12 @@ def _autovit_error_message(body: str) -> str:
 def publish(account_id):
     """Publish (create or update) a vehicle's advert on Autovit.
 
+    HTTP-layer shell around `service.republish_vehicle` (Task 4): resolves the
+    account/vehicle, fetches photo keys, then translates the service's result
+    dict into the same responses this route always returned — 404s below,
+    422 on unmapped-required taxonomy, 400 on missing fields, the unchanged
+    dry_run/success JSON shapes, and 502 on an Autovit rejection.
+
     `dry_run=True` assembles + validates the advert payload and returns it
     without any network call — no client is built. Photos are attached as a
     presigned-URL image collection; a photo failure is recorded on the
@@ -770,19 +790,36 @@ def publish(account_id):
         return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
 
     # Preload the DB-confirmed CarPark -> Autovit map ONCE and hand it to
-    # vehicle_to_advert — every enum/equipment value is resolved against it
+    # republish_vehicle — every enum/equipment value is resolved against it
     # (Task 3); a miss is omitted from `params` (never raw-sent, since
     # Autovit silently drops anything that isn't one of its exact codes)
     # and reported back in `unmapped` as "<dimension>:<source_value>".
     tmap = _taxonomy_repo.get_map()
-    advert, unmapped = taxonomy.vehicle_to_advert(vehicle, connector, tmap)
+    # A photo-fetch failure here must NOT be swallowed: pre-refactor the same
+    # error surfaced as a `photos:`-prefixed last_error + photos_ok=False (the
+    # advert was still created). Thread it into the service as `photos_error`
+    # so that visible, persisted signal is preserved — a transient DB blip on
+    # the photos query can't silently publish an advert with zero photos and
+    # no record anywhere that photo data was lost.
+    photos, photos_error = [], None
+    try:
+        photos = _photo_repo.urls(vehicle['id'])
+    except Exception as e:
+        logger.warning('Autovit photo lookup failed for vehicle %s: %s', vehicle['id'], e)
+        photos_error = f'photo lookup failed: {e}'
+
+    result = republish_vehicle(connector, vehicle, photos, tmap,
+                               dry_run=bool(body.get('dry_run')),
+                               now=datetime.now(timezone.utc),
+                               photos_error=photos_error)
+
     # An unmapped value in a REQUIRED dimension (make/model/body_type/
-    # fuel_type/color) would doom the Autovit call to a 400 anyway — block
-    # BEFORE spending the network round-trip, with a message naming exactly
-    # what needs mapping (vs. Autovit's own opaque rejection).
-    unmapped_required = [u for u in unmapped
-                         if u.split(':', 1)[0] in taxonomy_map.REQUIRED_DIMENSIONS]
-    if unmapped_required:
+    # fuel_type/color) would doom the Autovit call to a 400 anyway — the
+    # service blocks BEFORE spending the network round-trip; this route's job
+    # is just to phrase the RO message naming exactly what needs mapping (vs.
+    # Autovit's own opaque rejection).
+    if result.get('unmapped_required'):
+        unmapped_required = result['unmapped_required']
         return jsonify({
             'success': False,
             'error': ('Nu se poate publica: valori nemapate pentru Autovit la '
@@ -790,173 +827,38 @@ def publish(account_id):
                       '. Mapează-le în Setări → Taxonomie Autovit înainte de publicare.'),
             'unmapped_required': unmapped_required,
         }), 422
-    missing = taxonomy.validate_for_publish(advert)
-    if missing:
-        return jsonify({'success': False, 'error': 'Missing required fields', 'missing': missing}), 400
-    if body.get('dry_run'):
-        return jsonify({'success': True, 'dry_run': True, 'advert': advert, 'unmapped': unmapped})
+    if result.get('missing') is not None:
+        return jsonify({'success': False, 'error': 'Missing required fields',
+                        'missing': result['missing']}), 400
+    if result.get('dry_run'):
+        return jsonify({'success': True, 'dry_run': True, 'advert': result['advert'],
+                        'unmapped': result.get('unmapped', [])})
+    if not result['success']:
+        return jsonify({'success': False, 'error': result.get('error')}), 502
 
-    client = _build_client(connector)
-    # 504-guard: a single publish chains several sequential Autovit calls (token,
-    # location/contact backfill, image collection, create/update, verify). At the
-    # default 15s each they can sum past DO's ~60s gateway limit → 504. Cap the
-    # per-call timeout to 10s here (the best-effort backfill and the verify are
-    # bounded even shorter at their call sites) so the worst case stays ~<55s.
-    client.timeout = 10
-    _t0 = time.monotonic()
-    # Backfill location + contact from the account's own adverts if the config
-    # didn't carry them (Autovit requires them on create).
-    _fill_location_contact(client, advert)
-    _t_fill = time.monotonic()
-    # Photos: non-fatal (an advert is created fine without them, as an unpaid
-    # draft) but NOT silent — a failure is recorded on the listing row and in
-    # the response so it shows up in JARVIS instead of as an empty gallery on
-    # Autovit's form.
-    photos = _attach_image_collection(client, advert, vehicle['id'])
-    _t_photos = time.monotonic()
-
+    # Task 7: default this car to a 1h auto-update schedule unless it already
+    # has one (a user's explicit Manual/other choice is never overridden —
+    # see ensure_auto_schedule's docstring). Kept here in the route (HTTP
+    # layer), not in service.republish_vehicle, so the service core stays
+    # free of scheduling side effects.
+    # Best-effort: a transient DB error here must never turn an already-
+    # successful publish into a reported failure (mirrors the
+    # _verify_advert/_reconcile_best_effort pattern used elsewhere on this
+    # hot path).
     try:
-        existing = _listing_repo.get(vehicle['id'], account_id)
-        ext_id = existing.get('external_advert_id') if existing else None
-        # An advert the user/moderator removed on Autovit can't be updated — the
-        # PUT returns 400 ("Bad Request"). Treat a known-removed listing as gone
-        # and create a fresh advert instead of failing the publish.
-        removed_on_autovit = bool(existing) and str(existing.get('status') or '').startswith('removed')
-        updated_existing = bool(ext_id) and not removed_on_autovit
-        if updated_existing:
-            try:
-                client.update_advert(ext_id, advert)
-            except requests.HTTPError as e:
-                code = getattr(e.response, 'status_code', None)
-                if code not in (400, 404, 410):
-                    raise
-                # Advert gone/invalid on Autovit — recreate rather than surface a 400.
-                logger.info('Autovit update of advert %s returned %s; recreating', ext_id, code)
-                updated_existing = False
-        if updated_existing:
-            ext_url = existing.get('external_url')
-            ext_status = 'active'
-        else:
-            # VIN-dedup: before creating, check whether a live Autovit ad with
-            # this vehicle's VIN already exists on the account. If so, adopt +
-            # update it (connect/reconcile the listing) instead of posting a
-            # duplicate — covers the case where the local link was lost/removed
-            # but the ad is still up.
-            adopted_id, adopted_url = reconcile_service.find_active_advert_by_vin(
-                client, vehicle.get('vin'))
-            if adopted_id:
-                logger.info('Autovit: adopting live advert %s by VIN for vehicle %s '
-                            '(no duplicate)', adopted_id, vehicle['id'])
-                client.update_advert(adopted_id, advert)
-                ext_id, ext_url, ext_status = adopted_id, adopted_url, 'active'
-                updated_existing = True
-            else:
-                # New adverts are created in Autovit's `unpaid` status — a private
-                # draft, not visible on the marketplace until paid/activated.
-                result = client.create_advert(advert) or {}
-                ext_id = result.get('id')
-                ext_url = result.get('url')
-                ext_status = result.get('status') or 'unpaid'
-        _t_write = time.monotonic()
-
-        # Post-write verification: read the advert back and diff what we sent
-        # against what Autovit kept. Silently-dropped params are otherwise
-        # invisible (the create/update returns 2xx regardless).
-        verify = _verify_advert(client, ext_id, advert)
-        # Prefer the status Autovit actually reports (read back) over our guess —
-        # a create lands 'unpaid'; an active ad updated in place stays 'active'.
-        if verify.get('status_remote'):
-            ext_status = verify['status_remote']
-        # Per-stage timing — surfaces which leg is slow when a publish flirts
-        # with the gateway limit (the whole reason for the bounds above).
-        logger.info(
-            'Autovit publish timing vehicle=%s update=%s fill=%.1fs photos=%.1fs '
-            'write=%.1fs verify=%.1fs total=%.1fs', vehicle['id'], updated_existing,
-            _t_fill - _t0, _t_photos - _t_fill, _t_write - _t_photos,
-            time.monotonic() - _t_write, time.monotonic() - _t0)
-
-        # Problems belong in last_error (the fault surface that drives the error
-        # badge). The "already published" note is informational — it goes to the
-        # response warnings (a toast) only, and must NOT pollute last_error.
-        problems = []
-        if photos['error']:
-            problems.append(f"photos: {photos['error']}")
-        if verify['params_dropped']:
-            problems.append('params_dropped: ' + ', '.join(verify['params_dropped']))
-        if verify['photos_remote'] is not None and photos['sent'] and \
-                verify['photos_remote'] < photos['sent']:
-            problems.append(f"photos: sent {photos['sent']}, Autovit kept {verify['photos_remote']}")
-        if unmapped:
-            # Non-required unmapped values (equipment, etc.) didn't block the
-            # publish, but a dropped value is still a fault worth surfacing —
-            # same treatment as params_dropped/photos above.
-            problems.append('unmapped: ' + ', '.join(unmapped))
-        last_error = '; '.join(problems) if problems else None
-        warnings = (['Anunț deja publicat pe Autovit — a fost actualizat.']
-                    if updated_existing else []) + problems
-
-        _listing_repo.upsert(vehicle['id'], account_id,
-                             external_advert_id=str(ext_id),
-                             external_url=ext_url,
-                             status=ext_status,
-                             last_error=last_error)
-        return jsonify({'success': True, 'external_id': ext_id,
-                        'external_url': ext_url, 'status': ext_status,
-                        'updated_existing': updated_existing,
-                        'photos_sent': photos['sent'],
-                        'photos_ok': photos['error'] is None,
-                        'photos_remote': verify['photos_remote'],
-                        'params_dropped': verify['params_dropped'],
-                        'unmapped': unmapped,
-                        'warnings': warnings})
+        ensure_auto_schedule(vehicle['id'], 'autovit', datetime.now(timezone.utc))
     except Exception as e:
-        # Capture Autovit's actual rejection reason (the HTTPError response body) —
-        # str(e) is just "400 Bad Request for url ...", which isn't actionable.
-        body = getattr(getattr(e, 'response', None), 'text', '') or ''
-        logger.exception('Autovit publish failed for vehicle %s | autovit_body=%s',
-                         vehicle['id'], body[:800])
-        # A body means Autovit actually responded with a structured rejection —
-        # parse it into something a non-engineer can act on. No body (e.g. a
-        # network/timeout/mock error) falls back to the plain str(e).
-        msg = _autovit_error_message(body) if body else str(e)
-        _listing_repo.set_error(vehicle['id'], account_id, msg)
-        return jsonify({'success': False, 'error': msg}), 502
+        logger.warning('auto-schedule creation failed for vehicle %s: %s', vehicle['id'], e)
 
-
-def _attach_image_collection(client: AutovitClient, advert: dict, vehicle_id: int) -> dict:
-    """Build an Autovit image collection from the vehicle's photos and attach
-    its id to `advert`. Returns {'sent': n, 'error': str|None}.
-
-    carpark_vehicle_photos.url holds PRIVATE Spaces object keys, not URLs —
-    Autovit fetches images server-side and cannot read those, so every key is
-    presigned first (same fix Shopify got in connectors/shopify/connector.py).
-    Before this, every push sent raw keys, Autovit rejected the collection,
-    and the exception was downgraded to a log warning: 100% of JARVIS-published
-    adverts had zero photos and `success: true`.
-    """
-    try:
-        photo_urls = public_photo_urls(_photo_repo.urls(vehicle_id))
-    except Exception as e:
-        logger.warning('Autovit photo lookup failed for vehicle %s: %s', vehicle_id, e)
-        return {'sent': 0, 'error': f'photo lookup failed: {e}'}
-    if not photo_urls:
-        return {'sent': 0, 'error': None}
-    try:
-        icid = client.create_image_collection(photo_urls)
-    except Exception as e:
-        # A bare "400 Bad Request" isn't actionable — capture Autovit's actual
-        # rejection reason (the HTTPError response body) plus a sample source URL
-        # (host/path/query shape) so the real cause is diagnosable from the logs.
-        body = getattr(getattr(e, 'response', None), 'text', '') or ''
-        sample = photo_urls[0] if photo_urls else ''
-        logger.warning(
-            'Autovit image collection failed for vehicle %s: %s | autovit_body=%s | sample_source=%s',
-            vehicle_id, e, body[:600], sample[:220])
-        return {'sent': len(photo_urls), 'error': f'image collection rejected: {e}'}
-    if not icid:
-        return {'sent': len(photo_urls), 'error': 'image collection returned no id'}
-    advert['image_collection_id'] = icid
-    return {'sent': len(photo_urls), 'error': None}
+    return jsonify({'success': True, 'external_id': result['external_id'],
+                    'external_url': result['external_url'], 'status': result['status'],
+                    'updated_existing': result['updated_existing'],
+                    'photos_sent': result['photos_sent'],
+                    'photos_ok': result['photos_ok'],
+                    'photos_remote': result['photos_remote'],
+                    'params_dropped': result['params_dropped'],
+                    'unmapped': result['unmapped'],
+                    'warnings': result['warnings']})
 
 
 def _verify_advert(client: AutovitClient, advert_id, sent: dict) -> dict:

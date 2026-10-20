@@ -2401,6 +2401,11 @@ def _create_carpark_incremental(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_carpark_autovit_listings_vehicle ON carpark_autovit_listings(vehicle_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_carpark_autovit_listings_account ON carpark_autovit_listings(account_id)')
+    # last_published_at: distinct from last_sync (which verify-status also bumps
+    # on a read-only status check) — only moves on an actual publish/update, so
+    # later Autovit-freshness scheduling can compute staleness off a timestamp
+    # that means "we last pushed this listing", not "we last touched this row".
+    cursor.execute('ALTER TABLE carpark_autovit_listings ADD COLUMN IF NOT EXISTS last_published_at TIMESTAMP')
 
 
 def _create_schema_incremental_continued(conn, cursor):

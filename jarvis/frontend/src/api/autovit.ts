@@ -41,6 +41,9 @@ export interface AutovitListing {
   status: string // draft | unpaid | active | inactive | error
   last_sync: string | null
   last_error: string | null
+  // Present on GET /status and POST /verify-status responses (compute_autovit_freshness) —
+  // not on the dry-run `publish` response, hence optional here.
+  freshness?: 'not_published' | 'up_to_date' | 'stale' | 'expired' | 'inactive' | 'error' | 'draft' | 'moderation'
 }
 
 export interface AutovitAdvertsResponse {
