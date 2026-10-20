@@ -28,6 +28,13 @@ export interface BuybackRecord {
   client_id: number | null
   seller_name: string | null
   seller_cui: string | null
+  seller_address: string | null
+  seller_cnp: string | null
+  seller_ci_serie: string | null
+  seller_ci_number: string | null
+  seller_reg_no: string | null
+  seller_iban: string | null
+  seller_legal_rep: string | null
   seller_phone: string | null
   seller_email: string | null
   brand: string

@@ -119,6 +119,13 @@ export interface BuyBackFormState {
   seller_email?: string
   seller_phone?: string
   seller_cui?: string
+  seller_address?: string
+  seller_cnp?: string
+  seller_ci_serie?: string
+  seller_ci_number?: string
+  seller_reg_no?: string
+  seller_iban?: string
+  seller_legal_rep?: string
   // Vehicle
   brand: string
   brand_id?: number | null
@@ -167,6 +174,13 @@ const emptyForm: BuyBackFormState = {
   seller_email: '',
   seller_phone: '',
   seller_cui: '',
+  seller_address: '',
+  seller_cnp: '',
+  seller_ci_serie: '',
+  seller_ci_number: '',
+  seller_reg_no: '',
+  seller_iban: '',
+  seller_legal_rep: '',
   brand: '',
   model: '',
   variant: '',
@@ -214,6 +228,13 @@ function recordToForm(r: BuybackRecord): BuyBackFormState {
     seller_email: s(r.seller_email),
     seller_phone: s(r.seller_phone),
     seller_cui: s(r.seller_cui),
+    seller_address: s(r.seller_address),
+    seller_cnp: s(r.seller_cnp),
+    seller_ci_serie: s(r.seller_ci_serie),
+    seller_ci_number: s(r.seller_ci_number),
+    seller_reg_no: s(r.seller_reg_no),
+    seller_iban: s(r.seller_iban),
+    seller_legal_rep: s(r.seller_legal_rep),
     brand: s(r.brand),
     brand_id: null,
     model: s(r.model),
@@ -265,6 +286,13 @@ export interface CreatePayload {
   seller_email?: string
   seller_phone?: string
   seller_cui?: string
+  seller_address?: string
+  seller_cnp?: string
+  seller_ci_serie?: string
+  seller_ci_number?: string
+  seller_reg_no?: string
+  seller_iban?: string
+  seller_legal_rep?: string
   variant?: string
   equipment?: string
   mileage_km?: number
@@ -297,6 +325,8 @@ export interface CreatePayload {
 const STRING_FIELDS = [
   'acquisition_type', 'advisor_name', 'client_type', 'vat_status',
   'seller_name', 'seller_email', 'seller_phone', 'seller_cui',
+  'seller_address', 'seller_cnp', 'seller_ci_serie', 'seller_ci_number',
+  'seller_reg_no', 'seller_iban', 'seller_legal_rep',
   'variant', 'equipment', 'fuel_type', 'transmission', 'gearbox',
   'manufacture_date', 'first_registration_date', 'damage_details',
   'client_source', 'other_details', 'drive_folder_link', 'target_vehicle_text',

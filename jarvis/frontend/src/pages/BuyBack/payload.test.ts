@@ -18,6 +18,16 @@ describe('buildCreatePayload', () => {
     const blank = buildCreatePayload({ vin: 'X', brand: 'A', model: 'B', market_price_eur: '' } as any)
     expect('market_price_eur' in blank).toBe(false)
   })
+  it('emits seller legal-identity fields when present, omits them when blank', () => {
+    const p = buildCreatePayload({ vin: 'X', brand: 'A', model: 'B',
+      seller_cnp: '1234567890123', seller_ci_serie: 'CJ', seller_address: 'Str. 1',
+      seller_reg_no: '', seller_iban: '  ' } as any)
+    expect(p.seller_cnp).toBe('1234567890123')
+    expect(p.seller_ci_serie).toBe('CJ')
+    expect(p.seller_address).toBe('Str. 1')
+    expect('seller_reg_no' in p).toBe(false)
+    expect('seller_iban' in p).toBe(false)
+  })
   it('never emits a non-whitelisted key', () => {
     const p = buildCreatePayload({ vin: 'X', brand: 'A', model: 'B', hacker_field: 1 } as any)
     expect('hacker_field' in p).toBe(false)
