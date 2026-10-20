@@ -553,3 +553,16 @@ def test_finalize_with_no_photos_makes_no_spaces_calls(client, as_role, monkeypa
     _tracked['vehicle_ids'].append(veh_id)
 
     assert calls == []
+
+
+# ── P2: document carry-over on hand-off ──────────────────────────────────
+
+def test_carry_photos_requests_only_gallery(monkeypatch):
+    import buyback.services.carpark_handoff as ch
+    seen = {}
+    def fake_get(rid, ptype=None):
+        seen['ptype'] = ptype
+        return []
+    monkeypatch.setattr(ch._shared.photos_repo, 'get_by_record', fake_get)
+    ch._carry_photos(1, 2)
+    assert seen['ptype'] == 'gallery'
