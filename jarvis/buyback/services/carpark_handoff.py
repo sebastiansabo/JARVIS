@@ -78,6 +78,7 @@ def handoff_to_carpark(record, finalized_by) -> dict:
     veh = VehicleService().create_vehicle(data, created_by=finalized_by)  # may raise ValueError
 
     _carry_photos(record['id'], veh['id'])
+    _carry_documents(record['id'], veh['id'])
     _backlink(veh['id'], record['id'], finalized_by)
     return veh
 
@@ -111,6 +112,44 @@ def _carry_photos(record_id, veh_id):
             logger.warning(
                 'CarPark hand-off: failed to carry photo id=%s (buyback record=%s) '
                 'to vehicle=%s', photo.get('id'), record_id, veh_id, exc_info=True,
+            )
+
+
+_DOC_PHOTO_TYPES = ('document', 'civ', 'talon', 'contract')
+
+
+def _carry_documents(record_id, veh_id):
+    """Copy every buyback DOCUMENT (civ/talon/contract/other) for `record_id`
+    onto the new CarPark vehicle's document store (carpark_vehicle_documents),
+    preserving the real MIME + file extension — unlike _carry_photos, which is
+    gallery-only and re-encodes to jpg. Best-effort per document: one bad
+    document is logged and skipped, never raised (the vehicle already exists)."""
+    from carpark.repositories.document_repository import DocumentRepository
+
+    docs = [p for p in _shared.photos_repo.get_by_record(record_id)
+            if p.get('photo_type') in _DOC_PHOTO_TYPES]
+    if not docs:
+        return
+
+    repo = DocumentRepository()
+    for d in docs:
+        try:
+            data, content_type = spaces_service.fetch(d['url'])
+            name = d['url'].rsplit('/', 1)[-1]
+            ext = name.rsplit('.', 1)[-1] if '.' in name else 'pdf'
+            new_key = f'private/carpark/{veh_id}/doc-{uuid4().hex}.{ext}'
+            spaces_service.upload(data, new_key, content_type or 'application/octet-stream')
+            repo.create(veh_id, {
+                'document_type': d.get('photo_type') or 'document',
+                'title': d.get('caption') or (d.get('photo_type') or 'document'),
+                'file_url': new_key,
+                'mime_type': content_type or None,
+                'file_size': len(data) if data else None,
+            })
+        except Exception:
+            logger.warning(
+                'CarPark hand-off: failed to carry document id=%s (buyback record=%s) '
+                'to vehicle=%s', d.get('id'), record_id, veh_id, exc_info=True,
             )
 
 
@@ -181,5 +220,6 @@ def handoff_to_carpark_custody(record, agreement, actor) -> dict:
     ConsignmentRepository().create(veh['id'], agreement, created_by=actor)
 
     _carry_photos(record['id'], veh['id'])
+    _carry_documents(record['id'], veh['id'])
     _backlink(veh['id'], record['id'], actor)
     return veh
