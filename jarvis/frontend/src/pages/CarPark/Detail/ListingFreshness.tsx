@@ -1,6 +1,6 @@
 import { Badge } from '@/components/ui/badge'
 
-export type Freshness = 'not_published' | 'up_to_date' | 'stale' | 'expired' | 'inactive' | 'error'
+export type Freshness = 'not_published' | 'up_to_date' | 'stale' | 'expired' | 'inactive' | 'error' | 'draft' | 'moderation'
 
 const LABELS: Record<Freshness, { text: string; cls: string }> = {
   up_to_date:    { text: 'La zi',                cls: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' },
@@ -9,6 +9,8 @@ const LABELS: Record<Freshness, { text: string; cls: string }> = {
   inactive:      { text: 'Inactiv',              cls: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
   error:         { text: 'Eroare',               cls: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' },
   not_published: { text: 'Nepublicat',           cls: '' },
+  draft:         { text: 'Draft (neplătit)',     cls: 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200' },
+  moderation:    { text: 'În moderare',          cls: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300' },
 }
 
 const rel = (iso?: string | null) => {

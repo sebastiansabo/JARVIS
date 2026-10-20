@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, ExternalLink, Globe, Loader2, RefreshCw, Undo2 } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,10 +12,15 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { shopifyApi } from '@/api/shopify'
-import { ListingFreshness } from './ListingFreshness'
+import { carparkApi } from '@/api/carpark'
+import { AutoworldLogo } from '@/components/icons/MarketplaceLogos'
+import { PlatformPublishRow } from './PlatformPublishRow'
+import type { Freshness } from './ListingFreshness'
 
-// RO labels for the store's custom.* metafield keys, so the pre-publish modal
-// reads like the vehicle form rather than dumping raw backend warning strings.
+// Lifted verbatim from the old ShopifyPublishControl (Detail/ShopifyPublishControl.tsx,
+// now removed — superseded by this adapter): RO labels for the store's custom.*
+// metafield keys, so the pre-publish modal reads like the vehicle form rather than
+// dumping raw backend warning strings.
 const FIELD_LABELS: Record<string, string> = {
   culoare_tapiterie: 'Culoare tapițerie',
   dotari: 'Dotări',
@@ -68,8 +73,11 @@ function apiError(err: unknown, fallback: string): string {
   return (err as { data?: { error?: string } })?.data?.error || fallback
 }
 
-// ── Shopify publish control (status chip + publish/retract button) ──
-export function ShopifyPublishControl({
+// ── Autoworld.ro (Shopify-backed) publish row — adapts shopifyApi + the
+// per-vehicle auto-update schedule onto the shared PlatformPublishRow, keeping
+// the dry-run preview → warnings/blocked modal → publish flow identical to the
+// old ShopifyPublishControl. ──
+export function AutoworldPublishRow({
   vehicleId,
   canEdit,
 }: {
@@ -78,6 +86,8 @@ export function ShopifyPublishControl({
 }) {
   const queryClient = useQueryClient()
   const statusKey = ['shopify', 'status', vehicleId]
+  const scheduleKey = ['listing-schedule', vehicleId, 'shopify']
+
   // `modal` holds the content; `modalOpen` drives visibility. Closing flips only
   // `modalOpen` so the retained content renders correctly through Radix's exit
   // animation (clearing content on close flashes the dialog to the wrong variant).
@@ -88,14 +98,21 @@ export function ShopifyPublishControl({
     setModalOpen(true)
   }
 
-  const { data, isLoading } = useQuery({
+  const { data } = useQuery({
     queryKey: statusKey,
     queryFn: () => shopifyApi.vehicleStatus(vehicleId),
     enabled: !!vehicleId,
   })
-
   const listing = data?.listing ?? null
-  const isPublished = listing?.status === 'published'
+  const freshness: Freshness = data?.freshness ?? 'not_published'
+
+  const { data: scheduleData } = useQuery({
+    queryKey: scheduleKey,
+    queryFn: () => carparkApi.getListingSchedule(vehicleId, 'shopify'),
+    enabled: !!vehicleId,
+  })
+  const schedule = scheduleData?.schedule ?? null
+  const autoEnabled = !!schedule?.enabled && schedule.cadence !== 'manual'
 
   const invalidateStatus = () => queryClient.invalidateQueries({ queryKey: statusKey })
 
@@ -103,7 +120,7 @@ export function ShopifyPublishControl({
     mutationFn: () => shopifyApi.publishVehicle(vehicleId),
     onSuccess: (res) => {
       invalidateStatus()
-      toast.success('Publicat pe Shopify')
+      toast.success('Publicat pe Autoworld.ro')
       // Safety net: if the field/value map drifted between the dry-run preview
       // and the actual publish, surface whatever the publish itself skipped.
       if (res.warnings && res.warnings.length > 0) {
@@ -134,116 +151,56 @@ export function ShopifyPublishControl({
     mutationFn: () => shopifyApi.unpublishVehicle(vehicleId),
     onSuccess: () => {
       invalidateStatus()
-      toast.success('Retras de pe Shopify')
+      toast.success('Retras de pe Autoworld.ro')
     },
     onError: (err: unknown) => toast.error(apiError(err, 'Retragere eșuată')),
   })
 
   // Reconcile against the live store: if the product was deleted on Shopify, the
-  // chip would otherwise keep showing it as published. This re-checks and flips
+  // row would otherwise keep showing it as published. This re-checks and flips
   // the local status to "not published" when the product is gone.
   const verifyMutation = useMutation({
     mutationFn: () => shopifyApi.verifyStatus(vehicleId),
     onSuccess: (res) => {
       invalidateStatus()
       if (res.deleted_on_shopify)
-        toast.warning('Produsul nu mai există pe Shopify — status actualizat la „Nepublicat”.')
-      else toast.success('Status verificat — produsul există pe Shopify.')
+        toast.warning('Produsul nu mai există pe Autoworld.ro — status actualizat la „Nepublicat”.')
+      else toast.success('Status verificat — produsul există pe Autoworld.ro.')
     },
     onError: (err: unknown) => toast.error(apiError(err, 'Verificare status eșuată')),
   })
 
-  const isMutating =
-    previewMutation.isPending || publishMutation.isPending ||
-    unpublishMutation.isPending || verifyMutation.isPending
+  const scheduleMutation = useMutation({
+    mutationFn: (on: boolean) =>
+      carparkApi.setListingSchedule(vehicleId, {
+        platform: 'shopify',
+        cadence: on ? '1h' : 'manual',
+        enabled: on,
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: scheduleKey }),
+    onError: () => toast.error('Salvarea programării automate a eșuat'),
+  })
+
+  const busy = previewMutation.isPending || publishMutation.isPending
 
   return (
     <>
-      <div className="flex items-center gap-2">
-        {!isLoading && (
-          <ListingFreshness
-            freshness={data?.freshness ?? 'not_published'}
-            lastSync={listing?.last_sync}
-            expiresAt={listing?.expires_at}
-          />
-        )}
-        {isPublished && listing?.external_url && (
-          <a
-            href={listing.external_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            title="Deschide produsul publicat pe Shopify"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Vezi în magazin
-          </a>
-        )}
-        {canEdit && isPublished && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="px-2"
-            disabled={isMutating || isLoading}
-            onClick={() => verifyMutation.mutate()}
-            title="Verifică dacă produsul mai există pe Shopify"
-          >
-            {verifyMutation.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="h-3.5 w-3.5" />
-            )}
-          </Button>
-        )}
-        {canEdit && !isPublished && (
-          <Button
-            size="sm"
-            variant="default"
-            className="w-44"
-            disabled={isMutating || isLoading}
-            onClick={() => previewMutation.mutate()}
-          >
-            {isMutating ? (
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Globe className="mr-1.5 h-3.5 w-3.5" />
-            )}
-            Publică pe Shopify
-          </Button>
-        )}
-        {canEdit && isPublished && (
-          <>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={isMutating || isLoading}
-              onClick={() => previewMutation.mutate()}
-              title="Actualizează produsul pe Autoworld.ro cu datele curente"
-            >
-              {previewMutation.isPending || publishMutation.isPending ? (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              Actualizează
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={isMutating || isLoading}
-              onClick={() => unpublishMutation.mutate()}
-              title="Retrage produsul de pe Autoworld.ro"
-            >
-              {unpublishMutation.isPending ? (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Undo2 className="mr-1.5 h-3.5 w-3.5" />
-              )}
-              Retrage
-            </Button>
-          </>
-        )}
-      </div>
+      <PlatformPublishRow
+        logo={<AutoworldLogo className="h-9 w-9" />}
+        name="Autoworld.ro"
+        subtitle="Magazin online"
+        freshness={freshness}
+        lastSync={listing?.last_sync}
+        externalUrl={listing?.external_url}
+        externalLinkLabel="Vezi în magazin"
+        autoEnabled={autoEnabled}
+        busy={busy}
+        canEdit={canEdit}
+        onPrimary={() => previewMutation.mutate()}
+        onVerify={() => verifyMutation.mutate()}
+        onToggleAuto={(on) => scheduleMutation.mutate(on)}
+        onDeactivate={() => unpublishMutation.mutate()}
+      />
 
       <Dialog open={modalOpen} onOpenChange={(open) => !open && setModalOpen(false)}>
         <DialogContent className="max-w-md">
@@ -301,4 +258,4 @@ export function ShopifyPublishControl({
   )
 }
 
-export default ShopifyPublishControl
+export default AutoworldPublishRow

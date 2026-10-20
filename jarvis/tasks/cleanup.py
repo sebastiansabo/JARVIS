@@ -771,10 +771,10 @@ def _register_listing_autosync():
     from tasks.listing_autosync import _env_gate, listing_autosync_tick
     if not _env_gate():
         return
-    scheduler.add_job(listing_autosync_tick, 'interval', hours=4,
+    scheduler.add_job(listing_autosync_tick, 'interval', hours=1,
                       id='listing_autosync', replace_existing=True,
                       misfire_grace_time=300, coalesce=True)
-    logger.info('listing_autosync scheduled (interval 4h)')
+    logger.info('listing_autosync scheduled (interval 1h)')
 
 
 def is_scheduler_ok():

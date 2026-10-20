@@ -486,7 +486,8 @@ def test_publish_creates_new_listing_and_upserts(client):
         bc.return_value.update_advert.assert_not_called()
         upsert.assert_called_once_with(7, 1, external_advert_id="999",
                                        external_url="http://x/999",
-                                       status="unpaid", last_error=None)
+                                       status="unpaid", last_error=None,
+                                       last_published_at=ANY)
 
 
 def test_publish_updates_existing_listing_via_update_advert(client):
@@ -503,7 +504,8 @@ def test_publish_updates_existing_listing_via_update_advert(client):
         bc.return_value.create_advert.assert_not_called()
         upsert.assert_called_once_with(7, 1, external_advert_id="555",
                                        external_url="http://x/555",
-                                       status="active", last_error=None)
+                                       status="active", last_error=None,
+                                       last_published_at=ANY)
 
 
 def test_publish_recreates_when_listing_status_removed(client):

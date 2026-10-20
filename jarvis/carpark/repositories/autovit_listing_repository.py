@@ -12,7 +12,11 @@ from core.base_repository import BaseRepository
 # Columns the push job is allowed to write via upsert()/set_error(). Deliberately
 # excludes vehicle_id/account_id (identity, not updatable) and the
 # server-managed last_sync/updated_at (always bumped on every upsert below).
-_UPDATABLE = {"external_advert_id", "external_url", "status", "last_error"}
+# last_published_at is distinct from last_sync: last_sync is overloaded (also
+# bumped by verify-status, which doesn't publish anything), so freshness
+# computations need a timestamp that only moves on an actual publish/update.
+_UPDATABLE = {"external_advert_id", "external_url", "status", "last_error",
+              "last_published_at"}
 
 
 class AutovitListingRepository(BaseRepository):
@@ -51,3 +55,14 @@ class AutovitListingRepository(BaseRepository):
 
     def set_error(self, vehicle_id: int, account_id: int, msg: str) -> None:
         self.upsert(vehicle_id, account_id, status="error", last_error=msg)
+
+    def list_live_vehicle_ids(self) -> List[int]:
+        """Distinct vehicle_ids with a currently-live Autovit listing (status
+        'active' or 'unpaid' — same vocabulary as freshness.py's
+        autovit_sweep_stale). Used by Task 8's backfill script to find
+        already-published cars that predate Task 7's default-on-publish 1h
+        auto-update schedule."""
+        rows = self.query_all(
+            "SELECT DISTINCT vehicle_id FROM carpark_autovit_listings "
+            "WHERE status IN ('active', 'unpaid')")
+        return [r['vehicle_id'] for r in rows]

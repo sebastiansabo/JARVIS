@@ -174,6 +174,20 @@ class PublishingRepository(BaseRepository):
             'DELETE FROM carpark_vehicle_listings WHERE id = %s', (listing_id,)
         ) > 0
 
+    def list_published_vehicle_ids(self, platform_type: str) -> List[int]:
+        """Distinct vehicle_ids with a currently-published listing on the given
+        platform type (e.g. 'shopify'). platform_type isn't stored directly on
+        carpark_vehicle_listings, so this joins through carpark_publishing_platforms.
+        Used by Task 8's backfill script to find already-published cars that
+        predate Task 7's default-on-publish 1h auto-update schedule."""
+        rows = self.query_all('''
+            SELECT DISTINCT l.vehicle_id
+            FROM carpark_vehicle_listings l
+            JOIN carpark_publishing_platforms p ON p.id = l.platform_id
+            WHERE l.status = 'published' AND p.platform_type = %s
+        ''', (platform_type,))
+        return [r['vehicle_id'] for r in rows]
+
     def get_active_listings_count(self, platform_id: int = None) -> int:
         """Count active listings, optionally per platform."""
         if platform_id:

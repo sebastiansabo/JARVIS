@@ -13,3 +13,11 @@ it('shows expired', () => {
   render(<ListingFreshness freshness="expired" lastSync={null} expiresAt="2026-09-01T00:00:00Z" />)
   expect(screen.getByText('Expirat')).toBeInTheDocument()
 })
+it('shows the draft label', () => {
+  render(<ListingFreshness freshness="draft" lastSync={null} expiresAt={null} />)
+  expect(screen.getByText('Draft (neplătit)')).toBeInTheDocument()
+})
+it('shows the moderation label', () => {
+  render(<ListingFreshness freshness="moderation" lastSync={null} expiresAt={null} />)
+  expect(screen.getByText('În moderare')).toBeInTheDocument()
+})
