@@ -91,6 +91,17 @@ def _sync_client_contact(client_id, data):
     cui = str(data.get('seller_cui') or '').strip()
     if cui:
         updates['cui'] = cui
+    # Legal-identity fields with a 1:1 CRM column (CI serie/nr + IBAN + free-text
+    # address have no CRM column → stay record-only). Non-empty only.
+    cnp = str(data.get('seller_cnp') or '').strip()
+    if cnp:
+        updates['cnp'] = cnp
+    reg_no = str(data.get('seller_reg_no') or '').strip()
+    if reg_no:
+        updates['nr_reg'] = reg_no
+    legal_rep = str(data.get('seller_legal_rep') or '').strip()
+    if legal_rep:
+        updates['responsible'] = legal_rep
     if not updates:
         return
     try:

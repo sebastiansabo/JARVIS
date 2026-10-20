@@ -139,6 +139,28 @@ def test_sensitive_seller_fields_are_pii_redacted():
             'seller_iban', 'seller_address'}.issubset(_PII_LOG_FIELDS)
 
 
+def test_sync_client_contact_pushes_cnp_regno_legalrep(monkeypatch):
+    from buyback.routes import records as rec_mod
+    captured = {}
+    monkeypatch.setattr(rec_mod._shared.client_repo, 'update',
+                        lambda cid, fields: captured.update(fields))
+    rec_mod._sync_client_contact(42, {
+        'seller_cnp': '1234567890123', 'seller_reg_no': 'J12/345/2020',
+        'seller_legal_rep': 'Pop Ion', 'seller_ci_serie': 'CJ',  # CI not synced
+    })
+    assert captured.get('cnp') == '1234567890123'
+    assert captured.get('nr_reg') == 'J12/345/2020'
+    assert captured.get('responsible') == 'Pop Ion'
+    assert 'ci_serie' not in captured and 'seller_ci_serie' not in captured
+
+
+def test_crm_client_update_accepts_cnp_and_nr_reg():
+    # The seller-identity CRM sync is only effective if the CRM repo actually
+    # persists these columns rather than silently dropping them.
+    from crm.repositories.client_repository import ClientRepository
+    assert {'cnp', 'nr_reg'}.issubset(ClientRepository._UPDATABLE)
+
+
 def test_create_response_includes_vin_in_carpark_flag(client, as_role):
     as_role('Admin', 1)
     r = client.post('/api/buyback/records', json=_payload())
