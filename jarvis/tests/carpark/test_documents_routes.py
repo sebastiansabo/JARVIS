@@ -459,3 +459,19 @@ def test_timeline_merges_and_sorts_events():
     # Every event has the documented shape.
     for event in events:
         assert set(event.keys()) == {'type', 'label', 'date', 'meta'}
+
+
+def test_with_openable_urls_presigns_private_keys_and_passes_http_through(monkeypatch):
+    # Documents carried from BuyBack store a private Spaces key; the list route
+    # must presign it so the CarPark UI can open it. http/data links pass through.
+    import carpark.routes.documents as docs_mod
+    monkeypatch.setattr(docs_mod, 'public_photo_url',
+                        lambda ref: ('https://signed/' + ref) if not ref.startswith('http') else ref)
+    out = docs_mod._with_openable_urls([
+        {'id': 1, 'file_url': 'private/carpark/9/doc-x.pdf'},
+        {'id': 2, 'file_url': 'https://drive/abc'},
+        {'id': 3, 'file_url': None},
+    ])
+    assert out[0]['file_url'] == 'https://signed/private/carpark/9/doc-x.pdf'
+    assert out[1]['file_url'] == 'https://drive/abc'
+    assert out[2]['file_url'] is None
