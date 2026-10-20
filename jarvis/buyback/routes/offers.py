@@ -94,6 +94,19 @@ def post_offer(record_id):
                 'error': 'valid_until must be an ISO date (YYYY-MM-DD)',
             }), 400
 
+    # Optional: the acquisition team researches the retail value (Preț Piață) and
+    # sets it when posting the offer. Validate like a NUMERIC field (a bad value
+    # would otherwise reach the record UPDATE and 500), persist it, and refresh
+    # `record` so the seller email/PDF (built from it in post_offer) carry the
+    # retail price. Blank/omitted leaves the existing value untouched.
+    market_raw = data.get('market_price_eur')
+    if market_raw is not None and str(market_raw).strip() != '':
+        try:
+            market_val = Decimal(str(market_raw))
+        except (InvalidOperation, ValueError, TypeError):
+            return jsonify({'success': False, 'error': 'market_price_eur must be a number'}), 400
+        record = _shared.records_repo.update(record_id, {'market_price_eur': market_val})
+
     try:
         offer = _shared.service.post_offer(record, offer_type, data, current_user.id)
     except ValueError as e:

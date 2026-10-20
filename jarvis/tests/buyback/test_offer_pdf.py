@@ -12,6 +12,16 @@ def test_vehicle_sheet_pdf_is_valid_and_nonempty():
     assert len(data) > 500
 
 
+def test_vehicle_sheet_pdf_includes_retail_price_when_set():
+    import io
+    from PyPDF2 import PdfReader
+    data = build_vehicle_sheet_pdf({'record_code': 'BB-4', 'brand': 'BMW', 'model': 'X5',
+                                    'market_price_eur': 10000})
+    text = ''.join(p.extract_text() or '' for p in PdfReader(io.BytesIO(bytes(data))).pages)
+    assert 'Pret de piata' in text
+    assert '10000' in text
+
+
 def test_vehicle_sheet_pdf_handles_missing_fields():
     data = build_vehicle_sheet_pdf({'record_code': 'BB-2', 'brand': 'Audi', 'model': 'A4'})
     assert bytes(data[:4]) == b'%PDF'

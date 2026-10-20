@@ -92,7 +92,7 @@ export const buybackApi = {
   deleteRecord: (id: number) =>
     api.delete(`${BASE}/records/${id}`),
 
-  postOffer: (id: number, data: { offer_type: 'initial' | 'final'; amount_eur: number; vat_status?: string; valid_until?: string; notes?: string }) =>
+  postOffer: (id: number, data: { offer_type: 'initial' | 'final'; amount_eur: number; vat_status?: string; valid_until?: string; notes?: string; market_price_eur?: number }) =>
     api.post<{ offer: BuybackOffer }>(`${BASE}/records/${id}/offers`, data),
 
   recordDecision: (id: number, offerId: number, data: { decision: 'accepted' | 'declined'; decline_reason?: string }) =>

@@ -97,6 +97,27 @@ def test_post_initial_offer_moves_record_to_initial_offer(client, as_role):
     assert detail['record']['status'] == 'INITIAL_OFFER'
 
 
+def test_post_offer_persists_market_price_to_record(client, as_role):
+    # The acquisition team researches the retail value (Preț Piață) and sets it
+    # when posting the offer — it must land on the record (so the seller email
+    # + list/detail carry it).
+    rid = _make_record(client, as_role)
+    as_role('Admin', 1)
+    r = client.post(f'/api/buyback/records/{rid}/offers',
+                    json=_offer_payload(market_price_eur=10000))
+    assert r.status_code == 201, r.get_json()
+    detail = client.get(f'/api/buyback/records/{rid}?company_id=1').get_json()
+    assert float(detail['record']['market_price_eur']) == 10000.0
+
+
+def test_post_offer_rejects_non_numeric_market_price_400(client, as_role):
+    rid = _make_record(client, as_role)
+    as_role('Admin', 1)
+    r = client.post(f'/api/buyback/records/{rid}/offers',
+                    json=_offer_payload(market_price_eur='abc'))
+    assert r.status_code == 400, r.get_json()
+
+
 def test_post_offer_missing_offer_type_is_400(client, as_role):
     rid = _make_record(client, as_role)
     as_role('Admin', 1)

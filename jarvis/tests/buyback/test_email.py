@@ -41,6 +41,25 @@ def test_offer_email_contains_amount_and_vehicle():
     assert '9500' in text and 'BMW' in text and 'Ion' in text
 
 
+def test_offer_email_includes_retail_price_when_set():
+    # The seller's offer email shows the retail value (Preț de piață) so the
+    # below-market offer is justified — but NEVER the margin/difference.
+    rec = {'brand': 'BMW', 'model': '320d', 'market_price_eur': 10000}
+    off = {'amount_eur': 9000, 'offer_type': 'initial'}
+    subject, text, html = build_offer_email(rec, off, {})
+    assert 'Preț de piață' in html and '10000' in html
+    assert 'Preț de piață' in text
+    # no margin leaked
+    assert 'marjă' not in html.lower() and 'marja' not in html.lower()
+
+
+def test_offer_email_omits_retail_price_when_absent():
+    rec = {'brand': 'BMW', 'model': '320d'}
+    off = {'amount_eur': 9000, 'offer_type': 'initial'}
+    _, text, html = build_offer_email(rec, off, {})
+    assert 'Preț de piață' not in html and 'Preț de piață' not in text
+
+
 def test_offer_email_final_round_subject():
     rec = {'brand': 'Audi', 'model': 'A4'}
     off = {'amount_eur': 8000, 'offer_type': 'final'}
