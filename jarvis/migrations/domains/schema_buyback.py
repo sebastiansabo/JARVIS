@@ -67,6 +67,24 @@ def create_schema_buyback(conn, cursor):
             END $$;
         ''')
 
+    # ── Seller legal identity (for the purchase/consignație contract):
+    # person CNP + CI, company reg/IBAN/legal-rep, universal address.
+    # Idempotent per column — safe on already-seeded DBs.
+    for _col, _type in [
+        ('seller_address', 'TEXT'), ('seller_cnp', 'VARCHAR(13)'),
+        ('seller_ci_serie', 'VARCHAR(10)'), ('seller_ci_number', 'VARCHAR(20)'),
+        ('seller_reg_no', 'VARCHAR(30)'), ('seller_iban', 'VARCHAR(34)'),
+        ('seller_legal_rep', 'VARCHAR(255)'),
+    ]:
+        cursor.execute(f'''
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_name='buyback_records' AND column_name='{_col}') THEN
+                    ALTER TABLE buyback_records ADD COLUMN {_col} {_type};
+                END IF;
+            END $$;
+        ''')
+
     # Seed buyback_hold_reason dropdown options (idempotent, one INSERT per
     # value guarded by WHERE NOT EXISTS, mirrors the invoice_status seed
     # pattern in schema_misc.py -- additive only, won't disturb existing rows).
