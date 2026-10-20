@@ -96,7 +96,7 @@ def _carry_photos(record_id, veh_id):
     """
     from carpark.repositories.photo_repository import PhotoRepository as CarparkPhotoRepository
 
-    photos = _shared.photos_repo.get_by_record(record_id)
+    photos = _shared.photos_repo.get_by_record(record_id, 'gallery')
     if not photos:
         return
 
