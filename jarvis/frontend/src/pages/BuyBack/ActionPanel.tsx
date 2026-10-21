@@ -441,16 +441,19 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
       <CardContent className="space-y-4">
         {nothingToShow && <p className="text-sm text-muted-foreground">Nicio acțiune disponibilă.</p>}
 
-        {showInitialOffer && (
-          <Button size="sm" onClick={() => setOfferDialogType('initial')}>
-            Postează ofertă inițială
-          </Button>
-        )}
-
-        {showProposeConsignment && (
-          <Button size="sm" variant="outline" onClick={() => setProposeOpen(true)}>
-            Propune consignație
-          </Button>
+        {(showInitialOffer || showProposeConsignment) && (
+          <div className="flex flex-wrap gap-2">
+            {showInitialOffer && (
+              <Button size="sm" onClick={() => setOfferDialogType('initial')}>
+                Postează ofertă inițială
+              </Button>
+            )}
+            {showProposeConsignment && (
+              <Button size="sm" variant="outline" onClick={() => setProposeOpen(true)}>
+                Propune consignație
+              </Button>
+            )}
+          </div>
         )}
 
         {showDecision && (
@@ -600,22 +603,32 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
           <p className="text-sm text-muted-foreground">Consignat → CarPark #{record.carpark_vehicle_id}</p>
         )}
 
-        {showCancel && (
-          <Button size="sm" variant="destructive" onClick={() => setCancelDialogOpen(true)}>
-            Anulează
-          </Button>
-        )}
-
-        {showOverride && (
-          <Button size="sm" variant="outline" onClick={() => setOverrideOpen(true)}>
-            Schimbă status
-          </Button>
-        )}
-
-        {showHold && (
-          <Button size="sm" variant="outline" onClick={() => setHoldOpen(true)}>
-            Suspendă
-          </Button>
+        {/* Utility actions — grouped below a divider and kept quiet so they
+            don't compete with the primary workflow action. Anulează is the
+            only destructive one: a restrained ghost, not a solid red block. */}
+        {(showOverride || showHold || showCancel) && (
+          <div className="flex flex-wrap items-center gap-2 border-t pt-3">
+            {showOverride && (
+              <Button size="sm" variant="outline" onClick={() => setOverrideOpen(true)}>
+                Schimbă status
+              </Button>
+            )}
+            {showHold && (
+              <Button size="sm" variant="outline" onClick={() => setHoldOpen(true)}>
+                Suspendă
+              </Button>
+            )}
+            {showCancel && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                onClick={() => setCancelDialogOpen(true)}
+              >
+                Anulează
+              </Button>
+            )}
+          </div>
         )}
 
         {showResume && (
