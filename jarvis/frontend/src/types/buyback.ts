@@ -109,6 +109,19 @@ export interface VinHistoryEntry {
   last_offer_at: string | null
 }
 
+// A per-company×brand contract template (purchase / consignment). The legal
+// body carries {tokens} the renderer substitutes.
+export interface BuybackContractTemplate {
+  id: number
+  company_id: number
+  brand_id: number | null
+  document_type: 'purchase' | 'consignment'
+  title: string | null
+  body_template: string | null
+  general_conditions: string | null
+  is_active: boolean
+}
+
 export interface BuybackOffer {
   id: number
   record_id: number

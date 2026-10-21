@@ -20,6 +20,14 @@ describe('buybackApi', () => {
     expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/api\/buyback\/records\/vin-history\?.*vin=WBA123/))
     expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/exclude_id=99/))
   })
+  it('listContractTemplates + putContractTemplate hit the contract-templates route', () => {
+    buybackApi.listContractTemplates(3)
+    expect(api.get).toHaveBeenCalledWith(expect.stringMatching(/\/api\/buyback\/contract-templates\?.*company_id=3/))
+    buybackApi.putContractTemplate(3, 5, { document_type: 'purchase', title: 'X' })
+    expect(api.put).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/buyback\/contract-templates\/5\?.*company_id=3/),
+      expect.objectContaining({ title: 'X' }))
+  })
   it('postOffer + decision + finalize hit the right paths', () => {
     buybackApi.postOffer(5, { offer_type: 'initial', amount_eur: 9000 })
     expect(api.post).toHaveBeenCalledWith('/api/buyback/records/5/offers', expect.any(Object))
