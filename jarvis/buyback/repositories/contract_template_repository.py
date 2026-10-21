@@ -19,6 +19,28 @@ class ContractTemplateRepository(BaseRepository):
             (company_id, brand_id, document_type),
         )
 
+    def get_active_with_default(self, company_id, brand_id, document_type):
+        """`get_active` plus a company-wide-default fallback, for the manual
+        "generate contract" route (buyback/routes/contract.py): tries the
+        brand-specific active row first, then an active company-default row
+        (`brand_id IS NULL`) for the same company/document_type.
+
+        `get_active` alone can't express this fallback — its
+        `brand_id = %s` predicate never matches a NULL row (SQL's `NULL = x`
+        is always NULL/false, never true), even when `brand_id` is itself
+        None. Returns None when neither a brand-specific nor a default
+        active row exists.
+        """
+        row = self.get_active(company_id, brand_id, document_type)
+        if row is not None:
+            return row
+        return self.query_one(
+            'SELECT * FROM buyback_contract_templates '
+            'WHERE company_id = %s AND brand_id IS NULL AND document_type = %s '
+            'AND is_active = TRUE',
+            (company_id, document_type),
+        )
+
     def brands_for_company(self, company_id):
         """Active brands assigned to a company (id + name), for the editor's
         per-brand template cards. From the company_brands catalog."""
