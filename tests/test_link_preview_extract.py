@@ -31,3 +31,11 @@ def test_no_url():
 
 def test_trailing_punctuation_trimmed():
     assert extract_first_url("go to https://a.com.") == "https://a.com"
+
+def test_balanced_trailing_paren_preserved():
+    assert extract_first_url(
+        "see https://en.wikipedia.org/wiki/Foo_(bar) now"
+    ) == "https://en.wikipedia.org/wiki/Foo_(bar)"
+
+def test_wrapped_in_parens_strips_unbalanced_closer():
+    assert extract_first_url("(see https://a.com)") == "https://a.com"
