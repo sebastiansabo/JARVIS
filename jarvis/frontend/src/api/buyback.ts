@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { BuybackRecord, BuybackOffer, BuybackPhoto, BuybackEvent, BuybackConfig, ConsignmentAgreement, CustodyAgreementInput, VinHistoryEntry } from '../types/buyback'
+import type { BuybackRecord, BuybackOffer, BuybackPhoto, BuybackEvent, BuybackConfig, ConsignmentAgreement, CustodyAgreementInput, VinHistoryEntry, BuybackContractTemplate } from '../types/buyback'
 
 const BASE = '/api/buyback'
 
@@ -177,4 +177,17 @@ export const buybackApi = {
 
   updateConfig: (cfg: BuybackConfig) =>
     api.put<{ config: BuybackConfig }>(`${BASE}/settings/config`, cfg),
+
+  // Per-company×brand contract templates (admin Settings → Contracte).
+  listContractTemplates: (companyId: number) =>
+    api.get<{ templates: BuybackContractTemplate[] }>(
+      `${BASE}/contract-templates${qs({ company_id: companyId })}`),
+
+  putContractTemplate: (
+    companyId: number, brandId: number,
+    data: { document_type: 'purchase' | 'consignment'; title?: string;
+            body_template?: string; general_conditions?: string; is_active?: boolean },
+  ) =>
+    api.put<{ template: BuybackContractTemplate }>(
+      `${BASE}/contract-templates/${brandId}${qs({ company_id: companyId })}`, data),
 }
