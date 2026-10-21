@@ -204,6 +204,11 @@ def _write_contract(record_id, data):
               else record.get('contract_general_conditions')) or ''
         signatory = _signatory_for(record)
 
+    # contract_title is VARCHAR(300) — clamp so an over-long title (e.g. a
+    # paste, or an API client bypassing the form's maxLength) can't 500 the
+    # store. Body/general_conditions are TEXT (unbounded).
+    title = (title or '')[:300]
+
     pdf_bytes = render_contract_pdf_from_parts(title, body, gc, signatory=signatory)
     updated = _shared.records_repo.update_contract(record_id, title, body, gc)
     photo = _shared.photos_repo.store_contract_pdf(
