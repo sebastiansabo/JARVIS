@@ -263,6 +263,16 @@ class RecordRepository(BaseRepository):
         params = list(sets.values()) + [id]
         return self.execute(sql, tuple(params), returning=True)
 
+    def update_contract(self, record_id, title, body, general_conditions) -> dict:
+        """Store the editable contract text and stamp contract_generated_at.
+        Used by the P3c inline-edit / generate-contract route; the three text
+        columns are set verbatim (already-final, token-substituted or manually
+        edited) and generated_at is bumped to NOW()."""
+        sql = ('UPDATE buyback_records SET contract_title = %s, contract_body = %s, '
+               'contract_general_conditions = %s, contract_generated_at = NOW(), '
+               'updated_at = NOW() WHERE id = %s RETURNING *')
+        return self.execute(sql, (title, body, general_conditions, record_id), returning=True)
+
     def set_status(self, id, status, actor) -> dict:
         """Flip the lifecycle status. `actor` is accepted for interface
         parity with callers that log an audit event alongside this call
