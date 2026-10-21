@@ -12,14 +12,22 @@ consignment -> {token: value} dict builder for `contract_template
 .render_contract_template()`. The actual PDF renderer (Task 4) is added on
 top of these, in a later task of the P3b contract-renderer feature.
 """
+import base64
 import html
+import io
 import logging
 import os
 
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import HRFlowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-from buyback.services.contract_template import PLACEHOLDERS
+from buyback.services.contract_template import PLACEHOLDERS, render_contract_template
 
 logger = logging.getLogger('jarvis.buyback.contract_pdf')
 
@@ -241,3 +249,164 @@ def build_contract_context(record, company, *, offer=None, consignment=None,
             break
 
     return ctx
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# PDF renderer — template_row + context -> PDF bytes (Task 4)
+# ═══════════════════════════════════════════════════════════════════════
+#
+# A4, 18mm margins, modeled on offer_pdf.py's BytesIO pattern (no temp file,
+# returns bytes) and foi_parcurs/services/pdf_service.py's two-party
+# signature table (boxed cells, 35mm row, italic-style "Lipsă semnătură"
+# placeholder). Every ParagraphStyle/TableStyle uses FONT_REGULAR/FONT_BOLD
+# (never Helvetica) so diacritics render, and every user-controlled string —
+# title, body/general_conditions lines (after token substitution), the
+# dealer signatory name — goes through _ptext before reaching a Paragraph.
+
+_SIG_IMG_WIDTH = 55 * mm
+_SIG_IMG_HEIGHT = 22 * mm
+_SIG_ROW_HEIGHT = 35 * mm
+
+
+def _decode_signature_image(signature: str):
+    """`data:image/...;base64,...` data-URL -> reportlab Image flowable, or
+    None (missing/absent/malformed signature — including a non-data-URL
+    string, bad base64, or truncated image bytes — all fall back to the
+    caller's placeholder rather than raising)."""
+    if not signature or not isinstance(signature, str) or not signature.startswith('data:image'):
+        return None
+    if ',' not in signature:
+        return None
+    try:
+        _header, b64data = signature.split(',', 1)
+        img_bytes = base64.b64decode(b64data)
+        return Image(io.BytesIO(img_bytes), width=_SIG_IMG_WIDTH, height=_SIG_IMG_HEIGHT)
+    except Exception:
+        logger.warning('render_contract_pdf: failed to decode signature data-URL', exc_info=True)
+        return None
+
+
+def _non_empty_lines(text: str):
+    """Split on '\\n', dropping blank/whitespace-only lines."""
+    for line in (text or '').split('\n'):
+        if line.strip():
+            yield line
+
+
+def render_contract_pdf(template_row: dict, context: dict, signature: str | None = None) -> bytes:
+    """Render one buyback purchase contract as PDF bytes.
+
+    `template_row` is a ContractTemplateRepository row (`title`,
+    `body_template`, `general_conditions`); `context` is the {token: value}
+    dict produced by `build_contract_context()` (or any dict — callers in
+    tests pass bare dicts, and a missing token must render empty, never
+    raise). `signature` is an optional seller signature as a
+    `data:image/...;base64,...` data-URL — absent/invalid falls back to an
+    "Lipsă semnătură" placeholder (the P3b manual-generate flow runs before
+    any signing exists). The dealer side of the signature table is never an
+    app-captured signature; it shows the signatory's name instead
+    (`company_administrator`, falling back to `company_name`).
+
+    Returns raw PDF bytes (not a path) — callers persist/stream/email it
+    themselves.
+    """
+    _register_fonts()
+    template_row = template_row or {}
+    context = context or {}
+
+    title_style = ParagraphStyle(
+        'ContractTitle', fontName=FONT_BOLD, fontSize=14, leading=18,
+        alignment=TA_CENTER, spaceAfter=10,
+    )
+    body_style = ParagraphStyle(
+        'ContractBody', fontName=FONT_REGULAR, fontSize=10, leading=14,
+        alignment=TA_JUSTIFY, spaceAfter=6,
+    )
+    gc_heading_style = ParagraphStyle(
+        'ContractGCHeading', fontName=FONT_BOLD, fontSize=12, leading=15,
+        spaceBefore=8, spaceAfter=6,
+    )
+    sig_label_style = ParagraphStyle(
+        'ContractSigLabel', fontName=FONT_REGULAR, fontSize=9, alignment=TA_CENTER,
+    )
+    sig_placeholder_style = ParagraphStyle(
+        'ContractSigPlaceholder', fontName=FONT_REGULAR, fontSize=8,
+        alignment=TA_CENTER, textColor=colors.grey,
+    )
+    dealer_name_style = ParagraphStyle(
+        'ContractDealerName', fontName=FONT_BOLD, fontSize=9, alignment=TA_CENTER,
+    )
+
+    story = []
+    story.append(Paragraph(_ptext(template_row.get('title')), title_style))
+    story.append(HRFlowable(width='100%', thickness=1, color=colors.HexColor('#1a1a2e'), spaceAfter=10))
+
+    body_text = render_contract_template(template_row.get('body_template') or '', context)
+    for line in _non_empty_lines(body_text):
+        story.append(Paragraph(_ptext(line), body_style))
+
+    gc_text = render_contract_template(template_row.get('general_conditions') or '', context)
+    gc_lines = list(_non_empty_lines(gc_text))
+    if gc_lines:
+        story.append(Spacer(1, 6 * mm))
+        story.append(Paragraph(_ptext('Condiții generale'), gc_heading_style))
+        for line in gc_lines:
+            story.append(Paragraph(_ptext(line), body_style))
+
+    story.append(Spacer(1, 10 * mm))
+
+    # Two-party signature table (foi_parcurs/services/pdf_service.py's
+    # _sig_cell/sig_table pattern): seller gets an image-or-placeholder box,
+    # the dealer side just names the signatory (no app-captured signature).
+    usable_width = A4[0] - 36 * mm  # matches the 18mm left/right margins below
+    col_w = usable_width / 2 - 3 * mm
+
+    def _sig_cell(img, label):
+        inner = []
+        if img is not None:
+            inner.append([img])
+        else:
+            inner.append([Paragraph(_ptext('Lipsă semnătură'), sig_placeholder_style)])
+        inner.append([Paragraph(_ptext(label), sig_label_style)])
+        cell = Table(inner, colWidths=[col_w - 4 * mm])
+        cell.setStyle(TableStyle([
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ]))
+        return cell
+
+    seller_img = _decode_signature_image(signature)
+    seller_cell = _sig_cell(seller_img, 'Semnătură Vânzător')
+
+    signatory = context.get('company_administrator') or context.get('company_name') or ''
+    dealer_inner = [
+        [Paragraph(_ptext(signatory), dealer_name_style)],
+        [Paragraph(_ptext('Cumpărător'), sig_label_style)],
+    ]
+    dealer_cell = Table(dealer_inner, colWidths=[col_w - 4 * mm])
+    dealer_cell.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+    ]))
+
+    sig_row = [[seller_cell, dealer_cell]]
+    sig_table = Table(sig_row, colWidths=[col_w, col_w], rowHeights=[_SIG_ROW_HEIGHT])
+    sig_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (-1, -1), 0.75, colors.HexColor('#999999')),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    story.append(sig_table)
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        topMargin=18 * mm, bottomMargin=18 * mm, leftMargin=18 * mm, rightMargin=18 * mm,
+        title=_ptext(template_row.get('title')) or 'Contract',
+    )
+    doc.build(story)
+    return buf.getvalue()
