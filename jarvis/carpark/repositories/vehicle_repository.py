@@ -117,8 +117,17 @@ VEHICLE_UPDATABLE_FIELDS = {
     'company_id', 'transferred_from_company_id',
 }
 
+# Autovit listing statuses that mean "no longer live on the marketplace": a
+# gone/broken ad (error / removed_*) OR a deliberately deactivated one (inactive,
+# set by the Autovit "Dezactivează" action). Every "is this car live on Autovit?"
+# predicate — the Publicat icon + its ad link, get_by_id's flag, and
+# count_live_listings — interpolates THIS one constant so the icon, the "(n/2)"
+# count, and the auto LISTED/Pregătit-vânzare flip can never disagree. It's a
+# static literal (no user input), so f-string interpolation is safe here.
+_AUTOVIT_DEAD_STATUSES = "('error', 'removed_by_user', 'removed_by_moderator', 'inactive')"
+
 # Lightweight fields for catalog list (mobile-friendly)
-CATALOG_SELECT = """
+CATALOG_SELECT = f"""
     v.id, v.vin, v.nr_stoc, v.brand, v.model, v.variant, v.category, v.status,
     v.year_of_manufacture, v.fuel_type, v.transmission, v.body_type,
     v.mileage_km, v.engine_power_hp, v.color_exterior,
@@ -141,11 +150,11 @@ CATALOG_SELECT = """
     -- (the icons link to the ad on each marketplace).
     EXISTS(SELECT 1 FROM carpark_autovit_listings al
            WHERE al.vehicle_id = v.id AND al.external_advert_id IS NOT NULL
-             AND al.status NOT IN ('error', 'removed_by_user', 'removed_by_moderator')
+             AND al.status NOT IN {_AUTOVIT_DEAD_STATUSES}
            ) AS autovit_published,
     (SELECT al.external_url FROM carpark_autovit_listings al
            WHERE al.vehicle_id = v.id AND al.external_advert_id IS NOT NULL
-             AND al.status NOT IN ('error', 'removed_by_user', 'removed_by_moderator')
+             AND al.status NOT IN {_AUTOVIT_DEAD_STATUSES}
              AND al.external_url IS NOT NULL
            ORDER BY al.id DESC LIMIT 1) AS autovit_url,
     EXISTS(SELECT 1 FROM carpark_vehicle_listings vl
@@ -294,15 +303,42 @@ class VehicleRepository(BaseRepository):
     # ── SINGLE VEHICLE ──
 
     def get_by_id(self, vehicle_id: int) -> Optional[Dict[str, Any]]:
-        """Full vehicle record by ID."""
-        return self.query_one('''
+        """Full vehicle record by ID. Carries the same autovit_published /
+        shopify_published flags as the catalog (identical predicates) so the
+        Detail page can show the "(n/2)" live-channel count on the status badge."""
+        return self.query_one(f'''
             SELECT v.*,
                    l.name as location_name, l.code as location_code,
-                   (CURRENT_DATE - COALESCE(v.arrival_date, v.acquisition_date)) AS stationary_days
+                   (CURRENT_DATE - COALESCE(v.arrival_date, v.acquisition_date)) AS stationary_days,
+                   EXISTS(SELECT 1 FROM carpark_autovit_listings al
+                          WHERE al.vehicle_id = v.id AND al.external_advert_id IS NOT NULL
+                            AND al.status NOT IN {_AUTOVIT_DEAD_STATUSES}
+                          ) AS autovit_published,
+                   EXISTS(SELECT 1 FROM carpark_vehicle_listings vl
+                          WHERE vl.vehicle_id = v.id AND vl.external_listing_id IS NOT NULL
+                            AND vl.status = 'published') AS shopify_published
             FROM carpark_vehicles v
             LEFT JOIN carpark_locations l ON v.location_id = l.id
             WHERE v.id = %s AND v.deleted_at IS NULL
         ''', (vehicle_id,))
+
+    def count_live_listings(self, vehicle_id: int) -> int:
+        """How many marketplace channels this vehicle is live on right now (0-2):
+        Autovit + Autoworld/Shopify. Shares the catalog's exact live-predicate
+        (_AUTOVIT_DEAD_STATUSES + Shopify 'published') so the auto
+        LISTED<->READY_FOR_SALE flip always agrees with the list's Publicat icons."""
+        row = self.query_one(f'''
+            SELECT
+              (EXISTS(SELECT 1 FROM carpark_autovit_listings al
+                      WHERE al.vehicle_id = %s AND al.external_advert_id IS NOT NULL
+                        AND al.status NOT IN {_AUTOVIT_DEAD_STATUSES}))::int
+              +
+              (EXISTS(SELECT 1 FROM carpark_vehicle_listings vl
+                      WHERE vl.vehicle_id = %s AND vl.external_listing_id IS NOT NULL
+                        AND vl.status = 'published'))::int
+              AS live_count
+        ''', (vehicle_id, vehicle_id))
+        return int(row['live_count']) if row else 0
 
     def get_by_vin(self, vin: str) -> Optional[Dict[str, Any]]:
         """Lookup vehicle by VIN."""

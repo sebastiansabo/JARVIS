@@ -21,6 +21,7 @@ from .client import AutovitClient, AutovitAuthError, PRODUCTION_URL, SANDBOX_URL
 from .freshness import compute_autovit_freshness
 from .service import republish_vehicle
 from ..cadence import ensure_auto_schedule
+from ..listing_status_hook import sync_listing_status as sync_listing_status_hook
 from core.connectors.repositories.connector_repository import ConnectorRepository
 from core.utils.api_helpers import api_login_required, admin_required
 from carpark.repositories.vehicle_repository import VehicleRepository
@@ -331,6 +332,9 @@ def verify_vehicle_status(vehicle_id):
         d = dict(l)
         d['freshness'] = compute_autovit_freshness(d, v_updated, now)
         listings.append(_serialize(d))
+    # Verify may have discovered an advert was removed/expired on Autovit, which
+    # changes the live-channel count → reconcile the vehicle status (best-effort).
+    sync_listing_status_hook(vehicle_id, changed_by=getattr(current_user, 'id', None))
     return jsonify({'success': True, 'refreshed': refreshed, 'listings': listings})
 
 
@@ -850,6 +854,9 @@ def publish(account_id):
     except Exception as e:
         logger.warning('auto-schedule creation failed for vehicle %s: %s', vehicle['id'], e)
 
+    # Car is now live on Autovit → flip READY_FOR_SALE to LISTED (best-effort).
+    sync_listing_status_hook(vehicle['id'], changed_by=getattr(current_user, 'id', None))
+
     return jsonify({'success': True, 'external_id': result['external_id'],
                     'external_url': result['external_url'], 'status': result['status'],
                     'updated_existing': result['updated_existing'],
@@ -911,6 +918,7 @@ def unpublish(account_id):
     try:
         _build_client(connector).deactivate_advert(listing['external_advert_id'])
         _listing_repo.upsert(body['vehicle_id'], account_id, status='inactive')
+        sync_listing_status_hook(body['vehicle_id'], changed_by=getattr(current_user, 'id', None))
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 502
@@ -935,6 +943,7 @@ def delete_advert(account_id):
         _build_client(connector).delete_advert(listing['external_advert_id'])
         _listing_repo.upsert(body['vehicle_id'], account_id,
                              status='removed_by_user', last_error=None)
+        sync_listing_status_hook(body['vehicle_id'], changed_by=getattr(current_user, 'id', None))
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 502

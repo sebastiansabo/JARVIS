@@ -61,6 +61,7 @@ import {
   type VehicleStatus,
   type VehicleCategory,
 } from '@/types/carpark'
+import { publishedChannelCount, PUBLISH_CHANNEL_TOTAL } from './publishChannels'
 
 // ── Status colors ──────────────────────────────────────────
 const STATUS_COLORS: Record<string, string> = {
@@ -82,13 +83,16 @@ const STATUS_COLORS: Record<string, string> = {
   TRANSFERRED: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200',
 }
 
-function VehicleStatusBadge({ status }: { status: VehicleStatus }) {
+function VehicleStatusBadge({ status, published = 0 }: { status: VehicleStatus; published?: number }) {
   return (
     <Badge
       variant="secondary"
       className={`font-normal text-[11px] ${STATUS_COLORS[status] ?? ''}`}
     >
       {STATUS_LABELS[status] ?? status}
+      {published >= 1 && (
+        <span className="ml-1 tabular-nums opacity-70">({published}/{PUBLISH_CHANNEL_TOTAL})</span>
+      )}
     </Badge>
   )
 }
@@ -129,7 +133,7 @@ function shortCompany(name: string): string {
 }
 const CARPARK_COLUMNS: CarparkCol[] = [
   { key: 'category', label: 'Tip stoc', render: (v) => <CategoryBadge category={v.category} /> },
-  { key: 'status', label: 'Status', render: (v) => <VehicleStatusBadge status={v.status} /> },
+  { key: 'status', label: 'Status', render: (v) => <VehicleStatusBadge status={v.status} published={publishedChannelCount(v)} /> },
   {
     key: 'published', label: 'Publicat', headClassName: 'text-center', cellClassName: 'text-center',
     render: (v) => {
@@ -780,7 +784,7 @@ function MobileCardList({ items, ctx }: { items: VehicleCatalogItem[]; ctx: Carp
                   <div className="font-medium truncate">
                     {v.brand} {v.model}
                   </div>
-                  <VehicleStatusBadge status={v.status} />
+                  <VehicleStatusBadge status={v.status} published={publishedChannelCount(v)} />
                 </div>
                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                   {v.year_of_manufacture && <span>{v.year_of_manufacture}</span>}
