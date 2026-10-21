@@ -19,6 +19,17 @@ class ContractTemplateRepository(BaseRepository):
             (company_id, brand_id, document_type),
         )
 
+    def brands_for_company(self, company_id):
+        """Active brands assigned to a company (id + name), for the editor's
+        per-brand template cards. From the company_brands catalog."""
+        return self.query_all(
+            'SELECT b.id, b.name FROM company_brands cb '
+            'JOIN brands b ON b.id = cb.brand_id '
+            'WHERE cb.company_id = %s AND COALESCE(cb.is_active, TRUE) '
+            '  AND COALESCE(b.is_active, TRUE) ORDER BY b.name',
+            (company_id,),
+        )
+
     def list_for_company(self, company_id):
         """Every template configured for a company, by brand then type."""
         return self.query_all(

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import BuyBackContractsSection from './BuyBackContractsSection'
 
 const TOGGLES: { key: keyof BuybackConfig; label: string }[] = [
   { key: 'enabled', label: 'Notificări active (master)' },
@@ -101,6 +102,7 @@ export default function BuyBackTab() {
           </CardContent>
         </Card>
       )}
+      <BuyBackContractsSection companyId={companyId} />
     </div>
   )
 }
