@@ -19,7 +19,10 @@ ONE = Decimal("1")
 from ..models import StoredInvoice, InvoiceTypeEnum, InvoiceStateEnum, InvoiceLinkTypeEnum
 from ..repositories.invoice_storage_repository import InvoiceStorageRepository
 from .document_numbering import allocate
-from .advance_alloc import partial_advance_total, WHOLE_EUR, CENTS
+from .advance_alloc import (
+    partial_advance_total, proportional_total, track_prior_booked,
+    _round_half_up, WHOLE_EUR, CENTS,
+)
 
 logger = logging.getLogger("jarvis.facturare.state_machine")
 
@@ -179,6 +182,36 @@ class InvoiceStateMachine:
         existing_stornos = self.repo.get_invoices_by_anexa_and_type_list(anexa_id, InvoiceTypeEnum.STORNO)
         storno_freed = sum(abs(Decimal(str(s["total_amount_eur"]))) for s in existing_stornos)
         remaining = anexa_total - proformas_total + storno_freed
+
+        # Version B — a proportional advance's total is the SUM of each car's
+        # rounded per-car slice, so the stored total matches the per-car lines the
+        # allocator renders (every car's advance rounds half up) rather than a
+        # rounding of the summed price that forces some cars down. CTR-1561: a bulk
+        # 5% of 8 cars stored round(5% × Σprice) = 8128 rendered four 20290 cars at
+        # 1014 / 19276 instead of 1015 / 19275; Σ of the rounded slices is 8132.
+        # Only a clean whole-percent advance (what the % picker fills, Σprice×pct
+        # exact to the cent) is canonicalised; a custom amount is stored verbatim.
+        # The closing fraction books the residual from the ACTUAL prior bookings.
+        if split_mode == "proportional":
+            lp = {l["id"]: float(l["selling_price_eur"]) for l in anexa_lines}
+            covered_ids = list(line_ids) if line_ids else list(lp.keys())
+            covered_selling = sum(lp.get(l, 0) for l in covered_ids)
+            amt = float(amount_eur)
+            if covered_selling:
+                whole = round(amt / covered_selling * 100)
+                if whole and abs(amt - covered_selling * whole / 100.0) < 0.02:
+                    quant = CENTS if round_decimals else WHOLE_EUR
+                    prior_booked = track_prior_booked(covered_ids, existing_proformas, lp)
+                    amount_eur = Decimal(str(proportional_total(
+                        whole / 100.0, covered_ids, lp, prior_booked, quant)))
+                    # A canonical total sums per-car ROUNDED slices, so its ceiling is
+                    # the ROUNDED anexa capacity (Σ round(price)); the exact-euro
+                    # `remaining` would spuriously reject a cents-priced full/closing
+                    # proforma that overshoots the exact sum by the rounding reserve.
+                    anexa_total = sum(
+                        Decimal(str(_round_half_up(float(l["selling_price_eur"]), quant)))
+                        for l in anexa_lines)
+                    remaining = anexa_total - proformas_total + storno_freed
 
         if remaining <= 0:
             raise InvoiceStateMachineError(
