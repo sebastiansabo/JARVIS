@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import {
   BookmarkCheck,
   DollarSign,
+  FileText,
   PackageCheck,
   RotateCcw,
   User,
@@ -34,6 +35,7 @@ import { SellDialog } from '../Dispo/SellDialog'
 import { DeliverDialog } from '../Dispo/DeliverDialog'
 import { ReopenDialog } from '../Dispo/ReopenDialog'
 import { apiErrorMessage } from '../Dispo/dispoApiError'
+import { SaleDocumentsDialog } from './SaleDocumentsDialog'
 
 function formatDate(d: string | null): string {
   if (!d) return '-'
@@ -52,7 +54,7 @@ const SELLABLE_STATUSES = new Set<VehicleStatus>([
   'READY_FOR_SALE', 'LISTED', 'PRICE_REDUCED', 'AUCTION_CANDIDATE', 'RESERVED',
 ])
 
-type DialogKind = 'reserve' | 'sell' | 'deliver' | 'reopen' | null
+type DialogKind = 'reserve' | 'sell' | 'deliver' | 'reopen' | 'saledocs' | null
 
 // Builds a DispoRow-shaped object out of the Detail page's Vehicle record
 // (+ the active reservation, for the reservation_* columns DispoRow carries
@@ -400,7 +402,7 @@ export function VanzareTab({ vehicle, onChanged }: { vehicle: Vehicle; onChanged
 
   return (
     <div className="space-y-4">
-      {(canReserve || canSell || canDeliver || canReopen) && (
+      {(canReserve || canSell || canDeliver || canReopen || canEdit) && (
         <div className="flex flex-wrap items-center gap-2">
           {canReserve && (
             <Button size="sm" variant="outline" onClick={() => setDialog('reserve')}>
@@ -420,6 +422,11 @@ export function VanzareTab({ vehicle, onChanged }: { vehicle: Vehicle; onChanged
           {canReopen && (
             <Button size="sm" variant="outline" onClick={() => setDialog('reopen')}>
               <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Redeschide
+            </Button>
+          )}
+          {canEdit && (
+            <Button size="sm" variant="outline" onClick={() => setDialog('saledocs')}>
+              <FileText className="mr-1.5 h-3.5 w-3.5" /> Generează documente
             </Button>
           )}
         </div>
@@ -444,6 +451,9 @@ export function VanzareTab({ vehicle, onChanged }: { vehicle: Vehicle; onChanged
       )}
       {dialog === 'reopen' && (
         <ReopenDialog row={row} onClose={() => setDialog(null)} onSuccess={handleActionSuccess} />
+      )}
+      {dialog === 'saledocs' && (
+        <SaleDocumentsDialog vehicle={vehicle} onClose={() => setDialog(null)} />
       )}
     </div>
   )

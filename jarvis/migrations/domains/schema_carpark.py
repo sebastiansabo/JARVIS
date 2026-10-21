@@ -1080,4 +1080,28 @@ def create_schema_carpark(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vin_cache_vin ON carpark_vin_cache(vin)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vin_cache_expires ON carpark_vin_cache(expires_at)')
 
+    # ── Leasing Companies (GLOBAL — no company_id): the "Cumpărător" party
+    # directory for a sale-via-leasing contract (Documente vânzare, Task 1).
+    # Picked by id from a frontend picker in a later task; shared across all
+    # tenant companies, unlike every other carpark_* table above.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS carpark_leasing_companies (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            cui VARCHAR(30),
+            reg_no VARCHAR(30),
+            address TEXT,
+            city VARCHAR(100),
+            county VARCHAR(100),
+            legal_rep VARCHAR(255),
+            legal_rep_role VARCHAR(100),
+            phone VARCHAR(50),
+            email VARCHAR(255),
+            iban VARCHAR(34),
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     conn.commit()
