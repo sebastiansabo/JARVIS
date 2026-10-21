@@ -7,9 +7,11 @@ and are excluded from consideration.
 """
 
 import ipaddress
+import os
 import re
 import socket
 import time
+import uuid
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -460,3 +462,72 @@ def resolve_preview(url, attempts=3):
             time.sleep(_RETRY_BACKOFF_SECONDS * attempt)
 
     return None
+
+
+# ---------------------------------------------------------------------------
+# Social thumbnail re-hosting
+#
+# Facebook/Instagram CDN thumbnail URLs (surfaced via Microlink's `image`
+# field) are signed and expire, so linking to them directly would leave a
+# saved preview showing a broken image once the signature lapses. rehost_image
+# downloads the thumbnail once and stores it locally, mirroring the existing
+# chat image-upload convention (jarvis/chat/routes.py:upload_image saves to
+# `static/uploads/digest/` under a uuid4 filename and returns the
+# `/static/uploads/digest/<name>` URL).
+#
+# `image_url` comes from a Microlink response, not directly from the poster,
+# but Microlink is itself unfurling an arbitrary third-party page, so the
+# value is still attacker-influenced. Two cheap guards run before any fetch
+# is attempted: a scheme check (http/https only) and this module's existing
+# SSRF guard, `is_safe_url` (rejects private/loopback/link-local/CGNAT/
+# reserved/multicast hosts, e.g. a response pointing the fetch at an
+# internal IP or the cloud metadata endpoint).
+# ---------------------------------------------------------------------------
+
+_REHOST_EXT_WHITELIST = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
+
+
+def rehost_image(image_url, upload_dir):
+    """Download `image_url` and save it under `upload_dir`, returning its
+    local `/static/uploads/digest/<uuid>.<ext>` URL, or `None` on any
+    failure (unsafe URL, non-image response, oversized/garbled body,
+    network error, filesystem error — everything funnels through the
+    outer try/except).
+
+    The response's `Content-Type` must start with `image/`; its subtype is
+    mapped to a file extension (`jpeg` -> `.jpg`, otherwise `.<subtype>`)
+    and restricted to the same upload whitelist chat's direct image upload
+    uses (jpg, jpeg, png, gif, webp) — any other subtype (e.g. `svg+xml`)
+    is rejected rather than written with an arbitrary extension. At most
+    `_MAX_BODY_BYTES` (2 MiB) is read from the streamed body.
+    """
+    try:
+        if urlparse(image_url).scheme not in _SAFE_SCHEMES:
+            return None
+        if not is_safe_url(image_url):
+            return None
+
+        response = requests.get(image_url, timeout=_FETCH_TIMEOUT_SECONDS, stream=True)
+        try:
+            content_type = (response.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+            if not content_type.startswith('image/'):
+                return None
+
+            subtype = content_type.split('/', 1)[1]
+            ext = 'jpg' if subtype == 'jpeg' else subtype
+            if ext not in _REHOST_EXT_WHITELIST:
+                return None
+
+            body = _read_body(response)
+
+            os.makedirs(upload_dir, exist_ok=True)
+            filename = f'{uuid.uuid4().hex}.{ext}'
+            filepath = os.path.join(upload_dir, filename)
+            with open(filepath, 'wb') as f:
+                f.write(body)
+
+            return f'/static/uploads/digest/{filename}'
+        finally:
+            response.close()
+    except Exception:
+        return None
