@@ -129,6 +129,11 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     can('buyback.record.edit')
   const showInspection = status === 'INSPECTION' && can('buyback.inspection.manage')
   const showFinalOfferButton = status === 'INSPECTION' && can('buyback.offer.manage')
+  // Correct an already-posted final price: re-open the final-offer dialog while
+  // the record is still FINAL_OFFER (seller hasn't decided yet). Same
+  // offer-manage authority as posting it; the backend supersedes the pending
+  // final offer and keeps the record in FINAL_OFFER.
+  const showCorrectFinal = status === 'FINAL_OFFER' && can('buyback.offer.manage')
   const showFinalize = status === 'BOUGHT' && !record.carpark_vehicle_id && can('buyback.record.finalize')
   const showCarparkLabel = status === 'BOUGHT' && !!record.carpark_vehicle_id
   const showCancel = can('buyback.record.edit') && !TERMINAL_STATUSES.includes(status)
@@ -159,6 +164,7 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     !showDecision &&
     !showInspection &&
     !showFinalOfferButton &&
+    !showCorrectFinal &&
     !showFinalize &&
     !showCarparkLabel &&
     !showCancel &&
@@ -185,6 +191,12 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     }
   }, [offerDialogType, record.market_price_eur])
 
+  // The final-offer dialog is a CORRECTION (not a first post) whenever it's
+  // opened while the record is already FINAL_OFFER — the only entry point then
+  // is the "Corectează oferta finală" button (the plain post button shows only
+  // in INSPECTION). Drives the dialog title + success toast copy.
+  const correctingFinal = offerDialogType === 'final' && status === 'FINAL_OFFER'
+
   // ── hold / resume ──
   const [holdOpen, setHoldOpen] = useState(false)
   const [holdReason, setHoldReason] = useState('')
@@ -205,6 +217,17 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     setOfferMarketPrice('')
   }
 
+  // Open the final-offer dialog pre-filled with the current pending offer's
+  // amount/VAT so a manager can correct the agreed price (e.g. after the ETB
+  // evaluation changes it) instead of re-typing from scratch.
+  const openCorrectFinal = () => {
+    setOfferAmount(pendingOffer?.amount_eur != null ? String(pendingOffer.amount_eur) : '')
+    setOfferVat(pendingOffer?.vat_status ?? '')
+    setOfferValidUntil('')
+    setOfferNotes('')
+    setOfferDialogType('final')
+  }
+
   const postOfferMutation = useMutation({
     mutationFn: () =>
       buybackApi.postOffer(record.id, {
@@ -216,12 +239,12 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
         market_price_eur: offerMarketPrice.trim() !== '' ? Number(offerMarketPrice) : undefined,
       }),
     onSuccess: () => {
-      toast.success('Oferta a fost postată')
+      toast.success(correctingFinal ? 'Prețul ofertei finale a fost corectat' : 'Oferta a fost postată')
       invalidate()
       setOfferDialogType(null)
       resetOfferForm()
     },
-    onError: (e) => toast.error(errMsg(e, 'Postarea ofertei a eșuat')),
+    onError: (e) => toast.error(errMsg(e, correctingFinal ? 'Corectarea prețului a eșuat' : 'Postarea ofertei a eșuat')),
   })
 
   // ── client decision (accept / decline) ──
@@ -401,7 +424,11 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     onError: (e) => toast.error(errMsg(e, 'Reluarea a eșuat')),
   })
 
-  const offerDialogTitle = offerDialogType === 'final' ? 'Ofertă finală' : 'Ofertă inițială'
+  const offerDialogTitle = correctingFinal
+    ? 'Corectează oferta finală'
+    : offerDialogType === 'final'
+      ? 'Ofertă finală'
+      : 'Ofertă inițială'
 
   return (
     <Card>
@@ -516,6 +543,12 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
         {showFinalOfferButton && (
           <Button size="sm" onClick={() => setOfferDialogType('final')}>
             Postează ofertă finală
+          </Button>
+        )}
+
+        {showCorrectFinal && (
+          <Button size="sm" variant="outline" onClick={openCorrectFinal}>
+            Corectează oferta finală
           </Button>
         )}
 

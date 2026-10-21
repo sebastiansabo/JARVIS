@@ -117,6 +117,35 @@ describe('ActionPanel permission gating', () => {
     expect(screen.queryByText(/Postează ofertă finală/)).not.toBeInTheDocument()
   })
 
+  const pendingFinalOffer = [{
+    id: 9, record_id: 5, offer_type: 'final', amount_eur: 10000,
+    client_decision: 'pending', created_at: '2026-10-20',
+  } as unknown as BuybackOffer]
+
+  it('FINAL_OFFER + offer.manage shows "Corectează oferta finală"', () => {
+    renderPanel('FINAL_OFFER', { 'buyback.offer.manage': true }, { offers: pendingFinalOffer })
+    expect(screen.getByText(/Corectează oferta finală/)).toBeInTheDocument()
+  })
+
+  it('FINAL_OFFER without offer.manage HIDES "Corectează oferta finală"', () => {
+    renderPanel('FINAL_OFFER', {}, { offers: pendingFinalOffer })
+    expect(screen.queryByText(/Corectează oferta finală/)).not.toBeInTheDocument()
+  })
+
+  it('correcting a final offer pre-fills the current amount and posts the new final price', async () => {
+    renderPanel('FINAL_OFFER', { 'buyback.offer.manage': true }, { offers: pendingFinalOffer })
+    fireEvent.click(screen.getByText(/Corectează oferta finală/))
+    // amount is pre-filled from the current pending final offer
+    expect(await screen.findByDisplayValue('10000')).toBeInTheDocument()
+    const spinners = await screen.findAllByRole('spinbutton')  // [0]=Sumă
+    fireEvent.change(spinners[0], { target: { value: '9500' } })
+    fireEvent.click(screen.getByText('Trimite oferta'))
+    await waitFor(() => expect(buybackApi.postOffer).toHaveBeenCalled())
+    expect(buybackApi.postOffer).toHaveBeenCalledWith(5, expect.objectContaining({
+      offer_type: 'final', amount_eur: 9500,
+    }))
+  })
+
   it('BOUGHT + finalize permission + no carpark id shows "Finalizează"', () => {
     renderPanel('BOUGHT', { 'buyback.record.finalize': true }, { record: { carpark_vehicle_id: null } })
     expect(screen.getByText(/Finalizează/)).toBeInTheDocument()

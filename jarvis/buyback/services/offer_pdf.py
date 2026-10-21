@@ -156,6 +156,7 @@ def _kv_table(rows, styles):
 _EVENT_LABELS = {
     'created': 'Solicitare creata',
     'status_changed': 'Status schimbat',
+    'offer_corrected': 'Pret oferta corectat',
     'record_edited': 'Detalii editate',
     'inspection_updated': 'Inspectie actualizata',
     'inspection_report_uploaded': 'Raport inspectie incarcat',

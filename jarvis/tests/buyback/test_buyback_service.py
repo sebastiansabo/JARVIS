@@ -236,6 +236,67 @@ def test_decision_on_superseded_offer_raises(require_real_db):
     assert RecordRepository().get_by_id(rec['id'])['status'] == lifecycle.FINAL_OFFER
 
 
+def _advance_to_final_offer(svc, amount):
+    """Create a record and drive it to FINAL_OFFER with a pending final offer
+    of `amount`. Returns (record_id, final_offer)."""
+    rec = _record()
+    svc.post_offer(rec, 'initial', {'amount_eur': 1000, 'vat_status': 'no_vat'}, actor=1)
+    initial = OfferRepository().latest_for_record(rec['id'])
+    svc.record_decision(RecordRepository().get_by_id(rec['id']), initial['id'], 'accepted', actor=2)  # -> INSPECTION
+    final = svc.post_offer(
+        RecordRepository().get_by_id(rec['id']), 'final',
+        {'amount_eur': amount, 'vat_status': 'no_vat'}, actor=1,
+    )  # -> FINAL_OFFER
+    return rec['id'], final
+
+
+def test_correct_final_offer_supersedes_pending_and_stays_final(require_real_db):
+    """A posted final price can be CORRECTED: re-posting a 'final' offer while
+    the record is already FINAL_OFFER supersedes the still-pending final offer
+    (marks it 'superseded' — NOT 'declined', so no LOST transition) and
+    replaces it with the new amount, keeping the record in FINAL_OFFER. This
+    is the sanctioned way to amend an agreed final price that was previously
+    impossible (the price appeared permanently locked once posted)."""
+    svc = BuyBackService(notifier=None)
+    rid, first_final = _advance_to_final_offer(svc, 10000)
+    assert RecordRepository().get_by_id(rid)['status'] == lifecycle.FINAL_OFFER
+
+    corrected = svc.post_offer(
+        RecordRepository().get_by_id(rid), 'final',
+        {'amount_eur': 9500, 'vat_status': 'no_vat'}, actor=7,
+    )
+
+    # Record stays FINAL_OFFER (no LOST, no illegal transition).
+    assert RecordRepository().get_by_id(rid)['status'] == lifecycle.FINAL_OFFER
+    # Old final offer superseded (not declined), new one is the single pending.
+    assert OfferRepository().get(first_final['id'])['client_decision'] == 'superseded'
+    pending = OfferRepository().pending_for_record(rid)
+    assert pending is not None and pending['id'] == corrected['id']
+    assert float(pending['amount_eur']) == 9500.0
+    assert OfferRepository().latest_for_record(rid)['id'] == corrected['id']
+    # A price-correction audit event is logged.
+    actions = [e['action'] for e in EventRepository().list_for_record(rid)]
+    assert 'offer_corrected' in actions
+
+
+def test_correct_final_offer_then_accept_uses_corrected_price(require_real_db):
+    """After correcting the final price, the seller decision flows normally:
+    accepting the corrected (now-latest-pending) offer moves the record to
+    BOUGHT carrying the corrected amount — the superseded offer never
+    interferes with record_decision's latest-pending guard."""
+    svc = BuyBackService(notifier=None)
+    rid, _first = _advance_to_final_offer(svc, 10000)
+    corrected = svc.post_offer(
+        RecordRepository().get_by_id(rid), 'final',
+        {'amount_eur': 9500, 'vat_status': 'no_vat'}, actor=7,
+    )
+    svc.record_decision(RecordRepository().get_by_id(rid), corrected['id'], 'accepted', actor=2)
+    assert RecordRepository().get_by_id(rid)['status'] == lifecycle.BOUGHT
+    accepted = OfferRepository().get(corrected['id'])
+    assert accepted['client_decision'] == 'accepted'
+    assert float(accepted['amount_eur']) == 9500.0
+
+
 def test_decision_declined_initial_moves_to_lost_with_reason(require_real_db):
     svc = BuyBackService(notifier=None)
     rec = _record()
