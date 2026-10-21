@@ -100,6 +100,54 @@ def _per_car_advance_eur(inv_total, selling, covered_selling, split_mode, n_line
     return _round_half_up(inv_total / max(n_lines, 1), quant)
 
 
+def track_prior_booked(covered_ids, prior_invoices, line_prices):
+    """``{line_id: EUR already booked}`` for each covered car by the EXISTING
+    same-track invoices, computed with the per-car allocator.
+
+    Uses what earlier invoices ACTUALLY booked (not a fraction-implied round), so a
+    new advance's closing residual stays consistent with the allocator even when a
+    prior invoice stored a pre-canonical total (round(pct × Σprice)) that rounded
+    some cars down. The caller passes only the relevant track (PROFORMA accumulates
+    with PROFORMA, INVOICE/avans with INVOICE).
+    """
+    booked = {lid: 0.0 for lid in covered_ids}
+    if not prior_invoices:
+        return booked
+    for per_car in anexa_car_allocations(prior_invoices, line_prices).values():
+        for lid, amt in per_car.items():
+            if lid in booked:
+                booked[lid] += float(amt)
+    return booked
+
+
+def proportional_total(this_fraction, covered_ids, line_prices,
+                       prior_booked=None, quant: Decimal = WHOLE_EUR):
+    """Self-consistent total for a proportional proforma/advance: the SUM of each
+    covered car's cumulative-rounding slice, so the stored total equals Σ of the
+    per-car lines the allocator renders — and every car's advance rounds half up.
+
+    A bulk 5% advance on 8 cars of 20290 thus totals 8132 (= 8 × round_half_up(
+    1014.50)), not 8128 (= round(5% × 162564)). Storing 8128 forced the allocator
+    to round four cars DOWN to 1014 to reconcile to it (CTR-1561). A car whose
+    cumulative coverage closes books the residual ``round(price) − prior_booked``
+    (what earlier invoices ACTUALLY booked), so advance + rest equals the whole
+    price exactly — mirroring ``_allocate_one`` minus the reconcile-to-total.
+
+    `prior_booked`: ``{line_id: EUR already booked on this track}`` (see
+    ``track_prior_booked``); omit for a first advance.
+    """
+    priors = prior_booked or {}
+    total = Decimal("0")
+    for lid in covered_ids:
+        price = float(line_prices.get(lid, 0))
+        prior = float(priors.get(lid, 0))
+        if price > 0 and abs(prior / price + this_fraction - 1.0) < _PCT_CLOSE_TOL:
+            total += Decimal(str(_round_half_up(price, quant))) - Decimal(str(prior))
+        else:
+            total += Decimal(str(_round_half_up(price * this_fraction, quant)))
+    return int(total) if quant == WHOLE_EUR else float(total)
+
+
 def _hamilton(target: Decimal, weights, quant: Decimal):
     """Apportion `target` across items proportional to `weights`, rounded to
     `quant`, so the rounded slices sum to `target` EXACTLY (largest-remainder).

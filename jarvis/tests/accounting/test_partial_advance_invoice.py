@@ -257,3 +257,46 @@ def test_partial_invoice_allocates_per_car_numbers(sm, repo, make_anexa):
 
     m = repo.get_document_number_map(inv.id)
     assert m == {lids[0]: base, lids[1]: base + 1}
+
+
+# ── Version B: bulk advance total = Σ per-car rounded slices ──────────────────
+
+def test_bulk_advance_total_is_sum_of_per_car_rounded_slices(sm, repo, make_anexa):
+    # 6 cars at 20290 (5% = 1014.50 -> 1015) + 2 at 20412 (5% = 1020.60 -> 1021).
+    anexa_id, lids = make_anexa([20290, 20290, 20290, 20290, 20290, 20290, 20412, 20412])
+
+    # 5% proforma entered as 5% of the summed price (8128.20); stored canonical 8132,
+    # not round(8128.20) = 8128 which would round four cars DOWN to 1014.
+    p5 = sm.issue_proforma(anexa_id, Decimal("8128.20"), split_mode="proportional",
+                           invoice_number=_base(), issued_date=ISSUED, created_by_user_id=USER_ID)
+    assert Decimal(str(repo.get_invoice_by_id(p5.id)["total_amount_eur"])) == Decimal("8132")
+
+    # The advance invoice inherits the canonical proforma total.
+    i5 = sm.issue_invoice(anexa_id, sequence_number=p5.sequence_number,
+                          invoice_number=_base(), issued_date=ISSUED, manual_kurs=KURS,
+                          created_by_user_id=USER_ID)
+    assert Decimal(str(i5.total_amount_eur)) == Decimal("8132")
+
+    # 95% proforma (after the 5% is invoiced): closing residual total 154432, so
+    # 8132 + 154432 = 162564 (the contract) and each car's rest is the residual.
+    p95 = sm.issue_proforma(anexa_id, Decimal("154435.80"), split_mode="proportional",
+                            invoice_number=_base(), issued_date=ISSUED, created_by_user_id=USER_ID)
+    assert Decimal(str(repo.get_invoice_by_id(p95.id)["total_amount_eur"])) == Decimal("154432")
+
+
+def test_custom_non_percent_proforma_amount_is_stored_as_entered(sm, repo, make_anexa):
+    # A negotiated amount that is not a clean whole percent must NOT be rewritten.
+    anexa_id, lids = make_anexa([20290, 20290, 20290])
+    p = sm.issue_proforma(anexa_id, Decimal("5000"), split_mode="proportional",
+                          invoice_number=_base(), issued_date=ISSUED, created_by_user_id=USER_ID)
+    assert Decimal(str(repo.get_invoice_by_id(p.id)["total_amount_eur"])) == Decimal("5000")
+
+
+def test_cents_priced_full_proforma_not_rejected_by_capacity(sm, repo, make_anexa):
+    # Finding #1: the canonical total (Σ round(price) = 162328) exceeds the exact
+    # Σprice (162324.80); the capacity check must use the rounded ceiling, not the
+    # exact sum, or a legitimate 100% proforma on cents-priced cars is rejected.
+    anexa_id, lids = make_anexa([20290.60] * 8)
+    p = sm.issue_proforma(anexa_id, Decimal("162324.80"), split_mode="proportional",
+                          invoice_number=_base(), issued_date=ISSUED, created_by_user_id=USER_ID)
+    assert Decimal(str(repo.get_invoice_by_id(p.id)["total_amount_eur"])) == Decimal("162328")
