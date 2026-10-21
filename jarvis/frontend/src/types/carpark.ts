@@ -985,12 +985,12 @@ export type SaleType =
 export type DocumentType =
   | 'pv_intrare' | 'contract_achizitie' | 'civ' | 'talon' | 'factura_achizitie'
   | 'contract_vanzare' | 'factura_vanzare' | 'pv_livrare' | 'dosar_gw'
-  | 'asigurare' | 'itp' | 'mandat' | 'altele' | 'factura_transfer'
+  | 'asigurare' | 'itp' | 'mandat' | 'altele' | 'factura_transfer' | 'garantie'
 
 export const DOCUMENT_TYPES: DocumentType[] = [
   'pv_intrare', 'contract_achizitie', 'civ', 'talon', 'factura_achizitie',
   'contract_vanzare', 'factura_vanzare', 'pv_livrare', 'dosar_gw',
-  'asigurare', 'itp', 'mandat', 'altele', 'factura_transfer',
+  'asigurare', 'itp', 'mandat', 'altele', 'factura_transfer', 'garantie',
 ]
 
 export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
@@ -1008,6 +1008,72 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   mandat: 'Mandat',
   altele: 'Altele',
   factura_transfer: 'Factură transfer',
+  garantie: 'Certificat garanție',
+}
+
+// ── Sale documents ("Documente vânzare") ────────────────────────────────
+
+// Discriminator for the generate/save request body — the doc_type the
+// backend's sale_docs facade dispatches on (carpark/routes/sale_documents.py's
+// _DOCUMENT_TYPE_MAP). Distinct from DocumentType: this names the sale-doc
+// template to render, not the carpark_vehicle_documents.document_type the
+// saved row ends up tagged with.
+export type SaleDocType = 'contract' | 'proforma' | 'garantie'
+
+// A row from carpark_leasing_companies (LeasingCompanyRepository) — the
+// global "Cumpărător" directory for a sale-via-leasing contract.
+export interface LeasingCompany {
+  id: number
+  name: string
+  cui?: string | null
+  reg_no?: string | null
+  address?: string | null
+  city?: string | null
+  county?: string | null
+  legal_rep?: string | null
+  legal_rep_role?: string | null
+  phone?: string | null
+  email?: string | null
+  iban?: string | null
+  created_by?: number | null
+  created_at?: string
+  updated_at?: string
+}
+
+// Body for POST /leasing-companies — the user-settable subset of
+// LeasingCompany (mirrors leasing_company_repository.py's _FIELDS
+// whitelist); only `name` is required.
+export interface LeasingCompanyCreate {
+  name: string
+  cui?: string
+  reg_no?: string
+  address?: string
+  city?: string
+  county?: string
+  legal_rep?: string
+  legal_rep_role?: string
+  phone?: string
+  email?: string
+  iban?: string
+}
+
+// The sale-document form (design D7) submitted alongside a SaleDocType to
+// generate/save. All fields optional here — the backend validates per
+// doc_type. consultant_name is resolved server-side (vehicle's assigned
+// salesperson, falling back to the requesting user) and is NOT part of
+// this form.
+export interface SaleDocForm {
+  contract_number?: string
+  contract_date?: string
+  proforma_number?: number
+  proforma_date?: string
+  price?: number
+  currency?: string
+  delivery_term_days?: number
+  delivery_place?: string
+  delivery_date?: string
+  leasing_company_id?: number | null
+  autonomy?: string
 }
 
 // One row of GET /dispo/summary's `rows` (DispoRepository.summary — v.*

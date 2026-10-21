@@ -72,6 +72,9 @@ VALID_DOCUMENT_TYPES = frozenset({
     # Inter-company transfer (carpark/routes/transfers.py) — the invoice
     # backing a transfer between AutoWorld sibling companies.
     'factura_transfer',
+    # Sale-documents module (carpark/routes/sale_documents.py) — the
+    # commercial warranty certificate generated/saved for a sold vehicle.
+    'garantie',
 })
 
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB

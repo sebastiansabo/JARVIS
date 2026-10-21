@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="utf-8">
+<title>Contract de vanzare-cumparare</title>
+<style>
+  body { font-family: Georgia, 'Times New Roman', serif; font-size: 10.5pt; line-height: 1.45; color: #111; }
+  h1 { font-size: 15pt; text-align: center; margin-bottom: 4px; }
+  h2 { font-size: 11.5pt; margin-top: 18px; margin-bottom: 6px; text-transform: uppercase; }
+  p { margin: 6px 0; text-align: justify; }
+  ul, ol { margin: 4px 0 10px 20px; padding: 0; }
+  li { margin-bottom: 6px; text-align: justify; }
+  .center { text-align: center; }
+  .annex-title { text-align: center; font-weight: bold; margin-top: 10px; }
+  table.sig-table, table.sig-table-2, table.doc-table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+  table.sig-table td, table.sig-table-2 td { width: 33%; vertical-align: top; padding: 6px 8px; text-align: center; }
+  table.sig-table tr:first-child td, table.sig-table-2 tr:first-child td { font-weight: bold; }
+  table.sig-table tr:nth-child(2) td, table.sig-table-2 tr:nth-child(2) td { padding-top: 28px; border-top: 1px solid #000; }
+  table.doc-table td { border: 1px solid #999; padding: 3px 6px; font-size: 9.5pt; }
+  .page-break { page-break-before: always; }
+  .checkbox-row { margin: 2px 0; }
+</style>
+</head>
+<body>
+
+<h1>CONTRACT DE VANZARE-CUMPARARE</h1>
+<p class="center">Nr. {{contract_number}} din data de {{contract_date}}</p>
+
+<h2>PARTILE</h2>
+<p><strong>VANZATOR</strong><br>
+{{seller_name}}, cu sediul in localitatea {{seller_city}}, {{seller_address}}, jud {{seller_county}}, numar de ordine la Registrul Comertului {{seller_reg_no}}, Cod de inregistrare in scopuri de TVA {{seller_vat}}, avand punct de lucru pe {{seller_showroom_address}}, tel. {{seller_phone}}, email: {{seller_email}}, reprezentata legal de {{seller_rep_name}}, avand functia de Director General, prin {{consultant_name}} in calitatate de consultant vanzari, denumit in continuare „Vanzator”</p>
+
+<p><strong>CUMPARATOR (LOCATOR/FINANTATOR)</strong><br>
+{{cumparator_name}} cu sediul in localitatea {{cumparator_city}}, jud. {{cumparator_county}}, str. {{cumparator_address}} nr. {{cumparator_nr}}, numar de ordine la Registrul Comertului {{cumparator_reg_no}}, cod de inregistrare in scopuri de TVA {{cumparator_cui}}, tel. {{cumparator_tel}}, fax {{cumparator_fax}}, reprezentata legal de {{cumparator_rep}}, in calitate de {{cumparator_rep_role}}, denumit in continuare „Cumparatorul”</p>
+
+<p><strong>UTILIZATOR</strong><br>
+{{utilizator_name}}, cu sediul/domiciliul in localitatea {{utilizator_city}}, jud. {{utilizator_county}}, str. {{utilizator_address}} nr. {{utilizator_nr}}, numar de ordine la Registrul Comertului {{utilizator_reg_no}}, cod de inregistrare in scopuri de TVA {{utilizator_cui}}, tel. {{utilizator_tel}}, fax {{utilizator_fax}}, reprezentata legal de {{utilizator_rep}}, in calitate de {{utilizator_rep_role}}, denumit in continuare „Utilizator”</p>
+
+<h2>OBIECTUL CONTRACTULUI</h2>
+<ul>
+<li>In baza prezentului contract („Contractul”), este creat cadrul juridic necesar achizitionarii de catre Cumparator a unui autovehicul comercializat de Vanzator („Autovehicul”) si transmiterii ulterioare de catre Cumparator a dreptul de folosinta asupra autoturismului, pentru o perioada determinata, catre Utilizator.</li>
+<li>Autoturismului care face obiectul prezentului contract are specificatiile mentionate mai jos:</li>
+<li>Cantitate: {{quantity}}/unul (bucata);</li>
+<li>Marca / Model / Motorizarea : {{vehicle_full_spec}}</li>
+<li>Specificatie: conform Anexa 1.</li>
+</ul>
+
+<h2>PRET CONTRACTUAL</h2>
+<ul>
+<li>Pretul de vanzare al Autovehiculului mentionat la punctul B de mai sus este in cuantum total de {{price}} {{currency}} (TVA inclus) („Pretul”).</li>
+<li>Pretul include TVA si alte taxe suplimentare datorate conform legii romane de catre Vanzator inclusiv, dar fara a se limita la taxe vamale, taxe pentru Fondul de Mediu.</li>
+<li>Cumparatorul va achita Pretul Vanzatorului, dupa cum urmeaza :</li>
+</ul>
+<p>3.1 {{price}} {{currency}} (inclusiv TVA) reprezentand 100% din Pret  cu titlu de plata integrala, in termen de 2 (doua) zile lucratoare de la data la care Vanzatorul informeaza Cumparatorul cu privire la finalizarea pregatirilor pentru predarea Autoturismului. Informarea va fi realizata de Vanzator in scris, inclusiv prin intermediului e-mailului.</p>
+<ul>
+<li>Pretul va fi achitat in RON, la cursul de schimb valutar RON/EUR comunicat de catre Vanzator in baza cursului de facturare publicat de Porsche Romania/ Autoworld SRL pentru ziua de la data emiterii facturii aferente.</li>
+<li>Toate platile vor fi efectuate in contul IBAN nr. {{seller_iban}} deschis la {{seller_bank}}, apartinand Vanzatorului. Data platii va fi considerata data creditarii contului Vanzatorului. Factura finala va fi transmisa de catre Vanzator odata cu livrarea Autovehiculului si numai dupa creditarea contului Vanzatorului cu valoarea totala a Pretului.</li>
+<li>Diferentele mai mari de 0,2 % dintre sumele platite de Cumparator in RON (prin raportarea la cursul RON/EURO conform literei C punctul 4 de mai sus ) intre data platilor si data creditarii contului Vanzatorului se vor regulariza intre partile contractante inaintea emiterii facturii fiscale finale.</li>
+<li>Orice modificari de taxe in conformitate cu legislatia fiscala si/sau vamala valabila la data incheierii prezentului Contract, vor conduce la reactualizarea Pretului, conform cu noile reglementari in vigoare la data introducerii autoturismului in libera circulatie in Romania.</li>
+<li>Cumparatorul va suporta toate si orice comisioane si speze bancare ce privesc plata, astfel incat Vanzatorul sa primeasca integral Pretul.</li>
+</ul>
+
+<h2>TERMEN DE LIVRARE:</h2>
+<ul>
+<li>Prin incheierea prezentului Contract, Cumparatorul este de acord ca predarea Autovehiculului de catre Vanzator poate avea loc catre Utilizator.</li>
+<li>Autovehiculul ce face obiectul prezentului Contract, in conformitate cu punctul B de mai sus, va fi predat de catre Vanzator Cumparatorului sau, dupa caz, Utilizatorului, intr-un termen de maximum {{delivery_term_days}} zile lucratoare de la data confirmarii platii integrale a Pretului de catre Cumparator. .</li>
+</ul>
+
+<h2>LOCUL DE PREDARE &ndash; PRIMIRE</h2>
+<ul>
+<li>Predarea Autovehiculului va avea loc la sediul Vanzatorului.</li>
+<li>In vederea efectuarii predarii, Vanzatorul si Cumparatorul sau, dupa caz, Utilizatorul, vor incheia un proces verbal de predare-primire, in dublu exemplar, cate unul pentru fiecare parte. Cumparatorul sau, dupa caz, Utilizatorul, sunt de acord ca nu vor putea invoca impotriva Vanzatorului vreun viciu aparent al Autovehiculului ce nu a fost semnalat in procesul verbal de predare-primire. In cazul in care predarea are loc catre Utilizator, acesta este raspunzator fata de Cumparator pentru lipsa semnalarii in procesul verbal de predare-primire a oricaror vicii aparente. (Anexa 2)</li>
+<li>Vanzatorul declara expres prin prezentul Contract ca nu are cunostinta de nici un fel de defecte ale Autovehiculului, in afara celor ce sunt mentionate in proces verbal de predare-primire si/sau care sunt rezultatul utilizarii si uzurii normale ale Autovehiculului.</li>
+<li>Oricare si toate riscurile cu privire la Autovehicul vor fi transferate de la Vanzator la Cumparator la momentul incheierii procesului verbal de predare-primire, inclusiv in situatia in care predarea are loc catre Utilizator. In situatia in care Cumparatorul sau, dupa caz, Utilizatorul, din motive imputabile, nu va prelua Autovehiculul in termenul stabilit la punctul D de mai sus, oricare si toate riscurile cu privire la Autovehicul vor fi transferate de la Vanzator la Cumparator la data expirarii termenului prevazut la punctul D de mai sus.</li>
+</ul>
+
+<h2>DREPTUL DE PROPRIETATE</h2>
+<ul>
+<li>Dreptul de proprietate asupra autovehiculului se transfera de la Vanzator la Cumparator la momentul incheierii procesului verbal de predare-primire si, in orice caz, dupa plata integrala a Pretului.</li>
+<li>Dreptul de proprietate asupra autovehiculului ramane la Vanzator pana la achitarea integrala a pretului, iar riscurile si raspunderile aferente dreptului de proprietate inclusiv paza juridica a autovehiculului trec asupra Cumparatorului din momentul preluarii autovehiculului.</li>
+<li>Pana la achitarea integrala a pretului, Cumparatorul nu are dreptul de a instraina, greva, de a gaja autovehiculul sau de a garanta cu autovehiculul executarea oricarei obligatii fata de terti, chiar daca autovehiculul s-ar afla in detentia sa, fara acordul prealabil, exprimat in scris al Vanzatorului. Totodata, vanzatorul nu isi asuma niciun fel de obligatii care ar putea aparea ca urmare a incheierii unor contracte intre Cumparator si terti cu privire la utilizarea sau exercitarea atributiilor dreptului de proprietate asupra autovehiculului, nici anterior si nici dupa predarea acestuia catre Cumparator. In acest sens, daca dupa in perioada cuprinsa intre incheierea contractului si achitarea integrala a pretului, respectiv predarea autovehiculului, Cumparatorul incheie contracte cu tertii in considerarea obtinerii in viitor a dreptului de proprietate si a posesiei asupra acestora, Cumparatorul este singurul responsabil cu privire la orice prejudicii ar putea aparea in cazul in care proprietatea asupra autovehiculului nu va fi transferata ca urmare a unor imprejurari care exclud culpa Vanzatorului.</li>
+</ul>
+
+<h2>GARANTIE</h2>
+<ul>
+<li>Autovehiculul ce face obiectul prezentului Contract beneficiaza de garantia comerciala Audi Approved plus. Conditiile garantiei comerciale sunt incluse in certificatul de garantie comerciala al autovehiculului. Pentru cumparatorii care au calitatea de consumatori, garantia se acorda in temeiul OUG nr. 140/2021 si a tuturor normelor aplicabile in materia dreptului consumului, cum ar fi, dar fara a se limita la Legea 296/2004, OUG nr. 34/2014 si O.G. 21/1992. Exceptie de la conditiile de garantie facand autovehicule utilizate pentru transportul de persoane in regim de taxi, in regim de inchiriere si scoala de soferi.</li>
+<li>Garantia comerciala acordata nu exclude posibilitatea Cumparatorului care are calitatea de consumator de a beneficia de garantia legala de conformitate, in intelesul Ordonantei de urgenta 140/2021 privind anumite aspecte referitoare la contractele de vanzare de bunuri. In baza art. 9 alin. (5) din aceasta ordonanta, Cumparatorul declara, in mod expres, ca este de acord cu reducerea termenului de garantie legala de conformitate la 1 an de zile de la data livrarii/predarii autovehiculului. Cerintele de conformitate, subiective si obiective ale autovehiculului vandut sunt garantate in temeiul garantiei. In acest sens, bunul:</li>
+</ul>
+<ul>
+<li>respecta descrierea, tipul, cantitatea si calitatea si detine functionalitatea, compatibilitatea, interoperabilitatea si alte caracteristici prevazute in prezentul Contract, care sunt normale pentru bunurile de acelasi tip si la care consumatorul se poate astepta in mod rezonabil</li>
+<li>corespunde scopului special pentru care cumparatorul consumator le solicita, pe care consumatorul l-a adus la cunostinta vanzatorului cel tarziu in momentul incheierii contractului de vanzare si pe care vanzatorul l-a acceptat;</li>
+<li>este livrat impreuna cu toate accesoriile si cu toate instructiunile, inclusiv de instalare, prevazute in prezentul Contract;</li>
+<li>este furnizate cu actualizari conform dispozitiilor prezentului Contract.</li>
+<li>corespunde scopurilor pentru care s-ar utiliza in mod normal bunuri de acelasi tip, tinand seama, daca este cazul, de prevederile legale in vigoare, de standarde tehnice sau, in absenta unor astfel de standarde tehnice, de coduri de conduita aplicabile in domeniu si specifice sectorului;</li>
+<li>poseda calitatea si corespunde descrierii modelului pe care vanzatorul l-a pus la dispozitia consumatorului inainte de incheierea contractului</li>
+</ul>
+<ul>
+<li>Vanzatorul garanteaza ca Autovehiculul care face obiectul prezentului Contract este lipsit de vicii ascunse la data livrarii/predarii, conform verificarilor de marca efectuate. In acest sens, in limita permisa de legislatia aplicabila, Vanzatorul este exonerat de raspunderea pentru viciile pe care nu le-a cunoscut la momentul incheierii Contractului.</li>
+<li>In vederea exercitarii oricaror drepturi existente in baza prezentei sectiuni G, Cumparatorul poate acorda o imputernicire Utilizatorului.</li>
+</ul>
+
+<h2>OBLIGATIILE CUMPARATORULUI/UTILIZATORULUI</h2>
+<ul>
+<li>Cumparatorul are obligatia de a achita pretul in termenele si modalitatile convenite si Utilizatorul de a ridica autovehiculul in termenul stabilit.</li>
+<li>Utilizatorul are obligatia de a utiliza in conditii normale bunurile cumparate, conform destinatiei acestora, pe toata perioada de garantie acordata de Vanzator.</li>
+<li>Cumparatorul se obliga sa inmatriculeze/transcrie dreptul de proprietate asupra autovehiculului pe numele sau intr-un termen de  90 zile de la data transferului dreptului de proprietate potrivit punctului F</li>
+<li>Clauza penala: In cazul in care cumparatorul nu inmatriculeaza/nu transcrie dreptul sau de proprietate asupra vehiculului obiect al prezentului contract in termenul stipulat la  art. 3 cumparatorul este obligat aa-i plateasca vanzatorului Autoworld Premium SRL penalitati de intarziere in suma de 100 lei/zi calendaristica de intarziere de la data scadentei obligatiei contractuale pana la  indeplinirea ei. Cumparatorul este de drept in intarziere in ce priveste obligatia de a inmatricula/transcrie dreptul de proprietate asupra autovehiculului pe numele sau, de la data scadentei aceste obligatii, potrivit art. 3 al prezentului punct H.</li>
+<li>Prin prezentul contract utilizatorul declara ca a luat la cunostinta de obligatia sa, in calitate de dobanditor al dreptului de proprietate asupra vehiculului, ca in situata in care inregistreaza amenzi de circulatie sau orice alt fel de sanctiuni contraventionale ori de alta natura, in perioada scursa de la data transferului dreptului de proprietate si pana la data inmatricularii/transcrierii dreptului de proprietate asupra autovehiculului pe numele sau, toate aceste sanctiuni sunt in sarcina sa absoluta, trebuind a fi gestionate - achitate sau contestate, dupa  caz, de catre cumparator. Cumparatorul declara ca a luat la cunostinta de faptul ca din momentul transferarii dreptului de proprietate asupra vehiculului, vanzatorul este absolvit de orice obligatie privitoare la orice sanctiuni contraventionale sau de alta natura ar primi cumparatorul in legatura cu vehiculul, indiferent daca in registrele autoritatilor locale competente s-a mentionat sau nu, de catre cumparator, faptul transferului dreptului de proprietate asupra vehiculului pe numele cumparatorului. In acest sens, isi asuma acoperirea oricaror prejudicii, plata oricaror amenzi sau penalitati rezultate din lipsa acestuia de diligenta privitoare la transcierea autovehiculului.</li>
+</ul>
+
+<h2>OBLIGATIILE VANZATORULUI</h2>
+<ul>
+<li>Vanzatorul se obliga sa predea bunul in termenele si conditiile stabilite in prezentul contract.</li>
+<li>Vanzatorul garanteaza cumparatorului pentru evictiune, declarand ca autoturismul se afla in circuitul civil, este liber de orice sarcini, nu este sechestrat sau urmarit, nu face obiectul niciunui litigiu privind dreptul de proprietate asupra sa, nu se afla  pe lista autovehiculelor furate, obligatiile fiscale catre stat sunt achitate la zi.</li>
+<li>Vanzatorul raspunde doar pentru viciile ascunse ale autovehiculului pe care le-a cunoscut sau pe care ar fi trebuit sa le cunoasca la momentul incheierii contractului de vanzare-cumparare.</li>
+<li>Vanzatorul nu raspunde pentru viciile ascunse pe care nu le-a cunoscut la momentul incheierii contractului de vanzare-cumparare, in conditiile legislatiei aplicabile.</li>
+</ul>
+
+<h2>J. INTERDICTIA DE EXPORT CATRE FEDERATIA RUSA SI REPUBLICA BELARUS</h2>
+<ul>
+<li>Cumparatorul nu va (re)vinde, (re)exporta sau livra sau transfera in alt mod autoturismul care face obiectul prezentului Contract catre nicio persoana fizica sau juridica, organizatie sau entitate din Federatia Rusa si/sau Republica Belarus sau pentru utilizare in Federatia Rusa si/sau Republica Belarus.</li>
+<li>Daca este necesar pentru efectuarea inspectiilor de control al exporturilor de catre autoritatile competente de la sediul Vanzatorului, Cumparatorul, la cerere, va furniza cu promptitudine Vanzatorului toate informatiile despre destinatarul final, destinatia finala si utilizarea preconizata a autoturismului livrat de Vanzator.</li>
+<li>Cumparatorul va depune toate eforturile pentru a se asigura ca scopul prezentei clauze (H) nu este incalcat de terti din lantul de aprovizionare, inclusiv de potentialii revanzatori, si se angajeaza sa puna in aplicare mecanisme de monitorizare rezonabile pentru a detecta comportamentul tertilor in lantul de aprovizionare, inclusiv potentialii revanzatori, care ar contraveni scopului acestei clauze. Aceste obligatii nu se aplica daca Cumparatorul are calitatea de consumator, in sensul Ordonantei Guvernului nr. 21/1992 privind protectia consumatorilor.</li>
+</ul>
+
+<h2>CONDITII PRIVIND CERTIFICATUL DE ATESTARE FISCALA SI EFECTELE NEPREZENTARII ACESTUIA</h2>
+<p>1 Obligatia cumparatorului si Utilizatorului de a prezenta certificatul de atestare fiscala:</p>
+<p>Cumparatorul  si Utilizatorului se obliga sa prezinte vanzatorului un certificat de atestare fiscala valabil emis de organul fiscal local, in conditiile prevazute de prevederile art. 159 din Codul de procedura fiscala, care sa ateste ca toate obligatiile fiscale datorate bugetului local sunt achitate, la momentul incheierii contractului de vanzare-cumparare sau cel mai tarziu la momentul convenit pentru preluarea autovehiculului, atunci cand aceasta este ulterioara incheierii contractului. In situatia in care livrarea autovehiculului s-a convenit a se realiza la o data ulterioara incheierii contractului,  cumparatorul si utilizatorul vor furniza vanzatorului certificatul de atestare fiscala cu 5 zile lucratoare anterior datei convenite pentru livrare. Pana la momentul prezentarii certificatului de atestare fiscala de catre cumparator si utilizator vanzatorului, nu va opera transferul dreptului de proprietate asupra autovehiculului.</p>
+<ul>
+<li>Dreptul vanzatorului de a amana livrarea</li>
+</ul>
+<p>Vanzatorul are dreptul de a amana livrarea autovehiculului pana cand cumparatorul ii va prezenta certificatul de atestare fiscala care atesta achitarea tuturor obligatiilor fiscale datorate. Preluarea autovehiculului de catre cumparator se va realiza numai dupa ce acesta a prezentat certificatul de atestare fiscala vanzatorului.  Neprezentarea certificatului de atestare fiscala de catre cumparator si utilizator pana la data stabilita conform prezentului contract este imputabila exclusiv acestuia si atrage raspunderea sa pentru prejudiciile cauzate vanzatorului, inclusiv, dar fara a se limita la, deprecierea valorii vehiculului, costuri de depozitare pentru perioada in care acesta nu poate fi livrat, respectiv lipsa de folosinta a pretului integral achitat de vanzator catre importator.   In cazul neprezentarii certificatului de atestare fiscala in termenul stabilit, vanzatorul este exonerat de orice raspundere fata de cumparator si utilizator pentru imposibilitatea de livrare a autovehiculului. Aceasta nu constituie o neindeplinire a obligatiilor contractuale imputabila vanzatorului si nu genereaza drept la despagubiri sau penalitati, in sarcina vanzatorului.  Cumparatorul si utilizatorul se afla de drept in intarziere fata de obligatia sa de preluare, inca de la data stabilita pentru livrare.</p>
+<p>3 Conditionarea transferului dreptului de proprietate</p>
+<p>Transferul dreptului de proprietate asupra autovehiculului si emiterea documentelor necesare in vederea inmatricularii se realizeaza doar dupa prezentarea certificatului de atestare fiscala valabil, acesta constituind o conditie prealabila esentiala a livrarii si a transferului de proprietate.</p>
+<p>4 Consecintele neprezentarii certificatului</p>
+<p>In cazul in care cumparatorul si utilizatorul nu prezinta certificatul de atestare fiscala valabil, prezentul contract se considera nul de drept, conform art. 159 din Codul de procedura fiscala, desfiintandu-se retroactiv.  Dupa trecerea unei perioade de 30 zile lucratoare de la data programata pentru livrare, vanzatorul va putea sa dispuna in mod liber de autovehicul catre un alt tert interesat de dobandirea acestuia. Pentru neprezentarea certificatului de atestare fiscala, cumparatorul va putea fi obligat la plata unor penalitati de intarziere in cuantum de 0,05% pe zi de intarziere din pretul autovehiculului.</p>
+<ul>
+<li>Declaratie pe proprie raspundere</li>
+</ul>
+<p>Cumparatorul si utilizatorul declara pe propria raspundere ca nu are obligatii fiscale restante la bugetul local aferent domiciliului/sediului/punctului de lucru si ca va despagubi in integralitate vanzatorul pentru orice prejudiciu rezultat din neprezentarea certificatului de atestare fiscala valabil, respectiv din declararea necorespunzatoare a realitatii privind inexistenta obligatiilor sale fiscale locale.</p>
+<p>Partile declara ca au cunostinta de prevederile art. 159 din Codul de Procedura Fiscala, astfel cum a fost modificat prin OUG nr. 7/2026, si se obliga sa indeplineasca toate demersurile impuse de lege pentru incheierea valabila a operatiunii juridice, inclusiv prezentarea Certificatelor de Atestare Fiscala atat pentru Vanzator, cat si pentru Cumparator. Cumparatorul isi asuma intreaga responsabilitate pentru validitatea tranzactiei in raport cu situatia sa fiscala locala.</p>
+
+<h2>K.. PROTECTIA DATELOR CU CARACTER PERSONAL</h2>
+<p>Vanzatorul si Cumparatorul sunt raspunzatori in mod independent pentru respectarea cerintelor legale aplicabile pentru prelucrarea in mod legal a datelor cu caracter personal in contextul activitatilor desfasurate in scopul prezentului Contract. In cazul in care una dintre parti divulga orice date cu caracter personal catre o alta parte, altele decat conform prevederilor Contractului si decat este necesar in vederea executarii acestuia, aceste date vor fi sterse conform regulilor interne ale partii destinatare, iar partea destinatara nu isi va asuma nicio raspundere pentru aceasta prelucrare, orice divulgari nedorite sau alte incidente fiind in responsabilitatea exclusiva a partii care divulga astfel de date.</p>
+<p>Pe durata executarii acestui Contract, Vanzatorul si Cumparatorul pot colecta, stoca si utiliza mai multe categorii de date cu caracter personal, inclusiv nume, prenume, date de identificare, numar de telefon, adresa de e-mail, cont bancar, semnatura in legatura cu Utilizatorul sau reprezentantii legali/conventionali ai celeilalte parti, dupa caz. Aceste date pot fi colectate direct de la Utilizator sau de la cealalta parte. Prelucrarea datelor cu caracter personal ale persoanelor vizate mentionate mai sus este necesara pentru a permite partilor sa incheie si sa execute Contractul. Pentru a asigura informarea la timp, transparenta si relevanta a persoanelor vizate, conform cerintelor Regulamentului General privind Protectia Datelor (UE) 2016/679, Utilizatorul sau cu reprezentantii legali/conventionali ai celeilalte parti pot consulta notele de informare privind prelucrarea datelor cu caracter personal facute disponibile online pe www.autoworld.ro sau fizic la una din sediile SC Autoworld Premium SRL sau in orice alta forma. In acest sens partile se vor sprijini reciproc in vederea comunicarii notei de informare catre fiecarei persoane vizate implicate. Fiecare parte este de acord sa comunice fiecarei persoane vizate care actioneaza in numele sau, pe intreaga durata a acestui Contract, nota de informare pregatita de cealalta parte care i-a fost pusa la dispozitie in orice forma, precum si orice modificare si/sau actualizare a acesteia (comunicata in scris, inclusiv intr-o forma electronica de catre partea care a pregatit nota de informare).</p>
+<ul>
+<li>AUTOWORLD PREMIUM SRL prelucreaza doar datele personale pe care Dvs. le furnizati personal in cadrul acestui contract sau datele care au caracter public si doar in scopul executarii prezentului contract sau pentru a face demersuri la cererea Dvs. inainte de incheierea contractului.</li>
+<li>Pentru prelucrarea in scopuri care exced relatiei contractuale: in cazul in care doriti sa fiti informat cu privire la eventuale campanii desfasurate in scopuri publicitare, promotionale sau statistice pentru optimizarea gradului de satisfactie a clientilor, datele Dvs. vor fi prelucrate doar in baza consimtamantului Dvs. declarat in mod explicit prin bifarea urmatoarei casute:</li>
+</ul>
+<p>&#9676; - DA<br>&#9676; - NU</p>
+<ul>
+<li>Autoworld Premium SRL prelucreaza o parte din datele Dvs. personale cu sprijinul unor societati partenere specializate (agentii de marketing si societati de sondare a opiniei, firme care asigura mentenanta site-ului), care actioneaza pe baza instuctiunilor primite de la AUTOWORLD PREMIUM S.R.L. O lista destinatarilor poate fi accesata la link-ul www.autoworld.ro/protectia-datelor. Nu transferam datele Dvs. personale catre state terte care nu ofera garantii adecvate.</li>
+<li>Datele Dvs. personale vor fi stocate pe intrega  perioada contractuala si ulterior timp de 24 luni.</li>
+<li>Aveti dreptul de a solicita oricand, accesul la datele cu caracter personal care va privesc, completarea, rectificarea, stergerea, restrittionarea prelucrarii, dreptul de a va retrage consimtamantul, de a va opune prelucrarii, dreptul la portabilitatea datelor si dreptul de a depune plangere in fata autoritati de supraveghere.</li>
+<li>Pentru indeplinirea acestor cereri trebuie sa va adresati responsabilului cu date personale numit de subscrisa pe  e-mail : protectiadatelor@autoworld.ro care va raspunde solictarii Dvs., in cazul in care se dovedeste a fi intemeiata, in maxim 30 de zile.</li>
+</ul>
+
+<h2>L. DIVERSE</h2>
+<ul>
+<li>Valorile consumului si emisiilor de CO2 din brosuri si alte materiale de promovare sunt intotdeauna cele determinate conform procedurilor de masurare impuse de lege. Informatiile nu se refera la un singur autovehicul, pot privi intreaga gama de produs si nu sunt parte a ofertei, ci servesc exclusiv pentru compararea intre diferitele tipuri de autovehicule. Consumul de combustibil sau de electricitate si emisiile de CO ale autovehiculelor nu depind doar de eficienta utilizarii combustibilului prin intermediul tehnologiei autovehiculului, ci sunt influentate si de modul in care autovehiculul este utilizat, de ruta parcursa, precum si de alti factori care nu sunt de natura tehnica. De asemenea, dotarile optionale si accesoriile (de exemplu, pneuri mai late, instalatie de climatizare etc.), pot modifica parametrii relevanti ai autovehiculului, de exemplu, greutatea, rezistenta la rulare si aerodinamica, rezultand astfel abateri ale datelor de consum si emisii CO2 pentru modelul respectiv. Potrivit certificatului de conformitate al autovehiculului, acesta are indicata, in conditii particulare de exploatare, o autonomie de {{autonomy}}. Valoarea reprezinta un indicator exclusiv orientativ, fara ca acesta sa produca vreo neconformitate in ceea ce priveste exploatarea autovehiculului in situatia in care valoarea nu este atinsa. Consumul energetic indicat de Wh/km reprezinta, conform celor indicate mai sus, o valoare exclusiv orientativa. Mentionam ca autonomia si, implicit, consumul energetic al autovehiculului, sunt influentate in mod semnificativ de temperatura mediului ambiant in care se deplaseaza autovehiculul, de stilul de conducere, de categoria de drum pe care se deplaseaza autovehiculul, de numarul de pasageri transportati si de utilizarea functiilor de stabilire a temperaturilor ambientale si a altor consumatori de energie cu care autovehiculul este prevazut. Avand in vedere aspectele anterior mentionate, autovehiculul nu poate fi considerat neconform prin raportare la obtinerea altor valori decat cele indicate in certificatul de conformitate, in timpul exploatarii acestuia. In acest context, orice raspundere a vanzatorului pentru conformitatea autovehiculului sub aspectul autonomiei si consumului energetic raportat la valorile orientative indicate in certificatul de conformitate, este exclusa, partile fiind de acord cu inlaturarea conventionala a garantiei sub acest aspect.</li>
+<li>Nicio modificare adusa prezentului Contract nu isi va produce efectele decat daca este realizata in scris.</li>
+<li>In cazul existentei oricaror divergente cu privire la interpretarea sau incheierea prezentului Contract, partile vor depune toate diligentele pentru a le rezolva pe cale amiabila. In cazul in care partile nu vor ajunge la o solutie amiabila, orice neintelegeri vor fi inainte spre solutionare catre instantele competente din Romania.</li>
+<li>Prezentul Contract este guvernat de si interpretat in conformitate cu legea romana.</li>
+</ul>
+
+<p>Prezentul Contract a fost semnat astazi, {{contract_date}}, in trei exemplare originale, cate unul pentru fiecare parte si contine 1 Anexa, respectiv:</p>
+<ul>
+<li>Anexa 1 &ndash; Specificatie Autoturism</li>
+<li>Anexa 2 - Proces Verbal Predare Primire</li>
+</ul>
+
+<table class="sig-table">
+<tr><td>VANZATOR</td><td>UTILIZATOR</td><td>CUMPARATOR</td></tr>
+<tr><td>{{seller_name}}</td><td>{{utilizator_name}}</td><td>{{cumparator_name}}</td></tr>
+<tr><td>{{seller_rep_name}}</td><td>{{utilizator_rep_signature}}</td><td>{{cumparator_rep_signature}}</td></tr>
+</table>
+
+<div class="page-break">
+<p class="annex-title">ANEXA Nr. 1</p>
+<p class="center">la CONTRACTUL DE VANZARE &ndash; CUMPARARE<br>Nr. {{contract_number}} din data de {{contract_date}}</p>
+
+<p><strong>CUMPARATOR (LOCATOR/ FINANTATOR)</strong><br>
+{{cumparator_name}} cu sediul in localitatea {{cumparator_city}}, jud. {{cumparator_county}}, str. {{cumparator_address}} nr. {{cumparator_nr}}, numar de ordine la Registrul Comertului {{cumparator_reg_no}}, cod de inregistrare in scopuri de TVA {{cumparator_cui}}, tel. {{cumparator_tel}}, fax {{cumparator_fax}}, reprezentata legal de {{cumparator_rep}}, in calitate de {{cumparator_rep_role}}, denumit in continuare „Cumparatorul”</p>
+<p><strong>UTILIZATOR</strong><br>
+{{utilizator_name}}, cu sediul/domiciliul in localitatea {{utilizator_city}}, jud. {{utilizator_county}}, str. {{utilizator_address}} nr. {{utilizator_nr}}, numar de ordine la Registrul Comertului {{utilizator_reg_no}}, cod de inregistrare in scopuri de TVA {{utilizator_cui}}, tel. {{utilizator_tel}}, fax {{utilizator_fax}}, reprezentata legal de {{utilizator_rep}}, in calitate de {{utilizator_rep_role}}, denumit in continuare „Utilizator”</p>
+<p>si</p>
+<p><strong>VANZATOR:</strong> {{seller_name}}, cu sediul in localitatea {{seller_city}}, {{seller_address}}, jud {{seller_county}}, numar de ordine la Registrul Comertului {{seller_reg_no}}, Cod de inregistrare in scopuri de TVA {{seller_vat}}, avand punct de lucru pe {{seller_showroom_address}}, tel. {{seller_phone}}, email: {{seller_email}}, reprezentata legal de {{seller_rep_name}}, avand functia de Director General, prin {{consultant_name}} in calitatate de consultant vanzari, denumit in continuare „Vanzator”</p>
+
+<p>Tipul autoturismului:</p>
+<p>MODEL : {{model}}<br>
+SERIE SASIU : {{vin}}<br>
+SERIE MOTOR : {{engine_serial}}<br>
+AN FABRICATIE : {{year}}</p>
+<p>CULOARE: {{color}}<br>
+TAPITERIE: {{upholstery}}</p>
+
+<hr>
+<p>Pret contractual final cu TVA inclus &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; {{price}} {{currency}}</p>
+<hr>
+
+<p>Pretul va fi achitat in RON la cursul de schimb valutar RON/EURO stabilit de catre Vanzator in baza cursului de vanzare {{exchange_rate_source}}/al PORSCHE ROMANIA/Autoworld SRL</p>
+
+<table class="sig-table">
+<tr><td>VANZATOR</td><td>UTILIZATOR</td><td>CUMPARATOR</td></tr>
+<tr><td>{{seller_name}}</td><td>{{utilizator_name}}</td><td>{{cumparator_name}}</td></tr>
+<tr><td>{{seller_rep_name}}</td><td>{{utilizator_rep_signature}}</td><td>{{cumparator_rep_signature}}</td></tr>
+</table>
+</div>
+
+<div class="page-break">
+<p class="annex-title">Anexa 2 la CONTRACTUL DE VANZARE &ndash; CUMPARARE<br>Nr. {{contract_number}} din data de {{contract_date}}</p>
+
+<h2>PROCES-VERBAL DE PREDARE PRIMIRE</h2>
+<p class="center">Incheiat la data de {{delivery_date}}</p>
+
+<p><strong>CUMPARATOR (LOCATOR/ FINANTATOR)</strong><br>
+{{cumparator_name}} cu sediul in localitatea {{cumparator_city}}, jud. {{cumparator_county}}, str. {{cumparator_address}} nr. {{cumparator_nr}}, numar de ordine la Registrul Comertului {{cumparator_reg_no}}, cod de inregistrare in scopuri de TVA {{cumparator_cui}}, tel. {{cumparator_tel}}, fax {{cumparator_fax}}, reprezentata legal de {{cumparator_rep}}, in calitate de {{cumparator_rep_role}}, denumit in continuare „Cumparatorul”</p>
+<p><strong>UTILIZATOR</strong><br>
+{{utilizator_name}}, cu sediul/domiciliul in localitatea {{utilizator_city}}, jud. {{utilizator_county}}, str. {{utilizator_address}} nr. {{utilizator_nr}}, numar de ordine la Registrul Comertului {{utilizator_reg_no}}, cod de inregistrare in scopuri de TVA {{utilizator_cui}}, tel. {{utilizator_tel}}, fax {{utilizator_fax}}, reprezentata legal de {{utilizator_rep}}, in calitate de {{utilizator_rep_role}}, denumit in continuare „Utilizator”</p>
+<p>Si</p>
+<p><strong>VANZATOR:</strong> {{seller_name}}, cu sediul in localitatea {{seller_city}}, {{seller_address}}, jud {{seller_county}}, numar de ordine la Registrul Comertului {{seller_reg_no}}, Cod de inregistrare in scopuri de TVA {{seller_vat}}, avand punct de lucru pe {{seller_showroom_address}}, tel. {{seller_phone}}, email: {{seller_email}}, reprezentata legal de {{seller_rep_name}}, avand functia de Director General, prin {{consultant_name}} in calitatate de consultant vanzari, denumit in continuare „Vanzator”</p>
+
+<p><strong>AUTOVEHICUL:</strong><br>
+Nr inmatriculare {{registration_number}} , Marca {{brand}}, Tipul {{variant}}, Nr. km la bord {{mileage_km}} km</p>
+
+<p>Impreuna cu autovehiculul s-au predat/primit si urmatoarele:</p>
+<p><strong>ACCESORII:</strong></p>
+<p class="checkbox-row">Mapa de bord &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Da &#9744;&nbsp;&nbsp;NU &#9744;</p>
+<p class="checkbox-row">2 Chei&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Da &#9744;&nbsp;&nbsp;NU &#9744;</p>
+<p class="checkbox-row">Roata de rezerva/Chit reparatie pana&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Da &#9744;&nbsp;&nbsp;NU &#9744;</p>
+<p class="checkbox-row">Pachet legislativ&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Da &#9744;&nbsp;&nbsp;NU &#9744;</p>
+<p class="checkbox-row">Triunghi presemnalizare&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Da &#9744;&nbsp;&nbsp;NU &#9744;</p>
+<p class="checkbox-row">Altele....................................................................................................................................................................................................................................................................................................................................................................................................</p>
+
+<p><strong>DOCUMENTE:</strong></p>
+<table class="doc-table">
+<tr><td>Carte de identitate autovehicul in original</td><td>Da &#9744;</td><td>Prin curier&#9744;</td></tr>
+<tr><td>Certificat de inmatriculare in original</td><td>Da &#9744;</td><td>Prin curier&#9744;</td></tr>
+<tr><td>Acte externe BRIEF</td><td>Da &#9744;</td><td>Prin curier&#9744;</td></tr>
+<tr><td>Factura fiscala</td><td>Da &#9744;</td><td>Prin curier&#9744;</td></tr>
+<tr><td>Certificat de atestare fiscala</td><td>Da &#9744;</td><td>Prin curier&#9744;</td></tr>
+<tr><td>Certificat COC</td><td>Da &#9744;</td><td>Prin curier&#9744;</td></tr>
+<tr><td>Factura fiscala (pentru persoane juridice) de legatura</td><td>Da &#9744;</td><td>Prin curier&#9744;</td></tr>
+<tr><td>Certificat de atestare fisclala de legatura</td><td>Da &#9744;</td><td>Prin curier&#9744;</td></tr>
+<tr><td>Proces verbal de predare/primire documente</td><td>Da &#9744;</td><td>Prin curier&#9744;</td></tr>
+</table>
+
+<p><strong>Defectiuni constatate:</strong><br>
+....................................................................................................................................................................................................................................................................................................................................................................................................................................</p>
+<p>Primitorul a preluat autovehiculul in dotare cu cele amintite mai sus, in urma verificarii, fiind raspunzator de lipsa oricaruia dintre cele amintite, precum si de defectiunile cauzate de nepastrarea sau neutilizarea autovehiculului in mod corespunzator, conform specificatiilor</p>
+
+<table class="sig-table-2">
+<tr><td>Am predat, Vanzator</td><td>Am preluat, Utilizator/Cumparator</td></tr>
+<tr><td>{{seller_name}}</td><td>{{utilizator_name}}</td></tr>
+<tr><td>Nume/Prenume........................................</td><td>Nume/Prenume......................................</td></tr>
+<tr><td>Semnatura...............................................</td><td>Semnatura...............................................</td></tr>
+</table>
+</div>
+
+</body>
+</html>
