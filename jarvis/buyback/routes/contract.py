@@ -1,20 +1,24 @@
-"""Manual "generate contract" route — the Task 6 integration point tying
-together the P3b contract-PDF pipeline built in earlier tasks:
-build_contract_context (Task 3) + render_contract_pdf (Task 4) +
-PhotoRepository.store_contract_pdf (Task 5), behind one POST endpoint a user
-triggers from the record detail page before a contract is signed.
+"""Per-record contract routes — generate, inline-edit, and regenerate the
+BuyBack purchase/consignation contract.
 
-No SQL lives here — every DB access goes through buyback.routes._shared's
-singleton repos, ContractTemplateRepository, and core.organization's
-CompanyRepository (all raw-SQL-via-BaseRepository, same posture as every
-other buyback route module).
+- GET  /records/<id>/contract          -> the editable draft (stored text, or
+                                          a fresh template substitution preview)
+- POST /records/<id>/contract          -> write: generate-from-data | save a
+                                          manual edit | regenerate-from-data
+- POST /records/<id>/generate-contract -> legacy alias (= POST with from_data)
 
-This is a MANUAL trigger, not a lifecycle gate: it must never 500 on sparse
-data. The only non-2xx outcomes are 404 (no such record), 403
-(_guard_company — cross-company IDOR), and 409 (no active template for this
-company/brand/document_type, even after the company-default fallback).
-Missing seller/offer data still renders a (partially empty) PDF and comes
-back 200, with a `warnings` list calling out the gaps.
+The contract text (title/body/general_conditions) lives on buyback_records
+(P3c) so the advisor can edit it per-record; the PDF is re-rendered from that
+final text via render_contract_pdf_from_parts. `from_data` (or a first
+generate with no stored body) instead substitutes the active template against
+the record's current client/car data — discarding manual edits.
+
+No SQL lives here — every DB access goes through _shared's singleton repos,
+ContractTemplateRepository, and CompanyRepository.
+
+MANUAL trigger, not a lifecycle gate: never 500 on sparse data. The only
+non-2xx outcomes are 404 (no record), 403 (_guard_company IDOR), and 409 (no
+active template for this company/brand/document_type when one is required).
 """
 import logging
 from datetime import date
@@ -25,42 +29,31 @@ from flask_login import login_required
 from buyback import buyback_bp
 from buyback.routes import _shared
 from buyback.repositories.contract_template_repository import ContractTemplateRepository
-from buyback.services.contract_pdf import build_contract_context, render_contract_pdf
+from buyback.services.contract_pdf import build_contract_context, render_contract_pdf_from_parts
+from buyback.services.contract_template import render_contract_template
 from core.organization.repositories.company_repository import CompanyRepository
 from core.roles.decorators import v2_permission_required
 
 logger = logging.getLogger('jarvis.buyback')
 
-# Module-level singletons (mirrors buyback/routes/contract_templates.py's
-# `_repo = ContractTemplateRepository()`): both repos are stateless raw-SQL
-# wrappers, so one shared instance per process is safe and avoids
-# re-instantiating per request.
 _template_repo = ContractTemplateRepository()
 _company_repo = CompanyRepository()
 
 _DOC_TYPES = ('purchase', 'consignment')
-
-# Statuses on which an un-specified document_type infers 'consignment'
-# rather than 'purchase' — mirrors records.py get_record's own
-# status-gated consignment lookup (lifecycle.CONSIGNMENT_OFFER/CONSIGNAT).
 _CONSIGNMENT_STATUSES = ('CONSIGNMENT_OFFER', 'CONSIGNAT')
 
 
 def _resolve_document_type(data, record):
-    """Explicit `document_type` from the request body wins when it's one of
-    the two recognized values; otherwise infer from the record's current
-    lifecycle status."""
-    requested = data.get('document_type')
+    """Explicit `document_type` wins when recognized; else infer from status."""
+    requested = (data or {}).get('document_type')
     if requested in _DOC_TYPES:
         return requested
     return 'consignment' if record.get('status') in _CONSIGNMENT_STATUSES else 'purchase'
 
 
 def _accepted_offer(record_id, document_type):
-    """The accepted offer of the kind matching `document_type` ('consignment'
-    offers pair with a consignment contract, every other document type pairs
-    with the 'final' purchase offer), or None when no offer of that kind has
-    been accepted yet."""
+    """The accepted offer matching the document type (consignment↔consignment,
+    else the 'final' purchase offer), or None."""
     wanted = 'consignment' if document_type == 'consignment' else 'final'
     offers = _shared.offers_repo.list_for_record(record_id)
     return next(
@@ -71,12 +64,8 @@ def _accepted_offer(record_id, document_type):
 
 
 def _consignment_agreement(record):
-    """The consignment agreement for this record's CarPark vehicle, if any.
-
-    Mirrors records.py's get_record consignment lookup (same local-import
-    rationale: avoids a cross-module import cycle at buyback module-load
-    time, and keeps the repo patchable in tests). A consignment agreement
-    only ever exists once the record carries a carpark_vehicle_id."""
+    """The consignment agreement for this record's CarPark vehicle, if any
+    (mirrors records.py's local-import lookup; only exists once handed off)."""
     if not record.get('carpark_vehicle_id'):
         return None
     from carpark.repositories.consignment_repository import ConsignmentRepository
@@ -84,9 +73,7 @@ def _consignment_agreement(record):
 
 
 def _build_warnings(context):
-    """Non-blocking hints about gaps baked into the rendered contract — never
-    blocks generation (only 404/403/409 do). Derived from the same empty
-    critical tokens a human reviewing the PDF would notice missing."""
+    """Non-blocking hints about gaps baked into the rendered contract."""
     warnings = []
     if not context.get('price_eur'):
         warnings.append('Nicio ofertă acceptată — preț necompletat')
@@ -95,49 +82,155 @@ def _build_warnings(context):
     return warnings
 
 
-@buyback_bp.route('/records/<int:record_id>/generate-contract', methods=['POST'])
-@login_required
-@v2_permission_required('buyback', 'record', 'edit')
-def generate_contract(record_id):
-    record = _shared.records_repo.get_by_id(record_id)
-    if not record:
-        return jsonify({'success': False, 'error': 'Record not found'}), 404
+def _signatory_for(record):
+    """Dealer signature-line name (company administrator, else company name)."""
+    company = _company_repo.get(record['company_id']) or {}
+    return company.get('administrator') or company.get('company') or ''
 
-    # SECURITY: same unconditional IDOR guard as every other single-record
-    # mutation route (records.py::get_record/update_record) — the company
-    # boundary must be checked before anything else about the record is
-    # read or acted on.
-    err = _shared._guard_company(record)
-    if err:
-        return err
 
-    data = request.get_json(silent=True) or {}
-    document_type = _resolve_document_type(data, record)
-
-    template = _template_repo.get_active_with_default(
-        record['company_id'], record['brand_id'], document_type,
-    )
-    if template is None:
-        return jsonify({
-            'error': 'Nu există un model de contract activ pentru acest brand/companie.'
-        }), 409
-
+def _substitute_from_template(record, template, document_type):
+    """Resolve the token context from the record's current data and substitute
+    the template -> (title, body, general_conditions, signatory, warnings)."""
     company = _company_repo.get(record['company_id'])
-    offer = _accepted_offer(record_id, document_type)
+    offer = _accepted_offer(record['id'], document_type)
     consignment = _consignment_agreement(record)
-
     context = build_contract_context(
         record, company, offer=offer, consignment=consignment,
         contract_number=record.get('record_code') or '',
         contract_date=date.today().isoformat(),
     )
+    title = render_contract_template(template.get('title') or '', context)
+    body = render_contract_template(template.get('body_template') or '', context)
+    gc = render_contract_template(template.get('general_conditions') or '', context)
+    signatory = context.get('company_administrator') or context.get('company_name') or ''
+    return title, body, gc, signatory, _build_warnings(context)
 
-    pdf_bytes = render_contract_pdf(template, context)
+
+def _contract_download_url(record_id):
+    """download_url of the record's current stored contract document, or None."""
+    photos = _shared.photos_repo.get_by_record(record_id)
+    contract = next((p for p in photos if p.get('photo_type') == 'contract'), None)
+    if not contract:
+        return None
+    return _shared.serialize_photos([contract])[0].get('download_url')
+
+
+def _iso(value):
+    return value.isoformat() if hasattr(value, 'isoformat') else value
+
+
+def _draft(record, document_type, *, has_template, download_url, warnings):
+    """The editable-draft payload, read from the record's stored contract text."""
+    return {
+        'has_template': has_template,
+        'has_contract': bool(record.get('contract_body')),
+        'document_type': document_type,
+        'title': record.get('contract_title') or '',
+        'body': record.get('contract_body') or '',
+        'general_conditions': record.get('contract_general_conditions') or '',
+        'generated_at': _iso(record.get('contract_generated_at')),
+        'download_url': download_url,
+        'warnings': warnings,
+    }
+
+
+def _load_guarded(record_id):
+    """(record, None) or (None, response) — 404 then IDOR guard, in that order."""
+    record = _shared.records_repo.get_by_id(record_id)
+    if not record:
+        return None, (jsonify({'success': False, 'error': 'Record not found'}), 404)
+    err = _shared._guard_company(record)
+    if err:
+        return None, err
+    return record, None
+
+
+@buyback_bp.route('/records/<int:record_id>/contract', methods=['GET'])
+@login_required
+@v2_permission_required('buyback', 'record', 'view')
+def get_contract(record_id):
+    record, err = _load_guarded(record_id)
+    if err:
+        return err
+    document_type = _resolve_document_type(request.args, record)
+    template = _template_repo.get_active_with_default(
+        record['company_id'], record['brand_id'], document_type)
+
+    if record.get('contract_body'):
+        return jsonify(_draft(
+            record, document_type, has_template=template is not None,
+            download_url=_contract_download_url(record_id), warnings=[])), 200
+
+    # No stored contract yet: offer a fresh substitution preview to edit.
+    if template is None:
+        return jsonify({
+            'has_template': False, 'has_contract': False, 'document_type': document_type,
+            'title': '', 'body': '', 'general_conditions': '',
+            'generated_at': None, 'download_url': None, 'warnings': [],
+        }), 200
+    title, body, gc, _signatory, warnings = _substitute_from_template(record, template, document_type)
+    return jsonify({
+        'has_template': True, 'has_contract': False, 'document_type': document_type,
+        'title': title, 'body': body, 'general_conditions': gc,
+        'generated_at': None, 'download_url': None, 'warnings': warnings,
+    }), 200
+
+
+def _write_contract(record_id, data):
+    """Shared handler for POST /contract and the generate-contract alias."""
+    record, err = _load_guarded(record_id)
+    if err:
+        return err
+    document_type = _resolve_document_type(data, record)
+    from_data = bool(data.get('from_data'))
+    provided_body = data.get('body')
+    # Rebuild from the template when asked (from_data) or on a first generate
+    # with nothing posted and nothing stored; otherwise honour the manual edit.
+    use_template = from_data or (provided_body is None and not record.get('contract_body'))
+
+    warnings = []
+    if use_template:
+        template = _template_repo.get_active_with_default(
+            record['company_id'], record['brand_id'], document_type)
+        if template is None:
+            return jsonify({
+                'error': 'Nu există un model de contract activ pentru acest brand/companie.'
+            }), 409
+        title, body, gc, signatory, warnings = _substitute_from_template(record, template, document_type)
+    else:
+        title = (data.get('title') if 'title' in data else record.get('contract_title')) or ''
+        body = provided_body if provided_body is not None else (record.get('contract_body') or '')
+        gc = (data.get('general_conditions') if 'general_conditions' in data
+              else record.get('contract_general_conditions')) or ''
+        signatory = _signatory_for(record)
+
+    pdf_bytes = render_contract_pdf_from_parts(title, body, gc, signatory=signatory)
+    updated = _shared.records_repo.update_contract(record_id, title, body, gc)
     photo = _shared.photos_repo.store_contract_pdf(
-        record_id, pdf_bytes, caption=template.get('title') or 'Contract',
-    )
+        record_id, pdf_bytes, caption=title or 'Contract')
+    serialized = _shared.serialize_photos([photo])[0]
 
     return jsonify({
-        'photo': _shared.serialize_photos([photo])[0],
-        'warnings': _build_warnings(context),
+        'photo': serialized,
+        'draft': _draft(
+            updated, document_type, has_template=True,
+            download_url=serialized.get('download_url'), warnings=warnings),
+        'warnings': warnings,
     }), 200
+
+
+@buyback_bp.route('/records/<int:record_id>/contract', methods=['POST'])
+@login_required
+@v2_permission_required('buyback', 'record', 'edit')
+def write_contract(record_id):
+    return _write_contract(record_id, request.get_json(silent=True) or {})
+
+
+@buyback_bp.route('/records/<int:record_id>/generate-contract', methods=['POST'])
+@login_required
+@v2_permission_required('buyback', 'record', 'edit')
+def generate_contract(record_id):
+    """Legacy alias — a first generate substitutes from the active template."""
+    data = request.get_json(silent=True) or {}
+    data.setdefault('from_data', True)
+    return _write_contract(record_id, data)
