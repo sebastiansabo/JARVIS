@@ -477,57 +477,101 @@ def resolve_preview(url, attempts=3):
 #
 # `image_url` comes from a Microlink response, not directly from the poster,
 # but Microlink is itself unfurling an arbitrary third-party page, so the
-# value is still attacker-influenced. Two cheap guards run before any fetch
-# is attempted: a scheme check (http/https only) and this module's existing
-# SSRF guard, `is_safe_url` (rejects private/loopback/link-local/CGNAT/
-# reserved/multicast hosts, e.g. a response pointing the fetch at an
-# internal IP or the cloud metadata endpoint).
+# value is still attacker-influenced — and the host it names can 3xx-redirect
+# anywhere. rehost_image therefore fetches exactly like scrape_opengraph: a
+# scheme check (http/https only) plus this module's SSRF guard `is_safe_url`
+# before the first fetch, the fetch itself through `_GUARDED_SESSION` (whose
+# transport re-checks the real connected peer IP at connect time — the
+# TOCTOU/DNS-rebinding backstop), and `allow_redirects=False` with a manual
+# hop loop that re-validates every `Location` against `is_safe_url` before
+# following it. Without this, a 302 to `http://169.254.169.254/...` or an
+# internal host would be followed transparently, bypassing the guard that
+# only saw the original URL.
 # ---------------------------------------------------------------------------
 
-_REHOST_EXT_WHITELIST = {'jpg', 'jpeg', 'png', 'gif', 'webp'}
+# Extensions permitted for a re-hosted thumbnail — the same set chat's direct
+# image upload accepts (jarvis/chat/routes.py:ALLOWED_IMAGE_EXT), minus
+# 'jpeg': the `image/jpeg` subtype is normalized to 'jpg' before this
+# membership test, so a literal 'jpeg' here would be unreachable.
+_REHOST_EXT_WHITELIST = {'jpg', 'png', 'gif', 'webp'}
 
 
 def rehost_image(image_url, upload_dir):
     """Download `image_url` and save it under `upload_dir`, returning its
     local `/static/uploads/digest/<uuid>.<ext>` URL, or `None` on any
-    failure (unsafe URL, non-image response, oversized/garbled body,
-    network error, filesystem error — everything funnels through the
-    outer try/except).
+    failure (unsafe URL, redirect to an unsafe host, non-image response,
+    oversized/garbled body, network error, filesystem error — everything
+    funnels through the outer try/except).
 
-    The response's `Content-Type` must start with `image/`; its subtype is
-    mapped to a file extension (`jpeg` -> `.jpg`, otherwise `.<subtype>`)
-    and restricted to the same upload whitelist chat's direct image upload
-    uses (jpg, jpeg, png, gif, webp) — any other subtype (e.g. `svg+xml`)
-    is rejected rather than written with an arbitrary extension. At most
-    `_MAX_BODY_BYTES` (2 MiB) is read from the streamed body.
+    Fetched through `_GUARDED_SESSION` with `allow_redirects=False`;
+    redirects are followed manually (up to `_MAX_REDIRECTS` hops) and each
+    `Location` is re-validated with `is_safe_url` before it is followed —
+    mirroring `scrape_opengraph` so the SSRF guard can't be bypassed by a
+    redirect to an internal IP / the cloud metadata endpoint. The streamed
+    response is released between hops and on every return path.
+
+    The final response's `Content-Type` must start with `image/`; its
+    subtype is mapped to a file extension (`jpeg` -> `.jpg`, otherwise
+    `.<subtype>`) and restricted to `_REHOST_EXT_WHITELIST` — any other
+    subtype (e.g. `svg+xml`) is rejected rather than written with an
+    arbitrary extension. At most `_MAX_BODY_BYTES` (2 MiB) is read.
     """
+    if urlparse(image_url).scheme not in _SAFE_SCHEMES:
+        return None
+    if not is_safe_url(image_url):
+        return None
+
+    response = None
     try:
-        if urlparse(image_url).scheme not in _SAFE_SCHEMES:
-            return None
-        if not is_safe_url(image_url):
-            return None
+        current_url = image_url
 
-        response = requests.get(image_url, timeout=_FETCH_TIMEOUT_SECONDS, stream=True)
-        try:
-            content_type = (response.headers.get('Content-Type') or '').split(';')[0].strip().lower()
-            if not content_type.startswith('image/'):
+        for hop in range(_MAX_REDIRECTS + 1):
+            response = _GUARDED_SESSION.get(
+                current_url,
+                timeout=_FETCH_TIMEOUT_SECONDS,
+                allow_redirects=False,
+                stream=True,
+                headers=_REQUEST_HEADERS,
+            )
+
+            if response.status_code not in _REDIRECT_STATUS_CODES:
+                break
+
+            if hop == _MAX_REDIRECTS:
+                return None  # redirect budget exhausted, still redirecting
+
+            location = response.headers.get("Location")
+            if not location:
                 return None
 
-            subtype = content_type.split('/', 1)[1]
-            ext = 'jpg' if subtype == 'jpeg' else subtype
-            if ext not in _REHOST_EXT_WHITELIST:
-                return None
+            next_url = urljoin(current_url, location)
+            if not is_safe_url(next_url):
+                return None  # re-validated guard: redirect target is unsafe
 
-            body = _read_body(response)
+            current_url = next_url
+            response.close()  # redirect followed; release before next hop
+            response = None
 
-            os.makedirs(upload_dir, exist_ok=True)
-            filename = f'{uuid.uuid4().hex}.{ext}'
-            filepath = os.path.join(upload_dir, filename)
-            with open(filepath, 'wb') as f:
-                f.write(body)
+        content_type = (response.headers.get('Content-Type') or '').split(';')[0].strip().lower()
+        if not content_type.startswith('image/'):
+            return None
 
-            return f'/static/uploads/digest/{filename}'
-        finally:
-            response.close()
+        subtype = content_type.split('/', 1)[1]
+        ext = 'jpg' if subtype == 'jpeg' else subtype
+        if ext not in _REHOST_EXT_WHITELIST:
+            return None
+
+        body = _read_body(response)
+
+        os.makedirs(upload_dir, exist_ok=True)
+        filename = f'{uuid.uuid4().hex}.{ext}'
+        filepath = os.path.join(upload_dir, filename)
+        with open(filepath, 'wb') as f:
+            f.write(body)
+
+        return f'/static/uploads/digest/{filename}'
     except Exception:
         return None
+    finally:
+        if response is not None:
+            response.close()
