@@ -18,10 +18,11 @@ const DOC_TYPES: { value: DocType; label: string }[] = [
 const TOKENS = [
   '{contract_number}', '{contract_date}', '{seller_name}', '{seller_address}',
   '{seller_cnp}', '{seller_ci}', '{seller_cui}', '{seller_reg_no}', '{seller_legal_rep}',
-  '{company_name}', '{company_reg_no}', '{company_vat}', '{company_iban}', '{company_administrator}',
-  '{advisor_name}', '{brand}', '{model}', '{vin}', '{engine_no}', '{engine_capacity}',
+  '{company_name}', '{company_address}', '{company_reg_no}', '{company_vat}', '{company_iban}',
+  '{company_bank}', '{company_administrator}', '{advisor_name}',
+  '{brand}', '{model}', '{vin}', '{engine_no}', '{engine_capacity}',
   '{power_cp}', '{civ_no}', '{mileage}', '{first_registration}',
-  '{price_eur}', '{price_ron}', '{price_words}',
+  '{price_eur}', '{price_ron}', '{price_words}', '{vat_note}',
   '{owner_price}', '{promo_price}', '{min_price}', '{commission}', '{deposit_months}', '{monthly_fee}',
 ]
 
