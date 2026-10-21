@@ -214,23 +214,48 @@ class BuyBackService:
         `record`. Enforces that the record is sitting in the status the
         round expects, and that there is no other still-pending offer on
         this record (one-pending-per-record). Advances the record's status
-        to match the round, then fires notifier hooks if one is set."""
+        to match the round, then fires notifier hooks if one is set.
+
+        CORRECTION CASE: a `final` offer may also be re-posted while the
+        record is ALREADY in FINAL_OFFER, to amend an agreed final price
+        before the seller decides. In that case the existing pending final
+        offer is superseded (marked 'superseded' — NOT 'declined', so the
+        record is NOT sent to LOST) and replaced by the new one, and the
+        record STAYS in FINAL_OFFER (no transition). This is the sanctioned
+        way to change a final price once posted — otherwise the price is
+        unreachable (offers are immutable and the lifecycle has no
+        FINAL_OFFER → INSPECTION edge)."""
         required_status = _ROUND_REQUIRED_STATUS.get(offer_type)
         if required_status is None:
             raise ValueError(f"Unknown offer_type: {offer_type!r}")
 
-        if record['status'] != required_status:
+        # A 'final' round re-opened while already in FINAL_OFFER corrects the
+        # posted price in place, rather than advancing from INSPECTION.
+        correcting_final = (
+            offer_type == 'final'
+            and record['status'] == _ROUND_TARGET_STATUS['final']
+        )
+
+        if not correcting_final and record['status'] != required_status:
             raise ValueError(
                 f"Cannot post a {offer_type!r} offer while record "
                 f"{record['id']} is {record['status']!r} (expected "
                 f"{required_status!r})"
             )
 
-        if self.offers.pending_for_record(record['id']) is not None:
-            raise ValueError(
-                f"Record {record['id']} already has a pending offer — "
-                "cannot open a second one"
-            )
+        pending = self.offers.pending_for_record(record['id'])
+        if pending is not None:
+            if correcting_final:
+                # Replace the still-pending final offer: mark it superseded
+                # (distinct from a seller 'declined', which would move the
+                # record to LOST) so the one-pending-per-record invariant
+                # holds for the replacement offer created below.
+                self.offers.record_decision(pending['id'], 'superseded', actor)
+            else:
+                raise ValueError(
+                    f"Record {record['id']} already has a pending offer — "
+                    "cannot open a second one"
+                )
 
         # A consignment proposal carries its terms (already validated + JSON-
         # serialized by the route) in payload['consignment_terms'] rather than
@@ -254,10 +279,21 @@ class BuyBackService:
             consignment_terms=consignment_terms,
         )
 
-        record = self.transition(
-            record, _ROUND_TARGET_STATUS[offer_type], actor,
-            {'offer_id': offer['id']},
-        )
+        if correcting_final:
+            # Price correction: the record is already FINAL_OFFER, so there's
+            # no status change (FINAL_OFFER → FINAL_OFFER isn't a lifecycle
+            # transition). Log a distinct audit event for the Istoric timeline
+            # instead, carrying the superseded offer id for traceability.
+            self.events.log(
+                record['id'], 'offer_corrected', actor,
+                {'offer_id': offer['id'],
+                 'superseded_offer_id': pending['id'] if pending else None},
+            )
+        else:
+            record = self.transition(
+                record, _ROUND_TARGET_STATUS[offer_type], actor,
+                {'offer_id': offer['id']},
+            )
 
         # The notifier hooks render a seller-facing BUY offer (email + sales
         # heads-up); a consignment proposal is not a buy offer, so skip them —

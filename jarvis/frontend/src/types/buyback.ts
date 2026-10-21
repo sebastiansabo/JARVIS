@@ -132,7 +132,7 @@ export interface BuybackOffer {
   notes: string | null
   created_by: number | null
   created_at: string
-  client_decision: 'pending' | 'accepted' | 'declined'
+  client_decision: 'pending' | 'accepted' | 'declined' | 'superseded'
   decided_by: number | null
   decided_at: string | null
   decline_reason: string | null

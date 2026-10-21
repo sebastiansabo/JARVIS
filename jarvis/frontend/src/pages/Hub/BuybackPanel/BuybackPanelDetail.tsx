@@ -13,6 +13,7 @@ const DECISION_LABEL: Record<string, string> = {
   pending: 'În așteptare',
   accepted: 'Acceptată',
   declined: 'Refuzată',
+  superseded: 'Înlocuită',
 }
 
 /** cdn edge url first, else the /api/media proxy (data:/http pass through

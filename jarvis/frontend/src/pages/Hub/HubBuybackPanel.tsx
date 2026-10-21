@@ -33,6 +33,7 @@ const DECISION_LABEL: Record<string, string> = {
   pending: 'În așteptare',
   accepted: 'Acceptată',
   declined: 'Refuzată',
+  superseded: 'Înlocuită',
 }
 const fmtEur = (v: number | null | undefined) => (v == null ? '—' : `${v.toLocaleString('ro-RO')} €`)
 

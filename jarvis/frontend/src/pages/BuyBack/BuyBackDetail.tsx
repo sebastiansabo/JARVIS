@@ -57,11 +57,13 @@ const DECISION_LABEL: Record<string, string> = {
   pending: 'În așteptare',
   accepted: 'Acceptată',
   declined: 'Refuzată',
+  superseded: 'Înlocuită',
 }
 
 const EVENT_ACTION_LABEL: Record<string, string> = {
   created: 'Solicitare creată',
   status_changed: 'Status schimbat',
+  offer_corrected: 'Preț ofertă corectat',
   record_edited: 'Detalii editate',
   inspection_updated: 'Inspecție actualizată',
   inspection_report_uploaded: 'Raport inspecție încărcat',
