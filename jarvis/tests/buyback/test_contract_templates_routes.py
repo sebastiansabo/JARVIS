@@ -24,6 +24,14 @@ def test_bad_document_type_is_400(client, as_role):
     assert r.status_code == 400
 
 
+def test_admin_can_list_company_brands(client, as_role):
+    as_role('Admin', 1)
+    r = client.get('/api/buyback/contract-templates/brands?company_id=11')
+    assert r.status_code == 200, r.get_json()
+    names = [b['name'] for b in r.get_json()['brands']]
+    assert 'Audi' in names
+
+
 def test_non_admin_put_is_403(client, as_role):
     as_role('Acquisition', company_id=1)   # no can_access_settings
     r = client.put('/api/buyback/contract-templates/7?company_id=1',

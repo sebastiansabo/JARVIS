@@ -179,6 +179,10 @@ export const buybackApi = {
     api.put<{ config: BuybackConfig }>(`${BASE}/settings/config`, cfg),
 
   // Per-company×brand contract templates (admin Settings → Contracte).
+  getContractBrands: (companyId: number) =>
+    api.get<{ brands: { id: number; name: string }[] }>(
+      `${BASE}/contract-templates/brands${qs({ company_id: companyId })}`),
+
   listContractTemplates: (companyId: number) =>
     api.get<{ templates: BuybackContractTemplate[] }>(
       `${BASE}/contract-templates${qs({ company_id: companyId })}`),

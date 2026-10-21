@@ -44,6 +44,18 @@ def list_contract_templates():
     return jsonify({'templates': _shared._serialize(_repo.list_for_company(company_id))})
 
 
+@buyback_bp.route('/contract-templates/brands', methods=['GET'])
+@login_required
+def list_contract_brands():
+    err = _require_admin()
+    if err:
+        return err
+    company_id = _company_id()
+    if company_id is None:
+        return jsonify({'brands': []})
+    return jsonify({'brands': _shared._serialize(_repo.brands_for_company(company_id))})
+
+
 @buyback_bp.route('/contract-templates/<int:brand_id>', methods=['PUT'])
 @login_required
 def put_contract_template(brand_id):
