@@ -85,6 +85,23 @@ def create_schema_buyback(conn, cursor):
             END $$;
         ''')
 
+    # ── Editable per-record contract (P3c): the title/body/general-conditions
+    # the advisor edits inline on the record, plus the last-generated stamp.
+    # Seeded on first generate from the active template's substituted text,
+    # overwritten by a manual edit or a regenerate-from-data. Idempotent per col.
+    for _col, _type in [
+        ('contract_title', 'VARCHAR(300)'), ('contract_body', 'TEXT'),
+        ('contract_general_conditions', 'TEXT'), ('contract_generated_at', 'TIMESTAMPTZ'),
+    ]:
+        cursor.execute(f'''
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_name='buyback_records' AND column_name='{_col}') THEN
+                    ALTER TABLE buyback_records ADD COLUMN {_col} {_type};
+                END IF;
+            END $$;
+        ''')
+
     # Seed buyback_hold_reason dropdown options (idempotent, one INSERT per
     # value guarded by WHERE NOT EXISTS, mirrors the invoice_status seed
     # pattern in schema_misc.py -- additive only, won't disturb existing rows).
