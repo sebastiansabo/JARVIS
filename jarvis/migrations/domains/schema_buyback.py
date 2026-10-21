@@ -228,3 +228,22 @@ def create_schema_buyback(conn, cursor):
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
     ''')
+
+    # Per-company×brand contract templates (purchase / consignment). The legal
+    # body text carries {tokens} the renderer substitutes. One template per
+    # (company, brand, document_type).
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS buyback_contract_templates (
+            id BIGSERIAL PRIMARY KEY,
+            company_id BIGINT NOT NULL,
+            brand_id BIGINT,
+            document_type VARCHAR(20) NOT NULL DEFAULT 'purchase',
+            title VARCHAR(255),
+            body_template TEXT,
+            general_conditions TEXT,
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            created_by INTEGER, updated_by INTEGER,
+            created_at TIMESTAMPTZ DEFAULT NOW(), updated_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (company_id, brand_id, document_type)
+        )
+    ''')

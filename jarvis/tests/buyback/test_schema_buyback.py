@@ -77,6 +77,21 @@ def test_records_has_seller_identity_columns(require_real_db):
         release_db(conn)
 
 
+def test_buyback_contract_templates_table(require_real_db):
+    conn = get_db()
+    try:
+        cur = get_cursor(conn)
+        create_schema_buyback(conn, cur)
+        conn.commit()
+        cur.execute("""SELECT column_name FROM information_schema.columns
+                       WHERE table_name='buyback_contract_templates'""")
+        cols = {r[0] if not isinstance(r, dict) else r['column_name'] for r in cur.fetchall()}
+        assert {'company_id', 'brand_id', 'document_type', 'title', 'body_template',
+                'general_conditions', 'is_active'}.issubset(cols)
+    finally:
+        release_db(conn)
+
+
 def test_buyback_company_config_table_exists(require_real_db):
     conn = get_db()
     try:
