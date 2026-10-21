@@ -83,7 +83,7 @@ export default function ContractCard({
         )}
       </CardHeader>
       <CardContent className="space-y-3">
-        {!draft.has_template ? (
+        {!draft.has_template && !draft.has_contract ? (
           <p className="text-sm text-muted-foreground">
             Niciun model de contract activ pentru acest brand.{' '}
             <Link to="/app/settings" className="font-medium text-primary hover:underline">
@@ -97,6 +97,7 @@ export default function ContractCard({
               <Label className="text-xs">Titlu</Label>
               <Input
                 value={title}
+                maxLength={300}
                 disabled={!canEdit}
                 onChange={(e) => { setTitle(e.target.value); setDirty(true) }}
               />

@@ -128,6 +128,18 @@ def test_generate_contract_alias_still_works(client, as_role):
     assert r.get_json()['photo']['photo_type'] == 'contract'
 
 
+def test_long_title_is_clamped_not_500(client, as_role):
+    # contract_title is VARCHAR(300); an over-long title must be clamped, not 500.
+    as_role('Admin', 1)
+    cid, bid = _cid(), _bid()
+    rec = _record(company_id=cid, brand_id=bid)
+    _seed_template(cid, bid)
+    r = client.post(f"/api/buyback/records/{rec['id']}/contract",
+                    json={'title': 'X' * 500, 'body': 'corp'})
+    assert r.status_code == 200, r.get_json()
+    assert len(r.get_json()['draft']['title']) <= 300
+
+
 def test_post_rejects_cross_company(client, as_role):
     as_role('Sales', 1)
     cid, bid = 1, _bid()
