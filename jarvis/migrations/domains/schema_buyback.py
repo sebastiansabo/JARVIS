@@ -247,3 +247,7 @@ def create_schema_buyback(conn, cursor):
             UNIQUE (company_id, brand_id, document_type)
         )
     ''')
+
+    # Seed the three real AAP templates (templatized), idempotent + best-effort.
+    from buyback.seed_contract_templates import seed_contract_templates
+    seed_contract_templates(conn, cursor)
