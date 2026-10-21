@@ -293,26 +293,20 @@ def _non_empty_lines(text: str):
             yield line
 
 
-def render_contract_pdf(template_row: dict, context: dict, signature: str | None = None) -> bytes:
-    """Render one buyback purchase contract as PDF bytes.
+def render_contract_pdf_from_parts(title: str, body: str, general_conditions: str = '',
+                                   signatory: str = '', signature: str | None = None) -> bytes:
+    """Render a buyback contract from ALREADY-FINAL text — no token
+    substitution. `title`/`body`/`general_conditions` are the final strings
+    (template already substituted, or the advisor's inline edits). `signatory`
+    is the dealer signature-line name (company administrator, else company
+    name). `signature` is an optional seller signature `data:image/...;base64`
+    data-URL — absent/invalid falls back to the "Lipsă semnătură" placeholder.
+    Every string still goes through `_ptext` (escape, keep diacritics).
 
-    `template_row` is a ContractTemplateRepository row (`title`,
-    `body_template`, `general_conditions`); `context` is the {token: value}
-    dict produced by `build_contract_context()` (or any dict — callers in
-    tests pass bare dicts, and a missing token must render empty, never
-    raise). `signature` is an optional seller signature as a
-    `data:image/...;base64,...` data-URL — absent/invalid falls back to an
-    "Lipsă semnătură" placeholder (the P3b manual-generate flow runs before
-    any signing exists). The dealer side of the signature table is never an
-    app-captured signature; it shows the signatory's name instead
-    (`company_administrator`, falling back to `company_name`).
-
-    Returns raw PDF bytes (not a path) — callers persist/stream/email it
-    themselves.
+    Returns raw PDF bytes. See `render_contract_pdf` for the template+context
+    entry point that substitutes tokens then delegates here.
     """
     _register_fonts()
-    template_row = template_row or {}
-    context = context or {}
 
     title_style = ParagraphStyle(
         'ContractTitle', fontName=FONT_BOLD, fontSize=14, leading=18,
@@ -338,14 +332,14 @@ def render_contract_pdf(template_row: dict, context: dict, signature: str | None
     )
 
     story = []
-    story.append(Paragraph(_ptext(template_row.get('title')), title_style))
+    story.append(Paragraph(_ptext(title), title_style))
     story.append(HRFlowable(width='100%', thickness=1, color=colors.HexColor('#1a1a2e'), spaceAfter=10))
 
-    body_text = render_contract_template(template_row.get('body_template') or '', context)
+    body_text = body or ''
     for line in _non_empty_lines(body_text):
         story.append(Paragraph(_ptext(line), body_style))
 
-    gc_text = render_contract_template(template_row.get('general_conditions') or '', context)
+    gc_text = general_conditions or ''
     gc_lines = list(_non_empty_lines(gc_text))
     if gc_lines:
         story.append(Spacer(1, 6 * mm))
@@ -379,7 +373,6 @@ def render_contract_pdf(template_row: dict, context: dict, signature: str | None
     seller_img = _decode_signature_image(signature)
     seller_cell = _sig_cell(seller_img, 'Semnătură Vânzător')
 
-    signatory = context.get('company_administrator') or context.get('company_name') or ''
     dealer_inner = [
         [Paragraph(_ptext(signatory), dealer_name_style)],
         [Paragraph(_ptext('Cumpărător'), sig_label_style)],
@@ -406,7 +399,27 @@ def render_contract_pdf(template_row: dict, context: dict, signature: str | None
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
         topMargin=18 * mm, bottomMargin=18 * mm, leftMargin=18 * mm, rightMargin=18 * mm,
-        title=_ptext(template_row.get('title')) or 'Contract',
+        title=_ptext(title) or 'Contract',
     )
     doc.build(story)
     return buf.getvalue()
+
+
+def render_contract_pdf(template_row: dict, context: dict, signature: str | None = None) -> bytes:
+    """Render one buyback contract from a template row + {token} context.
+
+    `template_row` is a ContractTemplateRepository row (`title`,
+    `body_template`, `general_conditions`); `context` is the {token: value}
+    dict from `build_contract_context()`. Substitutes the whitelisted tokens
+    (`render_contract_template`), derives the dealer `signatory`
+    (`company_administrator`, else `company_name`), then delegates to
+    `render_contract_pdf_from_parts`. `signature` is an optional seller
+    signature data-URL. Returns raw PDF bytes.
+    """
+    template_row = template_row or {}
+    context = context or {}
+    title = render_contract_template(template_row.get('title') or '', context)
+    body = render_contract_template(template_row.get('body_template') or '', context)
+    gc = render_contract_template(template_row.get('general_conditions') or '', context)
+    signatory = context.get('company_administrator') or context.get('company_name') or ''
+    return render_contract_pdf_from_parts(title, body, gc, signatory=signatory, signature=signature)
