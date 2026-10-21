@@ -9,6 +9,7 @@ import pytest
 
 from database import get_db, get_cursor, release_db
 from migrations.domains.schema_buyback import create_schema_buyback
+from buyback.seed_contract_templates import seed_contract_templates
 from buyback.repositories.contract_template_repository import ContractTemplateRepository
 
 
@@ -69,4 +70,57 @@ def test_three_contract_templates_seeded_and_idempotent(require_real_db):
                 (co, br, dt))
             assert _scalar(cur.fetchone()) == 1
     finally:
+        release_db(conn)
+
+
+@pytest.mark.parametrize('autocommit', [True, False])
+def test_seed_isolates_failing_spec(require_real_db, autocommit):
+    """A spec whose INSERT fails (e.g. a UNIQUE race on concurrent boot) does
+    not stop the others. Tested in both modes: autocommit=True (the real boot
+    path — each statement independent) and autocommit=False (a transaction,
+    where the per-spec SAVEPOINT prevents InFailedSqlTransaction cascading)."""
+    conn = get_db()
+    original_ac = conn.autocommit
+    try:
+        conn.autocommit = autocommit
+        cur = get_cursor(conn)
+
+        def _commit():
+            if not autocommit:
+                conn.commit()
+
+        create_schema_buyback(conn, cur)
+        _commit()
+        intl, volvo = _resolve(cur, '%INTERNATIONAL%', 'Volvo')
+        if not intl or not volvo:
+            pytest.skip('International/Volvo absent on this DB')
+
+        # scratch keys (not among the real _SPECS): clean so insertion is observable
+        cur.execute("DELETE FROM buyback_contract_templates WHERE company_id=%s AND brand_id=%s "
+                    "AND document_type IN ('purchase','consignment')", (intl, volvo))
+        _commit()
+
+        bad = ('%INTERNATIONAL%', 'Volvo', 'purchase',
+               'X' * 300, 'corp {price_eur}', '')          # title > VARCHAR(255) -> real DB error
+        good = ('%INTERNATIONAL%', 'Volvo', 'consignment',
+                'ok', 'corp {owner_price} {commission}', '')
+        seed_contract_templates(conn, cur, specs=[bad, good])
+        _commit()
+
+        # the good spec inserted despite the bad one failing -> no poisoning
+        assert ContractTemplateRepository().get_active(intl, volvo, 'consignment') is not None
+        # the connection is still usable
+        cur.execute('SELECT 1')
+        assert _scalar(cur.fetchone()) == 1
+
+        cur.execute("DELETE FROM buyback_contract_templates WHERE company_id=%s AND brand_id=%s "
+                    "AND document_type IN ('purchase','consignment')", (intl, volvo))
+        _commit()
+    finally:
+        try:
+            if not conn.autocommit:
+                conn.rollback()
+        except Exception:
+            pass
+        conn.autocommit = original_ac  # restore before returning to the pool
         release_db(conn)

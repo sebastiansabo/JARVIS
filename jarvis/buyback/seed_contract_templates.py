@@ -99,32 +99,51 @@ prin {seller_legal_rep}                       prin {company_administrator}
 """
 
 
-def seed_contract_templates(conn, cursor):
-    """Insert the three AAP templates (WHERE NOT EXISTS). Best-effort: a
-    resolution/insert failure is logged and the rest continue — seeding must
-    never break schema init."""
-    specs = [
-        ('%INTERNATIONAL%', 'DasWeltAuto', 'purchase',
-         'Contract de achiziție autovehicul rulat', _PURCHASE_BODY, _PURCHASE_GC),
-        ('%PRESTIGE%', 'Volvo', 'purchase',
-         'Antecontract de vânzare-cumpărare', _ANTECONTRACT_BODY, _PURCHASE_GC),
-        ('%INTERNATIONAL%', 'Volkswagen (PKW)', 'consignment',
-         'Contract de depozit', _CONSIGNMENT_BODY, ''),
-    ]
-    for company_like, brand_name, doc_type, title, body, gc in specs:
+# Each spec: (company ILIKE, brand name, document_type, title, body, general_conditions)
+_SPECS = [
+    ('%INTERNATIONAL%', 'DasWeltAuto', 'purchase',
+     'Contract de achiziție autovehicul rulat', _PURCHASE_BODY, _PURCHASE_GC),
+    ('%PRESTIGE%', 'Volvo', 'purchase',
+     'Antecontract de vânzare-cumpărare', _ANTECONTRACT_BODY, _PURCHASE_GC),
+    ('%INTERNATIONAL%', 'Volkswagen (PKW)', 'consignment',
+     'Contract de depozit', _CONSIGNMENT_BODY, ''),
+]
+
+
+def _scalar(row):
+    if row is None:
+        return None
+    return row[0] if not isinstance(row, dict) else next(iter(row.values()))
+
+
+def seed_contract_templates(conn, cursor, specs=None):
+    """Insert the AAP templates (WHERE NOT EXISTS). Best-effort: a resolution or
+    insert failure for one spec is logged and the others continue.
+
+    The real boot path (init_db -> get_db) runs autocommit=True, so each
+    statement is its own implicit transaction and a failure can't poison later
+    ones. When a caller instead runs us inside an open transaction
+    (autocommit=False), a failed statement would abort that whole transaction
+    (InFailedSqlTransaction on every later statement, including other schema
+    domains), so there we wrap each spec in a SAVEPOINT and roll back to it on
+    error. Picking the mode off conn.autocommit keeps both paths correct."""
+    use_savepoint = not getattr(conn, 'autocommit', True)
+    for company_like, brand_name, doc_type, title, body, gc in (specs or _SPECS):
         try:
+            if use_savepoint:
+                cursor.execute('SAVEPOINT bb_seed')
             cursor.execute('SELECT id FROM companies WHERE company ILIKE %s ORDER BY id LIMIT 1',
                            (company_like,))
-            crow = cursor.fetchone()
+            company_id = _scalar(cursor.fetchone())
             cursor.execute('SELECT id FROM brands WHERE name ILIKE %s ORDER BY id LIMIT 1',
                            (brand_name,))
-            brow = cursor.fetchone()
-            if not crow or not brow:
+            brand_id = _scalar(cursor.fetchone())
+            if company_id is None or brand_id is None:
+                if use_savepoint:
+                    cursor.execute('RELEASE SAVEPOINT bb_seed')
                 logger.info('buyback contract seed: skipped %s/%s (company/brand not found)',
                             company_like, brand_name)
                 continue
-            company_id = crow[0] if not isinstance(crow, dict) else crow['id']
-            brand_id = brow[0] if not isinstance(brow, dict) else brow['id']
             cursor.execute(
                 'INSERT INTO buyback_contract_templates '
                 '(company_id, brand_id, document_type, title, body_template, '
@@ -135,5 +154,12 @@ def seed_contract_templates(conn, cursor):
                 (company_id, brand_id, doc_type, title, body, gc,
                  company_id, brand_id, doc_type),
             )
+            if use_savepoint:
+                cursor.execute('RELEASE SAVEPOINT bb_seed')
         except Exception:
+            if use_savepoint:
+                try:
+                    cursor.execute('ROLLBACK TO SAVEPOINT bb_seed')
+                except Exception:
+                    logger.exception('buyback contract seed: savepoint rollback failed')
             logger.exception('buyback contract seed failed for %s/%s', company_like, brand_name)
