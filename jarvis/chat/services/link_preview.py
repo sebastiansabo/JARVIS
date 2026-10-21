@@ -12,6 +12,9 @@ import socket
 from urllib.parse import urljoin, urlparse
 
 import requests
+import urllib3.connection
+import urllib3.connectionpool
+import urllib3.poolmanager
 from lxml import html as lxml_html
 
 # Markdown image token, e.g. ![pic](https://cdn/x.png)
@@ -88,6 +91,16 @@ def extract_first_url(text):
 # routable IP. scrape_opengraph re-applies the guard before the initial
 # fetch AND before following each redirect hop, since a host can resolve
 # safely yet redirect somewhere unsafe.
+#
+# The hostname guard alone is still vulnerable to DNS rebinding / TOCTOU:
+# requests re-resolves the host when it actually connects, so a host that
+# answers with a public IP during is_safe_url can flip to a private IP a
+# moment later at connect time. _GUARDED_SESSION closes that window — its
+# custom transport re-checks the REAL connected peer IP (sock.getpeername)
+# against the same rules in connect(), before any request bytes are sent,
+# and refuses the connection otherwise. TLS stays hostname-based (SNI and
+# certificate validation are unchanged — the URL is never rewritten to an
+# IP), so only the peer-IP safety check is added.
 # ---------------------------------------------------------------------------
 
 _SAFE_SCHEMES = {"http", "https"}
@@ -99,14 +112,35 @@ _REDIRECT_STATUS_CODES = (301, 302, 303, 307, 308)
 _REQUEST_HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; JarvisBot/1.0)"}
 
 
+def _ip_is_safe(ip_text):
+    """Return True iff `ip_text` is a public, routable address safe to
+    connect to. Rejects anything that is not globally reachable
+    (`not is_global` — this also covers RFC 6598 CGNAT `100.64.0.0/10`,
+    used by Tailscale and some clouds, which the category flags below miss)
+    plus the explicit private/loopback/link-local/reserved/multicast
+    categories (multicast is kept because `224.0.0.0/4` reports
+    `is_global == True`).
+    """
+    try:
+        ip = ipaddress.ip_address(ip_text)
+    except ValueError:
+        return False
+    if not ip.is_global:
+        return False
+    if (ip.is_private or ip.is_loopback or ip.is_link_local
+            or ip.is_reserved or ip.is_multicast):
+        return False
+    return True
+
+
 def is_safe_url(url):
     """Return True iff `url` is safe for the server to fetch.
 
     Safe means: scheme is http or https, and every IP the host resolves
     to is a public, routable address — never loopback (127.0.0.1),
-    private (10.0.0.5), link-local (169.254.169.254, the common cloud
-    metadata address), reserved, or multicast. This is the SSRF guard;
-    callers must check it before making any network request.
+    private (10.0.0.5), CGNAT (100.64.0.0/10), link-local (169.254.169.254,
+    the common cloud metadata address), reserved, or multicast. This is the
+    SSRF guard; callers must check it before making any network request.
     """
     try:
         parsed = urlparse(url)
@@ -129,16 +163,82 @@ def is_safe_url(url):
         return False
 
     for info in addrinfo:
-        ip_text = info[4][0]
-        try:
-            ip = ipaddress.ip_address(ip_text)
-        except ValueError:
-            return False
-        if (ip.is_private or ip.is_loopback or ip.is_link_local
-                or ip.is_reserved or ip.is_multicast):
+        if not _ip_is_safe(info[4][0]):
             return False
 
     return True
+
+
+class _UnsafePeerError(Exception):
+    """Raised at connect time when the actual peer IP fails the SSRF guard."""
+
+
+def _assert_peer_is_safe(sock):
+    """Raise `_UnsafePeerError` unless the socket's connected peer IP is a
+    public, routable address. This is the TOCTOU/DNS-rebinding backstop:
+    it validates the IP we really connected to, not the one DNS returned
+    during is_safe_url. The underlying socket connection is established
+    (incl. the TLS handshake for https) but no request bytes have been
+    sent yet when this fires.
+    """
+    try:
+        peer_ip = sock.getpeername()[0]
+    except OSError as exc:
+        raise _UnsafePeerError(f"cannot determine peer address: {exc}")
+    if not _ip_is_safe(peer_ip):
+        raise _UnsafePeerError(f"refusing connection to non-public peer {peer_ip}")
+
+
+class _GuardedHTTPConnection(urllib3.connection.HTTPConnection):
+    def connect(self):
+        super().connect()
+        _assert_peer_is_safe(self.sock)
+
+
+class _GuardedHTTPSConnection(urllib3.connection.HTTPSConnection):
+    def connect(self):
+        super().connect()
+        _assert_peer_is_safe(self.sock)
+
+
+class _GuardedHTTPConnectionPool(urllib3.connectionpool.HTTPConnectionPool):
+    ConnectionCls = _GuardedHTTPConnection
+
+
+class _GuardedHTTPSConnectionPool(urllib3.connectionpool.HTTPSConnectionPool):
+    ConnectionCls = _GuardedHTTPSConnection
+
+
+class _GuardedPoolManager(urllib3.poolmanager.PoolManager):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pool_classes_by_scheme = {
+            "http": _GuardedHTTPConnectionPool,
+            "https": _GuardedHTTPSConnectionPool,
+        }
+
+
+class _GuardedHTTPAdapter(requests.adapters.HTTPAdapter):
+    """requests adapter whose pool manager uses connections that re-check
+    the real peer IP in connect(). Mounted on `_GUARDED_SESSION`."""
+
+    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+        self.poolmanager = _GuardedPoolManager(
+            num_pools=connections, maxsize=maxsize, block=block, **pool_kwargs
+        )
+
+
+def _build_guarded_session():
+    session = requests.Session()
+    adapter = _GuardedHTTPAdapter()
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
+# Module-level session: the peer-IP guard lives on its mounted adapter, so
+# all scrape fetches must go through it (not bare requests.get).
+_GUARDED_SESSION = _build_guarded_session()
 
 
 def _read_body(response, max_bytes=_MAX_BODY_BYTES):
@@ -172,21 +272,24 @@ def scrape_opengraph(url):
     SSRF guard (`is_safe_url`), the response isn't `text/html`, or
     anything else goes wrong — network error, non-HTML, unparseable body.
 
-    No fetch is attempted for a URL that fails the guard. Redirects are
-    followed manually (`allow_redirects=False`) so that every `Location`
-    can be re-validated against the guard before it is followed — up to
-    `_MAX_REDIRECTS` hops. The body is read in streamed chunks capped at
-    `_MAX_BODY_BYTES` so an oversized response can't exhaust memory.
+    No fetch is attempted for a URL that fails the guard. The fetch goes
+    through `_GUARDED_SESSION`, whose transport re-checks the real peer IP
+    at connect time (TOCTOU backstop). Redirects are followed manually
+    (`allow_redirects=False`) so that every `Location` can be re-validated
+    against the guard before it is followed — up to `_MAX_REDIRECTS` hops.
+    The body is read in streamed chunks capped at `_MAX_BODY_BYTES` so an
+    oversized response can't exhaust memory. The streamed response is
+    closed on every return path so connections are returned to the pool.
     """
     if not is_safe_url(url):
         return None
 
+    response = None
     try:
         current_url = url
-        response = None
 
         for hop in range(_MAX_REDIRECTS + 1):
-            response = requests.get(
+            response = _GUARDED_SESSION.get(
                 current_url,
                 timeout=_FETCH_TIMEOUT_SECONDS,
                 allow_redirects=False,
@@ -209,6 +312,8 @@ def scrape_opengraph(url):
                 return None  # re-validated guard: redirect target is unsafe
 
             current_url = next_url
+            response.close()  # redirect followed; release before next hop
+            response = None
 
         content_type = (response.headers.get("Content-Type") or "").split(";")[0].strip().lower()
         if content_type != "text/html":
@@ -235,3 +340,6 @@ def scrape_opengraph(url):
         }
     except Exception:
         return None
+    finally:
+        if response is not None:
+            response.close()
