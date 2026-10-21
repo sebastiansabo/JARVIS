@@ -12,6 +12,7 @@ import { pickLatestOffer } from './offerUtils'
 import { makeLabelers } from './lookupLabels'
 import PhotoGallery from './PhotoGallery'
 import ActionPanel from './ActionPanel'
+import ContractCard from './ContractCard'
 import type { BuybackEvent } from '@/types/buyback'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -259,6 +260,11 @@ export default function BuyBackDetail() {
 
       {/* Primary workflow actions — kept at the top as the main action. */}
       <ActionPanel record={record} offers={offers} />
+
+      {/* The generated contract, editable inline, right under the actions. */}
+      {['FINAL_OFFER', 'BOUGHT', 'CONSIGNMENT_OFFER', 'CONSIGNAT'].includes(record.status) && (
+        <ContractCard recordId={recordId} canEdit={canEdit} />
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
