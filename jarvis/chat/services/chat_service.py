@@ -1,14 +1,27 @@
 """Service layer for the Chat module (formerly Digest)."""
 
+import os
 import re
 import logging
+from flask import current_app
 from chat.repositories.chat_repository import ChatRepository
+from chat.services import link_preview
+from chat.services.link_preview import extract_first_url
 
 logger = logging.getLogger(__name__)
 _repo = ChatRepository()
 
 # Matches @[Display Name](user_id)
 _MENTION_RE = re.compile(r'@\[([^\]]+)\]\((\d+)\)')
+
+
+def _upload_dir():
+    """Local directory link-preview images are re-hosted into — same
+    convention as the direct chat image upload (routes.py:upload_image).
+    Must be called from the request thread (reads `current_app`); the
+    resolved path is what gets passed into the background worker, which
+    has no application context of its own."""
+    return os.path.join(current_app.static_folder, 'uploads', 'digest')
 
 
 class ChatService:
@@ -179,6 +192,14 @@ class ChatService:
             except Exception as e:
                 logger.error(f'Post notification failed: {e}')
 
+        # Resolve a link preview in the background (non-blocking)
+        if post:
+            try:
+                if extract_first_url(content):
+                    link_preview.schedule_preview(post['id'], content, _upload_dir())
+            except Exception as e:
+                logger.error(f'Link preview scheduling failed: {e}')
+
         return post
 
     def _notify_post(self, post, channel_id, user_id, content, post_type,
@@ -295,7 +316,18 @@ class ChatService:
         post = _repo.get_post(post_id)
         if not post or post['user_id'] != user_id:
             return None
-        return _repo.update_post(post_id, content)
+        updated = _repo.update_post(post_id, content)
+
+        # Re-resolve the link preview in the background (non-blocking).
+        # Unconditional: the worker itself clears a stale preview when the
+        # edited content no longer contains a URL.
+        if updated:
+            try:
+                link_preview.schedule_preview(post_id, content, _upload_dir())
+            except Exception as e:
+                logger.error(f'Link preview scheduling failed: {e}')
+
+        return updated
 
     def delete_post(self, post_id, user_id):
         post = _repo.get_post(post_id)
