@@ -9,6 +9,7 @@ and are excluded from consideration.
 import ipaddress
 import re
 import socket
+import time
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -343,3 +344,119 @@ def scrape_opengraph(url):
     finally:
         if response is not None:
             response.close()
+
+
+# ---------------------------------------------------------------------------
+# Social-link routing + Microlink client + resolve orchestration
+#
+# Social platforms (Facebook, Instagram, TikTok, ...) block or heavily
+# rate-limit the in-house scraper's plain server-side fetch, so their posts
+# never yield usable Open Graph tags that way. is_social_url detects links
+# to those platforms so resolve_preview can route them to Microlink (a
+# third-party unfurl API) instead of scrape_opengraph. Microlink is a fixed,
+# trusted host — not a user-controlled fetch target — so fetch_via_microlink
+# calls it with a plain `requests.get`, not the SSRF-guarded session that
+# scrape_opengraph must use for arbitrary poster-supplied URLs.
+# ---------------------------------------------------------------------------
+
+SOCIAL_DOMAINS = {
+    'facebook.com', 'fb.watch', 'fb.me',
+    'instagram.com', 'instagr.am',
+    'tiktok.com',
+}
+
+_SOCIAL_HOST_PREFIXES = ('www.', 'm.', 'vt.', 'vm.')
+
+_MICROLINK_TIMEOUT_SECONDS = 8
+_RETRY_BACKOFF_SECONDS = 0.5
+
+
+def is_social_url(url):
+    """Return True iff `url`'s host is a known social platform domain.
+
+    A single leading mobile/www subdomain prefix (`www.`, `m.`, `vt.`,
+    `vm.`) is stripped before the `SOCIAL_DOMAINS` membership check, so
+    e.g. `m.instagram.com` and `vt.tiktok.com` both match.
+    """
+    try:
+        host = urlparse(url).hostname
+    except ValueError:
+        return False
+    if not host:
+        return False
+
+    host = host.lower()
+    for prefix in _SOCIAL_HOST_PREFIXES:
+        if host.startswith(prefix):
+            host = host[len(prefix):]
+            break
+
+    return host in SOCIAL_DOMAINS
+
+
+def fetch_via_microlink(url):
+    """Fetch a link preview for `url` via the Microlink unfurl API.
+
+    Microlink is a fixed, trusted host (`api.microlink.io`) — unlike
+    scrape_opengraph's target, `url` here is never dereferenced by this
+    process directly, so this uses a plain `requests.get`, not the
+    SSRF-guarded session.
+
+    Returns the normalized preview dict
+    `{"url", "title", "description", "image", "site_name", "source": "microlink"}`
+    (any field but `source`/`url` may be `None`), or `None` if the response
+    JSON's `status` isn't `"success"` or anything else goes wrong —
+    network error, timeout, malformed JSON.
+    """
+    try:
+        response = requests.get(
+            "https://api.microlink.io/",
+            params={"url": url},
+            timeout=_MICROLINK_TIMEOUT_SECONDS,
+        )
+        payload = response.json()
+        if payload.get("status") != "success":
+            return None
+
+        data = payload.get("data") or {}
+        image = (data.get("image") or {}).get("url")
+
+        return {
+            "url": url,
+            "title": data.get("title"),
+            "description": data.get("description"),
+            "image": image,
+            "site_name": data.get("publisher"),
+            "source": "microlink",
+        }
+    except Exception:
+        return None
+
+
+def resolve_preview(url, attempts=3):
+    """Resolve a link preview for `url`, routing social links to Microlink
+    and everything else to the in-house scraper, with retries.
+
+    Social-platform URLs (`is_social_url`) are fetched via
+    `fetch_via_microlink`; all other URLs go through `scrape_opengraph`.
+    The chosen fetcher is tried up to `attempts` times, returning the
+    first truthy result. Between tries — whether the fetcher raised or
+    simply returned a falsy result (`None`) — this sleeps a short fixed
+    backoff (`0.5 * attempt_index` seconds, no randomness) before
+    retrying. Returns `None` if every attempt fails.
+    """
+    fetch = fetch_via_microlink if is_social_url(url) else scrape_opengraph
+
+    for attempt in range(1, attempts + 1):
+        try:
+            result = fetch(url)
+        except Exception:
+            result = None
+
+        if result:
+            return result
+
+        if attempt < attempts:
+            time.sleep(_RETRY_BACKOFF_SECONDS * attempt)
+
+    return None
