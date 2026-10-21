@@ -166,7 +166,12 @@ def is_safe_url(url):
 
     try:
         addrinfo = socket.getaddrinfo(host, None)
-    except socket.gaierror:
+    except (socket.gaierror, UnicodeError):
+        # gaierror: normal resolution failure (NXDOMAIN, etc).
+        # UnicodeError: malformed IDNA host (e.g. a label that can't be
+        # ascii-encoded/decoded) — getaddrinfo raises this instead of
+        # gaierror for such hosts. Fail closed either way: an
+        # unresolvable/malformed host is never safe to fetch.
         return False
 
     if not addrinfo:
@@ -273,6 +278,25 @@ def _first_text(values):
     return value or None
 
 
+def _safe_image_url(image):
+    """Return `image` unchanged iff it has an http(s) scheme, else `None`.
+
+    The design spec requires the preview image to be loaded via `<img
+    src>` only after validating an http(s) scheme. This is the one
+    enforcement point for that rule, shared by scrape_opengraph's
+    (og:image) and fetch_via_microlink's (Microlink's data.image.url)
+    extraction, so a `javascript:`, `data:`, relative, or empty value
+    never reaches the client as an image `src`.
+    """
+    if not image:
+        return None
+    try:
+        scheme = urlparse(image).scheme
+    except ValueError:
+        return None
+    return image if scheme in _SAFE_SCHEMES else None
+
+
 def scrape_opengraph(url):
     """Fetch `url` server-side and pull Open Graph metadata from its HTML.
 
@@ -281,6 +305,10 @@ def scrape_opengraph(url):
     (any field but `source` may be `None`), or `None` if the URL fails the
     SSRF guard (`is_safe_url`), the response isn't `text/html`, or
     anything else goes wrong — network error, non-HTML, unparseable body.
+    `image` is run through `_safe_image_url`, so a scraped `og:image` with
+    a non-http(s) scheme (`javascript:`, `data:`, relative, ...) comes
+    back as `None` rather than a value the client would load into an
+    `<img src>`.
 
     No fetch is attempted for a URL that fails the guard. The fetch goes
     through `_GUARDED_SESSION`, whose transport re-checks the real peer IP
@@ -344,7 +372,7 @@ def scrape_opengraph(url):
             "url": url,
             "title": og_title or title_fallback,
             "description": og_description or description_fallback,
-            "image": og_image,
+            "image": _safe_image_url(og_image),
             "site_name": og_site_name or urlparse(url).hostname,
             "source": "scrape",
         }
@@ -415,7 +443,10 @@ def fetch_via_microlink(url):
     `{"url", "title", "description", "image", "site_name", "source": "microlink"}`
     (any field but `source`/`url` may be `None`), or `None` if the response
     JSON's `status` isn't `"success"` or anything else goes wrong —
-    network error, timeout, malformed JSON.
+    network error, timeout, malformed JSON. `image` is run through
+    `_safe_image_url`, so a non-http(s) `data.image.url` from Microlink
+    comes back as `None` rather than a value the client would load into
+    an `<img src>`.
     """
     try:
         response = requests.get(
@@ -434,7 +465,7 @@ def fetch_via_microlink(url):
             "url": url,
             "title": data.get("title"),
             "description": data.get("description"),
-            "image": image,
+            "image": _safe_image_url(image),
             "site_name": data.get("publisher"),
             "source": "microlink",
         }

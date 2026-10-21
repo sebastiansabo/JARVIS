@@ -100,6 +100,60 @@ def test_microlink_non_success_returns_none(monkeypatch):
     assert fetch_via_microlink("https://facebook.com/x") is None
 
 
+def test_microlink_image_with_javascript_scheme_dropped(monkeypatch):
+    # Spec requirement: the image is only loaded via <img src> after
+    # validating an http(s) scheme. A javascript: image.url from Microlink
+    # must come back as None.
+    payload = {
+        "status": "success",
+        "data": {
+            "title": "T",
+            "description": "D",
+            "image": {"url": "javascript:alert(1)"},
+            "publisher": "facebook.com",
+        },
+    }
+    monkeypatch.setattr(link_preview.requests, "get", MagicMock(return_value=_fake_response(payload)))
+
+    r = fetch_via_microlink("https://facebook.com/reel/1")
+
+    assert r["image"] is None
+
+
+def test_microlink_image_with_data_scheme_dropped(monkeypatch):
+    payload = {
+        "status": "success",
+        "data": {
+            "title": "T",
+            "description": "D",
+            "image": {"url": "data:image/png;base64,abcd"},
+            "publisher": "facebook.com",
+        },
+    }
+    monkeypatch.setattr(link_preview.requests, "get", MagicMock(return_value=_fake_response(payload)))
+
+    r = fetch_via_microlink("https://facebook.com/reel/1")
+
+    assert r["image"] is None
+
+
+def test_microlink_image_with_https_scheme_kept(monkeypatch):
+    payload = {
+        "status": "success",
+        "data": {
+            "title": "T",
+            "description": "D",
+            "image": {"url": "https://cdn/i.jpg"},
+            "publisher": "facebook.com",
+        },
+    }
+    monkeypatch.setattr(link_preview.requests, "get", MagicMock(return_value=_fake_response(payload)))
+
+    r = fetch_via_microlink("https://facebook.com/reel/1")
+
+    assert r["image"] == "https://cdn/i.jpg"
+
+
 def test_microlink_network_error_returns_none(monkeypatch):
     monkeypatch.setattr(link_preview.requests, "get", MagicMock(side_effect=RuntimeError("boom")))
 

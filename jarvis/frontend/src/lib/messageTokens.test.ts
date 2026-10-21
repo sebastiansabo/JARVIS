@@ -49,4 +49,35 @@ describe('tokenizeMessage', () => {
     const urls = t.filter((k) => k.kind === 'url').map((k) => (k as { url: string }).url)
     expect(urls).toEqual(['https://a.com', 'https://b.com'])
   })
+
+  // Trailing-punctuation trimming (consistency with the backend's
+  // _trim_trailing in jarvis/chat/services/link_preview.py): the url
+  // token's value must exclude trailing sentence punctuation / unbalanced
+  // closing brackets, matching what the backend treats as "the URL" —
+  // but the raw characters must still render, as a following text token.
+
+  it('strips a trailing period from the url token and keeps it as text', () => {
+    const t = tokenizeMessage('see https://a.com.')
+    expect(t).toEqual([
+      { kind: 'text', text: 'see ' },
+      { kind: 'url', url: 'https://a.com' },
+      { kind: 'text', text: '.' },
+    ])
+  })
+
+  it('preserves a balanced closing paren inside a wiki url', () => {
+    const t = tokenizeMessage('https://en.wikipedia.org/wiki/Foo_(bar)')
+    expect(t).toEqual([
+      { kind: 'url', url: 'https://en.wikipedia.org/wiki/Foo_(bar)' },
+    ])
+  })
+
+  it('strips an unbalanced trailing paren when the url is wrapped in parens', () => {
+    const t = tokenizeMessage('(see https://a.com)')
+    expect(t).toEqual([
+      { kind: 'text', text: '(see ' },
+      { kind: 'url', url: 'https://a.com' },
+      { kind: 'text', text: ')' },
+    ])
+  })
 })
