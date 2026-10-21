@@ -55,6 +55,25 @@ def is_valid_transition(old: str, new: str) -> bool:
     return new == old or new in TRANSITIONS.get(old, set())
 
 
+# Status-history notes stamped on the automatic listing-driven flips below.
+LISTED_ON_PUBLISH_NOTE = 'Listat automat — anunț activ pe cel puțin o platformă'
+UNLISTED_NOTE = 'Revenit automat la «Pregătit vânzare» — niciun anunț activ'
+
+
+def next_status_for_listings(current_status: str, live_count: int) -> Optional[str]:
+    """Pure decision for the publish-driven status flip. A car becomes LISTED the
+    moment it's live on its first channel, and reverts to READY_FOR_SALE when the
+    last one is removed. Only the READY_FOR_SALE<->LISTED pair is auto-managed —
+    reserved/sold/delivered, manual promo (PRICE_REDUCED/AUCTION_CANDIDATE) and
+    not-yet-ready prep statuses are left exactly as the operator set them.
+    Returns the new status, or None when nothing should change."""
+    if live_count >= 1 and current_status == 'READY_FOR_SALE':
+        return 'LISTED'
+    if live_count == 0 and current_status == 'LISTED':
+        return 'READY_FOR_SALE'
+    return None
+
+
 class VehicleService:
     """Core business logic for vehicle operations."""
 
@@ -261,6 +280,24 @@ class VehicleService:
 
         return self._repo.change_status(vehicle_id, new_status,
                                         changed_by=changed_by, notes=notes)
+
+    def sync_listing_status(self, vehicle_id: int,
+                            changed_by: int = None) -> Optional[Dict[str, Any]]:
+        """Reconcile a vehicle's status with how many marketplace channels it's
+        live on. Call after any publish/unpublish/delete/verify on Autovit or
+        Autoworld: flips READY_FOR_SALE -> LISTED on the first live channel and
+        LISTED -> READY_FOR_SALE once the last one is gone (see
+        next_status_for_listings). No-op for every other status. Returns the
+        updated vehicle on a flip, else None."""
+        vehicle = self._repo.get_by_id(vehicle_id)
+        if not vehicle:
+            return None
+        target = next_status_for_listings(
+            vehicle.get('status'), self._repo.count_live_listings(vehicle_id))
+        if not target:
+            return None
+        note = LISTED_ON_PUBLISH_NOTE if target == 'LISTED' else UNLISTED_NOTE
+        return self.change_status(vehicle_id, target, changed_by=changed_by, notes=note)
 
     # ── SOFT DELETE ──
 

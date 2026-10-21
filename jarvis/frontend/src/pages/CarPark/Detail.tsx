@@ -58,6 +58,7 @@ import { reductionPct, formatReductionPct } from './priceReduction'
 import { useDragScroll } from './useDragScroll'
 import { PricingSheet, PriceZone, computePricingModel, type PricingModel, type PricingSheetSnapshot, type SheetInputs } from './PricingSheet'
 import { econ, type EngineParams } from './pricingEngine'
+import { publishedChannelCount, PUBLISH_CHANNEL_TOTAL } from './publishChannels'
 import { acquisitionProfitInputs } from './profitInputs'
 import { AutofoxSyncModal } from './AutofoxSyncModal'
 import { activeSellingPrice } from './vehicleFormPricing'
@@ -601,12 +602,22 @@ export default function CarParkDetail() {
                   className={`text-sm cursor-pointer transition group-hover:ring-2 group-hover:ring-ring/40 ${STATUS_COLORS[vehicle.status] ?? ''}`}
                 >
                   {STATUS_LABELS[vehicle.status] ?? vehicle.status}
+                  {publishedChannelCount(vehicle) >= 1 && (
+                    <span className="ml-1 tabular-nums opacity-70">
+                      ({publishedChannelCount(vehicle)}/{PUBLISH_CHANNEL_TOTAL})
+                    </span>
+                  )}
                   <Pencil className="h-3 w-3 opacity-60" />
                 </Badge>
               </button>
             ) : (
               <Badge variant="secondary" className={`text-sm ${STATUS_COLORS[vehicle.status] ?? ''}`}>
                 {STATUS_LABELS[vehicle.status] ?? vehicle.status}
+                {publishedChannelCount(vehicle) >= 1 && (
+                  <span className="ml-1 tabular-nums opacity-70">
+                    ({publishedChannelCount(vehicle)}/{PUBLISH_CHANNEL_TOTAL})
+                  </span>
+                )}
               </Badge>
             )}
             <Badge variant="outline">{CATEGORY_LABELS[vehicle.category] ?? vehicle.category}</Badge>

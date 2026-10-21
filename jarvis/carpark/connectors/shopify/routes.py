@@ -12,6 +12,7 @@ from . import shopify_bp
 from .client import ShopifyClient, ShopifyAuthError
 from .connector import ShopifyConnector, ensure_platform
 from ..cadence import ensure_auto_schedule
+from ..listing_status_hook import sync_listing_status as sync_listing_status_hook
 from . import taxonomy
 from .taxonomy_repository import TaxonomyMapRepository
 from .schema_repository import SchemaRepository
@@ -401,6 +402,8 @@ def publish_vehicle(vid):
             ensure_auto_schedule(vid, 'shopify', datetime.now(timezone.utc))
         except Exception as e:
             logger.warning('auto-schedule creation failed for vehicle %s: %s', vid, e)
+        # Car is now live on Autoworld → flip READY_FOR_SALE to LISTED (best-effort).
+        sync_listing_status_hook(vid, changed_by=getattr(current_user, 'id', None))
     return jsonify(result), (200 if result.get('success') else 400)
 
 
@@ -457,6 +460,9 @@ def unpublish_vehicle(vid):
         _pub_repo.update_listing(listing['id'],
                                  {'status': 'not_published', 'external_listing_id': None})
         result = {'success': True, 'deleted_on_shopify': True}
+    if result.get('success'):
+        # Came off Autoworld → revert LISTED to Pregătit vânzare if no channels left.
+        sync_listing_status_hook(vid, changed_by=getattr(current_user, 'id', None))
     return jsonify(result), (200 if result.get('success') else 400)
 
 
@@ -498,6 +504,9 @@ def verify_vehicle_status(vid):
             _pub_repo.update_listing(listing['id'], {'external_url': public_url})
             listing = _pub_repo.get_listing_by_vehicle_platform(vid, platform_id)
     freshness = compute_listing_freshness(listing, v_updated, datetime.now(timezone.utc))
+    # Verify may have flipped the listing to not_published (deleted on Shopify),
+    # changing the live-channel count → reconcile the vehicle status (best-effort).
+    sync_listing_status_hook(vid, changed_by=getattr(current_user, 'id', None))
     return jsonify({'success': True, 'listing': listing, 'freshness': freshness,
                     'vehicle_updated_at': v_updated, 'deleted_on_shopify': deleted})
 
