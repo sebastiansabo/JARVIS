@@ -7,11 +7,14 @@ and are excluded from consideration.
 """
 
 import ipaddress
+import logging
 import os
 import re
 import socket
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from urllib.parse import urljoin, urlparse
 
 import requests
@@ -19,6 +22,10 @@ import urllib3.connection
 import urllib3.connectionpool
 import urllib3.poolmanager
 from lxml import html as lxml_html
+
+from chat.repositories.chat_repository import ChatRepository
+
+logger = logging.getLogger(__name__)
 
 # Markdown image token, e.g. ![pic](https://cdn/x.png)
 _IMAGE_TOKEN_RE = re.compile(r'!\[[^\]]*\]\([^)]+\)')
@@ -575,3 +582,134 @@ def rehost_image(image_url, upload_dir):
     finally:
         if response is not None:
             response.close()
+
+
+# ---------------------------------------------------------------------------
+# Background resolution worker
+#
+# Posting (or editing) a message must never block the request on an
+# external fetch — Microlink / the in-house scraper can each take a few
+# seconds once retries are counted. chat_service hands off to
+# schedule_preview right after the DB insert/update, which fire-and-forgets
+# _resolve_and_store onto a small fixed-size thread pool; the HTTP response
+# returns immediately and the preview lands on the post asynchronously.
+#
+# _resolve_and_store also owns the url-level cache (digest_link_previews):
+# a successful resolution is cached for _PREVIEW_CACHE_TTL so the same link
+# posted again (e.g. in another channel) doesn't re-hit the network, and a
+# failed resolution is cached as a negative entry (data=None) for the much
+# shorter _NEGATIVE_CACHE_TTL so a broken/unfurlable link isn't retried on
+# every single post. Freshness is judged against a naive datetime.now(),
+# matching the naive TIMESTAMP column fetched_at is read back from; a row
+# that can't be confidently judged fresh is treated as stale and re-fetched
+# — erring toward a re-fetch is always safe, trusting a stale/ambiguous
+# cache is not.
+# ---------------------------------------------------------------------------
+
+_PREVIEW_CACHE_TTL = timedelta(days=7)
+_NEGATIVE_CACHE_TTL = timedelta(minutes=30)
+
+
+def _cache_is_fresh(row):
+    """Whether a `get_cached_preview` row can be reused without a re-fetch.
+
+    A success row (`data` is not `None`) is fresh for `_PREVIEW_CACHE_TTL`
+    (7 days); a negative row (`data` is `None`) is fresh for the much
+    shorter `_NEGATIVE_CACHE_TTL` (30 minutes) so a transient failure gets
+    retried reasonably soon. Returns `False` — stale, re-fetch — if `row`
+    is falsy, `fetched_at` is missing, or the age can't be computed (e.g. a
+    naive/aware datetime mismatch): when in doubt, re-fetch rather than
+    trust a cache entry we can't confidently validate.
+
+    `fetched_at` normally arrives as a `datetime` (e.g. straight from a
+    test or a bare cursor), but `BaseRepository.query_one` — what
+    `get_cached_preview` is built on — runs rows through
+    `database.dict_from_row`, which serializes any datetime-like value to
+    an ISO string. The `isinstance` + `fromisoformat` round trip below
+    mirrors the same isinstance-guarded pattern already used elsewhere in
+    this codebase for the same reason (e.g.
+    `happy/repositories/surface_repository.py:_to_dt`,
+    `carpark/connectors/listing_freshness.py:_aware`,
+    `field_sales/services/segmentation_service.py`).
+    """
+    if not row:
+        return False
+
+    fetched_at = row.get('fetched_at')
+    if fetched_at is None:
+        return False
+
+    if isinstance(fetched_at, str):
+        try:
+            fetched_at = datetime.fromisoformat(fetched_at)
+        except ValueError:
+            return False
+
+    try:
+        age = datetime.now() - fetched_at
+    except TypeError:
+        return False
+
+    ttl = _NEGATIVE_CACHE_TTL if row.get('data') is None else _PREVIEW_CACHE_TTL
+    return age <= ttl
+
+
+def _resolve_and_store(post_id, content, upload_dir):
+    """Resolve the link preview for `post_id`'s `content` and store it.
+
+    Synchronous worker body (unit-testable directly; `schedule_preview`
+    submits this to the background executor rather than calling it
+    in-line). Steps:
+
+    1. No URL in `content` -> clear any stale preview on the post
+       (`set_post_link_preview(post_id, None)`) and return. This matters
+       for edits: removing a link from a post must remove its preview too.
+    2. A cached row for the URL that is still `_cache_is_fresh` is reused
+       as-is (its `data`, which may itself be `None` for a negative entry)
+       without hitting the network.
+    3. Otherwise, resolve the URL (`resolve_preview`), re-host the image
+       for social-platform links (their CDN thumbnails are signed and
+       expire) via `rehost_image`, and cache the (possibly negative)
+       result (`upsert_cached_preview`).
+    4. Snapshot whatever `data` ended up as onto the post
+       (`set_post_link_preview`).
+
+    The whole body is wrapped in try/except so a failure here — network,
+    DB, anything — can never propagate into the background thread and is
+    just logged.
+    """
+    try:
+        url = extract_first_url(content)
+        if not url:
+            ChatRepository().set_post_link_preview(post_id, None)
+            return
+
+        row = ChatRepository().get_cached_preview(url)
+        if _cache_is_fresh(row):
+            data = row.get('data')
+        else:
+            data = resolve_preview(url)
+            if data and is_social_url(url) and data.get('image'):
+                data['image'] = rehost_image(data['image'], upload_dir) or None
+            ChatRepository().upsert_cached_preview(url, data)
+
+        ChatRepository().set_post_link_preview(post_id, data)
+    except Exception:
+        logger.exception('Link preview resolution failed for post %s', post_id)
+
+
+# Small, fixed-size pool: link-preview resolution is best-effort background
+# work, not a scalable task queue — a handful of workers is enough to keep
+# a burst of posts from serializing behind one slow fetch.
+_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix='link-preview')
+
+
+def schedule_preview(post_id, content, upload_dir):
+    """Fire-and-forget: submit `_resolve_and_store` for `post_id` onto the
+    module-level background executor and return immediately.
+
+    `upload_dir` must be resolved by the caller (in the request thread,
+    where `current_app` is valid) and passed in — `_resolve_and_store`
+    runs on a worker thread, where there is no Flask application context.
+    """
+    _EXECUTOR.submit(_resolve_and_store, post_id, content, upload_dir)
