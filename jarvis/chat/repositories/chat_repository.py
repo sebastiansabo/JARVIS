@@ -4,6 +4,8 @@ Note: the underlying DB tables intentionally remain `digest_*` (table rename
 deferred to a dedicated migration); only the code layer is renamed to Chat.
 """
 
+from psycopg2.extras import Json
+
 from core.base_repository import BaseRepository
 from core.organization.ghost import ghost_exclude_clause
 
@@ -502,3 +504,29 @@ class ChatRepository(BaseRepository):
             GROUP BY c.id, c.name
             HAVING COUNT(p.id) > 0
         ''', (user_id, user_id))
+
+    # ── Link previews ────────────────────────────────────────
+
+    def get_cached_preview(self, url):
+        """Look up a cached Open-Graph preview by URL. Returns {data, fetched_at}
+        or None if not cached yet. `data` is NULL for a negative cache entry
+        (a prior fetch that found no unfurlable metadata)."""
+        return self.query_one('''
+            SELECT data, fetched_at FROM digest_link_previews WHERE url = %s
+        ''', (url,))
+
+    def upsert_cached_preview(self, url, data):
+        """Cache (or refresh) a URL's preview metadata. `data=None` records a
+        negative cache entry so we don't re-fetch a known-unfurlable URL."""
+        self.execute('''
+            INSERT INTO digest_link_previews (url, data, fetched_at)
+            VALUES (%s, %s, CURRENT_TIMESTAMP)
+            ON CONFLICT (url) DO UPDATE SET data = EXCLUDED.data, fetched_at = CURRENT_TIMESTAMP
+        ''', (url, Json(data)))
+
+    def set_post_link_preview(self, post_id, data):
+        """Snapshot the resolved preview onto the post so it renders without
+        re-fetching. `data=None` clears/omits the preview."""
+        self.execute('''
+            UPDATE digest_posts SET link_preview = %s WHERE id = %s
+        ''', (Json(data), post_id))
