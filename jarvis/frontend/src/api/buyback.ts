@@ -110,6 +110,12 @@ export const buybackApi = {
   finalize: (id: number) =>
     api.post<{ record: BuybackRecord; handoff_error?: string }>(`${BASE}/records/${id}/finalize`, {}),
 
+  // Render the active company×brand contract template into a PDF document
+  // attached to the record (Documente section, label 'Contract'). Best-effort
+  // non-blocking placeholder warnings (e.g. missing fields) come back as `warnings`.
+  generateContract: (id: number) =>
+    api.post<{ photo: BuybackPhoto; warnings?: string[] }>(`${BASE}/records/${id}/generate-contract`, {}),
+
   retryHandoff: (id: number) =>
     api.post(`${BASE}/records/${id}/handoff/retry`, {}),
 
