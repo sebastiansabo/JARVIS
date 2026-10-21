@@ -38,7 +38,7 @@ logger = logging.getLogger('jarvis.buyback')
 
 MAX_BATCH_PHOTOS = 50
 MAX_PHOTO_SIZE = 15 * 1024 * 1024  # 15 MB per file — matches carpark's norm
-_DOC_TYPES = {'document', 'civ', 'talon'}
+_DOC_TYPES = {'document', 'civ', 'talon', 'contract'}
 
 # Safe Content-Type per file extension for the download route. Anything not
 # here is served as an octet-stream attachment (forced download, never rendered

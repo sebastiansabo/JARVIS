@@ -26,7 +26,7 @@ _EXT_BY_MIME = {
 
 # photo_type values a client may assign to an uploaded document — anything else
 # is clamped to the generic 'document' so a caller can't inject arbitrary types.
-_DOC_TYPES = {'document', 'civ', 'talon'}
+_DOC_TYPES = {'document', 'civ', 'talon', 'contract'}
 
 
 def _parse_data_url(value: str):
@@ -213,3 +213,31 @@ class PhotoRepository(BaseRepository):
                 caption=d.get('caption'), file_size=len(data),
             ))
         return created
+
+    def store_contract_pdf(self, record_id: int, pdf_bytes: bytes,
+                            caption: str) -> Dict[str, Any]:
+        """Store a generated contract PDF as the record's single `'contract'`
+        document, replacing any prior one.
+
+        Unlike store_documents (client-supplied base64 batches), this takes
+        already-rendered PDF bytes (the P3b contract renderer's output) for a
+        single document and enforces a store-and-REPLACE semantic: any
+        existing non-deleted `photo_type='contract'` row for this record is
+        soft-deleted first (via the same `soft_delete` the delete_photo route
+        uses), so regenerating a contract never leaves more than one live
+        'contract' row behind. The new PDF is then uploaded PRIVATE to Spaces
+        (contracts carry personal data — owner name/address, VIN — same
+        posture as store_documents) and inserted via `create`.
+        """
+        existing_ids = [p['id'] for p in self.get_by_record(record_id)
+                        if p['photo_type'] == 'contract']
+        if existing_ids:
+            self.soft_delete(existing_ids, record_id)
+
+        key = f'private/buyback/{record_id}/contract-{uuid4().hex}.pdf'
+        spaces_service.upload(pdf_bytes, key, 'application/pdf', acl='private')
+
+        return self.create(
+            record_id, url=key, photo_type='contract', caption=caption,
+            file_size=len(pdf_bytes),
+        )

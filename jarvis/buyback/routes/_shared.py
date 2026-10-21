@@ -202,7 +202,7 @@ def _serialize(obj):
     return obj
 
 
-_DOC_LABELS = {'civ': 'CIV', 'talon': 'Talon'}
+_DOC_LABELS = {'civ': 'CIV', 'talon': 'Talon', 'contract': 'Contract'}
 
 
 def serialize_photos(photos):
