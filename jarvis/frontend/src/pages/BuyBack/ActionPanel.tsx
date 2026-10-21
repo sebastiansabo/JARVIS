@@ -592,14 +592,28 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
         )}
 
         {showGenerateContract && (
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={generateContractMutation.isPending}
-            onClick={() => generateContractMutation.mutate()}
-          >
-            Generează contract
-          </Button>
+          <div className="space-y-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={generateContractMutation.isPending}
+              onClick={() => generateContractMutation.mutate()}
+            >
+              {generateContractMutation.isPending ? 'Se generează…' : 'Generează contract'}
+            </Button>
+            {/* Immediate download right at the button so there's no scrolling to
+                the Documente section; the contract also lives there (PhotoGallery). */}
+            {generateContractMutation.data?.photo?.download_url && (
+              <a
+                href={generateContractMutation.data.photo.download_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block text-sm font-medium text-primary hover:underline"
+              >
+                ↓ Descarcă contractul
+              </a>
+            )}
+          </div>
         )}
 
         {showCarparkLabel && (
