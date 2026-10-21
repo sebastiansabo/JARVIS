@@ -1,5 +1,5 @@
 import { api } from './client'
-import type { BuybackRecord, BuybackOffer, BuybackPhoto, BuybackEvent, BuybackConfig, ConsignmentAgreement, CustodyAgreementInput, VinHistoryEntry, BuybackContractTemplate } from '../types/buyback'
+import type { BuybackRecord, BuybackOffer, BuybackPhoto, BuybackEvent, BuybackConfig, ConsignmentAgreement, CustodyAgreementInput, VinHistoryEntry, BuybackContractTemplate, ContractDraft } from '../types/buyback'
 
 const BASE = '/api/buyback'
 
@@ -115,6 +115,21 @@ export const buybackApi = {
   // non-blocking placeholder warnings (e.g. missing fields) come back as `warnings`.
   generateContract: (id: number) =>
     api.post<{ photo: BuybackPhoto; warnings?: string[] }>(`${BASE}/records/${id}/generate-contract`, {}),
+
+  // The editable contract draft (stored text, or a fresh substitution preview).
+  getContractDraft: (id: number) =>
+    api.get<ContractDraft>(`${BASE}/records/${id}/contract`),
+
+  // Save the advisor's inline edits and re-render the PDF from that exact text.
+  saveContract: (id: number, data: { title?: string; body?: string; general_conditions?: string }) =>
+    api.post<{ photo: BuybackPhoto; draft: ContractDraft; warnings?: string[] }>(
+      `${BASE}/records/${id}/contract`, data),
+
+  // Rebuild the contract from the template + current client/car data,
+  // discarding any manual edits.
+  regenerateContractFromData: (id: number) =>
+    api.post<{ photo: BuybackPhoto; draft: ContractDraft; warnings?: string[] }>(
+      `${BASE}/records/${id}/contract`, { from_data: true }),
 
   retryHandoff: (id: number) =>
     api.post(`${BASE}/records/${id}/handoff/retry`, {}),

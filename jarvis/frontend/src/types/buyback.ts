@@ -122,6 +122,21 @@ export interface BuybackContractTemplate {
   is_active: boolean
 }
 
+// The editable per-record contract (P3c): the stored title/body/general
+// conditions the advisor edits inline, or a fresh template-substitution
+// preview when none is stored yet.
+export interface ContractDraft {
+  has_template: boolean
+  has_contract: boolean
+  document_type: 'purchase' | 'consignment'
+  title: string
+  body: string
+  general_conditions: string
+  generated_at: string | null
+  download_url: string | null
+  warnings: string[]
+}
+
 export interface BuybackOffer {
   id: number
   record_id: number

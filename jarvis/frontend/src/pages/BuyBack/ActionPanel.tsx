@@ -159,12 +159,8 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   const showConsignatLink = status === 'CONSIGNAT' && !!record.carpark_vehicle_id
   // Render the company×brand contract template into a PDF attached to the
   // record (Documente). Available once there's an agreed price to contract
-  // over — final offer, bought, or either consignment stage — and re-runnable
-  // (regenerate replaces the tile) under the same edit authority as the rest
-  // of the record.
-  const showGenerateContract =
-    ['FINAL_OFFER', 'BOUGHT', 'CONSIGNMENT_OFFER', 'CONSIGNAT'].includes(status) && can('buyback.record.edit')
-
+  // (Contract generation/editing lives in the dedicated ContractCard rendered
+  // under this panel in BuyBackDetail, not here.)
   const nothingToShow =
     !showInitialOffer &&
     !showProposeConsignment &&
@@ -181,8 +177,7 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     !showResume &&
     !showCustody &&
     !showCustodyLink &&
-    !showConsignatLink &&
-    !showGenerateContract
+    !showConsignatLink
 
   // ── offer dialog (shared by "initial" + "final") ──
   const [offerDialogType, setOfferDialogType] = useState<'initial' | 'final' | null>(null)
@@ -355,16 +350,6 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
       invalidate()
     },
     onError: (e) => toast.error(errMsg(e, 'Reîncercarea transferului a eșuat')),
-  })
-
-  // ── contract generation ──
-  const generateContractMutation = useMutation({
-    mutationFn: () => buybackApi.generateContract(record.id),
-    onSuccess: (res) => {
-      invalidate()
-      res.warnings?.length ? toast.warning(res.warnings.join(' ')) : toast.success('Contract generat')
-    },
-    onError: (e) => toast.error(errMsg(e, 'Generarea contractului a eșuat')),
   })
 
   // ── custody transfer (LOST → CarPark consignment) ──
@@ -587,31 +572,6 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
                   Reîncearcă transferul
                 </Button>
               </div>
-            )}
-          </div>
-        )}
-
-        {showGenerateContract && (
-          <div className="space-y-2">
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={generateContractMutation.isPending}
-              onClick={() => generateContractMutation.mutate()}
-            >
-              {generateContractMutation.isPending ? 'Se generează…' : 'Generează contract'}
-            </Button>
-            {/* Immediate download right at the button so there's no scrolling to
-                the Documente section; the contract also lives there (PhotoGallery). */}
-            {generateContractMutation.data?.photo?.download_url && (
-              <a
-                href={generateContractMutation.data.photo.download_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-sm font-medium text-primary hover:underline"
-              >
-                ↓ Descarcă contractul
-              </a>
             )}
           </div>
         )}
