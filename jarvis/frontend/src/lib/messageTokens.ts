@@ -14,6 +14,43 @@ export type Token =
 // never separately matched (and re-linkified) by the url branch.
 const TOKEN_RE = /!\[([^\]]*)\]\(([^)]+)\)|@\[([^\]]+)\]\((\d+)\)|(https?:\/\/[^\s]+)/g
 
+// Sentence punctuation always trimmed from the tail of a matched URL.
+// Mirrors the backend's _SENTENCE_PUNCTUATION (jarvis/chat/services/link_preview.py).
+const SENTENCE_PUNCTUATION = '.,;:'
+
+// Closing brackets, mapped to their opener. Only trimmed when unbalanced
+// within the matched URL (so real URLs like `.../Foo_(bar)` survive).
+// Mirrors the backend's _CLOSERS.
+const CLOSERS: Record<string, string> = { ')': '(', ']': '[', '}': '{' }
+
+function countChar(str: string, ch: string): number {
+  let count = 0
+  for (const c of str) if (c === ch) count++
+  return count
+}
+
+// Trim trailing noise from a matched URL — the same rule the backend's
+// _trim_trailing applies when extracting the URL for link-preview
+// resolution, so the <a href> a message renders matches what the backend
+// would treat as "the URL" (e.g. `https://a.com.` -> href `https://a.com`,
+// `https://en.wikipedia.org/wiki/Foo_(bar)` left intact).
+function trimTrailingUrlPunctuation(url: string): string {
+  while (url.length > 0) {
+    const last = url[url.length - 1]
+    if (SENTENCE_PUNCTUATION.includes(last)) {
+      url = url.slice(0, -1)
+      continue
+    }
+    const opener = CLOSERS[last]
+    if (opener !== undefined && countChar(url, last) > countChar(url, opener)) {
+      url = url.slice(0, -1)
+      continue
+    }
+    break
+  }
+  return url
+}
+
 export function tokenizeMessage(content: string): Token[] {
   const tokens: Token[] = []
   let last = 0
@@ -28,8 +65,17 @@ export function tokenizeMessage(content: string): Token[] {
       // Mention: @[Name](id)
       tokens.push({ kind: 'mention', name: match[3], id: match[4] })
     } else {
-      // Bare URL
-      tokens.push({ kind: 'url', url: match[5] })
+      // Bare URL — trim trailing punctuation the same way the backend
+      // does for the link-preview URL, so the href excludes it. The
+      // trimmed suffix is never dropped from the rendered text: it is
+      // emitted as a following text token, so the message still reads
+      // identically — only the link target shrinks.
+      const raw = match[5]
+      const trimmed = trimTrailingUrlPunctuation(raw)
+      tokens.push({ kind: 'url', url: trimmed })
+      if (trimmed.length < raw.length) {
+        tokens.push({ kind: 'text', text: raw.slice(trimmed.length) })
+      }
     }
     last = re.lastIndex
   }

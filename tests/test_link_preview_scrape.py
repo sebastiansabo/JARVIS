@@ -297,6 +297,92 @@ def test_scrape_network_error_returns_none(monkeypatch):
     assert scrape_opengraph("https://example.com") is None
 
 
+def test_scrape_image_with_javascript_scheme_dropped(monkeypatch):
+    # Spec requirement: the image is only loaded via <img src> after
+    # validating an http(s) scheme. A javascript: og:image must come
+    # back as None, not pass through to the client untouched.
+    _patch_public_dns(monkeypatch)
+    html = (b'<html><head>'
+            b'<meta property="og:title" content="T">'
+            b'<meta property="og:image" content="javascript:alert(1)">'
+            b'</head></html>')
+    response = _FakeResponse(
+        status_code=200,
+        headers={"Content-Type": "text/html"},
+        body=html,
+    )
+    _patch_get(monkeypatch, MagicMock(return_value=response))
+
+    r = scrape_opengraph("https://example.com")
+
+    assert r["image"] is None
+
+
+def test_scrape_image_with_data_scheme_dropped(monkeypatch):
+    _patch_public_dns(monkeypatch)
+    html = (b'<html><head>'
+            b'<meta property="og:title" content="T">'
+            b'<meta property="og:image" content="data:image/png;base64,abcd">'
+            b'</head></html>')
+    response = _FakeResponse(
+        status_code=200,
+        headers={"Content-Type": "text/html"},
+        body=html,
+    )
+    _patch_get(monkeypatch, MagicMock(return_value=response))
+
+    r = scrape_opengraph("https://example.com")
+
+    assert r["image"] is None
+
+
+def test_scrape_image_with_relative_path_dropped(monkeypatch):
+    _patch_public_dns(monkeypatch)
+    html = (b'<html><head>'
+            b'<meta property="og:title" content="T">'
+            b'<meta property="og:image" content="/relative/i.jpg">'
+            b'</head></html>')
+    response = _FakeResponse(
+        status_code=200,
+        headers={"Content-Type": "text/html"},
+        body=html,
+    )
+    _patch_get(monkeypatch, MagicMock(return_value=response))
+
+    r = scrape_opengraph("https://example.com")
+
+    assert r["image"] is None
+
+
+def test_scrape_image_with_https_scheme_kept(monkeypatch):
+    _patch_public_dns(monkeypatch)
+    html = (b'<html><head>'
+            b'<meta property="og:title" content="T">'
+            b'<meta property="og:image" content="https://cdn.example.com/i.jpg">'
+            b'</head></html>')
+    response = _FakeResponse(
+        status_code=200,
+        headers={"Content-Type": "text/html"},
+        body=html,
+    )
+    _patch_get(monkeypatch, MagicMock(return_value=response))
+
+    r = scrape_opengraph("https://example.com")
+
+    assert r["image"] == "https://cdn.example.com/i.jpg"
+
+
+def test_is_safe_url_rejects_malformed_idna_unicode_error(monkeypatch):
+    # socket.getaddrinfo raises UnicodeError (not gaierror) for a malformed
+    # IDNA host. is_safe_url must fail closed (return False) rather than
+    # let the exception propagate out of the SSRF guard.
+    monkeypatch.setattr(
+        link_preview.socket, "getaddrinfo",
+        MagicMock(side_effect=UnicodeError("label empty or too long")),
+    )
+    assert is_safe_url("https://xn--bad.example/x") is False
+
+
 def test_connect_guard_refuses_non_public_peer():
     """TOCTOU backstop: even if DNS said "public", the transport refuses
     once the real connected peer IP is private/CGNAT/etc."""
