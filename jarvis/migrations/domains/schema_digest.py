@@ -62,6 +62,22 @@ def create_schema_digest(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_digest_posts_user ON digest_posts(user_id) WHERE deleted_at IS NULL')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_digest_posts_pinned ON digest_posts(channel_id) WHERE is_pinned = TRUE AND deleted_at IS NULL')
 
+    # Chat messenger: cached link-preview metadata rendered under a post.
+    for col_sql in [
+        "ALTER TABLE digest_posts ADD COLUMN IF NOT EXISTS link_preview JSONB",
+    ]:
+        cursor.execute(col_sql)
+
+    # ============== Link Preview Cache ==============
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS digest_link_previews (
+            url TEXT PRIMARY KEY,
+            data JSONB,
+            fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+
     # ============== Reactions ==============
 
     cursor.execute('''
