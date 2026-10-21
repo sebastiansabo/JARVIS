@@ -1,4 +1,3 @@
-import type React from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Pin, Reply, MessageSquare, MoreVertical, Trash2, Smile } from 'lucide-react'
 import { digestApi } from '@/api/digest'
@@ -9,8 +8,10 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { tokenizeMessage } from '@/lib/messageTokens'
 import type { DigestPost } from '@/types/digest'
 import PollDisplay from './PollDisplay'
+import LinkPreviewCard from './LinkPreviewCard'
 
 const EMOJI_QUICK = ['👍', '❤️', '😂', '🎉', '🤔', '👀', '🚀', '💯']
 
@@ -22,39 +23,42 @@ interface Props {
   isThreadReply?: boolean
 }
 
-// Matches images: ![alt](url) and mentions: @[Name](id)
-const TOKEN_RE = /!\[([^\]]*)\]\(([^)]+)\)|@\[([^\]]+)\]\((\d+)\)/g
-
 function renderContent(content: string) {
-  const parts: (string | React.ReactElement)[] = []
-  let last = 0
-  let match: RegExpExecArray | null
-  const re = new RegExp(TOKEN_RE)
-  while ((match = re.exec(content)) !== null) {
-    if (match.index > last) parts.push(content.slice(last, match.index))
-    if (match[1] !== undefined || match[2] !== undefined) {
-      // Image: ![alt](url)
-      parts.push(
-        <img
-          key={`img-${match.index}`}
-          src={match[2]}
-          alt={match[1] || 'image'}
-          className="mt-1 max-w-xs max-h-64 rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
-          onClick={() => window.open(match![2], '_blank')}
-        />
-      )
-    } else {
-      // Mention: @[Name](id)
-      parts.push(
-        <span key={`mention-${match.index}`} className="inline-flex items-center rounded bg-primary/15 text-primary font-medium px-1 text-[13px]">
-          @{match[3]}
-        </span>
-      )
+  const tokens = tokenizeMessage(content)
+  return tokens.map((token, i) => {
+    switch (token.kind) {
+      case 'image':
+        return (
+          <img
+            key={`img-${i}`}
+            src={token.url}
+            alt={token.alt || 'image'}
+            className="mt-1 max-w-xs max-h-64 rounded-lg border cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={() => window.open(token.url, '_blank')}
+          />
+        )
+      case 'mention':
+        return (
+          <span key={`mention-${i}`} className="inline-flex items-center rounded bg-primary/15 text-primary font-medium px-1 text-[13px]">
+            @{token.name}
+          </span>
+        )
+      case 'url':
+        return (
+          <a
+            key={`url-${i}`}
+            href={token.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline underline-offset-2 hover:opacity-80 break-all"
+          >
+            {token.url}
+          </a>
+        )
+      default:
+        return token.text
     }
-    last = re.lastIndex
-  }
-  if (last < content.length) parts.push(content.slice(last))
-  return parts.length > 0 ? parts : content
+  })
 }
 
 function formatTime(iso: string) {
@@ -216,6 +220,9 @@ export default function PostItem({ post, channelId, onReply, onThread, isThreadR
             <div className="text-sm whitespace-pre-wrap break-words">
               {renderContent(post.content)}
             </div>
+
+            {/* Link preview */}
+            {post.link_preview && <LinkPreviewCard preview={post.link_preview} />}
 
             {/* Poll */}
             {post.type === 'poll' && post.poll && (

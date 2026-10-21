@@ -60,8 +60,20 @@ export interface DigestPost {
   reply_count: number
   reactions: DigestReaction[]
   poll?: DigestPoll
+  link_preview?: LinkPreview | null
   created_at: string
   updated_at: string
+}
+
+// Snapshot of an unfurled URL's metadata, produced server-side when a post's
+// content contains a link. Null when the post has no (or a failed) preview.
+export interface LinkPreview {
+  url: string
+  title: string | null
+  description: string | null
+  image: string | null
+  site_name: string | null
+  source: string
 }
 
 export interface DigestReaction {
