@@ -173,12 +173,36 @@ def _all_companies_scope():
     return sorted(ids)
 
 
+def _may_act_on_company(company_id, user=None):
+    """True if `user` (default: the request's current_user) may act on a
+    vehicle in `company_id`: Admins (can_access_settings) on any company;
+    everyone else on their own company plus their actable set (org-responsable
+    companies, via get_actable_company_ids). Mirrors the authorization in
+    _acting_company_id() so per-vehicle actions are bounded to the same scope
+    as the lists the caller can see. The own-company match is a fast path that
+    avoids the DB-backed actable-set lookup for the common case. The explicit
+    `user` arg lets connector blueprints (which bind their own current_user)
+    reuse this without the vehicles-module proxy."""
+    user = user if user is not None else current_user
+    if getattr(user, 'can_access_settings', False):
+        return True
+    own = getattr(user, 'company_id', None)
+    if company_id is not None and company_id == own:
+        return True
+    return company_id in get_actable_company_ids(user.id)
+
+
 def _verify_vehicle_ownership(vehicle_id):
-    """Fetch a vehicle by id. Returns (vehicle_dict, None) if it exists, or
-    (None, error_response) if it doesn't. Exists-only: no company check —
-    the tenant switcher is permissive by design (see Slice A design doc)."""
+    """Fetch a vehicle by id and verify the caller may act on it. Returns
+    (vehicle_dict, None) when the vehicle exists and belongs to a company the
+    caller may act on (own company + org-responsable set; Admin = any), or
+    (None, 404) when the vehicle does not exist OR is out of scope — a
+    cross-tenant id is indistinguishable from an unknown one, so a guessed id
+    can't be used to probe for or act on another company's vehicles."""
     vehicle = _vehicle_service.get_vehicle(vehicle_id)
     if not vehicle:
+        return None, (jsonify({'success': False, 'error': 'Vehicle not found'}), 404)
+    if not _may_act_on_company(vehicle.get('company_id')):
         return None, (jsonify({'success': False, 'error': 'Vehicle not found'}), 404)
     return vehicle, None
 
@@ -419,8 +443,8 @@ def update_vehicle(vehicle_id):
     if not data:
         return jsonify({'success': False, 'error': 'Request body required'}), 400
 
-    # Verify vehicle exists (exists-only check — permissive tenant switcher,
-    # no company restriction; see _verify_vehicle_ownership docstring)
+    # Verify vehicle exists and is in the caller's scope (own + actable
+    # companies; Admin = any — see _verify_vehicle_ownership docstring)
     vehicle, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err
@@ -498,8 +522,8 @@ def update_vehicle(vehicle_id):
 @carpark_delete_required
 def delete_vehicle(vehicle_id):
     """Soft-delete a vehicle."""
-    # Verify vehicle exists (exists-only check — permissive tenant switcher,
-    # no company restriction; see _verify_vehicle_ownership docstring)
+    # Verify vehicle exists and is in the caller's scope (own + actable
+    # companies; Admin = any — see _verify_vehicle_ownership docstring)
     _, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err
@@ -522,8 +546,8 @@ def change_vehicle_status(vehicle_id):
     if not data or not data.get('status'):
         return jsonify({'success': False, 'error': 'status is required'}), 400
 
-    # Verify vehicle exists (exists-only check — permissive tenant switcher,
-    # no company restriction; see _verify_vehicle_ownership docstring)
+    # Verify vehicle exists and is in the caller's scope (own + actable
+    # companies; Admin = any — see _verify_vehicle_ownership docstring)
     _, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err
@@ -553,8 +577,8 @@ def change_vehicle_status(vehicle_id):
 @carpark_required
 def vehicle_status_history(vehicle_id):
     """Status change history for a vehicle."""
-    # Verify vehicle exists (exists-only check — permissive tenant switcher,
-    # no company restriction; see _verify_vehicle_ownership docstring)
+    # Verify vehicle exists and is in the caller's scope (own + actable
+    # companies; Admin = any — see _verify_vehicle_ownership docstring)
     _, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err
@@ -567,8 +591,8 @@ def vehicle_status_history(vehicle_id):
 @carpark_required
 def vehicle_modifications(vehicle_id):
     """Field-level modification history."""
-    # Verify vehicle exists (exists-only check — permissive tenant switcher,
-    # no company restriction; see _verify_vehicle_ownership docstring)
+    # Verify vehicle exists and is in the caller's scope (own + actable
+    # companies; Admin = any — see _verify_vehicle_ownership docstring)
     _, err = _verify_vehicle_ownership(vehicle_id)
     if err:
         return err

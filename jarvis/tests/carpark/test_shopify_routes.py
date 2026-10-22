@@ -6,6 +6,7 @@ from flask import Flask
 import core.utils.api_helpers as api_helpers
 from carpark.connectors.shopify import shopify_bp
 import carpark.connectors.shopify.routes as routes_mod
+import carpark.routes.vehicles as vehicles_mod
 
 class FakeUser:
     is_authenticated = True; id = 1; company_id = 10
@@ -69,6 +70,8 @@ def test_publish_vehicle_calls_connector(client, monkeypatch):
     assert config == {'vendor': 'Autoworld', 'template_suffix': 'produs_servicii_stoc_aap'}
 
 def test_publish_requires_configured_account(client, monkeypatch):
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id',
+        lambda vid: {'id': vid, 'company_id': 10})
     monkeypatch.setattr(routes_mod._repo, 'get_all_by_type', lambda t: [])
     r = client.post('/shopify/api/vehicles/7/publish')
     assert r.status_code == 400
@@ -145,6 +148,8 @@ def test_preview_forbidden_without_edit_permission(client, monkeypatch):
 
 
 def test_unpublish_vehicle_archives(client, monkeypatch):
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id',
+        lambda vid: {'id': vid, 'company_id': 10})
     monkeypatch.setattr(routes_mod._repo, 'get_all_by_type',
         lambda t: [{'id': 1, 'connector_type': 'shopify',
                     'config': {'store_domain': 'cb6c17-2.myshopify.com'},
@@ -346,6 +351,8 @@ def test_verify_status_forbidden_without_carpark(client, monkeypatch):
 
 
 def test_unpublish_reconciles_when_product_already_deleted(client, monkeypatch):
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id',
+                        lambda vid: {'id': vid, 'company_id': 10})
     monkeypatch.setattr(routes_mod._repo, 'get_all_by_type', lambda t: _shopify_account())
     monkeypatch.setattr(routes_mod, 'ensure_platform', lambda pub, dom: 3)
     monkeypatch.setattr(routes_mod._pub_repo, 'get_listing_by_vehicle_platform',
@@ -534,3 +541,72 @@ def test_build_client_caches_per_connector(monkeypatch):
             'credentials': {'client_id': 'cid', 'client_secret': 'sec2'}}
     c3 = routes_mod._build_client(row2)
     assert c3 is not c1  # changed secret → fresh client
+
+
+# ── Tenant scoping (cross-company IDOR guard) ─────────────────────────────
+# The default FakeUser is an Admin (can_access_settings=True), so the
+# existing publish/status tests bypass the scope check. These use a
+# NON-admin caller to prove a guessed cross-tenant vid is blocked with 404
+# before any Shopify write.
+
+class NonAdminUser:
+    is_authenticated = True
+    id = 2
+    company_id = 10
+    can_access_carpark = True
+    can_edit_carpark = True
+    can_access_settings = False
+
+
+def _nonadmin(monkeypatch):
+    user = NonAdminUser()
+    monkeypatch.setattr(api_helpers, 'current_user', user)
+    monkeypatch.setattr(routes_mod, 'current_user', user)
+    # _may_act_on_company reads get_actable_company_ids from the vehicles module.
+    monkeypatch.setattr(vehicles_mod, 'get_actable_company_ids', lambda _u: {10})
+
+
+def test_vehicle_status_cross_tenant_blocked_404(client, monkeypatch):
+    _nonadmin(monkeypatch)
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id',
+                        lambda vid: {'id': vid, 'company_id': 999})
+    r = client.get('/shopify/api/vehicles/7/status')
+    assert r.status_code == 404
+
+
+def test_publish_cross_tenant_blocked_404(client, monkeypatch):
+    _nonadmin(monkeypatch)
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id',
+                        lambda vid: {'id': vid, 'company_id': 999})
+    published = []
+
+    class Boom:
+        def __init__(self, *a, **k):
+            pass
+
+        def publish(self, *a, **k):
+            published.append(1)
+            return {'success': True}
+    monkeypatch.setattr(routes_mod, 'ShopifyConnector', Boom)
+    r = client.post('/shopify/api/vehicles/7/publish', json={})
+    assert r.status_code == 404
+    assert published == []  # scope check fires before any Shopify write
+
+
+def test_unpublish_cross_tenant_blocked_404(client, monkeypatch):
+    _nonadmin(monkeypatch)
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id',
+                        lambda vid: {'id': vid, 'company_id': 999})
+    r = client.post('/shopify/api/vehicles/7/unpublish', json={})
+    assert r.status_code == 404
+
+
+def test_vehicle_status_actable_company_allowed(client, monkeypatch):
+    """A non-own company in the caller's actable set is allowed (switcher)."""
+    _nonadmin(monkeypatch)
+    monkeypatch.setattr(vehicles_mod, 'get_actable_company_ids', lambda _u: {10, 999})
+    monkeypatch.setattr(routes_mod._vehicle_repo, 'get_by_id',
+                        lambda vid: {'id': vid, 'company_id': 999, 'updated_at': None})
+    monkeypatch.setattr(routes_mod, '_get_single_account', lambda: None)
+    r = client.get('/shopify/api/vehicles/7/status')
+    assert r.status_code == 200

@@ -289,6 +289,15 @@ def update_photo(photo_id):
     if 'photo_type' in data and data['photo_type'] not in VALID_PHOTO_TYPES:
         return jsonify({'success': False, 'error': f'Invalid photo_type. Allowed: {", ".join(VALID_PHOTO_TYPES)}'}), 400
 
+    # SECURITY: resolve the photo's vehicle and scope it to the caller's
+    # company (a guessed photo_id must not mutate another tenant's photo).
+    existing = _photo_repo.get_by_id(photo_id)
+    if not existing:
+        return jsonify({'error': 'Photo not found'}), 404
+    _, err = _verify_vehicle_ownership(existing['vehicle_id'])
+    if err:
+        return jsonify({'error': 'Photo not found'}), 404
+
     photo = _photo_repo.update(photo_id, data)
     if not photo:
         return jsonify({'error': 'Photo not found'}), 404
@@ -332,6 +341,14 @@ def reorder_photos(vehicle_id):
 @carpark_edit_required
 def delete_photo(photo_id):
     """Soft-delete a single photo (hidden now, purged permanently after 24h)."""
+    # SECURITY: resolve the photo's vehicle and scope it to the caller's
+    # company (a guessed photo_id must not delete another tenant's photo).
+    existing = _photo_repo.get_by_id(photo_id)
+    if not existing:
+        return jsonify({'success': False, 'error': 'Photo not found'}), 404
+    _, err = _verify_vehicle_ownership(existing['vehicle_id'])
+    if err:
+        return jsonify({'success': False, 'error': 'Photo not found'}), 404
     if _photo_repo.soft_delete([photo_id]):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Photo not found'}), 404

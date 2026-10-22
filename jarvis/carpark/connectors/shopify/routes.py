@@ -23,6 +23,7 @@ from carpark.repositories.photo_repository import PhotoRepository
 from carpark.repositories.publishing_repository import PublishingRepository
 from carpark.connectors.listing_freshness import compute_listing_freshness
 from carpark.services import reconcile_service
+from carpark.routes.vehicles import _may_act_on_company
 
 logger = logging.getLogger('jarvis.shopify.routes')
 
@@ -32,6 +33,17 @@ _photo_repo = PhotoRepository()
 _taxo_repo = TaxonomyMapRepository()
 _schema_repo = SchemaRepository()
 _pub_repo = PublishingRepository()
+
+
+def _vehicle_or_404(vid):
+    """Fetch a vehicle and scope it to the caller's company (own + actable
+    set; Admin = any). Returns (vehicle, None) or (None, 404-response) — a
+    cross-tenant vid is indistinguishable from an unknown one, so a guessed
+    id can't read or mutate another company's Shopify listing state."""
+    vehicle = _vehicle_repo.get_by_id(vid)
+    if not vehicle or not _may_act_on_company(vehicle.get('company_id'), user=current_user):
+        return None, (jsonify({'success': False, 'error': 'Vehicle not found'}), 404)
+    return vehicle, None
 
 DEFAULT_VENDOR = 'Autoworld'
 DEFAULT_TEMPLATE_SUFFIX = 'produs_servicii_stoc_aap'
@@ -378,13 +390,13 @@ def publish_vehicle(vid):
         _schema_repo.seed_defaults_if_empty()
     except Exception:
         logger.exception('schema seed failed; continuing with existing field/value map')
+    vehicle, err = _vehicle_or_404(vid)
+    if err:
+        return err
     conn, err = _connector_or_error()
     if err:
         return err
     connector = _get_single_account()
-    vehicle = _vehicle_repo.get_by_id(vid)
-    if not vehicle:
-        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
     photos = _photo_repo.get_by_vehicle(vid)
     _reconcile_best_effort(_build_client(connector))
     field_map = _schema_repo.get_active_field_map()
@@ -422,12 +434,12 @@ def preview_vehicle(vid):
         _schema_repo.seed_defaults_if_empty()
     except Exception:
         logger.exception('schema seed failed; continuing with existing field/value map')
+    vehicle, err = _vehicle_or_404(vid)
+    if err:
+        return err
     connector = _get_single_account()
     if not connector:
         return jsonify({'success': False, 'error': 'Shopify is not configured'}), 400
-    vehicle = _vehicle_repo.get_by_id(vid)
-    if not vehicle:
-        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
     photos = _photo_repo.get_by_vehicle(vid)
 
     eligible, reason = mapper.is_eligible(vehicle, photos)
@@ -445,6 +457,9 @@ def preview_vehicle(vid):
 @shopify_bp.route('/api/vehicles/<int:vid>/unpublish', methods=['POST'])
 @carpark_edit_required
 def unpublish_vehicle(vid):
+    _, err = _vehicle_or_404(vid)
+    if err:
+        return err
     conn, err = _connector_or_error()
     if err:
         return err
@@ -473,9 +488,9 @@ def verify_vehicle_status(vid):
     was DELETED on the storefront, flip the listing to not_published (clearing the
     stale GID) so the status chip stops showing it as live. Returns the recomputed
     freshness. Powers the Detail 'Verifică status' button."""
-    vehicle = _vehicle_repo.get_by_id(vid)
-    if not vehicle:
-        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+    vehicle, err = _vehicle_or_404(vid)
+    if err:
+        return err
     connector = _get_single_account()
     if not connector:
         return jsonify({'success': False, 'error': 'Shopify is not configured'}), 400
@@ -514,12 +529,12 @@ def verify_vehicle_status(vid):
 @shopify_bp.route('/api/vehicles/<int:vid>/status', methods=['GET'])
 @carpark_required
 def vehicle_status(vid):
-    # SECURITY: gated by carpark_required (listing state must not be readable by
-    # non-CarPark users) plus an exists-only ownership check — mirrors
-    # GET /vehicles/<id> and the Autovit per-vehicle status route.
-    vehicle = _vehicle_repo.get_by_id(vid)
-    if not vehicle:
-        return jsonify({'success': False, 'error': 'Vehicle not found'}), 404
+    # SECURITY: gated by carpark_required + scoped to the caller's company
+    # (own + actable set; Admin = any) — mirrors GET /vehicles/<id> and the
+    # Autovit status route, so a guessed cross-tenant vid can't read listing state.
+    vehicle, err = _vehicle_or_404(vid)
+    if err:
+        return err
     connector = _get_single_account()
     v_updated = vehicle.get('updated_at')
     if not connector:
