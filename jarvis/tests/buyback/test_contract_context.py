@@ -93,6 +93,32 @@ def test_consignment_min_price_from_floor_or_min_sale_price_key():
     assert ctx['min_price'] == '8500'
 
 
+# P5 — the real consignment agreement is a carpark_vehicle_consignment ROW with
+# TOP-LEVEL columns (owner_price/min_sale_price/commission_type/commission_value),
+# not a nested consignment_terms dict. The builder must read that shape too, and
+# compose {commission} from commission_type + commission_value.
+def test_consignment_carpark_row_shape_percent_commission():
+    row = {'owner_price': Decimal('10000.00'), 'min_sale_price': Decimal('8500.00'),
+           'commission_type': 'percent', 'commission_value': Decimal('4.00')}
+    ctx = build_contract_context({}, {}, consignment=row)
+    assert ctx['owner_price'] == '10000'       # trailing zeros stripped
+    assert ctx['min_price'] == '8500'
+    assert ctx['commission'] == '4%'
+
+
+def test_consignment_carpark_row_shape_fixed_commission():
+    row = {'commission_type': 'fixed', 'commission_value': Decimal('500.00')}
+    ctx = build_contract_context({}, {}, consignment=row)
+    assert ctx['commission'] == '500 €'
+
+
+def test_consignment_ready_commission_string_wins_over_type_value():
+    # The offer-JSONB shape may carry a ready 'commission' — keep it verbatim.
+    ctx = build_contract_context({}, {}, consignment={'consignment_terms': {
+        'commission': '4%', 'commission_type': 'fixed', 'commission_value': '999'}})
+    assert ctx['commission'] == '4%'
+
+
 def test_engine_no_power_cp_civ_no_always_empty():
     ctx = build_contract_context(
         {'engine_no': 'should-not-be-used', 'power_cp': 999, 'civ_no': 'CIV-1'}, {})

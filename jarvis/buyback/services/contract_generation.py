@@ -56,7 +56,10 @@ def _accepted_offer(record_id, document_type):
 
 
 def _consignment_agreement(record):
-    if not record.get('carpark_vehicle_id'):
+    # Match records.py's gate: only a LOST/CONSIGNAT record carries a real
+    # consignment agreement — don't fetch (stale) terms for a purchase record
+    # that merely has a carpark_vehicle_id (e.g. a finalized BOUGHT hand-off).
+    if record.get('status') not in ('CONSIGNAT', 'LOST') or not record.get('carpark_vehicle_id'):
         return None
     from carpark.repositories.consignment_repository import ConsignmentRepository
     return ConsignmentRepository().get_by_vehicle(record['carpark_vehicle_id'])

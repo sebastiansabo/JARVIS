@@ -17,6 +17,7 @@ import html
 import io
 import logging
 import os
+from decimal import Decimal, InvalidOperation
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
@@ -143,6 +144,17 @@ _CONSIGNMENT_DIRECT_FIELDS = ('owner_price', 'promo_price', 'commission', 'month
 _MIN_PRICE_KEYS = ('floor', 'min_sale_price', 'min_price')
 
 
+def _num(value):
+    """Render a numeric value without trailing zeros (10000.00 -> '10000',
+    4.50 -> '4.5'), passing a non-numeric string (e.g. a ready '4%') through."""
+    if value is None:
+        return ''
+    try:
+        return format(Decimal(str(value)).normalize(), 'f')
+    except (InvalidOperation, ValueError):
+        return str(value)
+
+
 def _s(value) -> str:
     """None -> '', everything else -> str(value). Never raises."""
     return '' if value is None else str(value)
@@ -191,7 +203,10 @@ def build_contract_context(record, company, *, offer=None, consignment=None,
     company = company or {}
     offer = offer or {}
     consignment = consignment or {}
-    terms = consignment.get('consignment_terms') or {}
+    # Support BOTH consignment shapes: the offer's nested `consignment_terms`
+    # JSONB, and the carpark_vehicle_consignment ROW (top-level columns) that
+    # `_consignment_agreement` actually returns for a CONSIGNAT record.
+    terms = consignment.get('consignment_terms') or consignment or {}
 
     ctx = {token: '' for token in PLACEHOLDERS}
 
@@ -246,13 +261,22 @@ def build_contract_context(record, company, *, offer=None, consignment=None,
     for field in _CONSIGNMENT_DIRECT_FIELDS:
         value = terms.get(field)
         if value is not None:
-            ctx[field] = value
+            ctx[field] = _num(value)
 
     for key in _MIN_PRICE_KEYS:
         value = terms.get(key)
         if value is not None:
-            ctx['min_price'] = value
+            ctx['min_price'] = _num(value)
             break
+
+    # {commission}: the carpark_vehicle_consignment row carries commission_type
+    # ('percent'/'fixed') + commission_value rather than a ready 'commission'
+    # string — compose one. A direct 'commission' (offer-JSONB shape) wins.
+    if not ctx.get('commission'):
+        cval = terms.get('commission_value')
+        if cval is not None:
+            pct = terms.get('commission_type') == 'percent'
+            ctx['commission'] = f'{_num(cval)}%' if pct else f'{_num(cval)} €'
 
     return ctx
 
