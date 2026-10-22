@@ -409,16 +409,21 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any],
     if vehicle.get("engine_displacement_cc"):
         params["engine_capacity"] = vehicle["engine_displacement_cc"]
     if vehicle.get("current_price") is not None:
+        # `gross_net` flags whether the price carries VAT, from the "Preț include
+        # TVA" (price_includes_vat) checkbox: checked -> "gross" (VAT-inclusive),
+        # unchecked -> "net". Absent defaults to "gross" (the DB column default is
+        # TRUE). Autovit stores this verbatim (verified live) and it drives the
+        # listing's net/TVA display — distinct from the `vat` invoice flag below.
+        gross_net = "net" if vehicle.get("price_includes_vat") is False else "gross"
         params["price"] = {"1": vehicle["current_price"],
-                           "currency": vehicle.get("price_currency", "EUR")}
-    # VAT regime -> Autovit `vat` flag ("factură cu TVA"). Without this, publish
-    # omitted `vat` entirely and Autovit defaulted the advert to "cu TVA" — so a
-    # margin-regime car (vat_deductible=False) wrongly showed VAT. vat_deductible
-    # True (normal regime, invoice WITH VAT) -> "1"; False (margin regime, no
-    # deductible VAT) -> "0"; absent -> omitted (don't guess). Emitted as a
-    # "1"/"0" flag per this mapper's convention for every boolean param.
-    # SMOKE-TEST the create contract (dry_run, then draft=True) before prod: the
-    # exact accepted value for `vat` is unverified against the live API.
+                           "currency": vehicle.get("price_currency", "EUR"),
+                           "gross_net": gross_net}
+    # VAT invoice flag ("factură cu TVA"), from the acquisition regime
+    # (vat_deductible): normal regime (True) -> "1" (cu TVA); margin regime
+    # (False) -> "0"; absent -> omitted. Verified live against the Autovit
+    # create API (draft adverts): "1" stores as "1"; "0" is accepted and stored
+    # as absent (== fără TVA, same as omitting) — no 400. This is the invoice
+    # flag, distinct from the price's gross_net above (VAT-inclusive pricing).
     if vehicle.get("vat_deductible") is not None:
         params["vat"] = "1" if vehicle["vat_deductible"] else "0"
     # Optional attributes Autovit also supports (it SENDS them on pull) that push
