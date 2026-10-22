@@ -120,6 +120,28 @@ def test_v2a_non_dimension_fields_unchanged():
     assert p["is_imported_car"] == "0"
 
 
+def test_v2a_vat_deductible_true_emits_vat_1():
+    # Normal regime (vat_deductible=True) -> dealer issues an invoice WITH VAT,
+    # so the advert must carry Autovit's vat flag "1" ("factură cu TVA").
+    advert, unmapped = tx.vehicle_to_advert({"vat_deductible": True}, {}, {})
+    assert advert["params"]["vat"] == "1"
+
+
+def test_v2a_vat_deductible_false_emits_vat_0():
+    # Margin regime (vat_deductible=False) -> no deductible VAT, so the advert
+    # must carry vat "0" ("fără TVA"). This is the case Roger reported as
+    # wrongly publishing "cu TVA" because the flag was never sent.
+    advert, unmapped = tx.vehicle_to_advert({"vat_deductible": False}, {}, {})
+    assert advert["params"]["vat"] == "0"
+
+
+def test_v2a_vat_absent_when_vat_deductible_missing():
+    # Unknown regime (vat_deductible absent/None) -> omit vat rather than guess,
+    # consistent with every other optional flag's `is not None` guard.
+    advert, unmapped = tx.vehicle_to_advert({"brand": "Audi"}, {}, {})
+    assert "vat" not in advert["params"]
+
+
 def test_v2a_equipment_sources_merge_options_and_jsonb_dict():
     # Equipment source values = UNNEST(equipment_options) ∪ truthy keys of
     # the `equipment` JSONB dict (per the design spec) — both land through
