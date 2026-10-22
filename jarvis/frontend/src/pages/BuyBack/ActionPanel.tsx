@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { buybackApi } from '@/api/buyback'
@@ -19,6 +19,10 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+
+// Drawn seller signature captured at accept (reused from the Test-Drive flow);
+// lazy so its canvas lib doesn't weigh on the panel until the dialog opens.
+const SignatureCanvas = lazy(() => import('@/components/shared/SignatureCanvas'))
 
 const TERMINAL_STATUSES = ['BOUGHT', 'CONSIGNAT', 'LOST', 'CANCELLED']
 
@@ -259,8 +263,11 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   const isConsignmentDecision = pendingOffer?.offer_type === 'consignment'
   const terms = pendingOffer?.consignment_terms ?? null
 
+  const [acceptSigOpen, setAcceptSigOpen] = useState(false)
+  const [acceptSignature, setAcceptSignature] = useState('')
+
   const decisionMutation = useMutation({
-    mutationFn: (data: { decision: 'accepted' | 'declined'; decline_reason?: string }) => {
+    mutationFn: (data: { decision: 'accepted' | 'declined'; decline_reason?: string; signature?: string }) => {
       if (!pendingOffer) throw new Error('Nicio ofertă în așteptare')
       return buybackApi.recordDecision(record.id, pendingOffer.id, data)
     },
@@ -269,6 +276,8 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
       invalidate()
       setDeclineDialogOpen(false)
       setDeclineReason('')
+      setAcceptSigOpen(false)
+      setAcceptSignature('')
     },
     onError: (e) => toast.error(errMsg(e, 'Înregistrarea deciziei a eșuat')),
   })
@@ -479,7 +488,7 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
               <Button
                 size="sm"
                 disabled={!pendingOffer || decisionMutation.isPending}
-                onClick={() => decisionMutation.mutate({ decision: 'accepted' })}
+                onClick={() => setAcceptSigOpen(true)}
               >
                 {isConsignmentDecision ? 'Acceptă consignația' : 'Client a acceptat'}
               </Button>
@@ -639,6 +648,51 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
       </CardContent>
 
       <StatusChangeDialog record={record} open={overrideOpen} onOpenChange={setOverrideOpen} />
+
+      {/* Accept + capture the seller's drawn signature; it's embedded in the
+          contract auto-generated on accept. Signature is optional — the advisor
+          can continue without it (placeholder in the PDF). */}
+      <Dialog
+        open={acceptSigOpen}
+        onOpenChange={(o) => {
+          setAcceptSigOpen(o)
+          if (!o) setAcceptSignature('')
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{isConsignmentDecision ? 'Acceptă consignația' : 'Client a acceptat'}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Semnătura vânzătorului (opțional) — se include în contractul generat automat.
+          </p>
+          <div className="flex justify-center">
+            <Suspense fallback={<div className="py-8 text-sm text-muted-foreground">Se încarcă…</div>}>
+              <SignatureCanvas
+                onSave={setAcceptSignature}
+                onClear={() => setAcceptSignature('')}
+                width={460}
+                height={180}
+              />
+            </Suspense>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              disabled={decisionMutation.isPending}
+              onClick={() => decisionMutation.mutate({ decision: 'accepted' })}
+            >
+              Continuă fără semnătură
+            </Button>
+            <Button
+              disabled={decisionMutation.isPending}
+              onClick={() => decisionMutation.mutate({ decision: 'accepted', signature: acceptSignature || undefined })}
+            >
+              Confirmă acceptarea
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Offer dialog (initial or final, shares the same fields) */}
       <Dialog
