@@ -114,7 +114,7 @@ def test_v2a_non_dimension_fields_unchanged():
     assert p["vin"] == "TMBJK7NS0K8000001"
     assert p["year"] == 2019
     assert p["mileage"] == 90000
-    assert p["price"] == {"1": 17000, "currency": "EUR"}
+    assert p["price"] == {"1": 17000, "currency": "EUR", "gross_net": "gross"}
     assert p["registered"] == "1"
     assert p["no_accident"] == "1"
     assert p["is_imported_car"] == "0"
@@ -140,6 +140,26 @@ def test_v2a_vat_absent_when_vat_deductible_missing():
     # consistent with every other optional flag's `is not None` guard.
     advert, unmapped = tx.vehicle_to_advert({"brand": "Audi"}, {}, {})
     assert "vat" not in advert["params"]
+
+
+def test_v2a_price_includes_vat_true_is_gross():
+    # "Preț include TVA" checked -> the gross price carries VAT -> Autovit gross.
+    advert, _ = tx.vehicle_to_advert(
+        {"current_price": 45000, "price_includes_vat": True}, {}, {})
+    assert advert["params"]["price"]["gross_net"] == "gross"
+
+
+def test_v2a_price_includes_vat_false_is_net():
+    # "Preț include TVA" unchecked (Roger's case) -> price is net -> Autovit net.
+    advert, _ = tx.vehicle_to_advert(
+        {"current_price": 45000, "price_includes_vat": False}, {}, {})
+    assert advert["params"]["price"]["gross_net"] == "net"
+
+
+def test_v2a_price_gross_net_defaults_to_gross_when_flag_absent():
+    # Flag absent -> default to gross (matches the DB column default TRUE).
+    advert, _ = tx.vehicle_to_advert({"current_price": 45000}, {}, {})
+    assert advert["params"]["price"]["gross_net"] == "gross"
 
 
 def test_v2a_equipment_sources_merge_options_and_jsonb_dict():
