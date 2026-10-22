@@ -114,14 +114,18 @@ def test_timeline_route_registered(client, monkeypatch):
     assert resp.get_json() == {'timeline': []}
 
 
-def test_list_documents_cross_tenant_now_allowed(client, monkeypatch):
-    # Permissive tenant switcher: ownership is exists-only, so a vehicle of
-    # another company is now accessible (no 404).
+def test_list_documents_cross_tenant_blocked_404(client, monkeypatch):
+    # Scoped ownership: a vehicle in a company OUTSIDE the caller's actable
+    # set 404s, and the document repo is never consulted.
+    monkeypatch.setattr(vehicles_mod, 'get_actable_company_ids', lambda _u: {COMPANY_ID})
     monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle',
                          lambda vid: _own_vehicle(vid, company_id=OTHER_COMPANY_ID))
-    monkeypatch.setattr(documents_mod._document_repo, 'list_for_vehicle', lambda vid: [])
+    calls = []
+    monkeypatch.setattr(documents_mod._document_repo, 'list_for_vehicle',
+                         lambda vid: calls.append(vid) or [])
     resp = client.get('/api/carpark/vehicles/1/documents')
-    assert resp.status_code == 200
+    assert resp.status_code == 404
+    assert calls == []
 
 # ── CREATE — LINK MODE ───────────────────────────────────────────────────
 
@@ -214,18 +218,19 @@ def test_create_document_requires_edit_permission(client, monkeypatch):
     assert resp.status_code == 403
 
 
-def test_create_document_cross_tenant_now_allowed(client, monkeypatch):
-    # Permissive: cross-tenant create now proceeds (exists-only ownership).
+def test_create_document_cross_tenant_blocked_404(client, monkeypatch):
+    # Scoped ownership: cross-tenant create (vehicle outside the actable set)
+    # 404s and never reaches the repo.
+    monkeypatch.setattr(vehicles_mod, 'get_actable_company_ids', lambda _u: {COMPANY_ID})
     monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle',
                          lambda vid: _own_vehicle(vid, company_id=OTHER_COMPANY_ID))
-    created = {}
+    created = []
     monkeypatch.setattr(documents_mod._document_repo, 'create',
-                         lambda vehicle_id, data: (created.update(vehicle_id=vehicle_id, data=data)
-                                                   or {'id': 1, 'vehicle_id': vehicle_id, **data}))
+                         lambda vehicle_id, data: created.append(vehicle_id))
     resp = client.post('/api/carpark/vehicles/1/documents', json={
         'document_type': 'pv_intrare', 'file_url': 'https://example.com/doc.pdf'})
-    assert resp.status_code == 201
-    assert created['vehicle_id'] == 1
+    assert resp.status_code == 404
+    assert created == []
 
 # ── CREATE — UPLOAD MODE ─────────────────────────────────────────────────
 
@@ -306,9 +311,29 @@ def test_delete_document_unknown_returns_404(client, monkeypatch):
     assert resp.status_code == 404
 
 
-def test_delete_document_cross_tenant_now_allowed(client, monkeypatch):
-    """Permissive tenant switcher: ownership is exists-only, so deleting a
-    document whose vehicle belongs to another company now PROCEEDS (no 404)."""
+def test_delete_document_cross_tenant_blocked_404(client, monkeypatch):
+    """Scoped ownership: a document whose vehicle belongs to a company
+    OUTSIDE the caller's actable set 404s, and delete is never called —
+    closes the cross-tenant pv_livrare-deletion hole."""
+    monkeypatch.setattr(vehicles_mod, 'get_actable_company_ids', lambda _u: {COMPANY_ID})
+    monkeypatch.setattr(documents_mod._document_repo, 'get',
+                         lambda doc_id: {'id': doc_id, 'vehicle_id': 1, 'document_type': 'pv_intrare'})
+    monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle',
+                         lambda vid: _own_vehicle(vid, company_id=OTHER_COMPANY_ID))
+    delete_calls = []
+    monkeypatch.setattr(documents_mod._document_repo, 'delete',
+                         lambda doc_id: delete_calls.append(doc_id) or True)
+
+    resp = client.delete('/api/carpark/documents/5')
+    assert resp.status_code == 404
+    assert delete_calls == []
+
+
+def test_delete_document_actable_company_allowed(client, monkeypatch):
+    """The permissive tenant switcher still works WITHIN the actable set: a
+    document on a non-own company the caller is org-responsable for deletes."""
+    monkeypatch.setattr(vehicles_mod, 'get_actable_company_ids',
+                         lambda _u: {COMPANY_ID, OTHER_COMPANY_ID})
     monkeypatch.setattr(documents_mod._document_repo, 'get',
                          lambda doc_id: {'id': doc_id, 'vehicle_id': 1, 'document_type': 'pv_intrare'})
     monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle',
@@ -393,13 +418,18 @@ def test_timeline_delegates_and_returns_events(client, monkeypatch):
     assert events[1]['type'] == 'document'
 
 
-def test_timeline_cross_tenant_now_allowed(client, monkeypatch):
-    # Permissive: cross-tenant timeline now accessible (exists-only ownership).
+def test_timeline_cross_tenant_blocked_404(client, monkeypatch):
+    # Scoped ownership: cross-tenant timeline (vehicle outside the actable
+    # set) 404s and never reaches the repo.
+    monkeypatch.setattr(vehicles_mod, 'get_actable_company_ids', lambda _u: {COMPANY_ID})
     monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle',
                          lambda vid: _own_vehicle(vid, company_id=OTHER_COMPANY_ID))
-    monkeypatch.setattr(documents_mod._dispo_repo, 'timeline', lambda vid: [])
+    calls = []
+    monkeypatch.setattr(documents_mod._dispo_repo, 'timeline',
+                         lambda vid: calls.append(vid) or [])
     resp = client.get('/api/carpark/vehicles/1/timeline')
-    assert resp.status_code == 200
+    assert resp.status_code == 404
+    assert calls == []
 
 # ── DispoRepository.timeline — merge/sort unit test (no Flask, no DB) ─────
 

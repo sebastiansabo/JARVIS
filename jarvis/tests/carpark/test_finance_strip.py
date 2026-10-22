@@ -80,6 +80,7 @@ def _real_vehicle_row():
     prices and a plain attribute that must survive."""
     return {
         'id': 1, 'vin': 'X' * 17, 'brand': 'BMW', 'model': 'X5',
+        'company_id': 1,  # == the logged-in user's company (in-scope for ownership)
         # STRIP — acquisition / cost / margin
         'acquisition_value': 12345, 'acquisition_vat': 2345,
         'acquisition_price': 14690, 'acquisition_currency': 'EUR',

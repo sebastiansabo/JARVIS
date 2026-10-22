@@ -248,7 +248,8 @@ def vehicle_autovit_status(vehicle_id):
 
     SECURITY: gated by carpark_required (this exposes external advert URLs and
     error messages, so it must not be readable by non-CarPark users) plus the
-    standard exists-only ownership check — mirrors GET /vehicles/<id>.
+    standard scoped ownership check (own + actable companies; Admin = any) —
+    mirrors GET /vehicles/<id>.
     """
     _, err = _verify_vehicle_ownership(vehicle_id)
     if err:

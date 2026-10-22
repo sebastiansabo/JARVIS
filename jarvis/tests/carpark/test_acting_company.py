@@ -7,8 +7,11 @@
   `can_access_settings` bypasses the check and may act on any company),
   aborting 403 otherwise. Falls back to `current_user.company_id` when
   absent.
-- `_verify_vehicle_ownership()` — now exists-only: 404 only when the
-  vehicle does not exist, never on a company mismatch.
+- `_verify_vehicle_ownership()` — scoped to the caller's actable set:
+  404 when the vehicle does not exist OR belongs to a company the caller
+  may not act on (own company + org-responsable set via
+  `get_actable_company_ids`; Admin = `can_access_settings` = any). A
+  cross-tenant id is indistinguishable from an unknown one.
 
 Uses the real Flask app (`app.py`) so the actual Flask-Login + carpark
 permission-decorator wiring is exercised end-to-end for the route-level
@@ -214,13 +217,64 @@ def test_create_vehicle_allows_permitted_company(client, monkeypatch):
 
 
 # ═══════════════════════════════════════════════
-# _verify_vehicle_ownership: now exists-only (no company check)
+# _verify_vehicle_ownership: scoped to the caller's actable set
+# (own company + org-responsable set; Admin = any). A vehicle outside
+# that set is indistinguishable from an unknown one (404).
 # ═══════════════════════════════════════════════
 
-def test_verify_ownership_foreign_company_is_allowed(monkeypatch):
-    """An existing vehicle belonging to a DIFFERENT company than the caller
-    must be returned with no error — the isolation check is removed."""
-    monkeypatch.setattr(vehicles_module, 'current_user', SimpleNamespace(company_id=1))
+def test_verify_ownership_company_in_actable_set_allowed(monkeypatch):
+    """A vehicle in a company the caller may act on (via the actable set,
+    not their own company) is returned with no error."""
+    monkeypatch.setattr(vehicles_module, 'current_user',
+                        SimpleNamespace(id=5, company_id=1, can_access_settings=False))
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', lambda _u: {1, 11})
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_vehicle',
+                            return_value={'id': 42, 'company_id': 11}):
+        with flask_app.test_request_context():
+            vehicle, err = vehicles_module._verify_vehicle_ownership(42)
+    assert err is None
+    assert vehicle == {'id': 42, 'company_id': 11}
+
+
+def test_verify_ownership_company_outside_actable_set_404(monkeypatch):
+    """A vehicle in a company OUTSIDE the caller's actable set 404s — a
+    cross-tenant id is indistinguishable from an unknown one."""
+    monkeypatch.setattr(vehicles_module, 'current_user',
+                        SimpleNamespace(id=5, company_id=1, can_access_settings=False))
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', lambda _u: {1})
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_vehicle',
+                            return_value={'id': 42, 'company_id': 999}):
+        with flask_app.test_request_context():
+            vehicle, err = vehicles_module._verify_vehicle_ownership(42)
+    assert vehicle is None
+    assert err is not None
+    assert err[1] == 404
+
+
+def test_verify_ownership_own_company_skips_actable_lookup(monkeypatch):
+    """A vehicle in the caller's OWN company is allowed without consulting
+    the (DB-backed) actable set — the common-case fast path."""
+    def _boom(_u):
+        raise AssertionError('get_actable_company_ids must not run for own-company access')
+    monkeypatch.setattr(vehicles_module, 'current_user',
+                        SimpleNamespace(id=5, company_id=7, can_access_settings=False))
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', _boom)
+    with mock.patch.object(vehicles_module._vehicle_service, 'get_vehicle',
+                            return_value={'id': 42, 'company_id': 7}):
+        with flask_app.test_request_context():
+            vehicle, err = vehicles_module._verify_vehicle_ownership(42)
+    assert err is None
+    assert vehicle == {'id': 42, 'company_id': 7}
+
+
+def test_verify_ownership_admin_any_company_allowed(monkeypatch):
+    """Admin (can_access_settings) may act on any company's vehicle without
+    the actable-set check."""
+    def _boom(_u):
+        raise AssertionError('get_actable_company_ids must not run for an Admin')
+    monkeypatch.setattr(vehicles_module, 'current_user',
+                        SimpleNamespace(id=5, company_id=1, can_access_settings=True))
+    monkeypatch.setattr(vehicles_module, 'get_actable_company_ids', _boom)
     with mock.patch.object(vehicles_module._vehicle_service, 'get_vehicle',
                             return_value={'id': 42, 'company_id': 999}):
         with flask_app.test_request_context():
@@ -231,7 +285,8 @@ def test_verify_ownership_foreign_company_is_allowed(monkeypatch):
 
 def test_verify_ownership_missing_vehicle_404(monkeypatch):
     """A vehicle id that doesn't exist at all still 404s."""
-    monkeypatch.setattr(vehicles_module, 'current_user', SimpleNamespace(company_id=1))
+    monkeypatch.setattr(vehicles_module, 'current_user',
+                        SimpleNamespace(id=5, company_id=1, can_access_settings=False))
     with mock.patch.object(vehicles_module._vehicle_service, 'get_vehicle', return_value=None):
         with flask_app.test_request_context():
             vehicle, err = vehicles_module._verify_vehicle_ownership(999)

@@ -146,14 +146,34 @@ def test_unknown_vehicle_returns_404(client, monkeypatch):
     assert calls == []
 
 
-def test_vehicle_owned_by_other_company_blocked_at_service_403(client, monkeypatch):
-    """Permissive tenant switcher: _verify_vehicle_ownership is now exists-only
-    (no route-level 404), but the money operations still enforce isolation at
-    the SERVICE layer — DispoService.reserve raises PermissionError for a
-    cross-company vehicle, mapped to 403. So cross-tenant reserve/sell/deliver
-    stay blocked, just as 403 (service) instead of 404 (route)."""
+def test_vehicle_outside_actable_set_blocked_404(client, monkeypatch):
+    """Scoped ownership: a lifecycle action on a vehicle OUTSIDE the caller's
+    actable set 404s at the route and never reaches DispoService — a
+    cross-tenant id is indistinguishable from an unknown one."""
+    monkeypatch.setattr(vehicles_mod, 'get_actable_company_ids', lambda _u: {COMPANY_ID})
     monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle',
                          lambda vid: _own_vehicle(vid, company_id=OTHER_COMPANY_ID))
+    calls = []
+    monkeypatch.setattr(dispo_mod._dispo_service, 'reserve', lambda *a, **k: calls.append(1))
+
+    resp = client.post('/api/carpark/vehicles/1/reserve', json={
+        'client_name': 'Ion Pop', 'reservation_end': '2026-09-01'})
+    assert resp.status_code == 404
+    assert calls == []
+
+
+def test_actable_but_not_own_company_blocked_at_service_403(client, monkeypatch):
+    """A vehicle in a non-own company that IS in the caller's actable set
+    passes the route ownership check, but DispoService still enforces
+    own-company isolation on money operations -> PermissionError -> 403."""
+    monkeypatch.setattr(vehicles_mod, 'get_actable_company_ids',
+                         lambda _u: {COMPANY_ID, OTHER_COMPANY_ID})
+    monkeypatch.setattr(vehicles_mod._vehicle_service, 'get_vehicle',
+                         lambda vid: _own_vehicle(vid, company_id=OTHER_COMPANY_ID))
+
+    def _raise_permission(*a, **k):
+        raise PermissionError(f'Vehicle 1 does not belong to company {COMPANY_ID}')
+    monkeypatch.setattr(dispo_mod._dispo_service, 'reserve', _raise_permission)
 
     resp = client.post('/api/carpark/vehicles/1/reserve', json={
         'client_name': 'Ion Pop', 'reservation_end': '2026-09-01'})

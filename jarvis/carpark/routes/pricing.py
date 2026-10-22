@@ -8,12 +8,29 @@ from carpark import carpark_bp
 from carpark.services.pricing_service import PricingService
 from carpark.routes.vehicles import (
     carpark_required, carpark_edit_required, carpark_finance_required, _serialize,
-    _verify_vehicle_ownership, _acting_company_id,
+    _verify_vehicle_ownership, _acting_company_id, _may_act_on_company,
 )
 
 logger = logging.getLogger('jarvis.carpark')
 
 _pricing_service = PricingService()
+
+
+def _verify_rule_scope(rule):
+    """Scope a pricing rule to the caller's company. Returns a 404 response
+    when the rule is missing OR belongs to a company the caller may not act
+    on (own + actable set; Admin = any) — a cross-tenant rule_id is
+    indistinguishable from an unknown one. Returns None when allowed."""
+    if not rule or not _may_act_on_company(rule.get('company_id'), user=current_user):
+        return jsonify({'error': 'Rule not found'}), 404
+    return None
+
+
+def _verify_promo_scope(promo):
+    """Scope a promotion to the caller's company (see _verify_rule_scope)."""
+    if not promo or not _may_act_on_company(promo.get('company_id'), user=current_user):
+        return jsonify({'error': 'Promotion not found'}), 404
+    return None
 
 
 # ═══════════════════════════════════════════════
@@ -68,8 +85,9 @@ def create_pricing_rule():
 @carpark_required
 def get_pricing_rule(rule_id):
     rule = _pricing_service.get_rule(rule_id)
-    if not rule:
-        return jsonify({'error': 'Rule not found'}), 404
+    err = _verify_rule_scope(rule)
+    if err:
+        return err
     return jsonify({'rule': _serialize(rule)})
 
 
@@ -82,8 +100,9 @@ def update_pricing_rule(rule_id):
         return jsonify({'error': 'Request body required'}), 400
 
     existing = _pricing_service.get_rule(rule_id)
-    if not existing:
-        return jsonify({'error': 'Rule not found'}), 404
+    err = _verify_rule_scope(existing)
+    if err:
+        return err
 
     try:
         rule = _pricing_service.update_rule(rule_id, data)
@@ -98,6 +117,9 @@ def update_pricing_rule(rule_id):
 @login_required
 @carpark_edit_required
 def delete_pricing_rule(rule_id):
+    err = _verify_rule_scope(_pricing_service.get_rule(rule_id))
+    if err:
+        return err
     if _pricing_service.delete_rule(rule_id):
         return jsonify({'success': True})
     return jsonify({'error': 'Rule not found'}), 404
@@ -116,6 +138,10 @@ def execute_pricing_rule(rule_id):
     dry_run = data.get('dry_run', False)
     approver_id = data.get('approver_id')
     company_id = _acting_company_id()
+
+    err = _verify_rule_scope(_pricing_service.get_rule(rule_id))
+    if err:
+        return err
 
     try:
         result = _pricing_service.execute_rule(
@@ -140,6 +166,9 @@ def execute_pricing_rule(rule_id):
 @carpark_required
 def list_rule_vehicles(rule_id):
     """List vehicles assigned to a pricing rule."""
+    err = _verify_rule_scope(_pricing_service.get_rule(rule_id))
+    if err:
+        return err
     vehicles = _pricing_service.get_rule_vehicles(rule_id)
     return jsonify({'vehicles': _serialize(vehicles), 'count': len(vehicles)})
 
@@ -154,8 +183,9 @@ def add_rule_vehicles(rule_id):
         return jsonify({'error': 'vehicle_ids array is required'}), 400
 
     rule = _pricing_service.get_rule(rule_id)
-    if not rule:
-        return jsonify({'error': 'Rule not found'}), 404
+    err = _verify_rule_scope(rule)
+    if err:
+        return err
 
     try:
         added = _pricing_service.add_vehicles_to_rule(
@@ -172,6 +202,9 @@ def add_rule_vehicles(rule_id):
 @carpark_edit_required
 def remove_rule_vehicle(rule_id, vehicle_id):
     """Remove a vehicle from a pricing rule."""
+    err = _verify_rule_scope(_pricing_service.get_rule(rule_id))
+    if err:
+        return err
     if _pricing_service.remove_vehicle_from_rule(rule_id, vehicle_id):
         return jsonify({'success': True})
     return jsonify({'error': 'Vehicle not in rule'}), 404
@@ -191,8 +224,9 @@ def link_rule_to_project(rule_id):
         return jsonify({'error': 'project_id is required'}), 400
 
     rule = _pricing_service.get_rule(rule_id)
-    if not rule:
-        return jsonify({'error': 'Rule not found'}), 404
+    err = _verify_rule_scope(rule)
+    if err:
+        return err
 
     updated = _pricing_service.update_rule(rule_id, {'project_id': data['project_id']})
     if updated:
@@ -206,8 +240,9 @@ def link_rule_to_project(rule_id):
 def unlink_rule_from_project(rule_id):
     """Unlink a pricing rule from its marketing project."""
     rule = _pricing_service.get_rule(rule_id)
-    if not rule:
-        return jsonify({'error': 'Rule not found'}), 404
+    err = _verify_rule_scope(rule)
+    if err:
+        return err
 
     updated = _pricing_service.update_rule(rule_id, {'project_id': None})
     if updated:
@@ -224,6 +259,9 @@ def unlink_rule_from_project(rule_id):
 @carpark_required
 def list_pending_changes(rule_id):
     """List pending price changes for a pricing rule."""
+    err = _verify_rule_scope(_pricing_service.get_rule(rule_id))
+    if err:
+        return err
     status = request.args.get('status')
     changes = _pricing_service.get_pending_changes(rule_id=rule_id, status=status)
     return jsonify({'changes': _serialize(changes), 'count': len(changes)})
@@ -265,6 +303,13 @@ def simulate_pricing():
     # Verify vehicle ownership if vehicle_id provided
     if vehicle_id:
         _, err = _verify_vehicle_ownership(vehicle_id)
+        if err:
+            return err
+
+    # Scope a body-supplied rule_id to the caller's company too (a rule_id-only
+    # simulation must not disclose/apply another company's rule config).
+    if rule_id:
+        err = _verify_rule_scope(_pricing_service.get_rule(rule_id))
         if err:
             return err
 
@@ -374,8 +419,9 @@ def create_promotion():
 @carpark_required
 def get_promotion(promo_id):
     promo = _pricing_service.get_promotion(promo_id)
-    if not promo:
-        return jsonify({'error': 'Promotion not found'}), 404
+    err = _verify_promo_scope(promo)
+    if err:
+        return err
     return jsonify({'promotion': _serialize(promo)})
 
 
@@ -388,8 +434,9 @@ def update_promotion(promo_id):
         return jsonify({'error': 'Request body required'}), 400
 
     existing = _pricing_service.get_promotion(promo_id)
-    if not existing:
-        return jsonify({'error': 'Promotion not found'}), 404
+    err = _verify_promo_scope(existing)
+    if err:
+        return err
 
     promo = _pricing_service.update_promotion(promo_id, data)
     if not promo:
@@ -401,6 +448,9 @@ def update_promotion(promo_id):
 @login_required
 @carpark_edit_required
 def delete_promotion(promo_id):
+    err = _verify_promo_scope(_pricing_service.get_promotion(promo_id))
+    if err:
+        return err
     if _pricing_service.delete_promotion(promo_id):
         return jsonify({'success': True})
     return jsonify({'error': 'Promotion not found'}), 404
@@ -415,6 +465,9 @@ def delete_promotion(promo_id):
 @carpark_required
 def get_promotion_vehicles(promo_id):
     """List vehicles assigned to a promotion."""
+    err = _verify_promo_scope(_pricing_service.get_promotion(promo_id))
+    if err:
+        return err
     vehicles = _pricing_service.get_promotion_vehicles(promo_id)
     return jsonify({'vehicles': _serialize(vehicles), 'count': len(vehicles)})
 
@@ -429,8 +482,9 @@ def add_promotion_vehicles(promo_id):
         return jsonify({'error': 'vehicle_ids array is required'}), 400
 
     promo = _pricing_service.get_promotion(promo_id)
-    if not promo:
-        return jsonify({'error': 'Promotion not found'}), 404
+    err = _verify_promo_scope(promo)
+    if err:
+        return err
 
     try:
         added = _pricing_service.add_vehicles_to_promotion(
@@ -447,6 +501,9 @@ def add_promotion_vehicles(promo_id):
 @carpark_edit_required
 def remove_promotion_vehicle(promo_id, vehicle_id):
     """Remove a vehicle from a promotion."""
+    err = _verify_promo_scope(_pricing_service.get_promotion(promo_id))
+    if err:
+        return err
     if _pricing_service.remove_vehicle_from_promotion(promo_id, vehicle_id):
         return jsonify({'success': True})
     return jsonify({'error': 'Vehicle not in promotion'}), 404
