@@ -93,11 +93,16 @@ def test_list_date_range_excludes_out_of_range(require_real_db):
 
 def test_list_pagination(require_real_db):
     repo = RecordRepository()
+    # Query the distinctive non-hex brand marker, NOT the bare hex tag: `q` is an
+    # ILIKE over vin/record_code too, and a short hex tag can collide with hex
+    # substrings in the shared DB's other records (flaky `total`). 'PGBRAND…'
+    # appears only in these three records' brand.
     tag = os.urandom(3).hex()
+    marker = f'PGBRAND{tag}'
     for _ in range(3):
-        repo.create(_base(brand=f'PGBRAND{tag}'))
-    rows_p1, total = repo.list(q=tag, per_page=2, page=1)
-    rows_p2, total2 = repo.list(q=tag, per_page=2, page=2)
+        repo.create(_base(brand=marker))
+    rows_p1, total = repo.list(q=marker, per_page=2, page=1)
+    rows_p2, total2 = repo.list(q=marker, per_page=2, page=2)
     assert len(rows_p1) == 2
     assert len(rows_p2) == 1
     assert total == 3 and total2 == 3
