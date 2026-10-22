@@ -257,7 +257,7 @@ _INTAKE_BOOL_FIELDS = ('has_damage', 'is_trade_in', 'service_history_uptodate', 
 # a ValueError) -> uncaught 500.
 _INTAKE_TEXT_FIELDS = (
     'brand', 'model', 'variant', 'equipment', 'damage_details', 'other_details',
-    'seller_name', 'seller_email', 'seller_phone', 'seller_cui',
+    'seller_name', 'seller_company_name', 'seller_email', 'seller_phone', 'seller_cui',
     'seller_address', 'seller_cnp', 'seller_ci_serie', 'seller_ci_number',
     'seller_reg_no', 'seller_iban', 'seller_legal_rep',
     'client_source', 'drive_folder_link', 'target_vehicle_text',

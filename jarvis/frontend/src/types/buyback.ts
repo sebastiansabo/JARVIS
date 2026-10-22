@@ -27,6 +27,7 @@ export interface BuybackRecord {
   vat_status: string | null
   client_id: number | null
   seller_name: string | null
+  seller_company_name: string | null
   seller_cui: string | null
   seller_address: string | null
   seller_cnp: string | null

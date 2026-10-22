@@ -106,7 +106,7 @@ _SELLER_ID = {
     'seller_address': 'Str. Exemplu 1, Cluj', 'seller_cnp': '1234567890123',
     'seller_ci_serie': 'CJ', 'seller_ci_number': '123456',
     'seller_reg_no': 'J12/345/2020', 'seller_iban': 'RO49AAAA1B31007593840000',
-    'seller_legal_rep': 'Pop Ion',
+    'seller_legal_rep': 'Pop Ion', 'seller_company_name': 'Auto Exemplu SRL',
 }
 
 

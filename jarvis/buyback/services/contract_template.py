@@ -7,8 +7,8 @@ a whitelisted token with no value renders empty."""
 PLACEHOLDERS = (
     'contract_number', 'contract_date', 'company_name', 'company_address',
     'company_reg_no', 'company_vat', 'company_administrator', 'company_iban',
-    'company_bank', 'advisor_name', 'seller_name', 'seller_address',
-    'seller_cnp', 'seller_cui', 'seller_ci', 'seller_reg_no',
+    'company_bank', 'advisor_name', 'seller_name', 'seller_company_name',
+    'seller_address', 'seller_cnp', 'seller_cui', 'seller_ci', 'seller_reg_no',
     'seller_legal_rep', 'brand', 'model', 'vin', 'engine_no',
     'engine_capacity', 'power_cp', 'civ_no', 'mileage', 'first_registration',
     'manufacture_date', 'price_eur', 'price_ron', 'price_words', 'vat_note',

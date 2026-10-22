@@ -17,6 +17,7 @@ from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from buyback import lifecycle
+from buyback.seller_identity import seller_display_name
 
 logger = logging.getLogger('jarvis.buyback.offer_pdf')
 
@@ -251,7 +252,7 @@ def build_record_export_pdf(record: dict, offers=None, events=None, photos=None)
     _section('Vanzator & Trade-in', [
         ('Tip client', record.get('client_type')),
         ('Status TVA', record.get('vat_status')),
-        ('Nume', record.get('seller_name')),
+        ('Nume', seller_display_name(record)),
         ('Email', record.get('seller_email')),
         ('Telefon', record.get('seller_phone')),
         ('CUI', record.get('seller_cui')),

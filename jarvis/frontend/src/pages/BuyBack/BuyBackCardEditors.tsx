@@ -320,7 +320,14 @@ export function SellerCardEditor({ record, opts, onClose }: EditorProps) {
   const [form, setForm] = useState({
     client_type: record.client_type ?? '',
     vat_status: record.vat_status ?? '',
-    seller_name: record.seller_name ?? '',
+    // Normalize the type-exclusive identity on load (see no-doubling note in
+    // BuyBackForm.recordToForm): a company surfaces its firm in
+    // seller_company_name (legacy fallback to seller_name) with seller_name
+    // blank; a person keeps seller_name.
+    seller_name: record.client_type === 'company' ? '' : (record.seller_name ?? ''),
+    seller_company_name: record.client_type === 'company'
+      ? ((record.seller_company_name ?? '') || (record.seller_name ?? ''))
+      : (record.seller_company_name ?? ''),
     seller_email: record.seller_email ?? '',
     seller_phone: record.seller_phone ?? '',
     seller_cui: record.seller_cui ?? '',
@@ -332,10 +339,15 @@ export function SellerCardEditor({ record, opts, onClose }: EditorProps) {
 
   function submit() {
     if (save.isPending) return
+    // Enforce the no-doubling invariant: send the owned identity field and
+    // explicitly null the other so the DB can never hold both (clears a stale
+    // legacy value when correcting a company record).
+    const isCompany = form.client_type === 'company'
     save.mutate({
       client_type: strOrNull(form.client_type),
       vat_status: strOrNull(form.vat_status),
-      seller_name: strOrNull(form.seller_name),
+      seller_name: isCompany ? null : strOrNull(form.seller_name),
+      seller_company_name: isCompany ? strOrNull(form.seller_company_name) : null,
       seller_email: strOrNull(form.seller_email),
       seller_phone: strOrNull(form.seller_phone),
       seller_cui: strOrNull(form.seller_cui),
@@ -349,7 +361,18 @@ export function SellerCardEditor({ record, opts, onClose }: EditorProps) {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label className="text-xs">Tip client</Label>
-          <Select value={form.client_type || undefined} onValueChange={(v) => set('client_type', v)}>
+          <Select
+            value={form.client_type || undefined}
+            onValueChange={(v) =>
+              // Keep seller_name and seller_company_name mutually exclusive:
+              // switching type clears the field the other type owns.
+              setForm((f) => ({
+                ...f,
+                client_type: v,
+                ...(v === 'company' ? { seller_name: '' } : { seller_company_name: '' }),
+              }))
+            }
+          >
             <SelectTrigger className="w-full"><SelectValue placeholder="Alege" /></SelectTrigger>
             <SelectContent>
               {(opts?.client_types ?? []).map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
@@ -365,10 +388,17 @@ export function SellerCardEditor({ record, opts, onClose }: EditorProps) {
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">Nume</Label>
-          <Input value={form.seller_name} onChange={(e) => set('seller_name', e.target.value)} placeholder="Nume și prenume" />
-        </div>
+        {form.client_type === 'company' ? (
+          <div className="space-y-1.5">
+            <Label className="text-xs">Denumire firmă</Label>
+            <Input value={form.seller_company_name} onChange={(e) => set('seller_company_name', e.target.value)} placeholder="Denumirea firmei" />
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <Label className="text-xs">Nume</Label>
+            <Input value={form.seller_name} onChange={(e) => set('seller_name', e.target.value)} placeholder="Nume și prenume" />
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label className="text-xs">Telefon</Label>
           <Input value={form.seller_phone} onChange={(e) => set('seller_phone', e.target.value)} placeholder="0721 234 567" />

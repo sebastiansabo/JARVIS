@@ -27,6 +27,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import HRFlowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from buyback.seller_identity import seller_display_name
 from buyback.services.contract_template import PLACEHOLDERS, render_contract_template
 
 logger = logging.getLogger('jarvis.buyback.contract_pdf')
@@ -207,7 +208,12 @@ def build_contract_context(record, company, *, offer=None, consignment=None,
 
     ctx['advisor_name'] = _s(record.get('advisor_name'))
 
-    ctx['seller_name'] = _s(record.get('seller_name'))
+    # For a company seller the legal Vânzător is the firm itself, so the firm
+    # name takes the {seller_name} slot (seller_display_name handles the legacy
+    # fallback). {seller_company_name} is also exposed for templates that want
+    # both the firm and its representative.
+    ctx['seller_company_name'] = _s(record.get('seller_company_name'))
+    ctx['seller_name'] = _s(seller_display_name(record))
     ctx['seller_cui'] = _s(record.get('seller_cui'))
     ctx['seller_cnp'] = _s(record.get('seller_cnp'))
     ctx['seller_address'] = _s(record.get('seller_address'))

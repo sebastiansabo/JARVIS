@@ -290,6 +290,52 @@ def test_finalize_company_buyer_gets_pj_source(client, as_role, _tracked):
     assert veh['source'] == 'BUY BACK PJ'
 
 
+def test_finalize_company_handoff_uses_company_name_not_seller_name(
+    client, as_role, monkeypatch, _tracked
+):
+    """Regression: a company seller's firm name (seller_company_name) must
+    reach the CarPark vehicle's supplier_name/owner_name. seller_name is blank
+    for a company, so reading it would hand off a nameless supplier."""
+    from carpark.services.vehicle_service import VehicleService
+
+    as_role('Admin', 1)
+    r = client.post('/api/buyback/records', json=_payload(
+        _vin(), client_type='company', seller_name='', seller_company_name='Auto Exemplu SRL'))
+    assert r.status_code == 201, r.get_json()
+    rid = r.get_json()['record']['id']
+    _tracked['record_ids'].append(rid)
+
+    as_role('Admin', 1)
+    oid = client.post(f'/api/buyback/records/{rid}/offers',
+                      json={'offer_type': 'initial', 'amount_eur': 9000, 'vat_status': 'no_vat'}
+                      ).get_json()['offer']['id']
+    as_role('Admin', 1)
+    client.post(f'/api/buyback/records/{rid}/offers/{oid}/decision', json={'decision': 'accepted'})
+    as_role('Admin', 1)
+    client.put(f'/api/buyback/records/{rid}/inspection', json={'inspection_rating': 4})
+    as_role('Admin', 1)
+    fid = client.post(f'/api/buyback/records/{rid}/offers',
+                      json={'offer_type': 'final', 'amount_eur': 7000, 'vat_status': 'no_vat'}
+                      ).get_json()['offer']['id']
+    as_role('Admin', 1)
+    client.post(f'/api/buyback/records/{rid}/offers/{fid}/decision', json={'decision': 'accepted'})
+
+    _login_finalizer(as_role, _tracked)
+    captured = {}
+
+    def _capture(self, data, created_by):
+        captured.update(data)
+        raise ValueError('stop before real vehicle insert')  # graceful handoff failure
+
+    with monkeypatch.context() as m:
+        m.setattr(VehicleService, 'create_vehicle', _capture)
+        r = client.post(f'/api/buyback/records/{rid}/finalize', json={})
+        assert r.status_code == 200, r.get_json()
+
+    assert captured.get('supplier_name') == 'Auto Exemplu SRL'
+    assert captured.get('owner_name') == 'Auto Exemplu SRL'
+
+
 # ── FINALIZE — dup VIN / retry ───────────────────────────────────────────
 
 def test_finalize_dup_vin_keeps_bought_null_and_retryable(client, as_role, monkeypatch, _tracked):

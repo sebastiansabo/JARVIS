@@ -157,7 +157,14 @@ export default function BuybackPanelDetail({ id, onBack }: { id: number; onBack:
         <Section title="Vânzător & Trade-in">
           <Field label="Tip client" value={toLabel(lookups?.client_types, record.client_type)} />
           <Field label="Status TVA" value={toLabel(lookups?.vat_statuses, record.vat_status)} />
-          <Field label="Nume vânzător" value={record.seller_name || '—'} />
+          {record.client_type === 'company' ? (
+            <>
+              <Field label="Denumire firmă" value={record.seller_company_name || '—'} />
+              <Field label="Reprezentant legal" value={record.seller_legal_rep || '—'} />
+            </>
+          ) : (
+            <Field label="Nume vânzător" value={record.seller_name || '—'} />
+          )}
           <Field label="Email" value={record.seller_email || '—'} />
           <Field label="Telefon" value={record.seller_phone || '—'} />
           <Field label="CUI" value={record.seller_cui || '—'} />
