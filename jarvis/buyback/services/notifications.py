@@ -11,6 +11,7 @@ import html as _html
 import logging
 
 from buyback import lifecycle
+from buyback.seller_identity import seller_display_name
 from buyback.services.config import get_config
 
 logger = logging.getLogger('jarvis.buyback.notifications')
@@ -43,7 +44,7 @@ def notify_new_request(record) -> None:
             return
         code = record.get('record_code') or record.get('id')
         vehicle = _vehicle(record)
-        seller = record.get('seller_name') or '—'
+        seller = seller_display_name(record) or '—'
         advisor = record.get('advisor_name') or '—'
         subject = f"[BuyBack] Solicitare nouă — {vehicle}".strip()
         text = (f"Solicitare nouă {code} ({vehicle}).\n"

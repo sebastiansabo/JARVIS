@@ -28,7 +28,7 @@ _LIST_COLUMNS = (
     'r.id, r.record_code, r.company_id, r.brand_id, r.status, '
     'r.acquisition_type, r.is_trade_in, r.advisor_id, r.advisor_name, '
     'r.client_type, r.vat_status, r.client_id, '
-    'r.seller_name, r.seller_email, r.seller_phone, r.seller_cui, '
+    'r.seller_name, r.seller_company_name, r.seller_email, r.seller_phone, r.seller_cui, '
     'r.brand, r.model, r.variant, r.equipment, '
     'r.vin, r.mileage_km, r.engine_capacity_cm3, '
     'r.fuel_type, r.transmission, r.gearbox, '
@@ -57,7 +57,7 @@ _SORT_WHITELIST = {'created_at', 'record_code', 'vin', 'status', 'brand',
 _UPDATABLE_COLUMNS = {
     'brand_id', 'acquisition_type', 'is_trade_in', 'advisor_id', 'advisor_name',
     'client_type', 'vat_status', 'client_id',
-    'seller_name', 'seller_email', 'seller_phone', 'seller_cui',
+    'seller_name', 'seller_company_name', 'seller_email', 'seller_phone', 'seller_cui',
     'seller_address', 'seller_cnp', 'seller_ci_serie', 'seller_ci_number',
     'seller_reg_no', 'seller_iban', 'seller_legal_rep',
     'brand', 'model', 'variant', 'equipment',
@@ -193,11 +193,11 @@ class RecordRepository(BaseRepository):
         if q:
             where_clauses.append(
                 '(r.brand ILIKE %s OR r.model ILIKE %s OR r.vin ILIKE %s OR r.record_code ILIKE %s'
-                ' OR r.seller_name ILIKE %s OR r.seller_email ILIKE %s'
+                ' OR r.seller_name ILIKE %s OR r.seller_company_name ILIKE %s OR r.seller_email ILIKE %s'
                 ' OR r.seller_phone ILIKE %s OR r.seller_cui ILIKE %s)'
             )
             like = f'%{q}%'
-            params.extend([like] * 8)
+            params.extend([like] * 9)
         if date_from:
             where_clauses.append('r.created_at >= %s')
             params.append(date_from)

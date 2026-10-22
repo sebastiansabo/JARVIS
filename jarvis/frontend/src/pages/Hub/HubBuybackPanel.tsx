@@ -285,7 +285,7 @@ export default function HubBuybackPanel() {
                       <span className="truncate text-sm font-medium">{`${r.brand} ${r.model}`}</span>
                     </div>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {r.seller_name || '—'} · {r.vin}
+                      {r.seller_name || r.seller_company_name || '—'} · {r.vin}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">

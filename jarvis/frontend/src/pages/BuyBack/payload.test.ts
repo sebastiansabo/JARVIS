@@ -28,6 +28,21 @@ describe('buildCreatePayload', () => {
     expect('seller_reg_no' in p).toBe(false)
     expect('seller_iban' in p).toBe(false)
   })
+  it('enforces the no-doubling invariant: a company sends the firm and clears seller_name', () => {
+    // Even with a stale person name in seller_name (e.g. a legacy record),
+    // a company payload sends the firm in seller_company_name and clears
+    // seller_name so the two columns are never both populated.
+    const p = buildCreatePayload({ vin: 'X', brand: 'A', model: 'B',
+      client_type: 'company', seller_name: 'Ion Pop', seller_company_name: 'Auto Exemplu SRL' } as any)
+    expect(p.seller_company_name).toBe('Auto Exemplu SRL')
+    expect(p.seller_name).toBe('')
+  })
+  it('enforces the no-doubling invariant: a person sends the name and clears seller_company_name', () => {
+    const p = buildCreatePayload({ vin: 'X', brand: 'A', model: 'B',
+      client_type: 'person', seller_name: 'Ion Pop', seller_company_name: 'leftover' } as any)
+    expect(p.seller_name).toBe('Ion Pop')
+    expect(p.seller_company_name).toBe('')
+  })
   it('never emits a non-whitelisted key', () => {
     const p = buildCreatePayload({ vin: 'X', brand: 'A', model: 'B', hacker_field: 1 } as any)
     expect('hacker_field' in p).toBe(false)

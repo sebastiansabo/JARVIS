@@ -79,7 +79,8 @@ const EDIT_FIELD_LABEL: Record<string, string> = {
   first_registration_date: 'Prima înmatriculare', service_history_uptodate: 'Istoric service',
   extra_wheels: 'Roți extra', keys_count: 'Nr. chei', general_condition: 'Condiție',
   has_damage: 'Daune', damage_details: 'Detalii daune', client_type: 'Tip client',
-  vat_status: 'Status TVA', seller_name: 'Nume', seller_email: 'Email', seller_phone: 'Telefon',
+  vat_status: 'Status TVA', seller_name: 'Nume', seller_company_name: 'Denumire firmă',
+  seller_email: 'Email', seller_phone: 'Telefon',
   seller_cui: 'CUI', is_trade_in: 'Trade-in', target_vehicle_text: 'Vehicul țintă',
 }
 
@@ -325,7 +326,14 @@ export default function BuyBackDetail() {
             <CardContent className="grid grid-cols-2 gap-3">
               <Field label="Tip client" value={L.clientType(record.client_type)} />
               <Field label="Status TVA" value={L.vat(record.vat_status)} />
-              <Field label="Nume vânzător" value={record.seller_name} />
+              {record.client_type === 'company' ? (
+                <>
+                  <Field label="Denumire firmă" value={record.seller_company_name} />
+                  <Field label="Reprezentant legal" value={record.seller_legal_rep} />
+                </>
+              ) : (
+                <Field label="Nume vânzător" value={record.seller_name} />
+              )}
               <Field label="Email" value={record.seller_email} />
               <Field label="Telefon" value={record.seller_phone} />
               <Field label="CUI" value={record.seller_cui} />

@@ -30,6 +30,7 @@ import logging
 from uuid import uuid4
 
 from buyback.routes import _shared
+from buyback.seller_identity import seller_display_name
 from core.services import spaces_service
 
 logger = logging.getLogger('jarvis.buyback')
@@ -67,8 +68,8 @@ def handoff_to_carpark(record, finalized_by) -> dict:
         'status': 'ACQUIRED',
         'source': source,
         'category': 'TI' if record.get('is_trade_in') else 'SH',
-        'supplier_name': record.get('seller_name'),
-        'owner_name': record.get('seller_name'),
+        'supplier_name': seller_display_name(record),
+        'owner_name': seller_display_name(record),
         'supplier_cif': record.get('seller_cui'),
         'purchase_price_net': record.get('purchase_price_eur'),
         'purchase_price_currency': 'EUR',
@@ -213,8 +214,8 @@ def handoff_to_carpark_custody(record, agreement, actor) -> dict:
         'is_consignment': True,
         'purchase_price_net': None,
         'category': 'TI' if record.get('is_trade_in') else 'SH',
-        'supplier_name': record.get('seller_name'),
-        'owner_name': record.get('seller_name'),
+        'supplier_name': seller_display_name(record),
+        'owner_name': seller_display_name(record),
         'supplier_cif': record.get('seller_cui'),
     }
 

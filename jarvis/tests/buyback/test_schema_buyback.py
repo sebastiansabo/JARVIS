@@ -72,7 +72,8 @@ def test_records_has_seller_identity_columns(require_real_db):
                        WHERE table_name='buyback_records'""")
         cols = {r[0] if not isinstance(r, dict) else r['column_name'] for r in cur.fetchall()}
         assert {'seller_address', 'seller_cnp', 'seller_ci_serie', 'seller_ci_number',
-                'seller_reg_no', 'seller_iban', 'seller_legal_rep'}.issubset(cols)
+                'seller_reg_no', 'seller_iban', 'seller_legal_rep',
+                'seller_company_name'}.issubset(cols)
     finally:
         release_db(conn)
 

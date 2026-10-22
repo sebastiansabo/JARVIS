@@ -40,6 +40,7 @@ test_send_offer_email_swallows_raising_send_email is the regression test.
 import html
 import os
 
+from buyback.seller_identity import seller_display_name
 from core.services.notification_service import send_email
 from core.utils.logging_config import get_logger
 from foi_parcurs.dealer_config import get_dealer_config
@@ -89,7 +90,7 @@ def build_offer_email(record: dict, offer: dict, dealer: dict, advisor: dict = N
     brand = record.get('brand') or ''
     model = record.get('model') or ''
     vin = record.get('vin') or ''
-    seller_name = record.get('seller_name') or ''
+    seller_name = seller_display_name(record)
     amount_eur = offer.get('amount_eur')
     valid_until = offer.get('valid_until')
     offer_type = offer.get('offer_type')

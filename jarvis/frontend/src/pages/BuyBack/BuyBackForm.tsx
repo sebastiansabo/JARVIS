@@ -116,6 +116,7 @@ export interface BuyBackFormState {
   // Seller
   client_id?: number | null
   seller_name?: string
+  seller_company_name?: string
   seller_email?: string
   seller_phone?: string
   seller_cui?: string
@@ -171,6 +172,7 @@ const emptyForm: BuyBackFormState = {
   vat_status: '',
   client_id: null,
   seller_name: '',
+  seller_company_name: '',
   seller_email: '',
   seller_phone: '',
   seller_cui: '',
@@ -224,7 +226,14 @@ function recordToForm(r: BuybackRecord): BuyBackFormState {
     client_type: s(r.client_type),
     vat_status: s(r.vat_status),
     client_id: r.client_id ?? null,
-    seller_name: s(r.seller_name),
+    // Normalize the type-exclusive identity on load: a company shows its firm
+    // in seller_company_name (falling back to a legacy firm name stored in
+    // seller_name) with seller_name blank; a person shows seller_name. This
+    // keeps the two fields from ever both appearing populated. [no-doubling]
+    seller_name: r.client_type === 'company' ? '' : s(r.seller_name),
+    seller_company_name: r.client_type === 'company'
+      ? (s(r.seller_company_name) || s(r.seller_name))
+      : s(r.seller_company_name),
     seller_email: s(r.seller_email),
     seller_phone: s(r.seller_phone),
     seller_cui: s(r.seller_cui),
@@ -283,6 +292,7 @@ export interface CreatePayload {
   vat_status?: string
   client_id?: number
   seller_name?: string
+  seller_company_name?: string
   seller_email?: string
   seller_phone?: string
   seller_cui?: string
@@ -324,7 +334,10 @@ export interface CreatePayload {
 // "YYYY-MM-DD" strings the date <Input>s already produce).
 const STRING_FIELDS = [
   'acquisition_type', 'advisor_name', 'client_type', 'vat_status',
-  'seller_name', 'seller_email', 'seller_phone', 'seller_cui',
+  // seller_name / seller_company_name are NOT here — they are type-exclusive
+  // and handled explicitly in buildCreatePayload to enforce the no-doubling
+  // invariant (exactly one is ever populated).
+  'seller_email', 'seller_phone', 'seller_cui',
   'seller_address', 'seller_cnp', 'seller_ci_serie', 'seller_ci_number',
   'seller_reg_no', 'seller_iban', 'seller_legal_rep',
   'variant', 'equipment', 'fuel_type', 'transmission', 'gearbox',
@@ -405,6 +418,15 @@ export function buildCreatePayload(form: BuyBackFormState): CreatePayload {
   if (Array.isArray(form.documents) && form.documents.length > 0) {
     payload.documents = form.documents
   }
+
+  // Seller identity is type-exclusive: a company's firm goes in
+  // seller_company_name, a person's in seller_name. BOTH keys are always sent
+  // — the owned one with its value, the other explicitly '' — so a save (even
+  // of a legacy record that stored the firm in seller_name) can never leave
+  // both columns populated. [no-doubling invariant]
+  const isCompany = form.client_type === 'company'
+  payload.seller_name = isCompany ? '' : (form.seller_name ?? '').trim()
+  payload.seller_company_name = isCompany ? (form.seller_company_name ?? '').trim() : ''
 
   return payload
 }
@@ -623,7 +645,17 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
   function applyClient(c: LookupCrmClient) {
     setSelectedClient(c)
     set('client_id', Number(c.id))
-    set('seller_name', c.display_name || c.name || '')
+    // A company client's name is the firm → goes in seller_company_name, not
+    // seller_name, so the two never hold the same value (the legal rep is
+    // captured separately below). A person's name goes in seller_name.
+    const clientName = c.display_name || c.name || ''
+    if (c.client_type === 'company') {
+      set('seller_company_name', clientName)
+      set('seller_name', '')
+    } else {
+      set('seller_name', clientName)
+      set('seller_company_name', '')
+    }
     set('seller_email', c.email || '')
     set('seller_phone', c.phone || '')
     set('seller_cui', c.cui || '')
@@ -854,7 +886,19 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Tip Client</Label>
-            <Select value={form.client_type} onValueChange={(v) => set('client_type', v)}>
+            <Select
+              value={form.client_type}
+              onValueChange={(v) =>
+                // Switching type clears the identity field that the other type
+                // owns, so a company never keeps a stray person name (and vice
+                // versa) — seller_name and seller_company_name are never both set.
+                setForm((f) => ({
+                  ...f,
+                  client_type: v,
+                  ...(v === 'company' ? { seller_name: '' } : { seller_company_name: '' }),
+                }))
+              }
+            >
               <SelectTrigger className="w-full"><SelectValue placeholder="Alege tipul de client" /></SelectTrigger>
               <SelectContent>
                 {(opts?.client_types ?? []).map((o) => (
@@ -980,10 +1024,17 @@ export default function BuyBackForm({ embedded, onDone, onCancel }: BuyBackFormP
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Nume</Label>
-              <Input value={form.seller_name} onChange={(e) => set('seller_name', e.target.value)} placeholder="Nume și prenume" />
-            </div>
+            {form.client_type === 'company' ? (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Denumire firmă</Label>
+                <Input value={form.seller_company_name} onChange={(e) => set('seller_company_name', e.target.value)} placeholder="Denumirea firmei" />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label className="text-xs">Nume</Label>
+                <Input value={form.seller_name} onChange={(e) => set('seller_name', e.target.value)} placeholder="Nume și prenume" />
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label className="text-xs">Telefon</Label>
               <Input value={form.seller_phone} onChange={(e) => set('seller_phone', e.target.value)} placeholder="0721 234 567" />

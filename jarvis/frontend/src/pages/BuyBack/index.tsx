@@ -524,7 +524,7 @@ export default function BuyBack() {
                         <span className="text-sm font-medium leading-tight">{`${r.brand} ${r.model}`}</span>
                         <span className="font-mono text-[10px] text-muted-foreground">{r.record_code}</span>
                       </div>
-                      <div className="text-xs text-muted-foreground">{r.seller_name || '—'}</div>
+                      <div className="text-xs text-muted-foreground">{r.seller_name || r.seller_company_name || '—'}</div>
                       <div className="flex items-center justify-between text-xs">
                         <span>{r.client_asking_price_eur != null ? `${r.client_asking_price_eur.toLocaleString('ro-RO')} €` : '—'}</span>
                         {r.purchase_price_eur != null && (
@@ -591,7 +591,7 @@ export default function BuyBack() {
                         )}
                       </span>
                     </TableCell>
-                    <TableCell className="text-sm">{r.seller_name || '—'}</TableCell>
+                    <TableCell className="text-sm">{r.seller_name || r.seller_company_name || '—'}</TableCell>
                     <TableCell className="text-right text-sm whitespace-nowrap">
                       {r.client_asking_price_eur != null ? r.client_asking_price_eur.toLocaleString('ro-RO') : '—'}
                     </TableCell>

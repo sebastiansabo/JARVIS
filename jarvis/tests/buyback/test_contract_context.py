@@ -20,6 +20,31 @@ def test_maps_company_and_vehicle_tokens():
     assert ctx['brand'] == 'Volvo' and ctx['mileage'] == 50000
 
 
+def test_company_seller_name_uses_company_name():
+    # A company seller: the Vânzător on the contract is the firm, so the
+    # company name takes the {seller_name} slot while {seller_company_name}
+    # carries it explicitly for templates that want both.
+    ctx = build_contract_context(
+        {'client_type': 'company', 'seller_name': 'Ion Pop', 'seller_company_name': 'Auto SRL'}, {})
+    assert ctx['seller_company_name'] == 'Auto SRL'
+    assert ctx['seller_name'] == 'Auto SRL'
+
+
+def test_person_seller_name_unchanged_by_company_name_field():
+    ctx = build_contract_context(
+        {'client_type': 'person', 'seller_name': 'Ion Pop', 'seller_company_name': ''}, {})
+    assert ctx['seller_name'] == 'Ion Pop'
+    assert ctx['seller_company_name'] == ''
+
+
+def test_company_without_company_name_falls_back_to_seller_name():
+    # Legacy company records (firm name typed into "Nume", no dedicated field)
+    # must still render the firm as Vânzător.
+    ctx = build_contract_context(
+        {'client_type': 'company', 'seller_name': 'Legacy Firm SRL'}, {})
+    assert ctx['seller_name'] == 'Legacy Firm SRL'
+
+
 def test_price_from_accepted_offer():
     ctx = build_contract_context({}, {}, offer={'amount_eur': Decimal('12000')})
     assert '12' in ctx['price_eur'] and ctx['price_ron'] == ''

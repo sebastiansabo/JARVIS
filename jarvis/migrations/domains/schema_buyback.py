@@ -74,7 +74,7 @@ def create_schema_buyback(conn, cursor):
         ('seller_address', 'TEXT'), ('seller_cnp', 'VARCHAR(13)'),
         ('seller_ci_serie', 'VARCHAR(10)'), ('seller_ci_number', 'VARCHAR(20)'),
         ('seller_reg_no', 'VARCHAR(30)'), ('seller_iban', 'VARCHAR(34)'),
-        ('seller_legal_rep', 'VARCHAR(255)'),
+        ('seller_legal_rep', 'VARCHAR(255)'), ('seller_company_name', 'VARCHAR(255)'),
     ]:
         cursor.execute(f'''
             DO $$ BEGIN

@@ -16,7 +16,7 @@ const DOC_TYPES: { value: DocType; label: string }[] = [
 
 // Mirrors the backend token set — the renderer (P3b) substitutes these.
 const TOKENS = [
-  '{contract_number}', '{contract_date}', '{seller_name}', '{seller_address}',
+  '{contract_number}', '{contract_date}', '{seller_name}', '{seller_company_name}', '{seller_address}',
   '{seller_cnp}', '{seller_ci}', '{seller_cui}', '{seller_reg_no}', '{seller_legal_rep}',
   '{company_name}', '{company_address}', '{company_reg_no}', '{company_vat}', '{company_iban}',
   '{company_bank}', '{company_administrator}', '{advisor_name}',
