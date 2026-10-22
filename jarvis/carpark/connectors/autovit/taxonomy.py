@@ -411,6 +411,16 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any],
     if vehicle.get("current_price") is not None:
         params["price"] = {"1": vehicle["current_price"],
                            "currency": vehicle.get("price_currency", "EUR")}
+    # VAT regime -> Autovit `vat` flag ("factură cu TVA"). Without this, publish
+    # omitted `vat` entirely and Autovit defaulted the advert to "cu TVA" — so a
+    # margin-regime car (vat_deductible=False) wrongly showed VAT. vat_deductible
+    # True (normal regime, invoice WITH VAT) -> "1"; False (margin regime, no
+    # deductible VAT) -> "0"; absent -> omitted (don't guess). Emitted as a
+    # "1"/"0" flag per this mapper's convention for every boolean param.
+    # SMOKE-TEST the create contract (dry_run, then draft=True) before prod: the
+    # exact accepted value for `vat` is unverified against the live API.
+    if vehicle.get("vat_deductible") is not None:
+        params["vat"] = "1" if vehicle["vat_deductible"] else "0"
     # Optional attributes Autovit also supports (it SENDS them on pull) that push
     # previously dropped — emitted so the advert is fuller. SMOKE-TEST the create
     # contract (publish dry_run, then draft=True to upload a disabled advert)
