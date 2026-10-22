@@ -28,11 +28,40 @@ from decimal import Decimal, InvalidOperation
 from flask import request, jsonify
 from flask_login import login_required, current_user
 
-from buyback import buyback_bp
+from buyback import buyback_bp, lifecycle
 from buyback.routes import _shared
+from buyback.services.contract_generation import generate_contract, NoTemplateError
+from buyback.services.email import send_contract_email
 from core.roles.decorators import v2_permission_required
 
 logger = logging.getLogger('jarvis.buyback')
+
+
+def _maybe_generate_contract(record_id, updated, signature):
+    """After an accept that landed in BOUGHT/CONSIGNAT, best-effort auto-generate
+    the contract (seller signature embedded) and email it to the advisor (P4).
+    NEVER raises — it runs AFTER the already-committed transition and swallows
+    everything, so a template/render/SMTP failure can't undo the accept (mirrors
+    send_offer_email). Returns a non-blocking {generated, warnings} summary, or
+    None when the accept didn't reach a contract-eligible status."""
+    if updated.get('status') not in (lifecycle.BOUGHT, lifecycle.CONSIGNAT):
+        return None
+    try:
+        fresh = _shared.records_repo.get_by_id(record_id)
+        result = generate_contract(fresh, signature=signature)
+        send_contract_email(fresh, result['pdf_bytes'])
+        return {'generated': True, 'warnings': result['warnings']}
+    except NoTemplateError:
+        logger.info(
+            'record %s: accept — no active contract template, contract not auto-generated',
+            record_id)
+        return {'generated': False,
+                'warnings': ['Niciun model de contract activ — contract negenerat']}
+    except Exception:
+        logger.exception(
+            'record %s: accept auto-generate/email raised — swallowed (accept preserved)',
+            record_id)
+        return {'generated': False, 'warnings': []}
 
 # Offer rounds the service recognizes (BuyBackService._ROUND_REQUIRED_STATUS).
 # Validated here too so a missing/garbage offer_type 400s before it reaches
@@ -133,6 +162,7 @@ def record_decision(record_id, offer_id):
 
     data = request.get_json(silent=True) or {}
     decision = data.get('decision')
+    signature = data.get('signature')
 
     try:
         updated = _shared.service.record_decision(
@@ -159,4 +189,8 @@ def record_decision(record_id, offer_id):
             'error': 'Înregistrarea deciziei a eșuat (eroare internă). A fost înregistrată.',
         }), 500
 
-    return jsonify({'success': True, 'record': _shared._serialize(updated)})
+    # Best-effort: auto-generate + email the contract on a successful accept.
+    # Runs after the committed transition and never raises — the accept stands
+    # even if generation/email fails.
+    contract = _maybe_generate_contract(record_id, updated, signature)
+    return jsonify({'success': True, 'record': _shared._serialize(updated), 'contract': contract})
