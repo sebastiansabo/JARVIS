@@ -241,6 +241,46 @@ def _build_offer_attachments(record: dict) -> list:
     return out
 
 
+def send_contract_email(record: dict, pdf_bytes: bytes, filename: str = None) -> None:
+    """Email the generated contract PDF to the advisor (P4). Best-effort — a
+    missing advisor email, a bad SMTP config, or a raising send_email are all
+    logged and swallowed, so this can never block the accept→BOUGHT transition
+    (mirrors send_offer_email's posture)."""
+    try:
+        advisor = _resolve_advisor_contact(record)
+        to_email = (advisor.get('email') or '').strip()
+        if not to_email:
+            logger.info(
+                "buyback record %s: no advisor email — skipping contract email",
+                record.get('id'),
+            )
+            return
+        code = record.get('record_code') or record.get('id') or 'vehicul'
+        brand = record.get('brand') or ''
+        model = record.get('model') or ''
+        subject = f"[Buyback] Contract {brand} {model} — {code}".strip()
+        text_body = f"Contractul pentru {brand} {model} (dosar {code}) este atașat."
+        html_body = f"<p>{_esc(text_body)}</p>"
+        success, error = send_email(
+            to_email=to_email,
+            subject=subject,
+            html_body=html_body,
+            text_body=text_body,
+            from_name=_SENDER_NAME,
+            attachments=[(filename or f'Contract_{code}.pdf', pdf_bytes)],
+        )
+        if not success:
+            logger.warning(
+                "buyback record %s: contract email to %s failed: %s",
+                record.get('id'), to_email, error,
+            )
+    except Exception:
+        logger.exception(
+            "buyback record %s: contract email raised — swallowed so the "
+            "accept transition is unaffected", record.get('id'),
+        )
+
+
 def _send_internal_notification(record: dict, env_var: str, label: str) -> None:
     """Shared body for internal heads-up notifications (notify_sales).
     Deliberately minimal
