@@ -102,7 +102,8 @@ def update_cost(cost_id):
         return jsonify({'error': 'Cost not found'}), 404
     _, err = _verify_vehicle_ownership(existing['vehicle_id'])
     if err:
-        return err
+        # Normalize cross-tenant to the same 404 as an unknown id (no oracle).
+        return jsonify({'error': 'Cost not found'}), 404
 
     cost = _service.update_cost(cost_id, data)
     if not cost:
@@ -124,7 +125,8 @@ def delete_cost(cost_id):
         return jsonify({'error': 'Cost not found'}), 404
     _, err = _verify_vehicle_ownership(existing['vehicle_id'])
     if err:
-        return err
+        # Normalize cross-tenant to the same 404 as an unknown id (no oracle).
+        return jsonify({'error': 'Cost not found'}), 404
 
     if _service.delete_cost(cost_id):
         return jsonify({'success': True})
@@ -210,7 +212,8 @@ def update_cost_line(line_id):
         return jsonify({'error': 'Cost line not found'}), 404
     _, err = _verify_vehicle_ownership(line['vehicle_id'])
     if err:
-        return err
+        # Normalize cross-tenant to the same 404 as an unknown id (no oracle).
+        return jsonify({'error': 'Cost line not found'}), 404
     data = request.get_json(silent=True)
     if not data:
         return jsonify({'error': 'Request body required'}), 400
@@ -237,7 +240,8 @@ def delete_cost_line(line_id):
         return jsonify({'error': 'Cost line not found'}), 404
     _, err = _verify_vehicle_ownership(line['vehicle_id'])
     if err:
-        return err
+        # Normalize cross-tenant to the same 404 as an unknown id (no oracle).
+        return jsonify({'error': 'Cost line not found'}), 404
     if _service.delete_cost_line(line_id):
         return jsonify({'success': True})
     return jsonify({'error': 'Cost line not found'}), 404
@@ -257,7 +261,8 @@ def list_line_costs(line_id):
         return jsonify({'error': 'Cost line not found'}), 404
     _, err = _verify_vehicle_ownership(line['vehicle_id'])
     if err:
-        return err
+        # Normalize cross-tenant to the same 404 as an unknown id (no oracle).
+        return jsonify({'error': 'Cost line not found'}), 404
     costs = _service.get_line_costs(line_id)
     return jsonify({'costs': _serialize(costs)})
 
@@ -276,7 +281,8 @@ def create_line_cost(line_id):
         return jsonify({'error': 'Cost line not found'}), 404
     _, err = _verify_vehicle_ownership(line['vehicle_id'])
     if err:
-        return err
+        # Normalize cross-tenant to the same 404 as an unknown id (no oracle).
+        return jsonify({'error': 'Cost line not found'}), 404
     data = request.get_json(silent=True)
     if not data:
         return jsonify({'error': 'Request body required'}), 400
@@ -304,7 +310,8 @@ def update_line_cost(cost_id):
         return jsonify({'error': 'Cost not found'}), 404
     _, err = _verify_vehicle_ownership(existing['vehicle_id'])
     if err:
-        return err
+        # Normalize cross-tenant to the same 404 as an unknown id (no oracle).
+        return jsonify({'error': 'Cost not found'}), 404
     data = request.get_json(silent=True)
     if not data:
         return jsonify({'error': 'Request body required'}), 400
@@ -322,7 +329,8 @@ def delete_line_cost(cost_id):
         return jsonify({'error': 'Cost not found'}), 404
     _, err = _verify_vehicle_ownership(existing['vehicle_id'])
     if err:
-        return err
+        # Normalize cross-tenant to the same 404 as an unknown id (no oracle).
+        return jsonify({'error': 'Cost not found'}), 404
     if _service.delete_line_cost(cost_id):
         return jsonify({'success': True})
     return jsonify({'error': 'Cost not found'}), 404
@@ -338,7 +346,8 @@ def link_cost_invoice(cost_id):
         return jsonify({'error': 'Cost not found'}), 404
     _, err = _verify_vehicle_ownership(existing['vehicle_id'])
     if err:
-        return err
+        # Normalize cross-tenant to the same 404 as an unknown id (no oracle).
+        return jsonify({'error': 'Cost not found'}), 404
     data = request.get_json(silent=True)
     if data is None:
         return jsonify({'error': 'Request body required'}), 400
@@ -423,7 +432,8 @@ def update_revenue(revenue_id):
         return jsonify({'error': 'Revenue not found'}), 404
     _, err = _verify_vehicle_ownership(existing['vehicle_id'])
     if err:
-        return err
+        # Normalize cross-tenant to the same 404 as an unknown id (no oracle).
+        return jsonify({'error': 'Revenue not found'}), 404
 
     revenue = _service.update_revenue(revenue_id, data)
     if not revenue:
@@ -445,7 +455,8 @@ def delete_revenue(revenue_id):
         return jsonify({'error': 'Revenue not found'}), 404
     _, err = _verify_vehicle_ownership(existing['vehicle_id'])
     if err:
-        return err
+        # Normalize cross-tenant to the same 404 as an unknown id (no oracle).
+        return jsonify({'error': 'Revenue not found'}), 404
 
     if _service.delete_revenue(revenue_id):
         return jsonify({'success': True})
