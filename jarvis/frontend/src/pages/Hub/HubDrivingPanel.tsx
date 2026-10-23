@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { useHubHeaderSlot } from '@/pages/Hub/hubHeaderSlot'
 import SearchMultiSelect from '@/pages/Hub/SearchMultiSelect'
 import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
+import { useAuthStore } from '@/stores/authStore'
 import { foiParcursApi } from '@/api/foiParcurs'
 import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
 import type { DocType } from '@/pages/FoiParcurs/documentType'
@@ -134,7 +135,16 @@ export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { on
 
   const { data: companiesData } = useQuery({ queryKey: ['fp-companies'], queryFn: () => foiParcursApi.getCompanies() })
   const companies = companiesData?.companies ?? []
-  useEffect(() => { if (companyId === 0 && companies.length) setCompanyId(companies[0].id) }, [companies]) // eslint-disable-line react-hooks/exhaustive-deps
+  const myCompanyId = useAuthStore((s) => s.user?.company_id)
+  // First-time default (only fires while nothing is persisted, companyId===0):
+  // prefer the logged-in user's own company over the alphabetically-first one.
+  // The alphabetical default landed the Service/courtesy panel on a company with
+  // no courtesy fleet, so the park list looked empty until the user switched.
+  useEffect(() => {
+    if (companyId !== 0 || !companies.length) return
+    const own = myCompanyId && companies.some((c) => c.id === myCompanyId) ? myCompanyId : companies[0].id
+    setCompanyId(own)
+  }, [companies, myCompanyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const { data: brandsData } = useQuery({ queryKey: ['fp-brands', companyId], queryFn: () => foiParcursApi.getBrands(companyId), enabled: companyId > 0 })
   const brands = brandsData?.brands ?? []
