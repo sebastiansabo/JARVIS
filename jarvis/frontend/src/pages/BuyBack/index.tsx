@@ -155,7 +155,7 @@ export default function BuyBack() {
   const [holdReason, setHoldReason] = useState('')
   const [holdNote, setHoldNote] = useState('')
 
-  const { can, isAdminOrManager } = usePermissions()
+  const { can } = usePermissions()
   const canCreate = can('buyback.record.create')
   const canDelete = can('buyback.record.delete')
   const canHold = can('buyback.record.hold')
@@ -349,11 +349,11 @@ export default function BuyBack() {
     onError: (e) => toast.error((e as { data?: { error?: string } })?.data?.error || 'Reluarea a eșuat'),
   })
 
-  // The row's Status cell is an interactive menu for admins/managers (reopen
-  // resolved records + free override) OR for a holder of buyback.record.hold on
-  // a hold-eligible row (Suspendă on active, Reia on ON_HOLD). Everyone else
-  // sees a static badge.
-  const canChangeStatus = isAdminOrManager
+  // The row's Status cell is an interactive menu for holders of
+  // buyback.record.edit (reopen resolved records + free override) OR for a
+  // holder of buyback.record.hold on a hold-eligible row (Suspendă on active,
+  // Reia on ON_HOLD). Everyone else sees a static badge.
+  const canChangeStatus = can('buyback.record.edit')
   const isReopenable = (s: string) => s === 'LOST' || s === 'CANCELLED'
   const showStatusMenu = (r: BuybackRecord) =>
     canChangeStatus || (canHold && (isHoldable(r.status) || r.status === 'ON_HOLD'))
@@ -442,16 +442,34 @@ export default function BuyBack() {
       {/* Toolbar: count chips on the left, filters aligned right, all inline. */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{visibleRecords.length} solicitări</Badge>
-          {/* Per-status chips only make sense with no status filter — a selected
-              status collapses them to one chip that just repeats the total. */}
+          {/* The total chip doubles as a "clear status filter" control. */}
+          <Badge asChild variant="outline">
+            <button
+              type="button"
+              onClick={() => setStatus('all')}
+              className="cursor-pointer transition hover:opacity-80"
+              title="Afișează toate stările"
+            >
+              {visibleRecords.length} solicitări
+            </button>
+          </Badge>
+          {/* Per-status chips double as quick filters — click one to show only
+              that status. They render only with no active status filter; a
+              selected status collapses them to the single total chip above. */}
           {status === 'all' &&
             tabStatusOptions.map((opt) => {
               const count = recordsByStatus[opt.value]?.length ?? 0
               if (!count) return null
               return (
-                <Badge key={opt.value} className={recordStatus(opt.value).badgeClass}>
-                  {count} {opt.label.toLowerCase()}
+                <Badge asChild key={opt.value} className={recordStatus(opt.value).badgeClass}>
+                  <button
+                    type="button"
+                    onClick={() => setStatus(opt.value)}
+                    className="cursor-pointer transition hover:opacity-80"
+                    title={`Filtrează: ${opt.label}`}
+                  >
+                    {count} {opt.label.toLowerCase()}
+                  </button>
                 </Badge>
               )
             })}

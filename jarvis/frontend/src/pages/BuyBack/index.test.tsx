@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 
@@ -64,6 +64,7 @@ vi.mock('@/hooks/useAuth', () => ({
 }))
 
 import BuyBack from './index'
+import { buybackApi } from '@/api/buyback'
 
 function wrap(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -98,10 +99,10 @@ describe('BuyBack list page', () => {
     expect(screen.getByText((21500).toLocaleString('ro-RO'))).toBeInTheDocument()
   })
 
-  it('a non-admin hold-permission holder gets "Suspendă" but NOT the admin-only items', async () => {
-    // Acquisition user: no admin/manager role, but holds buyback.record.hold.
+  it('a hold-only holder (no record.edit) gets "Suspendă" but NOT the status-change items', async () => {
+    // Acquisition user: holds buyback.record.hold but NOT buyback.record.edit.
     // The active-status row must expose a Status menu with ONLY "Suspendă" — the
-    // admin-only "Redeschide"/"Schimbă status…" items must stay hidden.
+    // edit-gated "Redeschide"/"Schimbă status…" items must stay hidden.
     auth.role = 'Acquisition'
     auth.permissions = { 'buyback.record.hold': true }
     wrap(<BuyBack />)
@@ -117,5 +118,44 @@ describe('BuyBack list page', () => {
     expect(await screen.findByRole('menuitem', { name: /suspendă/i })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: /schimbă status/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: /redeschide/i })).not.toBeInTheDocument()
+  })
+
+  it('a non-admin holder of buyback.record.edit gets the "Schimbă status" item', async () => {
+    // The status menu is matrix-driven now: any role granted buyback.record.edit
+    // (not just admin/manager) can change status — assignable to whoever you want.
+    auth.role = 'Acquisition'
+    auth.permissions = { 'buyback.record.edit': true }
+    wrap(<BuyBack />)
+
+    expect(await screen.findByText('Audi A4')).toBeInTheDocument()
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'În evaluare' }), { button: 0 })
+    expect(await screen.findByRole('menuitem', { name: /schimbă status/i })).toBeInTheDocument()
+  })
+
+  it('clicking a status count pill applies that status as the filter', async () => {
+    auth.role = 'Admin'
+    auth.permissions = {}
+    wrap(<BuyBack />)
+    // Active tab shows the PENDING_EVALUATION (Audi A4) record and its count pill.
+    const pill = await screen.findByRole('button', { name: /1 în evaluare/i })
+    fireEvent.click(pill)
+    // Selecting a status collapses the per-status pills (only the total remains).
+    expect(screen.queryByRole('button', { name: /1 în evaluare/i })).not.toBeInTheDocument()
+    // The chosen status is pushed into the records query as the server filter.
+    await waitFor(() =>
+      expect(buybackApi.listRecords).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'PENDING_EVALUATION' })
+      )
+    )
+  })
+
+  it('clicking the total "solicitări" chip clears the status filter', async () => {
+    auth.role = 'Admin'
+    auth.permissions = {}
+    wrap(<BuyBack />)
+    fireEvent.click(await screen.findByRole('button', { name: /1 în evaluare/i }))
+    // Reset back to all stări via the total chip — the per-status pills return.
+    fireEvent.click(screen.getByRole('button', { name: /solicitări/i }))
+    expect(await screen.findByRole('button', { name: /1 în evaluare/i })).toBeInTheDocument()
   })
 })

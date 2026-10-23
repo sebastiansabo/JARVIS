@@ -647,16 +647,15 @@ def cancel_record(record_id):
 @login_required
 @v2_permission_required('buyback', 'record', 'edit')
 def reopen_record(record_id):
-    if not _shared._is_admin():
-        return jsonify({'success': False, 'error': 'Admin/Manager permission required'}), 403
-
+    # Gated by the buyback.record.edit matrix permission (decorator above), so
+    # it's assignable to any role — no hardcoded admin/manager role gate.
     record = _shared.records_repo.get_by_id(record_id)
     if not record:
         return jsonify({'success': False, 'error': 'Record not found'}), 404
 
-    # Tenant boundary applies to reopen too — an admin/manager scoped to
-    # company A must not reopen a company-B record (the _is_admin() check
-    # above is only the role-capability gate, NOT the company boundary).
+    # Tenant boundary applies to reopen too — a caller scoped to company A must
+    # not reopen a company-B record (the edit permission is only the capability
+    # gate, NOT the company boundary).
     err = _shared._guard_company(record)
     if err:
         return err
@@ -679,18 +678,17 @@ def reopen_record(record_id):
 @v2_permission_required('buyback', 'record', 'edit')
 def set_record_status(record_id):
     """Force a record to ANY status, bypassing the lifecycle state machine.
-    Admin/Manager only (same role-capability gate as reopen) — this is the
-    deliberate escape hatch for corrections the normal workflow can't express
-    (e.g. un-cancelling into mid-flow, or reclassifying a resolved record).
+    Gated by the buyback.record.edit matrix permission (same capability gate as
+    reopen) — assignable to any role, no hardcoded admin/manager role gate. This
+    is the deliberate escape hatch for corrections the normal workflow can't
+    express (e.g. un-cancelling into mid-flow, or reclassifying a resolved
+    record).
 
     Only ever touches the buyback record (status + closed_at/bought_at
     bookkeeping + a `forced` audit event); never the linked CarPark vehicle or
     offers — see BuyBackService.force_status. The tenant/IDOR boundary
-    (_guard_company) still applies, so a company-A manager can't override a
-    company-B record it can't even see."""
-    if not _shared._is_admin():
-        return jsonify({'success': False, 'error': 'Admin/Manager permission required'}), 403
-
+    (_guard_company) still applies, so a caller scoped to company A can't
+    override a company-B record it can't even see."""
     record = _shared.records_repo.get_by_id(record_id)
     if not record:
         return jsonify({'success': False, 'error': 'Record not found'}), 404

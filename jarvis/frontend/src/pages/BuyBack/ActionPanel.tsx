@@ -113,10 +113,10 @@ function AgreementFields({
 
 export default function ActionPanel({ record, offers }: { record: BuybackRecord; offers: BuybackOffer[] }) {
   const queryClient = useQueryClient()
-  // Reopen mirrors the backend's role-only _is_admin() gate (admin/superadmin/Manager);
-  // there is NO buyback.record.reopen permission, so an Acquisition user holding
-  // buyback.record.finalize must NOT see it (would 403 on click).
-  const { isAdminOrManager, can } = usePermissions()
+  // Reopen + status override are gated by the buyback.record.edit matrix
+  // permission (mirrors the backend) — assignable to any role, no hardcoded
+  // admin/manager role gate.
+  const { can } = usePermissions()
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['buyback-record', record.id] })
@@ -124,7 +124,12 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   }
 
   const status = record.status
-  const showInitialOffer = status === 'PENDING_EVALUATION' && can('buyback.offer.manage')
+  // Post an offer from PENDING_EVALUATION, and re-send a revised one while the
+  // record is still awaiting the seller's decision (INITIAL_OFFER) — the
+  // acquisition handler can issue as many offers as needed; the backend
+  // supersedes the pending offer and keeps the record in INITIAL_OFFER.
+  const showInitialOffer =
+    (status === 'PENDING_EVALUATION' || status === 'INITIAL_OFFER') && can('buyback.offer.manage')
   // Propose a consignment from PENDING_EVALUATION — same offer-manage authority
   // as posting a buy offer (both are the acquisition advisor's call).
   const showProposeConsignment = status === 'PENDING_EVALUATION' && can('buyback.offer.manage')
@@ -145,10 +150,10 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
   // joins LOST now that the lifecycle allows CANCELLED → PENDING_EVALUATION.
   // A LOST record already transferred into custody (carpark_vehicle_id set)
   // can no longer be reopened — the vehicle now lives in CarPark.
-  const showReopen = (status === 'LOST' || status === 'CANCELLED') && isAdminOrManager && !record.carpark_vehicle_id
+  const showReopen = (status === 'LOST' || status === 'CANCELLED') && can('buyback.record.edit') && !record.carpark_vehicle_id
   // Free status override (any → any, bypassing the state machine) — the
-  // admin/manager escape hatch, always available to them regardless of status.
-  const showOverride = isAdminOrManager
+  // escape hatch, gated by record.edit and available regardless of status.
+  const showOverride = can('buyback.record.edit')
   // Hold/Resume — only from the "active" statuses, gated by the same
   // explicit permission in both directions.
   const showHold =
@@ -440,7 +445,7 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
     ? 'Corectează oferta finală'
     : offerDialogType === 'final'
       ? 'Ofertă finală'
-      : 'Ofertă inițială'
+      : 'Ofertă'
 
   return (
     <Card>
@@ -454,7 +459,7 @@ export default function ActionPanel({ record, offers }: { record: BuybackRecord;
           <div className="flex flex-wrap gap-2">
             {showInitialOffer && (
               <Button size="sm" onClick={() => setOfferDialogType('initial')}>
-                Postează ofertă inițială
+                Postează ofertă
               </Button>
             )}
             {showProposeConsignment && (

@@ -54,9 +54,9 @@ describe('ActionPanel permission gating', () => {
     vi.clearAllMocks()
   })
 
-  it('PENDING_EVALUATION + offer.manage shows "Postează ofertă inițială"', () => {
+  it('PENDING_EVALUATION + offer.manage shows "Postează ofertă"', () => {
     renderPanel('PENDING_EVALUATION', { 'buyback.offer.manage': true })
-    expect(screen.getByText(/Postează ofertă inițială/)).toBeInTheDocument()
+    expect(screen.getByText(/Postează ofertă/)).toBeInTheDocument()
   })
 
   it('PENDING_EVALUATION without offer.manage HIDES the offer button', () => {
@@ -64,10 +64,17 @@ describe('ActionPanel permission gating', () => {
     expect(screen.queryByText(/Postează ofertă/)).not.toBeInTheDocument()
   })
 
+  it('INITIAL_OFFER + offer.manage shows "Postează ofertă" (re-send a revised offer)', () => {
+    // The acquisition handler can issue as many offers as needed — the button
+    // stays available while the record is still awaiting the seller's decision.
+    renderPanel('INITIAL_OFFER', { 'buyback.offer.manage': true })
+    expect(screen.getByText(/Postează ofertă/)).toBeInTheDocument()
+  })
+
   it('offer dialog has an editable Preț Piață input pre-filled from the record', async () => {
     renderPanel('PENDING_EVALUATION', { 'buyback.offer.manage': true },
       { record: { id: 5, market_price_eur: 21500 } })
-    fireEvent.click(screen.getByText(/Postează ofertă inițială/))
+    fireEvent.click(screen.getByText(/Postează ofertă/))
     // acquisition sets/confirms the researched retail value here; pre-filled
     expect(await screen.findByDisplayValue('21500')).toBeInTheDocument()
   })
@@ -75,7 +82,7 @@ describe('ActionPanel permission gating', () => {
   it('posts the offer including the edited Preț Piață (retail)', async () => {
     renderPanel('PENDING_EVALUATION', { 'buyback.offer.manage': true },
       { record: { id: 5, market_price_eur: 21500 } })
-    fireEvent.click(screen.getByText(/Postează ofertă inițială/))
+    fireEvent.click(screen.getByText(/Postează ofertă/))
     const spinners = await screen.findAllByRole('spinbutton')  // [0]=Sumă, [1]=Preț Piață
     fireEvent.change(spinners[0], { target: { value: '9000' } })
     fireEvent.click(screen.getByText('Trimite oferta'))
@@ -177,13 +184,13 @@ describe('ActionPanel permission gating', () => {
     expect(screen.queryByText(/Anulează/)).not.toBeInTheDocument()
   })
 
-  it('reopen shows for an admin on LOST status', () => {
+  it('reopen shows for an admin (implicit edit) on LOST status', () => {
     renderPanel('LOST', {}, { role: 'admin' })
     expect(screen.getByText(/Redeschide/)).toBeInTheDocument()
   })
 
-  it('reopen shows for a manager (empty permissions) on LOST status', () => {
-    renderPanel('LOST', {}, { role: 'manager' })
+  it('reopen shows for a holder of buyback.record.edit on LOST status', () => {
+    renderPanel('LOST', { 'buyback.record.edit': true })
     expect(screen.getByText(/Redeschide/)).toBeInTheDocument()
   })
 
@@ -192,9 +199,9 @@ describe('ActionPanel permission gating', () => {
     expect(screen.queryByText(/Redeschide/)).not.toBeInTheDocument()
   })
 
-  it('reopen is hidden for an Acquisition user (finalize permission, non-admin) on LOST status', () => {
-    // Backend reopen gates role-only (admin/superadmin/Manager); buyback.record.finalize
-    // is ALSO granted to Acquisition — must NOT reveal a button that 403s on click.
+  it('reopen is hidden for an Acquisition user (finalize but no edit) on LOST status', () => {
+    // Reopen is gated by buyback.record.edit; buyback.record.finalize (held by
+    // Acquisition) must NOT reveal a button that would 403 on click.
     renderPanel('LOST', { 'buyback.record.finalize': true })
     expect(screen.queryByText(/Redeschide/)).not.toBeInTheDocument()
   })
@@ -249,8 +256,8 @@ describe('ActionPanel permission gating', () => {
     expect(screen.getByText(/Custodie/)).toBeInTheDocument()
   })
 
-  it('LOST already transferred HIDES Redeschide (reopen) for admin', () => {
-    renderPanel('LOST', {}, { role: 'Manager', record: { carpark_vehicle_id: 77 } })
+  it('LOST already transferred HIDES Redeschide (reopen) even with record.edit', () => {
+    renderPanel('LOST', { 'buyback.record.edit': true }, { record: { carpark_vehicle_id: 77 } })
     expect(screen.queryByText(/Redeschide/)).not.toBeInTheDocument()
   })
 

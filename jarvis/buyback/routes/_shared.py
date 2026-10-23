@@ -70,8 +70,6 @@ MAX_CREATE_BYTES = 12 * 1024 * 1024
 # check-digit validation, just shape, matching carpark's check-vin route.
 VIN_RE = re.compile(r'^[A-HJ-NPR-Z0-9]{17}$')
 
-_ADMIN_ROLE_NAMES = ('admin', 'superadmin', 'Admin', 'Manager')
-
 
 def _acting_company_id():
     """Company the caller is acting as: a request-provided company_id if the
@@ -99,24 +97,6 @@ def _acting_company_id():
                     jsonify({'success': False, 'error': 'Company not permitted'}), 403))
             return cid_int
     return getattr(current_user, 'company_id', None)
-
-
-def _is_admin():
-    """True for Admin/Manager-named roles, or anyone with the legacy
-    can_access_settings superuser flag.
-
-    NOTE: this is a ROLE-CAPABILITY check ("is this an admin/manager kind of
-    user"), NOT a tenant boundary. It is used ONLY for the reopen route's
-    "must be admin/manager" gate. It must NEVER be used to bypass the
-    company/IDOR boundary — that is _guard_company's job (see below), which
-    is bounded by the exact same company set the caller can LIST/CREATE
-    against, so a company-A manager can't mutate a company-B record it can't
-    even see.
-    """
-    return (
-        getattr(current_user, 'role_name', None) in _ADMIN_ROLE_NAMES
-        or getattr(current_user, 'can_access_settings', False)
-    )
 
 
 def _permitted_company_ids():

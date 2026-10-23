@@ -216,46 +216,43 @@ class BuyBackService:
         this record (one-pending-per-record). Advances the record's status
         to match the round, then fires notifier hooks if one is set.
 
-        CORRECTION CASE: a `final` offer may also be re-posted while the
-        record is ALREADY in FINAL_OFFER, to amend an agreed final price
-        before the seller decides. In that case the existing pending final
-        offer is superseded (marked 'superseded' — NOT 'declined', so the
-        record is NOT sent to LOST) and replaced by the new one, and the
-        record STAYS in FINAL_OFFER (no transition). This is the sanctioned
-        way to change a final price once posted — otherwise the price is
-        unreachable (offers are immutable and the lifecycle has no
-        FINAL_OFFER → INSPECTION edge)."""
+        RE-SEND / CORRECTION CASE: an offer of any round may be re-posted
+        while the record is ALREADY in that round's target status (e.g. another
+        'initial' offer while in INITIAL_OFFER, or a 'final' while in
+        FINAL_OFFER), to send a revised offer before the seller decides. The
+        still-pending offer is superseded (marked 'superseded' — NOT 'declined',
+        so the record is NOT sent to LOST) and replaced by the new one, and the
+        record STAYS in its current status (no transition). A second offer is
+        therefore never blocked — the acquisition handler can issue as many as
+        needed. This also recovers a record left with an orphan pending offer by
+        a force-status override."""
         required_status = _ROUND_REQUIRED_STATUS.get(offer_type)
         if required_status is None:
             raise ValueError(f"Unknown offer_type: {offer_type!r}")
 
-        # A 'final' round re-opened while already in FINAL_OFFER corrects the
-        # posted price in place, rather than advancing from INSPECTION.
-        correcting_final = (
-            offer_type == 'final'
-            and record['status'] == _ROUND_TARGET_STATUS['final']
-        )
+        # Re-posting a round while the record already sits in that round's
+        # TARGET status re-sends the offer in place (no transition), rather than
+        # advancing into it. Previously only a 'final' offer could do this;
+        # generalized to every round so the acquisition handler can issue as
+        # many offers as needed.
+        correcting = record['status'] == _ROUND_TARGET_STATUS.get(offer_type)
 
-        if not correcting_final and record['status'] != required_status:
+        if not correcting and record['status'] != required_status:
             raise ValueError(
                 f"Cannot post a {offer_type!r} offer while record "
                 f"{record['id']} is {record['status']!r} (expected "
                 f"{required_status!r})"
             )
 
+        # A still-pending offer is SUPERSEDED (not rejected) so the new offer
+        # becomes the single pending one — one-pending-per-record holds for the
+        # replacement, but a second offer is never blocked. 'superseded' is
+        # distinct from a seller 'declined' (which would send the record to
+        # LOST). This also recovers a record left with an orphan pending offer
+        # by a force-status override (the record-52 case).
         pending = self.offers.pending_for_record(record['id'])
         if pending is not None:
-            if correcting_final:
-                # Replace the still-pending final offer: mark it superseded
-                # (distinct from a seller 'declined', which would move the
-                # record to LOST) so the one-pending-per-record invariant
-                # holds for the replacement offer created below.
-                self.offers.record_decision(pending['id'], 'superseded', actor)
-            else:
-                raise ValueError(
-                    f"Record {record['id']} already has a pending offer — "
-                    "cannot open a second one"
-                )
+            self.offers.record_decision(pending['id'], 'superseded', actor)
 
         # A consignment proposal carries its terms (already validated + JSON-
         # serialized by the route) in payload['consignment_terms'] rather than
@@ -279,11 +276,12 @@ class BuyBackService:
             consignment_terms=consignment_terms,
         )
 
-        if correcting_final:
-            # Price correction: the record is already FINAL_OFFER, so there's
-            # no status change (FINAL_OFFER → FINAL_OFFER isn't a lifecycle
-            # transition). Log a distinct audit event for the Istoric timeline
-            # instead, carrying the superseded offer id for traceability.
+        if correcting:
+            # Re-send/correction: the record already sits in this round's
+            # target status, so there is no status change (e.g. FINAL_OFFER →
+            # FINAL_OFFER isn't a lifecycle transition). Log a distinct audit
+            # event for the Istoric timeline instead, carrying the superseded
+            # offer id for traceability.
             self.events.log(
                 record['id'], 'offer_corrected', actor,
                 {'offer_id': offer['id'],
