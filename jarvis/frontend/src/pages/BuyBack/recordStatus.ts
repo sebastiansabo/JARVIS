@@ -28,7 +28,7 @@ export function recordStatus(status: string): {
     case 'INITIAL_OFFER':
       return {
         key: 'initial_offer',
-        label: 'Ofertă inițială',
+        label: 'Ofertă',
         badgeClass: 'bg-blue-600 text-white',
         rowClass: 'bg-blue-500/5 border-l-4 border-l-blue-500/40',
       }
@@ -100,7 +100,7 @@ export function recordStatus(status: string): {
 
 export const STATUS_FILTER_OPTIONS = [
   { value: 'PENDING_EVALUATION', label: 'În evaluare' },
-  { value: 'INITIAL_OFFER', label: 'Ofertă inițială' },
+  { value: 'INITIAL_OFFER', label: 'Ofertă' },
   { value: 'INSPECTION', label: 'În inspecție' },
   { value: 'FINAL_OFFER', label: 'Ofertă finală' },
   { value: 'CONSIGNMENT_OFFER', label: 'Ofertă consignație' },

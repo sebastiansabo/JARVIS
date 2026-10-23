@@ -106,23 +106,57 @@ def test_transition_calls_notify_owner_with_event_and_status(require_real_db, mo
     assert kwargs.get('new_status') == lifecycle.CANCELLED
 
 
-def test_post_initial_offer_advances_and_blocks_second_pending(require_real_db):
+def test_post_second_initial_offer_supersedes_and_stays_initial(require_real_db):
+    """The acquisition handler can issue as many offers as needed: re-posting
+    an 'initial' offer while the record is already INITIAL_OFFER supersedes the
+    still-pending offer (marks it 'superseded' — NOT 'declined', so no LOST
+    transition) and replaces it, keeping the record in INITIAL_OFFER. Mirrors
+    the sanctioned final-offer correction path, generalized to every round so a
+    second offer is never blocked."""
     svc = BuyBackService(notifier=None)
     rec = _record()
 
-    offer = svc.post_offer(rec, 'initial', {'amount_eur': 1000, 'vat_status': 'no_vat'}, actor=1)
-    assert offer['id']
-    assert offer['offer_type'] == 'initial'
-    assert offer['client_decision'] == 'pending'
+    first = svc.post_offer(rec, 'initial', {'amount_eur': 1000, 'vat_status': 'no_vat'}, actor=1)
+    assert first['id']
+    assert first['offer_type'] == 'initial'
+    assert first['client_decision'] == 'pending'
 
     rec2 = RecordRepository().get_by_id(rec['id'])
     assert rec2['status'] == lifecycle.INITIAL_OFFER
 
-    try:
-        svc.post_offer(rec2, 'initial', {'amount_eur': 1100, 'vat_status': 'no_vat'}, actor=1)
-        assert False, 'expected ValueError (second pending offer of same round blocked)'
-    except ValueError:
-        pass
+    second = svc.post_offer(rec2, 'initial', {'amount_eur': 1100, 'vat_status': 'no_vat'}, actor=1)
+
+    # The first offer is superseded (not declined), the new one is the single
+    # pending offer, and the record stays in INITIAL_OFFER (no transition).
+    assert OfferRepository().get(first['id'])['client_decision'] == 'superseded'
+    pending = OfferRepository().pending_for_record(rec['id'])
+    assert pending is not None and pending['id'] == second['id']
+    assert float(pending['amount_eur']) == 1100.0
+    assert RecordRepository().get_by_id(rec['id'])['status'] == lifecycle.INITIAL_OFFER
+
+
+def test_post_initial_offer_supersedes_stuck_pending_in_pending_evaluation(require_real_db):
+    """Recovery for a record left in PENDING_EVALUATION with an orphan pending
+    offer (e.g. a force-status override moved the record back without touching
+    its offers — the exact record-52 bug). Posting an initial offer supersedes
+    the orphan and advances to INITIAL_OFFER instead of raising 'already has a
+    pending offer'."""
+    svc = BuyBackService(notifier=None)
+    rec = _record()  # PENDING_EVALUATION
+
+    # Orphan pending offer created directly (the "dumb" repo does not transition
+    # the record), simulating the leftover state a force-status override leaves.
+    orphan = OfferRepository().create(
+        rec['id'], 'initial', 999, 'no_vat', None, None, created_by=1,
+    )
+    assert OfferRepository().pending_for_record(rec['id'])['id'] == orphan['id']
+
+    offer = svc.post_offer(rec, 'initial', {'amount_eur': 1200, 'vat_status': 'no_vat'}, actor=1)
+
+    assert OfferRepository().get(orphan['id'])['client_decision'] == 'superseded'
+    pending = OfferRepository().pending_for_record(rec['id'])
+    assert pending is not None and pending['id'] == offer['id']
+    assert RecordRepository().get_by_id(rec['id'])['status'] == lifecycle.INITIAL_OFFER
 
 
 def test_post_offer_wrong_round_status_raises(require_real_db):

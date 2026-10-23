@@ -439,12 +439,27 @@ def test_cancel_cross_company_forbidden(client, as_role):
     assert r.status_code == 403
 
 
-def test_reopen_requires_admin_or_manager(client, as_role):
+def test_reopen_allowed_with_edit_permission(client, as_role, monkeypatch):
+    """Reopen is gated by the buyback.record.edit matrix permission, not an
+    admin/manager role name. Sales holds Edit (own scope), so it may reopen a
+    cancelled record in its own company — assignable to anyone via the matrix."""
+    _mute_emails(monkeypatch)
     as_role('Sales', 1)
     rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
     client.post(f'/api/buyback/records/{rid}/cancel', json={'reason': 'x'})
-    # A non-admin/manager must be blocked by the role gate regardless of whether
-    # the transition itself is legal (CANCELLED → PENDING_EVALUATION now is).
+    r = client.post(f'/api/buyback/records/{rid}/reopen')
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()['record']['status'] == 'PENDING_EVALUATION'
+
+
+def test_reopen_forbidden_without_edit_permission(client, as_role, monkeypatch):
+    """A role without buyback.record.edit (Viewer = deny) is still blocked —
+    the v2_permission_required decorator 403s before the route body runs."""
+    _mute_emails(monkeypatch)
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    client.post(f'/api/buyback/records/{rid}/cancel', json={'reason': 'x'})
+    as_role('Viewer', 1)
     r = client.post(f'/api/buyback/records/{rid}/reopen')
     assert r.status_code == 403
 
@@ -1077,10 +1092,25 @@ def test_reopen_from_cancelled_by_admin(client, as_role, monkeypatch):
     assert r.get_json()['record']['status'] == 'PENDING_EVALUATION'
 
 
-def test_set_status_requires_admin_or_manager(client, as_role, monkeypatch):
+def test_set_status_allowed_with_edit_permission(client, as_role, monkeypatch):
+    """Force-status override is gated by buyback.record.edit, not an
+    admin/manager role name. Sales holds Edit, so it may override a record in
+    its own company — assignable to anyone via the matrix."""
     _mute_emails(monkeypatch)
     as_role('Sales', 1)
     rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    r = client.post(f'/api/buyback/records/{rid}/status', json={'status': 'LOST'})
+    assert r.status_code == 200, r.get_json()
+    assert r.get_json()['record']['status'] == 'LOST'
+
+
+def test_set_status_forbidden_without_edit_permission(client, as_role, monkeypatch):
+    """A role without buyback.record.edit (Viewer = deny) is still blocked —
+    the v2_permission_required decorator 403s before the route body runs."""
+    _mute_emails(monkeypatch)
+    as_role('Admin', 1)
+    rid = client.post('/api/buyback/records', json=_payload()).get_json()['record']['id']
+    as_role('Viewer', 1)
     r = client.post(f'/api/buyback/records/{rid}/status', json={'status': 'LOST'})
     assert r.status_code == 403
 

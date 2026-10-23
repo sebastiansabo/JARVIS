@@ -180,20 +180,26 @@ def test_post_offer_valid_until_iso_accepted(client, as_role):
     assert r.status_code == 201, r.get_json()
 
 
-def test_post_second_pending_offer_is_409(client, as_role):
-    """One-pending-offer-per-record invariant (BuyBackService.post_offer),
-    surfaced as a route-level 409: posting a second offer round while the
-    first is still undecided (record already moved to INITIAL_OFFER, not
-    PENDING_EVALUATION) fails the round/status match too — either way it's
-    the service's ValueError translated to 409."""
+def test_post_second_offer_supersedes_first_and_returns_201(client, as_role):
+    """A second offer is no longer blocked — the acquisition handler can send
+    as many as needed. Re-posting an offer while the record is already in the
+    round's target status supersedes the still-pending offer (201) and keeps
+    the record in that status; the new offer becomes the single pending one."""
     rid = _make_record(client, as_role)
     as_role('Admin', 1)
-    first = client.post(f'/api/buyback/records/{rid}/offers', json=_offer_payload())
+    first = client.post(f'/api/buyback/records/{rid}/offers', json=_offer_payload(amount_eur=9000))
     assert first.status_code == 201, first.get_json()
+    first_id = first.get_json()['offer']['id']
 
-    second = client.post(f'/api/buyback/records/{rid}/offers', json=_offer_payload())
-    assert second.status_code == 409
-    assert 'error' in second.get_json()
+    second = client.post(f'/api/buyback/records/{rid}/offers', json=_offer_payload(amount_eur=9500))
+    assert second.status_code == 201, second.get_json()
+
+    body = client.get(f'/api/buyback/records/{rid}').get_json()
+    assert body['record']['status'] == 'INITIAL_OFFER'
+    by_id = {o['id']: o for o in body['offers']}
+    assert by_id[first_id]['client_decision'] == 'superseded'
+    pending = [o for o in body['offers'] if o['client_decision'] == 'pending']
+    assert len(pending) == 1 and float(pending[0]['amount_eur']) == 9500.0
 
 
 def test_post_offer_requires_offer_manage_permission(client, as_role):

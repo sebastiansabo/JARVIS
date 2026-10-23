@@ -81,7 +81,7 @@ describe('BuyBackDetail', () => {
   it('shows the vehicle, status badge, and event timeline', async () => {
     wrap('/app/buyback/5')
     expect(await screen.findByText('Audi A4')).toBeInTheDocument()
-    expect(screen.getByText('Ofertă inițială')).toBeInTheDocument()
+    expect(screen.getByText('Ofertă')).toBeInTheDocument()
     expect(screen.getByText('BB-Y')).toBeInTheDocument()
   })
 
