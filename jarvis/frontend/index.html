@@ -1,7 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ro">
   <head>
     <meta charset="UTF-8" />
+    <!-- App UI is Romanian; declaring lang + notranslate stops mobile browsers
+         (esp. Chrome/Google Translate on iOS) from rewriting the DOM, which made
+         React's removeChild throw NotFoundError and crash Radix <Select> dropdowns
+         (e.g. the Invoire form). -->
+    <meta name="google" content="notranslate" />
     <link rel="icon" type="image/svg+xml" href="/static/img/jarvis-icon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>JARVIS</title>
