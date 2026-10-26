@@ -173,7 +173,7 @@ export default function BonusesTab({ canViewAmounts, showFilters: _showFilters =
       queryClient.invalidateQueries({ queryKey: ['hr-bonuses'] })
       queryClient.invalidateQueries({ queryKey: ['hr-summary'] })
     },
-    onError: () => toast.error('Delete failed'),
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Delete failed'),
   })
 
   // Selection
@@ -1116,7 +1116,7 @@ function BonusDialog({
       queryClient.invalidateQueries({ queryKey: ['hr-summary'] })
       onClose()
     },
-    onError: () => toast.error('Failed to create bonus'),
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to create bonus'),
   })
 
   const updateMutation = useMutation({
@@ -1127,7 +1127,7 @@ function BonusDialog({
       queryClient.invalidateQueries({ queryKey: ['hr-summary'] })
       onClose()
     },
-    onError: () => toast.error('Failed to update bonus'),
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to update bonus'),
   })
 
   const handleSave = () => {
