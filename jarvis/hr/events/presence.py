@@ -10,7 +10,7 @@ event's date range. These helpers are the single source of truth for:
   in (uniform per-day rate; whole-cent exact), so a bonus that spans a month
   boundary is reported under every month it touches.
 """
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Callable, Dict, List, Tuple
 
 
@@ -56,6 +56,34 @@ def derive_bonus_fields(days) -> Dict:
         'year': first.year,
         'month': first.month,
     }
+
+
+def consecutive_days(start, end, count) -> List[date]:
+    """``count`` consecutive days from ``start``, never past ``end`` (inclusive).
+
+    This is the day set implied by the *scalar* edit path — a participation
+    window plus a day count, with no explicit presence days. Used to
+    materialise/reconcile ``hr.event_bonus_days`` so the count stays in step
+    with ``bonus_days``. Returns ``[]`` when ``start`` is missing or ``count``
+    is not a positive number (callers then leave the day-rows untouched).
+    """
+    if not start or not count:
+        return []
+    try:
+        n = int(round(float(count)))
+    except (TypeError, ValueError):
+        return []
+    if n <= 0:
+        return []
+    first = parse_day(start)
+    last = parse_day(end) if end else None
+    out: List[date] = []
+    for i in range(n):
+        d = first + timedelta(days=i)
+        if last is not None and d > last:
+            break
+        out.append(d)
+    return out
 
 
 def months_touched(days) -> List[Tuple[int, int]]:
