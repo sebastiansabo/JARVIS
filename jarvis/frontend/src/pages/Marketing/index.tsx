@@ -733,6 +733,8 @@ export default function Marketing() {
       {mainTab === 'archived' && (
         <ArchivedView
           visibleColumns={visibleColumns}
+          companies={companies}
+          typeOptions={typeOptions}
           onRestore={() => {
             queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
             queryClient.invalidateQueries({ queryKey: ['mkt-archived'] })
@@ -747,6 +749,8 @@ export default function Marketing() {
 
       {mainTab === 'trash' && (
         <TrashView
+          companies={companies}
+          typeOptions={typeOptions}
           onRestore={() => {
             queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
             queryClient.invalidateQueries({ queryKey: ['mkt-trash'] })
@@ -3004,16 +3008,117 @@ function KpiMatrix({ kpis, onProjectClick }: {
 }
 
 
+// ---- Archived / Trash shared filtering ----
+
+interface SimpleProjectFilter {
+  search: string
+  companyId: number | null
+  projectType: string | null
+  dateFrom: string
+  dateTo: string
+}
+
+const EMPTY_PROJECT_FILTER: SimpleProjectFilter = { search: '', companyId: null, projectType: null, dateFrom: '', dateTo: '' }
+
+const hasActiveFilter = (f: SimpleProjectFilter) =>
+  Boolean(f.search || f.companyId != null || f.projectType || f.dateFrom || f.dateTo)
+
+// Client-side filter over an already-loaded project list (archived/trash are bounded sets).
+function applySimpleFilter(projects: MktProject[], f: SimpleProjectFilter): MktProject[] {
+  const q = f.search.trim().toLowerCase()
+  return projects.filter((p) => {
+    if (q) {
+      const hay = `${p.name ?? ''} ${p.company_name ?? ''} ${p.brand_name ?? ''} ${p.owner_name ?? ''}`.toLowerCase()
+      if (!hay.includes(q)) return false
+    }
+    if (f.companyId != null && p.company_id !== f.companyId) return false
+    if (f.projectType && p.project_type !== f.projectType) return false
+    // Date-only comparison (slice off any time component); mirrors the main list's contained semantics.
+    if (f.dateFrom && (!p.start_date || p.start_date.slice(0, 10) < f.dateFrom)) return false
+    if (f.dateTo && (!p.end_date || p.end_date.slice(0, 10) > f.dateTo)) return false
+    return true
+  })
+}
+
+type CompanyOption = { id: number; company: string }
+type TypeOption = { value: string; label: string }
+
+/** Shared filter + export toolbar for the Archived and Trash views. */
+function ArchiveToolbar({ filter, onChange, companies, typeOptions, shown, total, onExport }: {
+  filter: SimpleProjectFilter
+  onChange: (f: SimpleProjectFilter) => void
+  companies: CompanyOption[]
+  typeOptions?: TypeOption[]
+  shown: number
+  total: number
+  onExport: () => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <SearchInput
+        value={filter.search}
+        onChange={(v) => onChange({ ...filter, search: v })}
+        placeholder="Search..."
+        className="w-44"
+      />
+      <Select
+        value={filter.projectType ?? 'all'}
+        onValueChange={(v) => onChange({ ...filter, projectType: v === 'all' ? null : v })}
+      >
+        <SelectTrigger className="w-[150px]"><SelectValue placeholder="All types" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All types</SelectItem>
+          {(typeOptions ?? []).map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <Select
+        value={filter.companyId != null ? String(filter.companyId) : 'all'}
+        onValueChange={(v) => onChange({ ...filter, companyId: v === 'all' ? null : Number(v) })}
+      >
+        <SelectTrigger className="w-[170px]"><SelectValue placeholder="All companies" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All companies</SelectItem>
+          {companies.map((c) => <SelectItem key={c.id} value={String(c.id)}>{c.company}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <DateField
+        mode="range"
+        startDate={filter.dateFrom}
+        endDate={filter.dateTo}
+        onRangeChange={(s, e) => onChange({ ...filter, dateFrom: s || '', dateTo: e || '' })}
+      />
+      {hasActiveFilter(filter) && (
+        <Button variant="ghost" size="sm" onClick={() => onChange(EMPTY_PROJECT_FILTER)}>Clear</Button>
+      )}
+      <div className="ml-auto flex items-center gap-2">
+        <span className="text-xs text-muted-foreground tabular-nums">{shown}/{total}</span>
+        <Button variant="outline" size="sm" onClick={onExport} disabled={!shown}>
+          <Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+
 // ---- Archived View ----
 
-function ArchivedView({ onRestore, onDelete, visibleColumns }: { onRestore: () => void; onDelete: () => void; visibleColumns?: string[] }) {
+function ArchivedView({ onRestore, onDelete, visibleColumns, companies, typeOptions }: {
+  onRestore: () => void
+  onDelete: () => void
+  visibleColumns?: string[]
+  companies: CompanyOption[]
+  typeOptions?: TypeOption[]
+}) {
   const navigate = useNavigate()
+  const [filter, setFilter] = useState(EMPTY_PROJECT_FILTER)
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['mkt-archived'],
-    queryFn: () => marketingApi.getArchivedProjects(),
+    queryFn: () => marketingApi.getArchivedProjects(500),
   })
-  const projects = data?.projects ?? []
+  const allProjects = data?.projects ?? []
+  const projects = applySimpleFilter(allProjects, filter)
 
   const handleRestore = async (id: number) => {
     await marketingApi.restoreProject(id)
@@ -3030,7 +3135,7 @@ function ArchivedView({ onRestore, onDelete, visibleColumns }: { onRestore: () =
   if (isError) return <QueryError message="Failed to load archived projects" onRetry={() => refetch()} />
   if (isLoading) return <TableSkeleton rows={4} columns={7} />
 
-  if (projects.length === 0) {
+  if (allProjects.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
         <Archive className="mx-auto h-8 w-8 mb-2 opacity-50" />
@@ -3041,18 +3146,26 @@ function ArchivedView({ onRestore, onDelete, visibleColumns }: { onRestore: () =
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button variant="outline" size="sm" onClick={() => exportProjectsCsv(projects, 'marketing-archived')}>
-          <Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV
-        </Button>
-      </div>
-      <ProjectTable
-        projects={projects}
-        onSelect={(p) => navigate(`/app/marketing/projects/${p.id}`)}
-        visibleColumns={visibleColumns}
-        onRestore={(p) => handleRestore(p.id)}
-        onDelete={(p) => handleDelete(p.id)}
+      <ArchiveToolbar
+        filter={filter}
+        onChange={setFilter}
+        companies={companies}
+        typeOptions={typeOptions}
+        shown={projects.length}
+        total={allProjects.length}
+        onExport={() => exportProjectsCsv(projects, 'marketing-archived')}
       />
+      {projects.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">No archived projects match your filters.</div>
+      ) : (
+        <ProjectTable
+          projects={projects}
+          onSelect={(p) => navigate(`/app/marketing/projects/${p.id}`)}
+          visibleColumns={visibleColumns}
+          onRestore={(p) => handleRestore(p.id)}
+          onDelete={(p) => handleDelete(p.id)}
+        />
+      )}
     </div>
   )
 }
@@ -3060,14 +3173,21 @@ function ArchivedView({ onRestore, onDelete, visibleColumns }: { onRestore: () =
 
 // ---- Trash View ----
 
-function TrashView({ onRestore, onPermanentDelete }: { onRestore: () => void; onPermanentDelete: () => void }) {
+function TrashView({ onRestore, onPermanentDelete, companies, typeOptions }: {
+  onRestore: () => void
+  onPermanentDelete: () => void
+  companies: CompanyOption[]
+  typeOptions?: TypeOption[]
+}) {
   const [confirming, setConfirming] = useState<number | null>(null)
+  const [filter, setFilter] = useState(EMPTY_PROJECT_FILTER)
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['mkt-trash'],
-    queryFn: () => marketingApi.getTrashProjects(),
+    queryFn: () => marketingApi.getTrashProjects(500),
   })
-  const projects = data?.projects ?? []
+  const allProjects = data?.projects ?? []
+  const projects = applySimpleFilter(allProjects, filter)
 
   const handleRestore = async (id: number) => {
     await marketingApi.restoreProject(id)
@@ -3092,12 +3212,25 @@ function TrashView({ onRestore, onPermanentDelete }: { onRestore: () => void; on
         <span className="text-amber-800 dark:text-amber-200">Projects in trash can be restored or permanently deleted.</span>
       </div>
 
-      {projects.length === 0 ? (
+      {allProjects.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <Trash2 className="mx-auto h-8 w-8 mb-2 opacity-50" />
           Trash is empty.
         </div>
       ) : (
+        <>
+        <ArchiveToolbar
+          filter={filter}
+          onChange={setFilter}
+          companies={companies}
+          typeOptions={typeOptions}
+          shown={projects.length}
+          total={allProjects.length}
+          onExport={() => exportProjectsCsv(projects, 'marketing-trash')}
+        />
+        {projects.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground">No trashed projects match your filters.</div>
+        ) : (
         <div className="space-y-3">
           {projects.map((p) => (
             <div key={p.id} className="flex items-center gap-4 rounded-lg border border-dashed p-4 opacity-60">
@@ -3126,6 +3259,8 @@ function TrashView({ onRestore, onPermanentDelete }: { onRestore: () => void; on
             </div>
           ))}
         </div>
+        )}
+        </>
       )}
     </div>
   )
