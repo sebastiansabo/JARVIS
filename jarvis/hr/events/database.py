@@ -2,7 +2,7 @@
 from database import get_db, get_cursor, release_db, dict_from_row
 from core.organization.ghost import ghost_exclude_clause
 from core.utils.scope_filter import apply_scope_filter
-from .presence import derive_bonus_fields
+from .presence import derive_bonus_fields, consecutive_days, parse_day
 
 
 def _replace_bonus_days(cursor, bonus_id, presence_days, day_hours=None):
@@ -21,6 +21,38 @@ def _replace_bonus_days(cursor, bonus_id, presence_days, day_hours=None):
             'VALUES (%s, %s, %s, %s) '
             'ON CONFLICT (bonus_id, day) DO NOTHING',
             (bonus_id, d, interval.get('start'), interval.get('end')))
+
+
+def _reconcile_bonus_days(cursor, bonus_id, target_days):
+    """Keep ``hr.event_bonus_days`` in step with the *scalar* edit path (a
+    participation window + day count, no explicit presence days).
+
+    Only acts when the stored day-count differs from ``target_days``: an edit
+    that leaves the count unchanged preserves the existing — possibly
+    non-consecutive — days and their per-day hour intervals (the scalar dialog
+    cannot express those, so it must not clobber them). When the count does
+    change it drops the surplus days and adds the missing ones, keeping the
+    hours of the days that survive. This holds the invariant the reporting
+    views rely on: ``COUNT(day-rows) == bonus_days`` (so pro-rata money, which
+    divides by ``bonus_days`` and sums over the rows, stays exact).
+    """
+    target = {parse_day(d) for d in target_days}
+    if not target:
+        return
+    cursor.execute('SELECT day FROM hr.event_bonus_days WHERE bonus_id = %s', (bonus_id,))
+    existing = {r['day'] for r in cursor.fetchall()}
+    if len(existing) == len(target):
+        return  # count already consistent — preserve existing days + hours
+    to_delete = existing - target
+    to_insert = target - existing
+    if to_delete:
+        cursor.execute(
+            'DELETE FROM hr.event_bonus_days WHERE bonus_id = %s AND day = ANY(%s)',
+            (bonus_id, list(to_delete)))
+    for d in sorted(to_insert):
+        cursor.execute(
+            'INSERT INTO hr.event_bonus_days (bonus_id, day) VALUES (%s, %s) '
+            'ON CONFLICT (bonus_id, day) DO NOTHING', (bonus_id, d))
 
 
 # ============== HR Employees (now using users table) ==============
@@ -468,6 +500,14 @@ def save_event_bonus(employee_id, event_id, year, month, participation_start=Non
         year, month = f['year'], f['month']
         participation_start, participation_end = f['participation_start'], f['participation_end']
         bonus_days = f['bonus_days']
+        scalar_days = None
+    else:
+        # Scalar path: derive the implied consecutive days so the day-rows exist
+        # and bonus_days matches their count (keeps the bonus visible in the
+        # per-day summary views).
+        scalar_days = consecutive_days(participation_start, participation_end, bonus_days)
+        if scalar_days:
+            bonus_days = len(scalar_days)
     conn = get_db()
     try:
         cursor = get_cursor(conn)
@@ -482,6 +522,8 @@ def save_event_bonus(employee_id, event_id, year, month, participation_start=Non
         bonus_id = cursor.fetchone()['id']
         if presence_days:
             _replace_bonus_days(cursor, bonus_id, presence_days, day_hours)
+        elif scalar_days:
+            _reconcile_bonus_days(cursor, bonus_id, scalar_days)
         conn.commit()
         return bonus_id
 
@@ -506,6 +548,11 @@ def save_event_bonuses_bulk(bonuses, created_by=None):
                 year, month = f['year'], f['month']
                 participation_start, participation_end = f['participation_start'], f['participation_end']
                 bonus_days = f['bonus_days']
+                scalar_days = None
+            else:
+                scalar_days = consecutive_days(participation_start, participation_end, bonus_days)
+                if scalar_days:
+                    bonus_days = len(scalar_days)
             cursor.execute('''
                 INSERT INTO hr.event_bonuses
                 (user_id, event_id, year, month, participation_start, participation_end,
@@ -519,6 +566,8 @@ def save_event_bonuses_bulk(bonuses, created_by=None):
             new_id = cursor.fetchone()['id']
             if presence_days:
                 _replace_bonus_days(cursor, new_id, presence_days, b.get('day_hours'))
+            elif scalar_days:
+                _reconcile_bonus_days(cursor, new_id, scalar_days)
             created_ids.append(new_id)
 
         conn.commit()
@@ -541,6 +590,14 @@ def update_event_bonus(bonus_id, employee_id, event_id, year, month, participati
         year, month = f['year'], f['month']
         participation_start, participation_end = f['participation_start'], f['participation_end']
         bonus_days = f['bonus_days']
+        scalar_days = None
+    else:
+        # Scalar path: reconcile the day-rows to the implied consecutive window
+        # so the edit actually reflects in the per-day summary views and the
+        # pro-rata money stays correct (bonus_days == COUNT(day-rows)).
+        scalar_days = consecutive_days(participation_start, participation_end, bonus_days)
+        if scalar_days:
+            bonus_days = len(scalar_days)
     conn = get_db()
     try:
         cursor = get_cursor(conn)
@@ -555,6 +612,8 @@ def update_event_bonus(bonus_id, employee_id, event_id, year, month, participati
               bonus_days, hours_free, bonus_net, details, allocation_month, bonus_id))
         if presence_days is not None:
             _replace_bonus_days(cursor, bonus_id, presence_days, day_hours)
+        elif scalar_days:
+            _reconcile_bonus_days(cursor, bonus_id, scalar_days)
         conn.commit()
 
 
