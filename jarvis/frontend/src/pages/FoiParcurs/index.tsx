@@ -2488,9 +2488,14 @@ export function SessionsTab({ companyId, brand, onActivate, onReturn, toolbarSlo
     if (filterMonth !== 'all' && c.month != null && String(c.month) !== filterMonth) return false
     if (filterYear !== 'all' && c.year != null && String(c.year) !== filterYear) return false
     if (search) {
-      const q = search.toLowerCase()
-      const haystack = `${c.vin} ${c.client_name || ''} ${c.driver_name || ''} ${c.company_name || ''} ${c.itinerary || ''} ${c.advisor_name || ''}`.toLowerCase()
-      if (!haystack.includes(q)) return false
+      const q = search.trim().toLowerCase()
+      // Include the vehicle mark + brand + model + plate so searching by the car name
+      // works — the row shows the car, but these fields weren't in the haystack, so a
+      // query that leads with the make returned nothing. Token-split (AND) so word
+      // order and extra spaces don't matter.
+      const _vh = vinVehicle.get(c.vin)
+      const haystack = `${c.vin} ${c.client_name || ''} ${c.driver_name || ''} ${c.company_name || ''} ${c.itinerary || ''} ${c.advisor_name || ''} ${_vh?.mark || ''} ${_vh?.brand || ''} ${_vh?.model || ''} ${_vh?.registration_number || ''}`.toLowerCase()
+      if (!q.split(/\s+/).every((t) => haystack.includes(t))) return false
     }
     return true
   })

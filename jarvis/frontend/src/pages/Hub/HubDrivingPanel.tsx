@@ -11,7 +11,6 @@ import SearchMultiSelect from '@/pages/Hub/SearchMultiSelect'
 import { cn, usePersistedState, useIsMobile } from '@/lib/utils'
 import { useAuthStore } from '@/stores/authStore'
 import { foiParcursApi } from '@/api/foiParcurs'
-import { sessionStatus } from '@/pages/FoiParcurs/sessionStatus'
 import type { DocType } from '@/pages/FoiParcurs/documentType'
 import type { FpVehicle, FoiContract } from '@/types/foiParcurs'
 import DrivingSessionsList from '@/pages/Hub/DrivingSessionsList'
@@ -170,34 +169,36 @@ export default function HubDrivingPanel({ onBack, documentType = 'sales' }: { on
   const { data: vehiclesData } = useQuery({ queryKey: ['fp-vehicles', documentType], queryFn: () => foiParcursApi.getVehicles(true, documentType), staleTime: 30_000 })
   const vinVehicle = useMemo(() => new Map((vehiclesData?.vehicles ?? []).map((v) => [v.vin, v] as const)), [vehiclesData])
 
-  // Distinct cars + consultants across the (brand-scoped) upcoming/live sessions.
-  // Car search haystack spans car/plate/VIN/id/consultant; consultant by name.
+  // Car filter options = the full tenant FLEET (every active vehicle for the
+  // selected company + brand), NOT only cars that currently have an upcoming/live
+  // session. The old session-derived list hid any car whose sessions were all
+  // finalised/missed (e.g. a T-Roc with only COMPLETED drives never appeared),
+  // which read as "the car is missing". Consultants stay session-derived (only
+  // advisors who actually have sessions in this view). Both brand-scoped the same
+  // way as the sessions list: match the vehicle's `brand` (catalog label) or fall
+  // back to `mark` (short make code).
   const { carOptions, consultantOptions } = useMemo(() => {
     const cars = new Map<string, { label: string; search: string }>()
+    for (const v of vehiclesData?.vehicles ?? []) {
+      if (!v.vin) continue
+      if (companyId > 0 && v.company_id !== companyId) continue
+      if (brand && (v.brand ?? '').trim() !== brand && (v.mark ?? '').trim() !== brand) continue
+      const plate = (v.registration_number ?? '').trim()
+      const label = plate ? `${vehName(v, v.vin)} · ${plate}` : vehName(v, v.vin)
+      cars.set(v.vin, { label, search: [label, v.vin, plate, v.id != null ? String(v.id) : ''].join(' ').toLowerCase() })
+    }
     const consultants = new Map<string, { label: string; search: string }>()
     for (const c of contractsData?.contracts ?? []) {
       const vh = c.vin ? vinVehicle.get(c.vin) : undefined
       if (brand && c.vin && (vh?.brand ?? '').trim() !== brand && (vh?.mark ?? '').trim() !== brand) continue
-      const k = sessionStatus(c).key
-      if (k !== 'planificat' && k !== 'driving' && k !== 'intarziat') continue
       const advisor = (c.advisor_name ?? '').trim()
-      if (c.vin) {
-        const existing = cars.get(c.vin)
-        if (!existing) {
-          const plate = (vh?.registration_number ?? '').trim()
-          const label = plate ? `${vehName(vh, c.vin)} · ${plate}` : vehName(vh, c.vin)
-          cars.set(c.vin, { label, search: [label, c.vin, plate, vh?.id != null ? String(vh.id) : '', advisor].join(' ').toLowerCase() })
-        } else if (advisor && !existing.search.includes(advisor.toLowerCase())) {
-          existing.search += ' ' + advisor.toLowerCase()
-        }
-      }
       if (advisor && !consultants.has(advisor)) consultants.set(advisor, { label: advisor, search: advisor.toLowerCase() })
     }
     return {
       carOptions: Array.from(cars, ([value, o]) => ({ value, ...o })).sort((a, b) => a.label.localeCompare(b.label)),
       consultantOptions: Array.from(consultants, ([value, o]) => ({ value, ...o })).sort((a, b) => a.label.localeCompare(b.label)),
     }
-  }, [contractsData, brand, vinVehicle])
+  }, [contractsData, vehiclesData, companyId, brand, vinVehicle])
 
   const activeFilters = carFilter.length + consultantFilter.length + (brand ? 1 : 0)
   const resetFilters = () => { setBrand(''); setCarFilter([]); setConsultantFilter([]) }

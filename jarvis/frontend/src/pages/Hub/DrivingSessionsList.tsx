@@ -122,8 +122,14 @@ export default function DrivingSessionsList({ companyId, brand, carFilter = [], 
       if (q) {
         // Include driver_name so a company booking is findable by its DRIVER, not
         // just the company client_name (e.g. client "ENERGOBIT SA", driver "CSEREI Lorand").
-        const hay = `${c.client_name ?? ''} ${c.driver_name ?? ''} ${c.vin ?? ''} ${c.advisor_name ?? ''} ${vinVehicle.get(c.vin ?? '')?.model ?? ''}`.toLowerCase()
-        if (!hay.includes(q)) return false
+        // Include the vehicle mark + brand + plate, not only the model: the card label
+        // shows `${mark} ${model}` (e.g. "Volkswagen Noul T-Roc R-Line 1.5 eTSI DSG"),
+        // so a query that leads with the make ("Volkswagen …") must match too — the
+        // old model-only haystack returned zero for the exact text the card displays.
+        // Token-split (AND) so word order and extra spaces don't matter.
+        const vh = vinVehicle.get(c.vin ?? '')
+        const hay = `${c.client_name ?? ''} ${c.driver_name ?? ''} ${c.vin ?? ''} ${c.advisor_name ?? ''} ${vh?.mark ?? ''} ${vh?.brand ?? ''} ${vh?.model ?? ''} ${vh?.registration_number ?? ''}`.toLowerCase()
+        if (!q.split(/\s+/).every((t) => hay.includes(t))) return false
       }
       return true
     })
