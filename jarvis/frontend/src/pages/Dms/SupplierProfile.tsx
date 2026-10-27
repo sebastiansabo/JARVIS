@@ -110,8 +110,8 @@ export default function SupplierProfile() {
       queryClient.invalidateQueries({ queryKey: ['dms-supplier', id] })
       queryClient.invalidateQueries({ queryKey: ['dms-suppliers'] })
     },
-    onError: (err: Error & { response?: { data?: { error?: string } } }) => {
-      const msg = err?.response?.data?.error || 'ANAF sync failed'
+    onError: (err: Error & { data?: { error?: string } }) => {
+      const msg = err?.data?.error || err?.message || 'ANAF sync failed'
       toast.error(msg)
     },
   })
@@ -133,8 +133,8 @@ export default function SupplierProfile() {
       queryClient.invalidateQueries({ queryKey: ['dms-supplier', id] })
       queryClient.invalidateQueries({ queryKey: ['dms-suppliers'] })
     },
-    onError: (err: Error & { response?: { data?: { error?: string } } }) => {
-      const msg = err?.response?.data?.error || 'Auto-fill failed'
+    onError: (err: Error & { data?: { error?: string } }) => {
+      const msg = err?.data?.error || err?.message || 'Auto-fill failed'
       toast.error(msg)
     },
   })

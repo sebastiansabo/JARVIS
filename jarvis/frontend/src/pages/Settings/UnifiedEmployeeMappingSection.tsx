@@ -272,7 +272,7 @@ export function UnifiedEmployeeMappingSection() {
       toast.success(msg)
     },
     onError: (err: any) => {
-      const msg = err?.response?.data?.error ?? 'Failed to create user'
+      const msg = err?.data?.error || err?.message || 'Failed to create user'
       toast.error(msg)
     },
   })

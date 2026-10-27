@@ -756,8 +756,8 @@ function ConversionPanel({ search }: { search: string }) {
       setCoDays('1')
       setApproverId('')
     },
-    onError: (err: { response?: { data?: { error?: string } } }) => {
-      toast.error(err.response?.data?.error || 'Failed to create conversion')
+    onError: (err: any) => {
+      toast.error(err?.data?.error || err?.message || 'Failed to create conversion')
     },
   })
 
