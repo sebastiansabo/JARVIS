@@ -200,7 +200,7 @@ export default function SincronOrgBuilder() {
     mutationFn: ({ id, parentId }: { id: number; parentId: number | null }) =>
       organizationApi.updateSincronOrgNode(id, { parent_id: parentId }),
     onSuccess: () => { invalidate(); setMoveNode(null); toast.success('Node mutat') },
-    onError: (e: any) => toast.error(e?.response?.data?.error || 'Failed to move node'),
+    onError: (e: any) => toast.error(e?.data?.error || e?.message || 'Failed to move node'),
   })
 
   const setMembersMut = useMutation({

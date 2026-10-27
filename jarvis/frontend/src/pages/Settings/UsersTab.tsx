@@ -78,7 +78,7 @@ export default function UsersTab() {
       setShowAdd(false)
       toast.success('User created')
     },
-    onError: (err: any) => toast.error(err?.response?.data?.error || 'Failed to create user'),
+    onError: (err: any) => toast.error(err?.data?.error || err?.message || 'Failed to create user'),
   })
 
   const updateMutation = useMutation({
@@ -88,7 +88,7 @@ export default function UsersTab() {
       setEditUser(null)
       toast.success('User updated')
     },
-    onError: (err: any) => toast.error(err?.response?.data?.error || 'Failed to update user'),
+    onError: (err: any) => toast.error(err?.data?.error || err?.message || 'Failed to update user'),
   })
 
   const deleteMutation = useMutation({
