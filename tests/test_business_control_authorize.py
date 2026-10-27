@@ -443,3 +443,42 @@ class TestBusinessControlSeed:
         assert grants['Manager'] == ('all', True)
         assert grants['User'] == ('deny', False)
         assert grants['Viewer'] == ('deny', False)
+
+
+def _call_directory(caller, candidates, company=101, permission=True, active=True):
+    from core.integrations import routes as bc
+    repo = MagicMock()
+    repo.return_value.list_active_companies.return_value = [{'id': 101, 'company': 'A'}] if active else []
+    repo.return_value.list_company_access_candidates.return_value = candidates
+    with _app().test_request_context(f'/api/integrations/business-control/admin/users?company_id={company}'):
+        with patch(f'{_HELPERS}.current_user', caller), patch(f'{_ROUTES}.current_user', caller), \
+             patch(f'{_ROUTES}.IntegrationsRepository', repo), patch(f'{_ROUTES}.PermissionRepository', _perm_mock(permission)):
+            result = _normalize(bc.bc_admin_company_users())
+    return result, repo
+
+
+def test_company_directory_minimal_eligible_users():
+    users = [dict(id=7, email='a@example.com', name='A', role_id=2, can_access_settings=False, password_hash='SECRET'),
+             dict(id=8, email='admin@example.com', name='Admin', role_id=3, can_access_settings=True)]
+    (status, body), repo = _call_directory(_make_user(can_access_settings=True), users, permission=False)
+    assert status == 200
+    assert body == {'success': True, 'company_id': 101, 'users': [{'id': 8, 'email': 'admin@example.com', 'full_name': 'Admin'}]}
+    repo.return_value.list_company_access_candidates.assert_called_once_with(101)
+    (status, body), _ = _call_directory(_make_user(can_access_settings=True), users)
+    assert status == 200 and len(body['users']) == 2
+    assert 'SECRET' not in json.dumps(body) and 'role_id' not in json.dumps(body)
+
+
+@pytest.mark.parametrize('caller', [_make_user(), _make_user(can_access_settings=True, is_active=False)])
+def test_company_directory_requires_active_admin(caller):
+    (status, _), repo = _call_directory(caller, [])
+    assert status == 403
+    repo.return_value.list_company_access_candidates.assert_not_called()
+
+
+def test_company_directory_rejects_wrong_or_inactive_company():
+    (status, _), repo = _call_directory(_make_user(can_access_settings=True), [], company=202)
+    assert status == 403
+    repo.return_value.list_company_access_candidates.assert_not_called()
+    (status, _), _ = _call_directory(_make_user(can_access_settings=True), [], active=False)
+    assert status == 403

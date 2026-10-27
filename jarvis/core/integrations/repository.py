@@ -24,3 +24,13 @@ class IntegrationsRepository(BaseRepository):
             'SELECT id, company FROM companies WHERE id = %s AND is_active = TRUE',
             (company_id,),
         )
+
+    def list_company_access_candidates(self, company_id):
+        """Minimal identities only; role permissions are checked by the route."""
+        return self.query_all('''
+            SELECT u.id, u.email, u.name, u.role_id, r.can_access_settings
+            FROM users u LEFT JOIN roles r ON r.id = u.role_id
+            WHERE u.is_active = TRUE
+              AND (u.company_id = %s OR r.can_access_settings = TRUE)
+            ORDER BY u.name, u.id
+        ''', (company_id,)) or []

@@ -292,3 +292,33 @@ def bc_admin_user_access(user_id):
         'sees_all_companies': is_admin,
         'registered_company': registered_company,
     })
+
+
+@integrations_bp.route('/api/integrations/business-control/admin/users', methods=['GET'])
+@admin_required
+def bc_admin_company_users():
+    """Active Alpha-eligible identities for one authorized active company."""
+    if not getattr(current_user, 'is_active', False):
+        return error_response('Permission denied', 403)
+    throttled = _throttle('directory')
+    if throttled:
+        return throttled
+    raw = request.args.get('company_id', '')
+    if not raw.isdigit() or int(raw) <= 0:
+        return error_response('company_id must be a positive integer', 400)
+    company_id = int(raw)
+    tenants, _, _ = _eligible_companies(current_user)
+    if not any(t['company_id'] == company_id for t in tenants):
+        return _tenant_denied()
+    users, role_access = [], {}
+    for user in IntegrationsRepository().list_company_access_candidates(company_id):
+        admin = bool(user.get('can_access_settings'))
+        role_id = user.get('role_id')
+        if role_id not in role_access and not admin:
+            role_access[role_id] = _role_has_bc_access(role_id, False)
+        if admin or role_access.get(role_id, False):
+            users.append({'id': user['id'], 'email': user.get('email') or '',
+                          'full_name': user.get('name') or ''})
+    response = jsonify({'success': True, 'company_id': company_id, 'users': users})
+    response.headers['Cache-Control'] = 'no-store'
+    return response
