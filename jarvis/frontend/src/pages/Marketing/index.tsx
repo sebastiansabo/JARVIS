@@ -301,6 +301,7 @@ export default function Marketing() {
   const effectiveViewMode = isMobile ? 'cards' : viewMode
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [showStats, setShowStats] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const [mainTabRaw, setMainTab] = useTabParam<MainTab>('projects')
   // Migrate old tab=dashboard / tab=calendar URLs to projects view
   const mainTab: MainTab = ((mainTabRaw as string) === 'dashboard' || (mainTabRaw as string) === 'calendar') ? 'projects' : mainTabRaw
@@ -347,6 +348,28 @@ export default function Marketing() {
   const projects = projectsData?.projects ?? []
   const total = projectsData?.total ?? 0
   const companies = companiesData ?? []
+
+  // Export every project matching the current filters — not just the loaded page.
+  // The backend caps `limit` at 500, so page through the full result set.
+  const handleExportProjects = async () => {
+    if (isExporting || !projects.length) return
+    setIsExporting(true)
+    try {
+      let rows = projects
+      if (total > projects.length) {
+        const all: MktProject[] = []
+        for (let offset = 0; offset < total; offset += 500) {
+          const res = await marketingApi.listProjects({ ...filters, limit: 500, offset })
+          all.push(...res.projects)
+          if (res.projects.length < 500) break
+        }
+        rows = all
+      }
+      exportProjectsCsv(rows, 'marketing-projects')
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   return (
     <div className="space-y-4 md:space-y-6">
@@ -553,6 +576,15 @@ export default function Marketing() {
                   <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
                 )}
                 <div className="ml-auto flex gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleExportProjects}
+                    disabled={!projects.length || isExporting}
+                    title="Export CSV"
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
                   {effectiveViewMode === 'table' && (
                     <ColumnToggle
                       visibleColumns={visibleColumns}
@@ -700,6 +732,7 @@ export default function Marketing() {
 
       {mainTab === 'archived' && (
         <ArchivedView
+          visibleColumns={visibleColumns}
           onRestore={() => {
             queryClient.invalidateQueries({ queryKey: ['mkt-projects'] })
             queryClient.invalidateQueries({ queryKey: ['mkt-archived'] })
@@ -1210,10 +1243,11 @@ export const MKT_PROJECT_COLUMNS: MktProjectColumn[] = [
 
 const MKT_PROJECT_COLUMN_MAP = new Map(MKT_PROJECT_COLUMNS.map((c) => [c.key, c]))
 
-export function ProjectTable({ projects, onSelect, onArchive, onDelete, compareMode, compareIds, onToggleCompare, visibleColumns, sort, order, onSort }: {
+export function ProjectTable({ projects, onSelect, onArchive, onRestore, onDelete, compareMode, compareIds, onToggleCompare, visibleColumns, sort, order, onSort }: {
   projects: MktProject[]
   onSelect: (p: MktProject) => void
   onArchive?: (p: MktProject) => void
+  onRestore?: (p: MktProject) => void
   onDelete?: (p: MktProject) => void
   compareMode?: boolean
   compareIds?: Set<number>
@@ -1235,7 +1269,7 @@ export function ProjectTable({ projects, onSelect, onArchive, onDelete, compareM
   const cols = (visibleColumns ?? MKT_DEFAULT_COLUMNS)
     .map((k) => MKT_PROJECT_COLUMN_MAP.get(k))
     .filter((c): c is MktProjectColumn => Boolean(c))
-  const hasActions = Boolean(onArchive || onDelete)
+  const hasActions = Boolean(onArchive || onRestore || onDelete)
 
   return (
     <div className="rounded-md border">
@@ -1295,6 +1329,16 @@ export function ProjectTable({ projects, onSelect, onArchive, onDelete, compareM
                 {hasActions && (
                   <TableCell>
                     <div className="flex items-center gap-1">
+                      {onRestore && (
+                        <button
+                          type="button"
+                          className="p-1 rounded hover:bg-accent cursor-pointer transition-colors"
+                          title="Restore"
+                          onClick={(e) => { e.stopPropagation(); onRestore(p) }}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5 text-muted-foreground" />
+                        </button>
+                      )}
                       {onArchive && p.status !== 'archived' && (
                         <button
                           type="button"
@@ -2962,8 +3006,8 @@ function KpiMatrix({ kpis, onProjectClick }: {
 
 // ---- Archived View ----
 
-function ArchivedView({ onRestore, onDelete }: { onRestore: () => void; onDelete: () => void }) {
-  const [confirming, setConfirming] = useState<number | null>(null)
+function ArchivedView({ onRestore, onDelete, visibleColumns }: { onRestore: () => void; onDelete: () => void; visibleColumns?: string[] }) {
+  const navigate = useNavigate()
 
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['mkt-archived'],
@@ -2981,49 +3025,34 @@ function ArchivedView({ onRestore, onDelete }: { onRestore: () => void; onDelete
     await marketingApi.deleteProject(id)
     onDelete()
     refetch()
-    setConfirming(null)
   }
 
   if (isError) return <QueryError message="Failed to load archived projects" onRetry={() => refetch()} />
-  if (isLoading) return <TableSkeleton rows={4} columns={5} />
+  if (isLoading) return <TableSkeleton rows={4} columns={7} />
+
+  if (projects.length === 0) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <Archive className="mx-auto h-8 w-8 mb-2 opacity-50" />
+        No archived projects.
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">
-      {projects.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <Archive className="mx-auto h-8 w-8 mb-2 opacity-50" />
-          No archived projects.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {projects.map((p) => (
-            <div key={p.id} className="flex items-center gap-4 rounded-lg border p-4 opacity-80">
-              <div className="min-w-0 flex-1">
-                <h3 className="font-semibold truncate">{p.name}</h3>
-                <p className="text-sm text-muted-foreground">{p.company_name}{p.brand_name ? ` / ${p.brand_name}` : ''}</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Owner: {p.owner_name} &middot; Budget: {formatCurrency(p.total_budget, p.currency)}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Button variant="outline" size="sm" onClick={() => handleRestore(p.id)}>
-                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> Restore
-                </Button>
-                {confirming === p.id ? (
-                  <div className="flex items-center gap-1">
-                    <Button variant="destructive" size="sm" onClick={() => handleDelete(p.id)}>Confirm</Button>
-                    <Button variant="ghost" size="sm" onClick={() => setConfirming(null)}>Cancel</Button>
-                  </div>
-                ) : (
-                  <Button variant="ghost" size="sm" onClick={() => setConfirming(p.id)}>
-                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                  </Button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={() => exportProjectsCsv(projects, 'marketing-archived')}>
+          <Download className="h-3.5 w-3.5 mr-1.5" /> Export CSV
+        </Button>
+      </div>
+      <ProjectTable
+        projects={projects}
+        onSelect={(p) => navigate(`/app/marketing/projects/${p.id}`)}
+        visibleColumns={visibleColumns}
+        onRestore={(p) => handleRestore(p.id)}
+        onDelete={(p) => handleDelete(p.id)}
+      />
     </div>
   )
 }
@@ -3186,6 +3215,30 @@ function ComparePanel({ projects, onClose }: { projects: MktProject[]; onClose: 
 
 
 // ---- CSV Export Helper ----
+
+/** Export a list of marketing projects to CSV using the shared column set. Reused by the projects and archived views. */
+function exportProjectsCsv(projects: MktProject[], filename: string) {
+  const headers = ['Project', 'Company', 'Brand', 'Type', 'Status', 'Budget', 'Spent', 'Burn %', 'Owner', 'Start', 'End', 'Currency']
+  const rows = projects.map((p) => {
+    const spent = typeof p.total_spent === 'string' ? parseFloat(p.total_spent) : (p.total_spent ?? 0)
+    const budget = typeof p.total_budget === 'string' ? parseFloat(p.total_budget as unknown as string) : (p.total_budget ?? 0)
+    return [
+      p.name,
+      p.company_name,
+      p.brand_name ?? '',
+      (p.project_type ?? '').replace('_', ' '),
+      (p.status ?? '').replace('_', ' '),
+      budget,
+      spent,
+      burnRate(spent, budget),
+      p.owner_name,
+      p.start_date ? new Date(p.start_date).toLocaleDateString('ro-RO') : '',
+      p.end_date ? new Date(p.end_date).toLocaleDateString('ro-RO') : '',
+      p.currency ?? '',
+    ]
+  })
+  exportCsv(headers, rows, filename)
+}
 
 function exportCsv(headers: string[], rows: (string | number | null | undefined)[][], filename: string) {
   const escape = (v: unknown) => {
