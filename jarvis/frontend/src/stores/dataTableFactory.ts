@@ -125,7 +125,9 @@ export function createDataTableSlice<F>(
         filters: {
           ...s.filters,
           [key]: value,
-          ...(resetOffsetOnFilter ? { offset: 0 } : {}),
+          // Reset to the first page when a filter changes — but NOT when the
+          // field being updated IS `offset` (that would break pagination).
+          ...(resetOffsetOnFilter && key !== 'offset' ? { offset: 0 } : {}),
         },
       })),
 
