@@ -98,8 +98,9 @@ function AICampaignGenerator({ companies, onCreated }: {
       setOpen(false)
       resetForm()
     },
-    onError: (err: Error & { response?: { data?: { error?: string } } }) => {
-      setError(err.response?.data?.error || err.message || 'Generation failed')
+    onError: (err: Error & { data?: { error?: string } }) => {
+      // ApiError exposes .data/.status (not .response) — read the server error from there.
+      setError(err.data?.error || err.message || 'Generation failed')
     },
   })
 
@@ -433,19 +434,19 @@ export default function Marketing() {
           <div className={`grid grid-cols-2 gap-3 lg:grid-cols-4 ${showStats ? '' : 'hidden'}`}>
             <StatCard
               title="Projects"
-              value={projects.length}
+              value={total}
               icon={<FolderOpen className="h-4 w-4" />}
               isLoading={projectsLoading}
             />
             <StatCard
               title="Total Budget"
-              value={formatCurrency(projects.reduce((s, p) => s + Number(p.total_budget ?? 0), 0))}
+              value={currencyAwareTotal(projects, 'total_budget')}
               icon={<DollarSign className="h-4 w-4" />}
               isLoading={projectsLoading}
             />
             <StatCard
               title="Total Spent"
-              value={formatCurrency(projects.reduce((s, p) => s + Number(p.total_spent ?? 0), 0))}
+              value={currencyAwareTotal(projects, 'total_spent')}
               icon={<Target className="h-4 w-4" />}
               isLoading={projectsLoading}
             />
@@ -572,7 +573,7 @@ export default function Marketing() {
             return (
               <div className="flex flex-wrap gap-3 items-center">
                 {filterControls}
-                {Object.values(filters).some((v) => v != null && v !== '' && v !== 50 && v !== 0) && (
+                {Boolean(filters.search || filters.status || filters.project_type || filters.company_id || filters.brand_id || filters.owner_id || filters.date_from || filters.date_to) && (
                   <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>
                 )}
                 <div className="ml-auto flex gap-1">
@@ -3355,6 +3356,25 @@ function ComparePanel({ projects, onClose }: { projects: MktProject[]; onClose: 
 }
 
 
+// ---- Stat helpers ----
+
+/** Sum a money field across projects, but don't blend currencies: returns a
+ *  single-currency formatted total, or "Mixed" when currencies differ. */
+function currencyAwareTotal(projects: MktProject[], field: 'total_budget' | 'total_spent'): string {
+  const byCcy = new Map<string, number>()
+  for (const p of projects) {
+    const c = p.currency || 'RON'
+    byCcy.set(c, (byCcy.get(c) ?? 0) + Number(p[field] ?? 0))
+  }
+  if (byCcy.size === 0) return formatCurrency(0)
+  if (byCcy.size === 1) {
+    const [c, v] = [...byCcy][0]
+    return formatCurrency(v, c)
+  }
+  return 'Mixed'
+}
+
+
 // ---- CSV Export Helper ----
 
 /** Export a list of marketing projects to CSV using the shared column set. Reused by the projects and archived views. */
@@ -3383,7 +3403,10 @@ function exportProjectsCsv(projects: MktProject[], filename: string) {
 
 function exportCsv(headers: string[], rows: (string | number | null | undefined)[][], filename: string) {
   const escape = (v: unknown) => {
-    const s = String(v ?? '')
+    let s = String(v ?? '')
+    // Neutralize CSV/formula injection: a cell starting with = + - @ (or tab/CR)
+    // is prefixed with ' so spreadsheets treat it as text, not a formula.
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s
     return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
   }
   const csv = [headers.map(escape).join(','), ...rows.map((r) => r.map(escape).join(','))].join('\n')

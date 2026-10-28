@@ -371,7 +371,7 @@ export function FilesTab({ projectId }: { projectId: number }) {
             files={grouped[key]}
             collapsed={!expandedCategories.has(key)}
             onToggle={() => toggleCategory(key)}
-            onDelete={(id) => deleteMut.mutate(id)}
+            onDelete={(id) => { if (confirm('Delete this file?')) deleteMut.mutate(id) }}
             onChangeCategory={(fileId, category) => updateCategoryMut.mutate({ fileId, category })}
             categories={categories}
           />

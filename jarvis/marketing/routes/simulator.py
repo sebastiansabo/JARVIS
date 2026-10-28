@@ -9,6 +9,7 @@ from core.utils.api_helpers import error_response
 
 from database import get_db, get_cursor, release_db
 from marketing import marketing_bp
+from marketing.decorators import mkt_permission_required
 
 logger = logging.getLogger('jarvis.marketing.routes.simulator')
 
@@ -33,6 +34,7 @@ SIM_DEFAULTS = {
 
 @marketing_bp.route('/api/simulator/settings', methods=['GET'])
 @login_required
+@mkt_permission_required('budget', 'view')
 def api_sim_settings_get():
     """Return simulator configuration (thresholds, multipliers, auto-distribute weights)."""
     conn = get_db()
@@ -52,6 +54,7 @@ def api_sim_settings_get():
 
 @marketing_bp.route('/api/simulator/settings', methods=['PUT'])
 @login_required
+@mkt_permission_required('budget', 'edit')
 def api_sim_settings_put():
     """Save simulator configuration."""
     data = request.get_json(silent=True) or {}
@@ -71,6 +74,7 @@ def api_sim_settings_put():
 
 @marketing_bp.route('/api/simulator/benchmarks', methods=['GET'])
 @login_required
+@mkt_permission_required('budget', 'view')
 def api_sim_benchmarks():
     """Return all simulator benchmarks grouped by funnel stage."""
     conn = get_db()
@@ -97,6 +101,7 @@ def api_sim_benchmarks():
 
 @marketing_bp.route('/api/simulator/benchmarks/<int:benchmark_id>', methods=['PUT'])
 @login_required
+@mkt_permission_required('budget', 'edit')
 def api_sim_benchmark_update(benchmark_id):
     """Update a single benchmark's CPC/CVR values."""
     data = request.get_json(silent=True) or {}
@@ -126,6 +131,7 @@ def api_sim_benchmark_update(benchmark_id):
 
 @marketing_bp.route('/api/simulator/benchmarks/bulk', methods=['PUT'])
 @login_required
+@mkt_permission_required('budget', 'edit')
 def api_sim_benchmarks_bulk_update():
     """Bulk update benchmarks. Body: {updates: [{id, cpc?, cvr_lead?, cvr_car?}]}"""
     data = request.get_json(silent=True) or {}
@@ -164,6 +170,7 @@ def api_sim_benchmarks_bulk_update():
 
 @marketing_bp.route('/api/simulator/benchmarks', methods=['POST'])
 @login_required
+@mkt_permission_required('budget', 'edit')
 def api_sim_benchmark_create():
     """Create a new channel with benchmark rows for all 3 months."""
     data = request.get_json(silent=True) or {}
@@ -208,6 +215,7 @@ def api_sim_benchmark_create():
 
 @marketing_bp.route('/api/simulator/benchmarks/channel/<channel_key>', methods=['DELETE'])
 @login_required
+@mkt_permission_required('budget', 'edit')
 def api_sim_benchmark_delete_channel(channel_key):
     """Delete all benchmark rows for a channel."""
     conn = get_db()
@@ -223,6 +231,7 @@ def api_sim_benchmark_delete_channel(channel_key):
 
 @marketing_bp.route('/api/simulator/ai-distribute', methods=['POST'])
 @login_required
+@mkt_permission_required('budget', 'edit')
 def api_sim_ai_distribute():
     """Use AI to distribute budget across channels like a PPC specialist."""
     from marketing.services.project_service import ProjectService

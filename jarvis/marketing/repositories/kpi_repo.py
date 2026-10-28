@@ -6,6 +6,35 @@ from core.base_repository import BaseRepository
 logger = logging.getLogger('jarvis.marketing.kpi_repo')
 
 
+def derive_kpi_status(current, target, direction):
+    """Derive a KPI health status from current vs target, honoring direction.
+
+    Single source of truth for KPI status (the stored `status` column is never
+    written by any code path). Returns one of the schema enum values:
+    no_data | exceeded | on_track | at_risk | behind.
+
+    `current == 0` is treated as no_data so a freshly-added KPI doesn't masquerade
+    as excellent (lower-is-better) or critical (higher-is-better) before any data.
+    """
+    if current is None or target is None:
+        return 'no_data'
+    try:
+        current = float(current)
+        target = float(target)
+    except (TypeError, ValueError):
+        return 'no_data'
+    if target == 0 or current == 0:
+        return 'no_data'
+    ratio = (target / current) if direction == 'lower' else (current / target)
+    if ratio >= 1.0:
+        return 'exceeded'
+    if ratio >= 0.8:
+        return 'on_track'
+    if ratio >= 0.5:
+        return 'at_risk'
+    return 'behind'
+
+
 class KpiRepository(BaseRepository):
 
     # ---- KPI Definitions (admin catalog) ----
@@ -54,7 +83,7 @@ class KpiRepository(BaseRepository):
     # ---- Project KPIs ----
 
     def get_by_project(self, project_id):
-        return self.query_all('''
+        rows = self.query_all('''
             SELECT pk.*, kd.name as kpi_name, kd.slug as kpi_slug,
                    kd.unit, kd.direction, kd.category, kd.formula,
                    (SELECT ROUND(AVG(s.value)::numeric, 4) FROM mkt_kpi_snapshots s
@@ -69,6 +98,20 @@ class KpiRepository(BaseRepository):
             WHERE pk.project_id = %s
             ORDER BY kd.sort_order
         ''', (project_id,))
+        # Derive status read-side (the stored column is never written). Use the
+        # aggregation-appropriate value so the pill matches the displayed number.
+        for r in rows:
+            agg = r.get('aggregation') or 'latest'
+            if agg == 'average':
+                eff = r.get('average_value')
+            elif agg == 'cumulative':
+                eff = r.get('cumulative_value')
+            else:
+                eff = r.get('latest_value')
+            if eff is None:
+                eff = r.get('current_value')
+            r['status'] = derive_kpi_status(eff, r.get('target_value'), r.get('direction'))
+        return rows
 
     def add_project_kpi(self, project_id, kpi_definition_id, **kwargs):
         row = self.execute('''
@@ -108,24 +151,13 @@ class KpiRepository(BaseRepository):
         ) > 0
 
     def delete_project_kpi(self, kpi_id):
-        # Get the definition id before deleting
-        row = self.query_one(
-            'SELECT kpi_definition_id FROM mkt_project_kpis WHERE id = %s', (kpi_id,)
-        )
-        deleted = self.execute(
+        # Do NOT cascade-delete the shared mkt_kpi_definitions row. The catalog has
+        # no is_custom/created_by flag, so removing a now-unused definition would
+        # wipe a seeded standard (e.g. ROAS) for EVERY project and it never
+        # re-seeds. Just detach this project's KPI. (JAR-2236)
+        return self.execute(
             'DELETE FROM mkt_project_kpis WHERE id = %s', (kpi_id,)
         ) > 0
-        # Clean up orphan custom definitions (no other project uses it)
-        if deleted and row:
-            def_id = row['kpi_definition_id']
-            still_used = self.query_one(
-                'SELECT 1 FROM mkt_project_kpis WHERE kpi_definition_id = %s', (def_id,)
-            )
-            if not still_used:
-                self.execute(
-                    'DELETE FROM mkt_kpi_definitions WHERE id = %s', (def_id,)
-                )
-        return deleted
 
     # ---- KPI ↔ Budget Line linking ----
 
@@ -698,6 +730,8 @@ class KpiRepository(BaseRepository):
                 SELECT project_kpi_id FROM mkt_kpi_deal_sources
                 UNION
                 SELECT project_kpi_id FROM mkt_kpi_deals
+                UNION
+                SELECT project_kpi_id FROM mkt_kpi_lead_sources
             ) src
         ''')
         return [r['project_kpi_id'] for r in rows]
@@ -721,10 +755,21 @@ class KpiRepository(BaseRepository):
                 VALUES (%s, %s, %s, %s, %s) RETURNING id
             ''', (project_kpi_id, value, source, recorded_by, notes))
             snap_id = cursor.fetchone()['id']
-            # Update current_value on project_kpi (cumulative — add to existing)
+            # Recompute current_value from snapshots per the KPI's aggregation mode
+            # (previously always accumulated, which was wrong for latest/average).
+            cursor.execute('SELECT aggregation FROM mkt_project_kpis WHERE id = %s', (project_kpi_id,))
+            agg_row = cursor.fetchone()
+            agg = (agg_row['aggregation'] if agg_row else 'latest') or 'latest'
+            if agg == 'average':
+                cursor.execute('SELECT ROUND(AVG(value)::numeric, 4) AS v FROM mkt_kpi_snapshots WHERE project_kpi_id = %s', (project_kpi_id,))
+            elif agg == 'cumulative':
+                cursor.execute('SELECT ROUND(SUM(value)::numeric, 4) AS v FROM mkt_kpi_snapshots WHERE project_kpi_id = %s', (project_kpi_id,))
+            else:  # latest
+                cursor.execute('SELECT value AS v FROM mkt_kpi_snapshots WHERE project_kpi_id = %s ORDER BY recorded_at DESC LIMIT 1', (project_kpi_id,))
+            new_current = cursor.fetchone()['v']
             cursor.execute('''
-                UPDATE mkt_project_kpis SET current_value = COALESCE(current_value, 0) + %s, last_synced_at = NOW(), updated_at = NOW()
+                UPDATE mkt_project_kpis SET current_value = %s, last_synced_at = NOW(), updated_at = NOW()
                 WHERE id = %s
-            ''', (value, project_kpi_id))
+            ''', (new_current, project_kpi_id))
             return snap_id
         return self.execute_many(_work)

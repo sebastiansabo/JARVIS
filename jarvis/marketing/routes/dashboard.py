@@ -7,6 +7,7 @@ from flask_login import login_required
 from database import get_db, get_cursor, release_db
 from marketing import marketing_bp
 from marketing.decorators import mkt_permission_required
+from marketing.repositories.kpi_repo import derive_kpi_status
 
 logger = logging.getLogger('jarvis.marketing.routes.dashboard')
 
@@ -60,15 +61,19 @@ def api_dashboard_summary():
         summary['total_active_spent'] = float(spent_row['active_spent']) + float(event_row['active_event_cost'])
         summary['total_event_cost'] = float(event_row['all_event_cost'])
 
-        # KPI alerts
+        # KPI alerts — status is derived (the stored column is never written), so
+        # count at_risk/behind in Python from current vs target honoring direction.
         cursor.execute('''
-            SELECT COUNT(*) as at_risk_count
+            SELECT pk.current_value, pk.target_value, kd.direction
             FROM mkt_project_kpis pk
+            JOIN mkt_kpi_definitions kd ON kd.id = pk.kpi_definition_id
             JOIN mkt_projects p ON p.id = pk.project_id
             WHERE p.deleted_at IS NULL AND p.status = 'active'
-              AND pk.status IN ('at_risk', 'behind')
         ''')
-        summary['kpi_alerts'] = cursor.fetchone()['at_risk_count']
+        summary['kpi_alerts'] = sum(
+            1 for r in cursor.fetchall()
+            if derive_kpi_status(r['current_value'], r['target_value'], r['direction']) in ('at_risk', 'behind')
+        )
 
         return jsonify({'summary': summary})
     finally:
@@ -120,6 +125,9 @@ def api_kpi_scoreboard():
             ORDER BY p.name, kd.sort_order
         ''')
         kpis = [dict(r) for r in cursor.fetchall()]
+        # Derive status read-side (stored column is never written).
+        for k in kpis:
+            k['status'] = derive_kpi_status(k['current_value'], k['target_value'], k['direction'])
         return jsonify({'kpis': kpis})
     finally:
         release_db(conn)

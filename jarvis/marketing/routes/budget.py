@@ -8,6 +8,7 @@ from flask_login import login_required, current_user
 from marketing import marketing_bp
 from marketing.repositories import BudgetRepository, ActivityRepository, ProjectRepository, ProjectEventRepository
 from marketing.decorators import mkt_permission_required
+from marketing.access import scoped_project
 from core.utils.api_helpers import get_json_or_error, safe_error_response
 from core.services.currency_converter import convert_currency
 
@@ -24,6 +25,7 @@ _event_repo = ProjectEventRepository()
 @marketing_bp.route('/api/projects/<int:project_id>/budget-lines', methods=['GET'])
 @login_required
 @mkt_permission_required('budget', 'view')
+@scoped_project
 def api_get_budget_lines(project_id):
     """Get all budget lines for a project, auto-syncing event costs."""
     _sync_event_line_costs(project_id)
@@ -70,6 +72,7 @@ def _sync_event_line_costs(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/budget-lines', methods=['POST'])
 @login_required
 @mkt_permission_required('budget', 'edit')
+@scoped_project
 def api_create_budget_line(project_id):
     """Add a budget line to a project."""
     data, error = get_json_or_error()
@@ -80,6 +83,11 @@ def api_create_budget_line(project_id):
     if not channel:
         return jsonify({'success': False, 'error': 'channel is required'}), 400
 
+    # Default a new line to the PROJECT's currency (was hard-coded 'RON'), so the
+    # project-level SUM(planned/spent) aggregate stays currency-consistent. (JAR-2237)
+    project = _project_repo.get_by_id(project_id)
+    project_currency = (project.get('currency') if project else None) or 'RON'
+
     try:
         line_id = _budget_repo.create_line(
             project_id=project_id,
@@ -88,7 +96,7 @@ def api_create_budget_line(project_id):
             department_structure_id=data.get('department_structure_id'),
             agency_name=data.get('agency_name'),
             planned_amount=data.get('planned_amount', 0),
-            currency=data.get('currency', 'RON'),
+            currency=data.get('currency') or project_currency,
             period_type=data.get('period_type', 'campaign'),
             period_start=data.get('period_start'),
             period_end=data.get('period_end'),
@@ -104,6 +112,7 @@ def api_create_budget_line(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/budget-lines/<int:line_id>', methods=['PUT'])
 @login_required
 @mkt_permission_required('budget', 'edit')
+@scoped_project
 def api_update_budget_line(project_id, line_id):
     """Update a budget line."""
     data, error = get_json_or_error()
@@ -124,6 +133,7 @@ def api_update_budget_line(project_id, line_id):
 @marketing_bp.route('/api/projects/<int:project_id>/budget-lines/<int:line_id>', methods=['DELETE'])
 @login_required
 @mkt_permission_required('budget', 'edit')
+@scoped_project
 def api_delete_budget_line(project_id, line_id):
     """Delete a budget line."""
     if _budget_repo.delete_line(line_id):

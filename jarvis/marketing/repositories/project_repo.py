@@ -243,9 +243,28 @@ class ProjectRepository(BaseRepository):
             (project_id,)
         ) > 0
 
-    def list_archived(self, limit=100, offset=0):
+    @staticmethod
+    def _archive_scope_clause(scope, user_id, dept_company_id):
+        """Build an AND-clause + params restricting archived/trash rows to the
+        caller's permission scope (owner/member, + same company for department).
+        Mirrors list_projects' scope intent. Returns ('', []) for scope='all'."""
+        if scope == 'all' or not user_id:
+            return '', []
+        clauses = [
+            'p.owner_id = %s',
+            'EXISTS (SELECT 1 FROM mkt_project_members m WHERE m.project_id = p.id AND m.user_id = %s)',
+        ]
+        params = [user_id, user_id]
+        if scope == 'department' and dept_company_id:
+            clauses.append('p.company_id = %s')
+            params.append(int(dept_company_id))
+        return ' AND (' + ' OR '.join(clauses) + ')', params
+
+    def list_archived(self, limit=100, offset=0, scope='all', user_id=None, dept_company_id=None):
+        scope_sql, scope_params = self._archive_scope_clause(scope, user_id, dept_company_id)
+
         def _work(cursor):
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT p.*, c.company as company_name, b.name as brand_name, u.name as owner_name,
                        (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id) as total_spent,
                        (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id) as event_cost
@@ -253,16 +272,18 @@ class ProjectRepository(BaseRepository):
                 JOIN companies c ON c.id = p.company_id
                 LEFT JOIN brands b ON b.id = p.brand_id
                 JOIN users u ON u.id = p.owner_id
-                WHERE p.status = 'archived' AND p.deleted_at IS NULL
+                WHERE p.status = 'archived' AND p.deleted_at IS NULL{scope_sql}
                 ORDER BY p.updated_at DESC
                 LIMIT %s OFFSET %s
-            ''', (limit, offset))
+            ''', (*scope_params, limit, offset))
             return [dict(r) for r in cursor.fetchall()]
         return self.execute_many(_work)
 
-    def list_deleted(self, limit=100, offset=0):
+    def list_deleted(self, limit=100, offset=0, scope='all', user_id=None, dept_company_id=None):
+        scope_sql, scope_params = self._archive_scope_clause(scope, user_id, dept_company_id)
+
         def _work(cursor):
-            cursor.execute('''
+            cursor.execute(f'''
                 SELECT p.*, c.company as company_name, b.name as brand_name, u.name as owner_name,
                        (SELECT COALESCE(SUM(bl.spent_amount), 0) FROM mkt_budget_lines bl WHERE bl.project_id = p.id) as total_spent,
                        (SELECT COALESCE(SUM(eb.bonus_net), 0) FROM mkt_project_events pe JOIN hr.event_bonuses eb ON eb.event_id = pe.event_id WHERE pe.project_id = p.id) as event_cost
@@ -270,10 +291,10 @@ class ProjectRepository(BaseRepository):
                 JOIN companies c ON c.id = p.company_id
                 LEFT JOIN brands b ON b.id = p.brand_id
                 JOIN users u ON u.id = p.owner_id
-                WHERE p.deleted_at IS NOT NULL
+                WHERE p.deleted_at IS NOT NULL{scope_sql}
                 ORDER BY p.deleted_at DESC
                 LIMIT %s OFFSET %s
-            ''', (limit, offset))
+            ''', (*scope_params, limit, offset))
             return [dict(r) for r in cursor.fetchall()]
         return self.execute_many(_work)
 
