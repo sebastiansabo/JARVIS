@@ -9,6 +9,7 @@ duplicate execution and wasted DB connections.
 import os
 import atexit
 import fcntl
+import pytz
 from apscheduler.schedulers.background import BackgroundScheduler
 from core.utils.logging_config import get_logger
 
@@ -458,14 +459,16 @@ def start_scheduler():
         coalesce=True,
     )
 
-    # HR — per-manager punch-compliance digest. Runs daily at 05:00 UTC (≈08:00 Romania);
-    # the task itself is a no-op except on Mondays (previous working week) and the morning
-    # after a mid-week month-end (closing report) — see tasks/punch_compliance_digest.py.
+    # HR — per-manager punch-compliance digest. Fires daily at 08:00 Europe/Bucharest
+    # (DST-aware, true 08:00 local year-round); the task is a no-op except on Mondays
+    # (previous working week) and the morning after a mid-week month-end (closing report)
+    # — see tasks/punch_compliance_digest.py.
     scheduler.add_job(
         send_punch_compliance_digest,
         'cron',
-        hour=5,
+        hour=8,
         minute=0,
+        timezone=pytz.timezone('Europe/Bucharest'),
         id='punch_compliance_digest',
         replace_existing=True,
         misfire_grace_time=3600,
