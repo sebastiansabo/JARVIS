@@ -40,8 +40,11 @@ def build_project_order_clause(sort_by, sort_dir):
 
 class ProjectRepository(BaseRepository):
 
-    def get_by_id(self, project_id):
-        return self.query_one('''
+    def get_by_id(self, project_id, include_deleted=False):
+        # Soft-deleted (trash) rows are excluded by default; the restore path
+        # passes include_deleted=True so it can fetch a trashed project.
+        deleted_clause = '' if include_deleted else 'AND p.deleted_at IS NULL'
+        return self.query_one(f'''
             SELECT p.*,
                    c.company as company_name,
                    b.name as brand_name,
@@ -55,7 +58,7 @@ class ProjectRepository(BaseRepository):
             LEFT JOIN brands b ON b.id = p.brand_id
             JOIN users u ON u.id = p.owner_id
             JOIN users u2 ON u2.id = p.created_by
-            WHERE p.id = %s AND p.deleted_at IS NULL
+            WHERE p.id = %s {deleted_clause}
         ''', (project_id,))
 
     def list_projects(self, filters=None):

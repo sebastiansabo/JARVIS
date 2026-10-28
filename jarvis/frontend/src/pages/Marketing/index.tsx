@@ -2974,7 +2974,13 @@ function KpiMatrix({ kpis, onProjectClick }: {
                   if (!k) return <TableCell key={kpiName} className="text-center text-xs text-muted-foreground">—</TableCell>
                   const current = Number(k.current_value) || 0
                   const target = Number(k.target_value) || 0
-                  const pct = target ? Math.round((current / target) * 100) : 0
+                  // Direction-aware progress: for lower-is-better KPIs (CPA/CPL/…)
+                  // attainment is target/current, not current/target.
+                  const pct = !target
+                    ? 0
+                    : k.direction === 'lower'
+                      ? (current > 0 ? Math.round((target / current) * 100) : 0)
+                      : Math.round((current / target) * 100)
                   return (
                     <TableCell key={kpiName} className="p-1 text-center">
                       <Tooltip>

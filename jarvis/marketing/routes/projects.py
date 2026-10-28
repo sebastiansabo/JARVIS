@@ -195,7 +195,9 @@ def api_archive_project(project_id):
 @mkt_permission_required('project', 'edit')
 def api_restore_project(project_id):
     """Restore a project from archived or trash back to draft."""
-    project = _project_repo.get_by_id(project_id)
+    # include_deleted=True so trashed (soft-deleted) projects can be fetched for
+    # the scope check — get_by_id otherwise filters out deleted_at rows.
+    project = _project_repo.get_by_id(project_id, include_deleted=True)
     if not project:
         return jsonify({'success': False, 'error': 'Project not found'}), 404
 
