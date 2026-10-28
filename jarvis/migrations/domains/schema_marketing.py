@@ -677,6 +677,86 @@ def create_schema_marketing(conn, cursor):
     ''')
     conn.commit()
 
+    # Migration: refresh the AI model catalog (ai_agent.model_configs).
+    # - claude-sonnet-4-20250514 was retired by Anthropic (404) -> move to claude-sonnet-4-6
+    # - modernize OpenAI rows in place (gpt-3.5-turbo -> gpt-4o-mini, gpt-4-turbo -> gpt-4o),
+    #   preserving api_key_encrypted / is_active / is_default
+    # - one-time flip of the global default to Claude Sonnet 4.6, gated on the pre-upgrade
+    #   state (default was a legacy OpenAI model) so it never stomps a later admin choice
+    # All statements are idempotent and re-runnable on every boot.
+    cursor.execute('''
+        DO $$
+        DECLARE
+            had_legacy_openai_default boolean := FALSE;
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'ai_agent') THEN
+                SELECT EXISTS (
+                    SELECT 1 FROM ai_agent.model_configs
+                    WHERE is_default = TRUE AND provider = 'openai'
+                      AND model_name IN ('gpt-3.5-turbo', 'gpt-4-turbo')
+                ) INTO had_legacy_openai_default;
+
+                -- Retired Claude Sonnet 4 -> Sonnet 4.6
+                UPDATE ai_agent.model_configs
+                SET model_name = 'claude-sonnet-4-6',
+                    cost_per_1k_input = 0.003, cost_per_1k_output = 0.015,
+                    context_window = 200000, updated_at = NOW()
+                WHERE provider = 'claude' AND model_name = 'claude-sonnet-4-20250514';
+
+                -- Modernize OpenAI models in place
+                UPDATE ai_agent.model_configs
+                SET model_name = 'gpt-4o-mini', display_name = 'GPT-4o mini',
+                    cost_per_1k_input = 0.00015, cost_per_1k_output = 0.0006,
+                    context_window = 128000, max_tokens = 16384, updated_at = NOW()
+                WHERE provider = 'openai' AND model_name = 'gpt-3.5-turbo';
+
+                UPDATE ai_agent.model_configs
+                SET model_name = 'gpt-4o', display_name = 'GPT-4o',
+                    cost_per_1k_input = 0.0025, cost_per_1k_output = 0.01,
+                    context_window = 128000, max_tokens = 16384, updated_at = NOW()
+                WHERE provider = 'openai' AND model_name = 'gpt-4-turbo';
+
+                -- One-time default flip to Claude Sonnet 4.6 (only when upgrading off the
+                -- legacy OpenAI default and the Sonnet 4.6 row exists post-rename)
+                IF had_legacy_openai_default
+                   AND EXISTS (SELECT 1 FROM ai_agent.model_configs
+                               WHERE provider = 'claude' AND model_name = 'claude-sonnet-4-6') THEN
+                    UPDATE ai_agent.model_configs SET is_default = FALSE WHERE is_default = TRUE;
+                    UPDATE ai_agent.model_configs
+                    SET is_default = TRUE, is_active = TRUE, updated_at = NOW()
+                    WHERE provider = 'claude' AND model_name = 'claude-sonnet-4-6';
+                END IF;
+            END IF;
+        END $$;
+    ''')
+    conn.commit()
+
+    # Seed current flagship models if absent; reuse the api key from an existing
+    # same-provider row (keeps secrets out of source), else NULL -> env fallback.
+    cursor.execute('''
+        INSERT INTO ai_agent.model_configs
+          (provider, model_name, display_name, api_key_encrypted,
+           cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_active, is_default)
+        SELECT 'claude', 'claude-opus-4-8', 'Claude Opus 4.8 (Smart)',
+               (SELECT api_key_encrypted FROM ai_agent.model_configs
+                WHERE provider = 'claude' AND api_key_encrypted IS NOT NULL AND api_key_encrypted <> '' LIMIT 1),
+               0.005, 0.025, 32000, 200000, TRUE, FALSE
+        WHERE EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'ai_agent')
+        AND NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'claude' AND model_name = 'claude-opus-4-8')
+    ''')
+    cursor.execute('''
+        INSERT INTO ai_agent.model_configs
+          (provider, model_name, display_name, api_key_encrypted,
+           cost_per_1k_input, cost_per_1k_output, max_tokens, context_window, is_active, is_default)
+        SELECT 'openai', 'gpt-4.1', 'GPT-4.1',
+               (SELECT api_key_encrypted FROM ai_agent.model_configs
+                WHERE provider = 'openai' AND api_key_encrypted IS NOT NULL AND api_key_encrypted <> '' LIMIT 1),
+               0.002, 0.008, 32768, 1000000, TRUE, FALSE
+        WHERE EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = 'ai_agent')
+        AND NOT EXISTS (SELECT 1 FROM ai_agent.model_configs WHERE provider = 'openai' AND model_name = 'gpt-4.1')
+    ''')
+    conn.commit()
+
     # Seed default approval flow for marketing projects (context_approver)
     cursor.execute('''
         INSERT INTO approval_flows (name, slug, entity_type, is_active, created_by)
