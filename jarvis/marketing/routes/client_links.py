@@ -7,6 +7,7 @@ from flask_login import login_required, current_user
 from marketing import marketing_bp
 from marketing.repositories import ProjectClientLinkRepository, ActivityRepository
 from marketing.decorators import mkt_permission_required
+from marketing.access import scoped_project
 from core.utils.api_helpers import get_json_or_error, safe_error_response
 
 logger = logging.getLogger('jarvis.marketing.routes.client_links')
@@ -20,6 +21,7 @@ _activity_repo = ActivityRepository()
 @marketing_bp.route('/api/projects/<int:project_id>/clients', methods=['GET'])
 @login_required
 @mkt_permission_required('project', 'view')
+@scoped_project
 def api_get_project_clients(project_id):
     """List CRM clients linked to a project."""
     clients = _client_link_repo.get_by_project(project_id)
@@ -29,6 +31,7 @@ def api_get_project_clients(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/clients', methods=['POST'])
 @login_required
 @mkt_permission_required('project', 'edit')
+@scoped_project
 def api_link_client(project_id):
     """Link a CRM client to a project."""
     data, error = get_json_or_error()
@@ -53,6 +56,7 @@ def api_link_client(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/clients/<int:client_id>', methods=['DELETE'])
 @login_required
 @mkt_permission_required('project', 'edit')
+@scoped_project
 def api_unlink_client(project_id, client_id):
     """Remove a CRM client link from a project."""
     if _client_link_repo.unlink(project_id, client_id):
@@ -65,6 +69,7 @@ def api_unlink_client(project_id, client_id):
 @marketing_bp.route('/api/projects/<int:project_id>/clients/<int:client_id>/deals', methods=['GET'])
 @login_required
 @mkt_permission_required('project', 'view')
+@scoped_project
 def api_get_client_deals(project_id, client_id):
     """Get deals for a linked client (expanded row)."""
     deals = _client_link_repo.get_client_deals(client_id)
@@ -84,6 +89,7 @@ def api_search_crm_clients():
 
 @marketing_bp.route('/api/crm-clients/<int:client_id>/campaigns', methods=['GET'])
 @login_required
+@mkt_permission_required('project', 'view')
 def api_get_client_campaigns(client_id):
     """Get all marketing campaigns linked to a client (for client profile)."""
     campaigns = _client_link_repo.get_projects_for_client(client_id)

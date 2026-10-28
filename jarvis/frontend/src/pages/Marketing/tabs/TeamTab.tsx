@@ -153,7 +153,7 @@ export function TeamTab({ projectId }: { projectId: number }) {
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">{fmtDate(m.created_at)}</TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeMut.mutate(m.id)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { if (confirm('Remove this member from the project?')) removeMut.mutate(m.id) }}>
                       <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
                     </Button>
                   </TableCell>

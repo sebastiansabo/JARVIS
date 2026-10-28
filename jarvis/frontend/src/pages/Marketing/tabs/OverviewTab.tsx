@@ -16,7 +16,7 @@ import { statusColors, fmt, fmtDate } from './utils'
 
 function KpiVarianceBadge({ kpiId, isLowerBetter }: { kpiId: number; isLowerBetter: boolean }) {
   const { data } = useQuery({
-    queryKey: ['mkt-kpi-snapshots', kpiId],
+    queryKey: ['mkt-kpi-snapshots', kpiId, 2],
     queryFn: () => marketingApi.getKpiSnapshots(kpiId, 2),
   })
   const snaps = data?.snapshots ?? []

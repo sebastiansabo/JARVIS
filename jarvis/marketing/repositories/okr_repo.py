@@ -23,7 +23,8 @@ class OkrRepository(BaseRepository):
             obj_ids = [o['id'] for o in objectives]
             cursor.execute('''
                 SELECT kr.*,
-                       kd.name as linked_kpi_name
+                       kd.name as linked_kpi_name,
+                       kd.direction as linked_kpi_direction
                 FROM mkt_key_results kr
                 LEFT JOIN mkt_project_kpis pk ON kr.linked_kpi_id = pk.id
                 LEFT JOIN mkt_kpi_definitions kd ON pk.kpi_definition_id = kd.id
@@ -36,7 +37,14 @@ class OkrRepository(BaseRepository):
             for kr in krs:
                 target = float(kr['target_value'] or 0)
                 current = float(kr['current_value'] or 0)
-                kr['progress'] = round(min(current / target * 100, 100), 1) if target > 0 else 0
+                # Direction-aware: for lower-is-better linked KPIs, attainment is
+                # target/current, not current/target (else failing shows as 100%).
+                if target <= 0:
+                    kr['progress'] = 0
+                elif kr.get('linked_kpi_direction') == 'lower':
+                    kr['progress'] = round(min(target / current * 100, 100), 1) if current > 0 else 0
+                else:
+                    kr['progress'] = round(min(current / target * 100, 100), 1)
                 kr_by_obj.setdefault(kr['objective_id'], []).append(kr)
 
             for obj in objectives:

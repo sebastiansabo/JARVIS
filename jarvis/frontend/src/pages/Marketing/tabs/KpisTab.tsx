@@ -309,7 +309,7 @@ function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkSo
   onEdit: () => void
 }) {
   const { data: snapsData } = useQuery({
-    queryKey: ['mkt-kpi-snapshots', k.id],
+    queryKey: ['mkt-kpi-snapshots', k.id, 10],
     queryFn: () => marketingApi.getKpiSnapshots(k.id, 10),
   })
   const snaps = snapsData?.snapshots ?? [] // newest first
@@ -342,13 +342,16 @@ function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkSo
   const hasLinks = linkedBLCount > 0 || linkedDepCount > 0 || linkedDealCount > 0 || linkedIndividualDeals > 0
 
   const target = Number(k.target_value) || 0
-  const avg = Number(k.average_value) || 0
-  const cumul = Number(k.cumulative_value) || 0
   const latest = Number(k.latest_value) || 0
   const agg = k.aggregation || 'latest'
-  const current = agg === 'average' ? (avg || Number(k.current_value) || 0)
-    : agg === 'cumulative' ? (cumul || Number(k.current_value) || 0)
-    : (latest || Number(k.current_value) || 0)
+  // Fall back to current_value only when the aggregation value is truly absent
+  // (null/undefined), not when it's a legitimate 0.
+  const aggRaw = agg === 'average' ? k.average_value
+    : agg === 'cumulative' ? k.cumulative_value
+    : k.latest_value
+  const current = aggRaw !== null && aggRaw !== undefined
+    ? Number(aggRaw)
+    : (k.current_value !== null && k.current_value !== undefined ? Number(k.current_value) : 0)
   const isLowerBetter = k.direction === 'lower'
   const pct = target
     ? Math.round(isLowerBetter ? (target / Math.max(current, 0.01)) * 100 : (current / target) * 100)
@@ -395,7 +398,7 @@ function KpiCard({ kpi: k, statusColors, onRecord, onHistory, onDelete, onLinkSo
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onEdit} title="Edit KPI">
             <Pencil className="h-3 w-3 text-muted-foreground" />
           </Button>
-          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={onDelete}>
+          <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { if (confirm('Remove this KPI from the project?')) onDelete() }}>
             <Trash2 className="h-3 w-3 text-muted-foreground" />
           </Button>
         </div>
@@ -585,7 +588,7 @@ export function KpisTab({ projectId }: { projectId: number }) {
   const definitions = defsData?.definitions ?? []
 
   const { data: snapshotsData } = useQuery({
-    queryKey: ['mkt-kpi-snapshots', historyKpiId],
+    queryKey: ['mkt-kpi-snapshots', historyKpiId, 50],
     queryFn: () => marketingApi.getKpiSnapshots(historyKpiId!, 50),
     enabled: !!historyKpiId,
   })

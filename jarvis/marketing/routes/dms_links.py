@@ -7,6 +7,7 @@ from flask_login import login_required, current_user
 from marketing import marketing_bp
 from marketing.repositories import ProjectDmsLinkRepository, ActivityRepository
 from marketing.decorators import mkt_permission_required
+from marketing.access import scoped_project
 from core.utils.api_helpers import get_json_or_error, safe_error_response
 
 logger = logging.getLogger('jarvis.marketing.routes.dms_links')
@@ -20,6 +21,7 @@ _activity_repo = ActivityRepository()
 @marketing_bp.route('/api/projects/<int:project_id>/dms-documents', methods=['GET'])
 @login_required
 @mkt_permission_required('project', 'view')
+@scoped_project
 def api_get_project_dms_docs(project_id):
     """List DMS documents linked to a project."""
     docs = _dms_link_repo.get_by_project(project_id)
@@ -29,6 +31,7 @@ def api_get_project_dms_docs(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/dms-documents', methods=['POST'])
 @login_required
 @mkt_permission_required('project', 'edit')
+@scoped_project
 def api_link_dms_doc(project_id):
     """Link a DMS document to a project."""
     data, error = get_json_or_error()
@@ -53,6 +56,7 @@ def api_link_dms_doc(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/dms-documents/<int:document_id>', methods=['DELETE'])
 @login_required
 @mkt_permission_required('project', 'edit')
+@scoped_project
 def api_unlink_dms_doc(project_id, document_id):
     """Remove a DMS document link from a project."""
     if _dms_link_repo.unlink(project_id, document_id):

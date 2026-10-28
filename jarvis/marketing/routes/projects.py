@@ -13,6 +13,7 @@ from marketing.repositories import (
 from marketing.services.project_service import ProjectService, UserContext
 from core.utils.api_helpers import get_json_or_error, handle_api_errors
 from marketing.decorators import mkt_permission_required  # noqa: F401 — re-exported
+from marketing.access import require_project_access
 
 logger = logging.getLogger('jarvis.marketing.routes.projects')
 
@@ -219,7 +220,10 @@ def api_list_archived():
     """List archived projects."""
     limit = min(int(request.args.get('limit', 100)), 500)
     offset = int(request.args.get('offset', 0))
-    projects = _project_repo.list_archived(limit, offset)
+    scope = getattr(g, 'permission_scope', 'all')
+    projects = _project_repo.list_archived(
+        limit, offset, scope=scope, user_id=current_user.id,
+        dept_company_id=getattr(current_user, 'company', None))
     return jsonify({'projects': projects, 'total': len(projects)})
 
 
@@ -230,7 +234,10 @@ def api_list_trash():
     """List soft-deleted projects (trash)."""
     limit = min(int(request.args.get('limit', 100)), 500)
     offset = int(request.args.get('offset', 0))
-    projects = _project_repo.list_deleted(limit, offset)
+    scope = getattr(g, 'permission_scope', 'all')
+    projects = _project_repo.list_deleted(
+        limit, offset, scope=scope, user_id=current_user.id,
+        dept_company_id=getattr(current_user, 'company', None))
     return jsonify({'projects': projects, 'total': len(projects)})
 
 
@@ -239,6 +246,9 @@ def api_list_trash():
 @mkt_permission_required('project', 'delete')
 def api_permanent_delete_project(project_id):
     """Permanently delete a project from trash."""
+    denied = require_project_access(project_id, include_deleted=True)
+    if denied:
+        return denied
     if _project_repo.permanent_delete(project_id):
         return jsonify({'success': True})
     return jsonify({'success': False, 'error': 'Project not found or not in trash'}), 404
@@ -268,6 +278,10 @@ def api_activate_project(project_id):
     project = _project_repo.get_by_id(project_id)
     if not project:
         return jsonify({'success': False, 'error': 'Project not found'}), 404
+    scope = getattr(g, 'permission_scope', 'all')
+    if not _service.can_access_project(project, current_user.id, scope,
+                                       getattr(current_user, 'company', None)):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
     if project['status'] != 'approved':
         return jsonify({'success': False, 'error': 'Project must be approved before activating'}), 400
 
@@ -285,6 +299,10 @@ def api_pause_project(project_id):
     project = _project_repo.get_by_id(project_id)
     if not project:
         return jsonify({'success': False, 'error': 'Project not found'}), 404
+    scope = getattr(g, 'permission_scope', 'all')
+    if not _service.can_access_project(project, current_user.id, scope,
+                                       getattr(current_user, 'company', None)):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
     if project['status'] != 'active':
         return jsonify({'success': False, 'error': 'Only active projects can be paused'}), 400
 
@@ -302,6 +320,10 @@ def api_complete_project(project_id):
     project = _project_repo.get_by_id(project_id)
     if not project:
         return jsonify({'success': False, 'error': 'Project not found'}), 404
+    scope = getattr(g, 'permission_scope', 'all')
+    if not _service.can_access_project(project, current_user.id, scope,
+                                       getattr(current_user, 'company', None)):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
     if project['status'] not in ('active', 'paused'):
         return jsonify({'success': False, 'error': 'Only active/paused projects can be completed'}), 400
 
@@ -318,12 +340,15 @@ def api_complete_project(project_id):
 def api_duplicate_project(project_id):
     """Clone project as new draft."""
     data = request.get_json() or {}
-    new_name = data.get('name')
-    if not new_name:
-        project = _project_repo.get_by_id(project_id)
-        if not project:
-            return jsonify({'success': False, 'error': 'Project not found'}), 404
-        new_name = f"{project['name']} (Copy)"
+    # Always load + scope-check the SOURCE project before cloning its contents.
+    project = _project_repo.get_by_id(project_id)
+    if not project:
+        return jsonify({'success': False, 'error': 'Project not found'}), 404
+    scope = getattr(g, 'permission_scope', 'all')
+    if not _service.can_access_project(project, current_user.id, scope,
+                                       getattr(current_user, 'company', None)):
+        return jsonify({'success': False, 'error': 'Access denied'}), 403
+    new_name = data.get('name') or f"{project['name']} (Copy)"
 
     new_id = _project_repo.duplicate(project_id, new_name, current_user.id)
     if not new_id:
@@ -341,6 +366,9 @@ def api_duplicate_project(project_id):
 @mkt_permission_required('project', 'view')
 def api_get_activity(project_id):
     """Paginated activity feed for a project."""
+    denied = require_project_access(project_id)
+    if denied:
+        return denied
     limit = min(int(request.args.get('limit', 50)), 200)
     offset = int(request.args.get('offset', 0))
     activity = _activity_repo.get_by_project(project_id, limit=limit, offset=offset)

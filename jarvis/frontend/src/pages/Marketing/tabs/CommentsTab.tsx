@@ -170,7 +170,7 @@ export function CommentsTab({ projectId }: { projectId: number }) {
                     >
                       <Pencil className="h-3 w-3 text-muted-foreground" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => deleteMut.mutate(c.id)}>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => { if (confirm('Delete this comment?')) deleteMut.mutate(c.id) }}>
                       <Trash2 className="h-3 w-3 text-muted-foreground" />
                     </Button>
                   </div>

@@ -7,6 +7,7 @@ from flask_login import login_required, current_user
 from marketing import marketing_bp
 from marketing.repositories import OkrRepository, ActivityRepository
 from marketing.decorators import mkt_permission_required
+from marketing.access import scoped_project
 from core.utils.api_helpers import get_json_or_error, safe_error_response
 
 logger = logging.getLogger('jarvis.marketing.routes.okr')
@@ -20,6 +21,7 @@ _activity_repo = ActivityRepository()
 @marketing_bp.route('/api/projects/<int:project_id>/objectives', methods=['GET'])
 @login_required
 @mkt_permission_required('kpi', 'view')
+@scoped_project
 def api_get_objectives(project_id):
     """Get all objectives with nested key results for a project."""
     objectives = _okr_repo.get_by_project(project_id)
@@ -29,6 +31,7 @@ def api_get_objectives(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/objectives', methods=['POST'])
 @login_required
 @mkt_permission_required('kpi', 'edit')
+@scoped_project
 def api_create_objective(project_id):
     """Create a new objective."""
     data, error = get_json_or_error()
@@ -149,6 +152,7 @@ def api_delete_key_result(kr_id):
 @marketing_bp.route('/api/projects/<int:project_id>/objectives/<int:objective_id>/suggest-krs', methods=['POST'])
 @login_required
 @mkt_permission_required('kpi', 'edit')
+@scoped_project
 def api_suggest_key_results(project_id, objective_id):
     """Use AI to suggest key results for an objective based on its title and available KPIs."""
     from marketing.services.project_service import ProjectService
@@ -162,6 +166,7 @@ def api_suggest_key_results(project_id, objective_id):
 @marketing_bp.route('/api/projects/<int:project_id>/objectives/sync-kpis', methods=['POST'])
 @login_required
 @mkt_permission_required('kpi', 'edit')
+@scoped_project
 def api_sync_okr_kpis(project_id):
     """Sync linked KPI values to key results."""
     try:

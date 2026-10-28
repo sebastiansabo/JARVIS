@@ -10,6 +10,7 @@ from marketing.repositories import (
     KpiRepository, ProjectRepository,
 )
 from marketing.decorators import mkt_permission_required
+from marketing.access import scoped_project
 from marketing.services.lead_intake import LEAD_STATUSES
 from core.utils.api_helpers import get_json_or_error, safe_error_response
 
@@ -28,6 +29,7 @@ _kpi_repo = KpiRepository()
 @marketing_bp.route('/api/projects/<int:project_id>/members', methods=['GET'])
 @login_required
 @mkt_permission_required('project', 'view')
+@scoped_project
 def api_get_members(project_id):
     """Get project team members."""
     members = _member_repo.get_by_project(project_id)
@@ -37,6 +39,7 @@ def api_get_members(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/members', methods=['POST'])
 @login_required
 @mkt_permission_required('project', 'edit')
+@scoped_project
 def api_add_member(project_id):
     """Add a team member to a project."""
     data, error = get_json_or_error()
@@ -77,6 +80,7 @@ def api_add_member(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/members/<int:member_id>', methods=['PUT'])
 @login_required
 @mkt_permission_required('project', 'edit')
+@scoped_project
 def api_update_member(project_id, member_id):
     """Update a member's role and/or responsibility."""
     data, error = get_json_or_error()
@@ -99,6 +103,7 @@ def api_update_member(project_id, member_id):
 @marketing_bp.route('/api/projects/<int:project_id>/members/<int:member_id>', methods=['DELETE'])
 @login_required
 @mkt_permission_required('project', 'edit')
+@scoped_project
 def api_remove_member(project_id, member_id):
     """Remove a member from the project."""
     if _member_repo.remove(member_id):
@@ -113,6 +118,7 @@ def api_remove_member(project_id, member_id):
 @marketing_bp.route('/api/projects/<int:project_id>/comments', methods=['GET'])
 @login_required
 @mkt_permission_required('project', 'view')
+@scoped_project
 def api_get_comments(project_id):
     """Get project comments."""
     include_internal = request.args.get('include_internal', 'false').lower() == 'true'
@@ -123,6 +129,7 @@ def api_get_comments(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/comments', methods=['POST'])
 @login_required
 @mkt_permission_required('project', 'view')
+@scoped_project
 def api_create_comment(project_id):
     """Add a comment to a project."""
     data, error = get_json_or_error()
@@ -147,6 +154,7 @@ def api_create_comment(project_id):
 
 @marketing_bp.route('/api/comments/<int:comment_id>', methods=['PUT'])
 @login_required
+@mkt_permission_required('project', 'edit')
 def api_update_comment(comment_id):
     """Update a comment (own comments only)."""
     data, error = get_json_or_error()
@@ -164,6 +172,7 @@ def api_update_comment(comment_id):
 
 @marketing_bp.route('/api/comments/<int:comment_id>', methods=['DELETE'])
 @login_required
+@mkt_permission_required('project', 'edit')
 def api_delete_comment(comment_id):
     """Soft delete a comment."""
     if _comment_repo.soft_delete(comment_id):
@@ -176,6 +185,7 @@ def api_delete_comment(comment_id):
 @marketing_bp.route('/api/projects/<int:project_id>/files', methods=['GET'])
 @login_required
 @mkt_permission_required('project', 'view')
+@scoped_project
 def api_get_files(project_id):
     """Get project files."""
     files = _file_repo.get_by_project(project_id)
@@ -185,6 +195,7 @@ def api_get_files(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/files', methods=['POST'])
 @login_required
 @mkt_permission_required('project', 'edit')
+@scoped_project
 def api_create_file(project_id):
     """Attach a file to a project."""
     data, error = get_json_or_error()
@@ -213,6 +224,7 @@ def api_create_file(project_id):
 
 @marketing_bp.route('/api/files/<int:file_id>', methods=['PUT'])
 @login_required
+@mkt_permission_required('project', 'edit')
 def api_update_file(file_id):
     """Update file metadata (category, description)."""
     data, error = get_json_or_error()
@@ -230,6 +242,7 @@ def api_update_file(file_id):
 
 @marketing_bp.route('/api/files/<int:file_id>', methods=['DELETE'])
 @login_required
+@mkt_permission_required('project', 'edit')
 def api_delete_file(file_id):
     """Delete a file attachment."""
     if _file_repo.delete(file_id):
@@ -240,6 +253,7 @@ def api_delete_file(file_id):
 @marketing_bp.route('/api/projects/<int:project_id>/file-categories', methods=['GET'])
 @login_required
 @mkt_permission_required('project', 'view')
+@scoped_project
 def api_get_file_categories(project_id):
     """Get predefined file categories for a project."""
     proj = _project_repo.get_by_id(project_id)
@@ -252,6 +266,7 @@ def api_get_file_categories(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/file-categories', methods=['PUT'])
 @login_required
 @mkt_permission_required('project', 'edit')
+@scoped_project
 def api_set_file_categories(project_id):
     """Set predefined file categories for a project."""
     data, error = get_json_or_error()
@@ -270,6 +285,7 @@ def api_set_file_categories(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/files/upload', methods=['POST'])
 @login_required
 @mkt_permission_required('project', 'edit')
+@scoped_project
 def api_upload_file(project_id):
     """Upload a file to Google Drive and attach to project."""
     from marketing.services.project_service import ProjectService
@@ -297,6 +313,7 @@ def api_upload_file(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/kpis', methods=['GET'])
 @login_required
 @mkt_permission_required('kpi', 'view')
+@scoped_project
 def api_get_kpis(project_id):
     """Get project KPI targets and current values."""
     kpis = _kpi_repo.get_by_project(project_id)
@@ -306,6 +323,7 @@ def api_get_kpis(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/kpis', methods=['POST'])
 @login_required
 @mkt_permission_required('kpi', 'edit')
+@scoped_project
 def api_add_kpi(project_id):
     """Add a KPI to a project."""
     data, error = get_json_or_error()
@@ -340,6 +358,7 @@ def api_add_kpi(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/kpis/<int:kpi_id>', methods=['PUT'])
 @login_required
 @mkt_permission_required('kpi', 'edit')
+@scoped_project
 def api_update_kpi(project_id, kpi_id):
     """Update a project KPI."""
     data, error = get_json_or_error()
@@ -360,6 +379,7 @@ def api_update_kpi(project_id, kpi_id):
 @marketing_bp.route('/api/projects/<int:project_id>/kpis/<int:kpi_id>', methods=['DELETE'])
 @login_required
 @mkt_permission_required('kpi', 'edit')
+@scoped_project
 def api_delete_kpi(project_id, kpi_id):
     """Remove a KPI from a project."""
     if _kpi_repo.delete_project_kpi(kpi_id):
@@ -370,6 +390,7 @@ def api_delete_kpi(project_id, kpi_id):
 @marketing_bp.route('/api/projects/<int:project_id>/suggest-kpi-target', methods=['POST'])
 @login_required
 @mkt_permission_required('kpi', 'view')
+@scoped_project
 def api_suggest_kpi_target(project_id):
     """AI-suggest a KPI target based on project budget, channels, and existing KPIs."""
     from marketing.services.benchmark_service import suggest_kpi_target
@@ -463,6 +484,7 @@ def api_suggest_kpi_target(project_id):
 @marketing_bp.route('/api/projects/<int:project_id>/kpis/<int:kpi_id>/snapshot', methods=['POST'])
 @login_required
 @mkt_permission_required('kpi', 'edit')
+@scoped_project
 def api_add_kpi_snapshot(project_id, kpi_id):
     """Record a KPI measurement."""
     data, error = get_json_or_error()
@@ -722,6 +744,7 @@ def api_unlink_kpi_deal(kpi_id, deal_link_id):
 @marketing_bp.route('/api/projects/<int:project_id>/kpis/<int:kpi_id>/available-deals', methods=['GET'])
 @login_required
 @mkt_permission_required('kpi', 'view')
+@scoped_project
 def api_get_available_deals(project_id, kpi_id):
     """Get deals from linked clients not yet linked to this KPI."""
     deals = _kpi_repo.get_available_deals(project_id, kpi_id)
@@ -733,6 +756,7 @@ def api_get_available_deals(project_id, kpi_id):
 @marketing_bp.route('/api/projects/<int:project_id>/kpis/sync-all', methods=['POST'])
 @login_required
 @mkt_permission_required('kpi', 'edit')
+@scoped_project
 def api_sync_all_kpis(project_id):
     """Sync all KPIs for a project."""
     try:
