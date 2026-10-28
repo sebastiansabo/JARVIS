@@ -1226,6 +1226,48 @@ def api_trigger_hr_weekly_digest():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@biostar_bp.route('/api/trigger-punch-compliance-digest', methods=['POST'])
+def api_trigger_punch_compliance_digest():
+    """Run a manager's weekly punch-compliance digest on demand (admin token).
+
+    Query params:
+      manager_user_id (int, required), to (CSV recipients), tolerance (int, default 10),
+      dry_run ('true' default — preview only, no e-mail), include_html ('true' to return the body).
+    Reports the previous full working week relative to today.
+    """
+    if not _check_admin_token():
+        return jsonify({'success': False, 'error': 'Invalid token'}), 403
+    try:
+        from datetime import date
+        from tasks.punch_compliance_digest import run_for_manager, previous_working_week
+
+        manager_user_id = request.args.get('manager_user_id', type=int)
+        if not manager_user_id:
+            return jsonify({'success': False, 'error': 'manager_user_id is required'}), 400
+        recipients = [e.strip() for e in (request.args.get('to') or '').split(',') if e.strip()]
+        tolerance = request.args.get('tolerance', default=10, type=int)
+        dry_run = (request.args.get('dry_run', 'true').lower() != 'false')
+        start, end = previous_working_week(date.today())
+
+        res = run_for_manager(manager_user_id, recipients, start, end,
+                              kind='weekly', tolerance=tolerance, dry_run=dry_run)
+        payload = {
+            'success': True, 'dry_run': dry_run,
+            'manager_name': res['data']['manager_name'],
+            'period': f"{start.isoformat()}..{end.isoformat()}",
+            'team_size': res['data']['team_size'],
+            'flagged_employees': len(res['data']['flagged']),
+            'divergent_days': res['data']['total_days'],
+            'subject': res['subject'], 'sent': res['sent'],
+        }
+        if request.args.get('include_html', '').lower() == 'true':
+            payload['html'] = res['html']
+        return jsonify(payload)
+    except Exception as e:
+        logger.error(f"Manual punch-compliance digest trigger failed: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @biostar_bp.route('/api/test-smtp', methods=['POST'])
 def api_test_smtp():
     """Quick SMTP connectivity test from the server (admin token required)."""

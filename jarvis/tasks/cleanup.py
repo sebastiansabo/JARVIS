@@ -24,6 +24,7 @@ from tasks.biostar import sync_biostar_events, sync_biostar_users, auto_adjust_b
 from tasks.sincron import sync_sincron_timesheets
 from tasks.verification import run_end_of_month_verification
 from tasks.hr_attendance import check_missing_punches, send_pontaje_digest, send_monthly_pontaje_summary, send_hr_weekly_digest
+from tasks.punch_compliance_digest import send_punch_compliance_digest
 from tasks.driving_digest import run_weekly_driving_digest
 from tasks.hr_courses import check_course_cert_expiry
 from tasks.foi_parcurs_expiry import check_vehicle_document_expiry
@@ -452,6 +453,20 @@ def start_scheduler():
         hour=5,
         minute=0,
         id='weekly_driving_digest',
+        replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+
+    # HR — per-manager punch-compliance digest. Runs daily at 05:00 UTC (≈08:00 Romania);
+    # the task itself is a no-op except on Mondays (previous working week) and the morning
+    # after a mid-week month-end (closing report) — see tasks/punch_compliance_digest.py.
+    scheduler.add_job(
+        send_punch_compliance_digest,
+        'cron',
+        hour=5,
+        minute=0,
+        id='punch_compliance_digest',
         replace_existing=True,
         misfire_grace_time=3600,
         coalesce=True,
