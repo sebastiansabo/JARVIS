@@ -1256,8 +1256,9 @@ def api_trigger_punch_compliance_digest():
             'manager_name': res['data']['manager_name'],
             'period': f"{start.isoformat()}..{end.isoformat()}",
             'team_size': res['data']['team_size'],
-            'flagged_employees': len(res['data']['flagged']),
+            'flagged_employees': len(res['data']['deficits']),
             'divergent_days': res['data']['total_days'],
+            'schedule_mismatch_employees': len(res['data']['mismatches']),
             'subject': res['subject'], 'sent': res['sent'],
         }
         if request.args.get('include_html', '').lower() == 'true':
