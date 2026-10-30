@@ -560,7 +560,7 @@ def generate_legal_pdf(contract: dict) -> str:
 
     def _kv_table(rows):
         if not rows:
-            rows = [[Paragraph('—', label_style), Paragraph('—', value_style)]]
+            rows = [('—', '—')]
         t = Table([[Paragraph(l, label_style), Paragraph(str(v), value_style)] for l, v in rows],
                   colWidths=[45 * mm, W - 45 * mm])
         t.setStyle(_kv_style)
