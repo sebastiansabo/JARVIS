@@ -348,11 +348,18 @@ class UserRepository(BaseRepository):
              notify_on_allocation: bool = True, contract_status: str = 'active') -> int:
         """Save a new user. Returns user ID."""
         try:
+            # Resolve company_id from the company TEXT (case-insensitive) in the
+            # same INSERT. Without this, new users get a NULL company_id and fail
+            # every company-scoped feature (e.g. BuyBack create → "No company
+            # assigned to your account"), because only the TEXT column is written
+            # by the admin UI. NULL when company is blank or matches no company.
             result = self.execute('''
-                INSERT INTO users (name, email, phone, role_id, is_active, company, brand, department, subdepartment, notify_on_allocation, contract_status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO users (name, email, phone, role_id, is_active, company, company_id, brand, department, subdepartment, notify_on_allocation, contract_status)
+                VALUES (%s, %s, %s, %s, %s, %s,
+                        (SELECT id FROM companies WHERE upper(btrim(companies.company)) = upper(btrim(%s)) LIMIT 1),
+                        %s, %s, %s, %s, %s)
                 RETURNING id
-            ''', (name, email, phone, role_id, is_active, company, brand, department, subdepartment, notify_on_allocation, contract_status),
+            ''', (name, email, phone, role_id, is_active, company, company, brand, department, subdepartment, notify_on_allocation, contract_status),
                 returning=True)
             return result['id']
         except Exception as e:
@@ -389,6 +396,12 @@ class UserRepository(BaseRepository):
             params.append(is_active)
         if company is not None:
             updates.append('company = %s')
+            params.append(company)
+            # Keep company_id in sync with the company TEXT (case-insensitive).
+            # Editing a user's company previously left company_id stale (pointing
+            # at the OLD tenant); re-resolving here keeps the two consistent and
+            # fails safe to NULL when the text matches no company.
+            updates.append('company_id = (SELECT id FROM companies WHERE upper(btrim(companies.company)) = upper(btrim(%s)) LIMIT 1)')
             params.append(company)
         if brand is not None:
             updates.append('brand = %s')
