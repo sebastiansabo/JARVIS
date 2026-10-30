@@ -64,6 +64,15 @@ jobs:
           fetch-depth: 0
           path: jarvis-mobile
 
+      - name: Checkout jarvis-alpha
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.period == matrix.period
+        uses: actions/checkout@v4
+        with:
+          repository: sebastiansabo/jarvis-alpha
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
+          path: jarvis-alpha
+
       - name: Set up Python
         if: github.event_name != 'workflow_dispatch' || github.event.inputs.period == matrix.period
         uses: actions/setup-python@v5
@@ -86,6 +95,7 @@ jobs:
           SMTP_FROM_NAME: JARVIS Digest
           JARVIS_PATH: ${{ github.workspace }}/JARVIS
           MOBILE_PATH: ${{ github.workspace }}/jarvis-mobile
+          ALPHA_PATH: ${{ github.workspace }}/jarvis-alpha
           DIGEST_PERIOD: ${{ matrix.period }}
           FORCE_RUN: ${{ github.event.inputs.force_run == 'true' && '1' || '0' }}
         run: python JARVIS/scripts/daily_digest.py

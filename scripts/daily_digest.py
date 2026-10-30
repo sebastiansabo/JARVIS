@@ -180,6 +180,7 @@ MODEL = "claude-opus-4-6"
 REPOS = [
     {"name": "JARVIS", "env": "JARVIS_PATH", "default": "."},
     {"name": "jarvis-mobile", "env": "MOBILE_PATH", "default": "../jarvis-mobile"},
+    {"name": "jarvis-alpha", "env": "ALPHA_PATH", "default": "../jarvis-alpha"},
 ]
 
 PERIODS: dict[str, dict] = {
@@ -1161,9 +1162,10 @@ def main() -> int:
     period_desc = period_config["period_desc_ro"]
 
     if total == 0:
+        repo_names = ", ".join(f"**{r['name']}**" for r in REPOS)
         body = (
             f"# {title} — {date_str}\n\n"
-            f"Niciun commit nou în {period_desc} în repo-urile **JARVIS** sau **jarvis-mobile**.\n\n"
+            f"Niciun commit nou în {period_desc} în repo-urile {repo_names}.\n\n"
             "_Perioadă liniștită. Spor la treabă!_"
         )
     else:
