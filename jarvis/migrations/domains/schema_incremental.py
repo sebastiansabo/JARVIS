@@ -2432,6 +2432,20 @@ def _create_schema_incremental_continued(conn, cursor):
             END IF;
         END $$;
     ''')
+    # Repeatable, case-insensitive back-fill. The one-time block above runs
+    # only when the column is first created AND matches case-sensitively, so
+    # every user added later (the admin UI writes only the company TEXT) keeps
+    # a NULL company_id and fails company-scoped features like BuyBack create.
+    # This runs on every migration, touches ONLY rows still NULL (never
+    # overrides an explicit value), and matches company name case-insensitively.
+    cursor.execute('''
+        UPDATE users u
+        SET company_id = c.id
+        FROM companies c
+        WHERE u.company_id IS NULL
+          AND u.company IS NOT NULL AND btrim(u.company) <> ''
+          AND upper(btrim(u.company)) = upper(btrim(c.company))
+    ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_users_company_id ON users (company_id) WHERE is_active = TRUE')
 
     # ── contract_status on users (active / suspended / closed) ──
