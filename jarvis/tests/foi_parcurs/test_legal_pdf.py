@@ -105,3 +105,33 @@ def test_general_conditions_flowables_empty_when_no_text():
 def test_general_conditions_flowables_present():
     fl = ps._general_conditions_flowables('## T\n\ntext', '2026-07-20T09:00:00+00:00')
     assert fl  # non-empty list of flowables
+
+
+def test_legal_pdf_builds_with_empty_client_section():
+    """An internal 'Neatribuit' session carries no client, so every client
+    field is blank and the Client key/value table receives zero rows. The
+    empty-rows fallback must still render. Regression for the `_kv_table`
+    double-wrap: the fallback built Paragraph objects which the row
+    comprehension then re-wrapped in Paragraph(), handing reportlab a Paragraph
+    where it expected text (TypeError: Paragraph.split() missing availHeight)."""
+    contract = {
+        'contract_id': 'TEST-EMPTY-CLIENT',
+        'vehicle_brand': 'VW', 'vehicle_fuel_type': 'Diesel',
+        'registration_number': 'CJ 01 ABC',
+        'client_name': None, 'client_phone': None, 'client_email': None,
+        'client_address': None, 'driver_license_number': None,
+        'driver_license_expiry': None,
+        'advisor_name': 'Tester', 'itinerary': '',
+        'departure_datetime': '2026-10-27T14:05:00',
+        'return_datetime': '2026-11-03T15:05:00',
+        'km_start': 0, 'km_end': 0,
+        'general_conditions_text': '', 'general_conditions_accepted_at': None,
+        'client_signature': '', 'signature_ai_generated': '',
+        'driver_license_photo': '',
+    }
+    path = ps.generate_legal_pdf(contract)
+    try:
+        assert os.path.exists(path) and os.path.getsize(path) > 0
+    finally:
+        if os.path.exists(path):
+            os.remove(path)
