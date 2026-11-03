@@ -332,7 +332,8 @@ REQUIRED_PARAMS = ("make", "model", "year", "mileage", "fuel_type", "price", "bo
 
 
 def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any],
-                      taxonomy_map: Dict[str, Dict[Tuple[Any, Optional[str]], dict]]
+                      taxonomy_map: Dict[str, Dict[Tuple[Any, Optional[str]], dict]],
+                      catalog_index: Optional[dict] = None
                       ) -> Tuple[Dict[str, Any], List[str]]:
     """CarPark vehicle + Autovit account config + taxonomy map -> (advert, unmapped).
 
@@ -367,6 +368,13 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any],
         if source_value is None or source_value == "":
             return None
         hit = _taxonomy_map.resolve(taxonomy_map, dimension, source_value, make)
+        # Catalog fallback (make/model only): an explicit map row always wins,
+        # but when none exists, resolve against the synced Autovit vocabulary so
+        # a valid brand/model never needs a per-car manual mapping. resolve_catalog
+        # is a no-op (None) for every non-make/model dimension and when no catalog
+        # is supplied, so enum resolution is unchanged.
+        if hit is None and catalog_index is not None:
+            hit = _taxonomy_map.resolve_catalog(catalog_index, dimension, source_value, make)
         if hit is None:
             unmapped.append(f"{dimension}:{source_value}")
             return None

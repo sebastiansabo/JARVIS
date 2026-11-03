@@ -36,6 +36,7 @@ from carpark.connectors.shopify.schema_repository import SchemaRepository
 from carpark.connectors.autovit.freshness import autovit_sweep_stale, compute_autovit_freshness
 from carpark.connectors.autovit.service import republish_vehicle
 from carpark.connectors.autovit.taxonomy_repository import AutovitTaxonomyRepository
+from carpark.connectors.autovit import taxonomy_map as _tx_map
 from carpark.repositories.listing_schedule_repository import ListingScheduleRepository
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.photo_repository import PhotoRepository
@@ -104,7 +105,8 @@ def resync_shopify_vehicle(connector, pub_repo, photo_repo, taxo_map, vehicle, n
     return 'pushed' if result.get('success') else f"error: {result.get('error')}"
 
 
-def resync_autovit_vehicle(account: dict, vehicle: dict, taxonomy_map: dict, now) -> str:
+def resync_autovit_vehicle(account: dict, vehicle: dict, taxonomy_map: dict, now,
+                           catalog_index: dict = None) -> str:
     """Autovit counterpart of `resync_shopify_vehicle`. Freshness is decided
     by `autovit_sweep_stale` (active/unpaid + stale by last_published_at —
     Task 2); when not stale, `compute_autovit_freshness` supplies the human
@@ -123,7 +125,8 @@ def resync_autovit_vehicle(account: dict, vehicle: dict, taxonomy_map: dict, now
         reason = compute_autovit_freshness(listing, vehicle.get('updated_at'), now)
         return f'skipped ({reason})'
     photos = VehiclePhotoRepository().urls(vehicle['id'])
-    res = republish_vehicle(account, vehicle, photos, taxonomy_map, now=now)
+    res = republish_vehicle(account, vehicle, photos, taxonomy_map, now=now,
+                            catalog_index=catalog_index)
     if res.get('success'):
         return 'pushed'
     if res.get('unmapped_required'):
@@ -198,7 +201,11 @@ def listing_autosync_tick() -> None:
             for sch in due_av:
                 srepo.mark_run(sch['id'], now + timedelta(hours=4), 'skipped (no account)')
         else:
-            tmap = AutovitTaxonomyRepository().get_map()
+            _av_repo = AutovitTaxonomyRepository()
+            tmap = _av_repo.get_map()
+            # Catalog fallback index (make/model), built once per sweep — same
+            # Autovit-as-source-of-truth resolution the manual publish uses.
+            catalog_index = _tx_map.build_catalog_index(_av_repo.get_cache())
             vrepo_av = VehicleRepository()
             for sch in due_av:
                 try:
@@ -206,7 +213,8 @@ def listing_autosync_tick() -> None:
                     if not vehicle:
                         srepo.mark_run(sch['id'], None, 'skipped (no vehicle)')
                         continue
-                    result = resync_autovit_vehicle(account, vehicle, tmap, now)
+                    result = resync_autovit_vehicle(account, vehicle, tmap, now,
+                                                    catalog_index=catalog_index)
                     mins = cadence_to_minutes(sch['cadence'])
                     nxt = now + timedelta(minutes=mins) if mins else None
                     srepo.mark_run(sch['id'], nxt, result)

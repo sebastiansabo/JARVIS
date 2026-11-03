@@ -82,6 +82,120 @@ def resolve(mapping: dict, dimension: str, source_value: Any,
     return dim_map.get(key)
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Catalog fallback (make/model) — resolve from the synced Autovit vocabulary
+# (`carpark_autovit_taxonomy_cache`) when no explicit map row exists, so a
+# brand/model that IS a valid Autovit code never needs a per-car manual
+# mapping before publish. Scoped to 'make' and 'model' ONLY: enum dimensions
+# (fuel/color/body…) keep their curated alias seed — their CarPark values are
+# local-language terms that must NOT be guessed against the raw catalog.
+#
+# Never invents a code: every result is a real catalog code. Matching is
+# layered and conservative — an ambiguous collapse (two distinct codes that
+# normalize the same) resolves to None (unmapped, blocks) rather than guessing.
+import re as _re
+
+_CATALOG_SCOPED = {'make', 'model'}
+
+
+def _collapse(folded: str) -> str:
+    """Separator-insensitive form: drop spaces/hyphens from an already-folded
+    value, so `"q3 sportback"` and the catalog code `"q3-sportback"` compare
+    equal (`"q3sportback"`)."""
+    return _re.sub(r'[\s-]+', '', folded)
+
+
+def _add(exact: dict, collapsed: dict, key_folded: str, target: dict) -> None:
+    """Register one folded key in the exact + collapsed lookup tables, marking
+    a collision between two DIFFERENT target codes as ambiguous (None) in BOTH
+    tables so it can never silently mis-resolve — a dirty catalog with two
+    model codes sharing a label/collapsed form resolves to a block, not a
+    coin-flip."""
+    if not key_folded:
+        return
+    for table, tkey in ((exact, key_folded), (collapsed, _collapse(key_folded))):
+        prev = table.get(tkey, _MISSING)
+        if prev is _MISSING:
+            table[tkey] = target
+        elif prev is not None and prev['target_code'] != target['target_code']:
+            table[tkey] = None  # ambiguous
+
+
+_MISSING = object()
+
+
+def build_catalog_index(cache_rows) -> dict:
+    """Build the lookup index `resolve_catalog()` consumes from
+    `carpark_autovit_taxonomy_cache` rows (`{dimension, code, ro_label,
+    make}`). Shape: `{'make': {None: scope}, 'model': {make_code: scope}}`,
+    where each `scope` is `{'exact': {folded: target}, 'collapsed':
+    {collapsed: target}}`. Both the Autovit `code` and its `ro_label` are
+    registered as keys (a CarPark value may equal either)."""
+    index: dict = {'make': {None: {'exact': {}, 'collapsed': {}}}, 'model': {}}
+    for r in (cache_rows or []):
+        dim = r.get('dimension')
+        if dim not in _CATALOG_SCOPED:
+            continue
+        code = r.get('code')
+        if not code:
+            continue
+        target = {'target_code': code, 'target_label': r.get('ro_label')}
+        if dim == 'make':
+            scope = index['make'][None]
+        else:
+            mk = fold(r.get('make'))
+            scope = index['model'].setdefault(mk, {'exact': {}, 'collapsed': {}})
+        _add(scope['exact'], scope['collapsed'], fold(code), target)
+        _add(scope['exact'], scope['collapsed'], fold(r.get('ro_label')), target)
+    return index
+
+
+def _match_scope(scope: dict, folded: str):
+    """Exact then separator-insensitive lookup of one folded value in a scope.
+    Returns the target dict, or None (miss OR ambiguous-collapse)."""
+    hit = scope['exact'].get(folded)
+    if hit is not None:
+        return hit
+    return scope['collapsed'].get(_collapse(folded))  # None if absent/ambiguous
+
+
+def resolve_catalog(index: dict, dimension: str, source_value, make=None):
+    """Resolve a CarPark `source_value` to an Autovit catalog target for the
+    make/model dimensions, or None. Layered, conservative:
+
+      1. exact fold match on the catalog code or ro_label,
+      2. separator-insensitive match (`"Q3 Sportback"` -> `q3-sportback`),
+      3. trailing-trim strip — drop the last whitespace/hyphen token and retry
+         1-2 until a real code matches or the tokens run out
+         (`"Cayenne S"` -> `Cayenne`, `"E-Class"` -> `E`).
+
+    Returns `{'target_code', 'target_label'}` on a hit. None for any
+    non-make/model dimension, an absent make-scope, or no confident match."""
+    if dimension not in _CATALOG_SCOPED:
+        return None
+    if dimension == 'make':
+        scope = index.get('make', {}).get(None)
+    else:
+        scope = index.get('model', {}).get(fold(make)) if make is not None else None
+    if not scope:
+        return None
+    f = fold(source_value)
+    if not f:
+        return None
+    hit = _match_scope(scope, f)
+    if hit is not None:
+        return hit
+    # Trim-strip: tokens split on whitespace AND hyphen; retry on each shorter
+    # front-prefix. Only for make-scoped models in practice (makes rarely have
+    # trailing trim), but harmless for makes.
+    tokens = [t for t in _re.split(r'[\s-]+', f) if t]
+    for i in range(len(tokens) - 1, 0, -1):
+        hit = _match_scope(scope, ' '.join(tokens[:i]))
+        if hit is not None:
+            return hit
+    return None
+
+
 def emit(params: dict, dimension: str, target_code: str) -> None:
     """Write a resolved `target_code` into `params` at the position
     `DIMENSIONS[dimension]` declares for that dimension.

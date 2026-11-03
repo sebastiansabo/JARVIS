@@ -800,6 +800,10 @@ def publish(account_id):
     # Autovit silently drops anything that isn't one of its exact codes)
     # and reported back in `unmapped` as "<dimension>:<source_value>".
     tmap = _taxonomy_repo.get_map()
+    # Catalog fallback index: make/model that aren't explicitly mapped resolve
+    # against the synced Autovit vocabulary (Autovit is source of truth), so a
+    # new brand/model needs no per-car manual mapping before publish.
+    catalog_index = taxonomy_map.build_catalog_index(_taxonomy_repo.get_cache())
     # A photo-fetch failure here must NOT be swallowed: pre-refactor the same
     # error surfaced as a `photos:`-prefixed last_error + photos_ok=False (the
     # advert was still created). Thread it into the service as `photos_error`
@@ -816,7 +820,8 @@ def publish(account_id):
     result = republish_vehicle(connector, vehicle, photos, tmap,
                                dry_run=bool(body.get('dry_run')),
                                now=datetime.now(timezone.utc),
-                               photos_error=photos_error)
+                               photos_error=photos_error,
+                               catalog_index=catalog_index)
 
     # An unmapped value in a REQUIRED dimension (make/model/body_type/
     # fuel_type/color) would doom the Autovit call to a 400 anyway — the

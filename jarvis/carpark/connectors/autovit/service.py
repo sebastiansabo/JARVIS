@@ -85,7 +85,8 @@ def _attach_image_collection(client: AutovitClient, advert: dict, photos,
 
 
 def republish_vehicle(account: dict, vehicle: dict, photos, taxonomy_map: dict,
-                      *, dry_run: bool = False, now, photos_error=None) -> dict:
+                      *, dry_run: bool = False, now, photos_error=None,
+                      catalog_index: dict = None) -> dict:
     """Push core: resolve `vehicle` against `taxonomy_map` into an Autovit
     advert and (unless blocked or `dry_run`) create/update it on Autovit,
     then stamp the listing row.
@@ -113,7 +114,7 @@ def republish_vehicle(account: dict, vehicle: dict, photos, taxonomy_map: dict,
     - `{'success': False, 'error': str}` — Autovit rejected the push (the
       listing row's `last_error` is set via `_listing_repo.set_error`).
     """
-    advert, unmapped = taxonomy.vehicle_to_advert(vehicle, account, taxonomy_map)
+    advert, unmapped = taxonomy.vehicle_to_advert(vehicle, account, taxonomy_map, catalog_index)
     # An unmapped value in a REQUIRED dimension would doom the Autovit call to
     # a 400 anyway — block BEFORE spending the network round-trip.
     unmapped_required = [u for u in unmapped
