@@ -374,7 +374,11 @@ def vehicle_to_advert(vehicle: Dict[str, Any], account: Dict[str, Any],
         # is a no-op (None) for every non-make/model dimension and when no catalog
         # is supplied, so enum resolution is unchanged.
         if hit is None and catalog_index is not None:
-            hit = _taxonomy_map.resolve_catalog(catalog_index, dimension, source_value, make)
+            # make/model resolve from the Autovit catalog; color/body_type/
+            # fuel_type from curated EN/RO keyword tables. Both fire ONLY here,
+            # after an explicit-map miss, so manual mappings always win.
+            hit = (_taxonomy_map.resolve_catalog(catalog_index, dimension, source_value, make)
+                   or _taxonomy_map.resolve_enum(dimension, source_value))
         if hit is None:
             unmapped.append(f"{dimension}:{source_value}")
             return None

@@ -111,3 +111,60 @@ def test_enum_dimensions_never_catalog_resolved():
     # fuel_type must NOT be guessed from the catalog even though a row exists
     assert tm.resolve_catalog(_idx(), 'fuel_type', 'Benzină') is None
     assert tm.resolve_catalog(_idx(), 'color', 'Gri') is None
+
+
+# ── enum keyword fallback (color / body_type / fuel_type) ───────────────────
+
+def test_color_marketing_names():
+    # the real exposure: dealer marketing names carry a base colour word
+    assert tm.resolve_enum('color', 'Fjord Blue')['target_code'] == 'blue'
+    assert tm.resolve_enum('color', 'Nardo Grey')['target_code'] == 'gray'
+    assert tm.resolve_enum('color', 'Sophisto Grey')['target_code'] == 'gray'
+    assert tm.resolve_enum('color', 'Snow White Pearl')['target_code'] == 'white'
+    assert tm.resolve_enum('color', 'British Racing Green')['target_code'] == 'green'
+
+
+def test_color_romanian_and_slug():
+    assert tm.resolve_enum('color', 'Gri')['target_code'] == 'gray'
+    assert tm.resolve_enum('color', 'Negru')['target_code'] == 'black'
+    assert tm.resolve_enum('color', 'beige')['target_code'] == 'bej'
+
+
+def test_color_ambiguous_blocks():
+    # two distinct base colours -> block, never a coin-flip
+    assert tm.resolve_enum('color', 'Blue Grey Metallic') is None
+    # no recognised colour word -> block (manual map)
+    assert tm.resolve_enum('color', 'Grafit') is None
+
+
+def test_color_no_substring_false_positive():
+    # "redwood" must NOT match "red" (token match, not substring)
+    assert tm.resolve_enum('color', 'Redwood') is None
+
+
+def test_body_synonyms():
+    assert tm.resolve_enum('body_type', 'Berlina')['target_code'] == 'sedan'
+    assert tm.resolve_enum('body_type', 'Break')['target_code'] == 'combi'
+    assert tm.resolve_enum('body_type', 'SUV')['target_code'] == 'suv'
+    assert tm.resolve_enum('body_type', 'Off-Road')['target_code'] == 'suv'
+    assert tm.resolve_enum('body_type', 'Hatchback')['target_code'] == 'compact'
+
+
+def test_fuel_specificity_ordered():
+    assert tm.resolve_enum('fuel_type', 'Mild Hybrid Diesel')['target_code'] == 'mild-hybrid-diesel'
+    assert tm.resolve_enum('fuel_type', 'Mild Hybrid Benzina')['target_code'] == 'mild-hybrid-petrol'
+    assert tm.resolve_enum('fuel_type', 'Plug-in Hybrid')['target_code'] == 'plugin-hybrid'
+    assert tm.resolve_enum('fuel_type', 'Hybrid')['target_code'] == 'hybrid'
+    assert tm.resolve_enum('fuel_type', 'Benzină')['target_code'] == 'petrol'
+    assert tm.resolve_enum('fuel_type', 'Motorina')['target_code'] == 'diesel'
+    assert tm.resolve_enum('fuel_type', 'Electric')['target_code'] == 'electric'
+    # bare "Mild Hybrid" (no petrol/diesel base) must BLOCK, not degrade to full hybrid
+    assert tm.resolve_enum('fuel_type', 'Mild Hybrid') is None
+    assert tm.resolve_enum('fuel_type', 'MHEV') is None
+
+
+def test_enum_unknown_and_scope():
+    assert tm.resolve_enum('fuel_type', 'Antimatter') is None
+    # make/model are NOT enum-resolved here
+    assert tm.resolve_enum('make', 'Mazda') is None
+    assert tm.resolve_enum('model', 'Cayenne') is None

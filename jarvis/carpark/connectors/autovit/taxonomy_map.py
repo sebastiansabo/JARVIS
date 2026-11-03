@@ -196,6 +196,115 @@ def resolve_catalog(index: dict, dimension: str, source_value, make=None):
     return None
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Enum keyword fallback (color / body_type / fuel_type) — the OTHER required
+# dimensions. Unlike make/model these are concept enums: a CarPark value is a
+# local-language or marketing term ("Fjord Blue", "Berlina", "Mild Hybrid
+# Diesel") that must map by MEANING, not by string similarity to a catalog
+# label. So this uses curated EN/RO keyword tables grounded in the authoritative
+# Autovit push slugs (taxonomy.COLOR_MAP/_REVERSE, BODY_MAP, FUEL_MAP). Fires
+# ONLY when the explicit map misses. Conservative: colour/body resolve to the
+# SINGLE base concept present or block (two distinct base colours -> None);
+# fuel uses specificity-ordered rules (mild-hybrid before hybrid before petrol).
+# Never emits a code outside the Autovit vocabulary.
+_ENUM_SCOPED = {'color', 'body_type', 'fuel_type'}
+
+# base-colour token -> Autovit push slug (gray/bej per live Autovit, not grey/beige)
+_COLOR_KEYWORDS = {
+    'black': 'black', 'negru': 'black',
+    'white': 'white', 'alb': 'white',
+    'silver': 'silver', 'argintiu': 'silver',
+    'grey': 'gray', 'gray': 'gray', 'gri': 'gray',
+    'blue': 'blue', 'albastru': 'blue', 'bleu': 'blue',
+    'red': 'red', 'rosu': 'red',
+    'green': 'green', 'verde': 'green',
+    'brown': 'brown', 'maro': 'brown',
+    'beige': 'bej', 'bej': 'bej',
+    'yellow': 'yellow', 'galben': 'yellow',
+    'orange': 'orange', 'portocaliu': 'orange',
+    'gold': 'gold', 'auriu': 'gold',
+    'violet': 'violet', 'mov': 'violet', 'purple': 'violet',
+    'bordeaux': 'bordeaux', 'bordo': 'bordeaux',
+    'pink': 'pink', 'roz': 'pink',
+}
+# body token -> Autovit body slug
+_BODY_KEYWORDS = {
+    'suv': 'suv', 'offroad': 'suv', 'teren': 'suv',
+    'sedan': 'sedan', 'berlina': 'sedan', 'limuzina': 'sedan', 'limousine': 'sedan',
+    'combi': 'combi', 'break': 'combi', 'estate': 'combi', 'kombi': 'combi', 'caravan': 'combi',
+    'coupe': 'coupe',
+    'cabrio': 'cabrio', 'cabriolet': 'cabrio', 'convertible': 'cabrio',
+    'decapotabil': 'cabrio', 'roadster': 'cabrio',
+    'hatchback': 'compact', 'compact': 'compact', 'compacta': 'compact',
+    'minivan': 'minivan', 'monovolum': 'minivan', 'mpv': 'minivan',
+    'minibus': 'minibus', 'microbuz': 'minibus',
+    'pickup': 'pickup',
+    'van': 'van', 'furgon': 'van', 'utilitara': 'van',
+}
+
+
+def _resolve_color(f: str):
+    toks = set(_re.split(r'[\s/-]+', f))
+    slugs = {_COLOR_KEYWORDS[t] for t in toks if t in _COLOR_KEYWORDS}
+    return next(iter(slugs)) if len(slugs) == 1 else None
+
+
+def _resolve_body(f: str):
+    toks = set(_re.split(r'[\s/-]+', f))
+    toks.add(_collapse(f))  # catch "off-road" -> "offroad"
+    slugs = {_BODY_KEYWORDS[t] for t in toks if t in _BODY_KEYWORDS}
+    return next(iter(slugs)) if len(slugs) == 1 else None
+
+
+def _resolve_fuel(f: str):
+    """Specificity-ordered: a compound like 'mild hybrid diesel' contains
+    'hybrid', 'diesel' AND 'mild' — most-specific rule must win first."""
+    has = lambda *kw: any(k in f for k in kw)
+    if has('mild') and has('diesel', 'motorina'):
+        return 'mild-hybrid-diesel'
+    if has('mild') and has('petrol', 'benzin'):
+        return 'mild-hybrid-petrol'
+    if has('mild'):
+        # "Mild Hybrid" with no petrol/diesel base: Autovit has no bare
+        # mild-hybrid slug, so BLOCK (manual map) rather than mislabel it as a
+        # full 'hybrid' on the live listing — the two are a real spec difference.
+        return None
+    if has('plug') and has('hybrid', 'hibrid'):
+        return 'plugin-hybrid'
+    if has('hybrid', 'hibrid'):
+        return 'hybrid'
+    if has('electric'):
+        return 'electric'
+    if has('lpg', 'gpl'):
+        return 'petrol-lpg'
+    if has('cng'):
+        return 'petrol-cng'
+    if has('hydrogen', 'hidrogen'):
+        return 'hydrogen'
+    if has('ethanol', 'etanol'):
+        return 'ethanol'
+    if has('diesel', 'motorina'):
+        return 'diesel'
+    if has('petrol', 'benzin'):
+        return 'petrol'
+    return None
+
+
+def resolve_enum(dimension: str, source_value):
+    """Keyword fallback for the color/body_type/fuel_type required dimensions.
+    Returns `{'target_code', 'target_label'}` (label == the Autovit slug) or
+    None (non-enum dimension, blank, ambiguous, or unknown concept)."""
+    if dimension not in _ENUM_SCOPED:
+        return None
+    f = fold(source_value)
+    if not f:
+        return None
+    code = (_resolve_color if dimension == 'color'
+            else _resolve_body if dimension == 'body_type'
+            else _resolve_fuel)(f)
+    return {'target_code': code, 'target_label': code} if code else None
+
+
 def emit(params: dict, dimension: str, target_code: str) -> None:
     """Write a resolved `target_code` into `params` at the position
     `DIMENSIONS[dimension]` declares for that dimension.
