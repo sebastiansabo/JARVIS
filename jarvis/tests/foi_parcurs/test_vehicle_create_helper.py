@@ -113,6 +113,31 @@ def test_success_returns_created_vehicle():
     assert vehicle == {'id': 7, 'vin': 'WAUZZZF4T1021365'}
 
 
+def test_create_failure_returns_500_with_message():
+    """A repo.create() exception is caught and mapped to (None, (str(e)[:300], 500))
+    — the original route's INSERT-failure path. Only the INSERT is guarded."""
+    repo = _repo()
+    repo.create.side_effect = RuntimeError('db exploded')
+    vehicle, err = create_fp_vehicle(
+        _data(fuel_type='Diesel', fuel_tank_capacity_liters=50), repo=repo)
+    assert vehicle is None
+    assert err == ('db exploded', 500)
+
+
+def test_get_by_vin_exception_propagates():
+    """The duplicate-VIN lookup is OUTSIDE the try/except: an exception there
+    must propagate (to the app's global errorhandler), NOT be swallowed into a
+    500 tuple — matching the original route where get_by_vin was unguarded."""
+    repo = _repo()
+    repo.get_by_vin.side_effect = RuntimeError('lookup down')
+    try:
+        create_fp_vehicle(_data(fuel_type='Diesel', fuel_tank_capacity_liters=50), repo=repo)
+        assert False, 'expected the get_by_vin exception to propagate'
+    except RuntimeError as e:
+        assert str(e) == 'lookup down'
+    repo.create.assert_not_called()
+
+
 def test_create_payload_preserves_all_fields():
     """Field-preservation guard: every column the manual-add route previously
     built inline must still reach repo.create() — dropping any would silently
