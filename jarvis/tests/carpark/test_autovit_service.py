@@ -1,6 +1,7 @@
-"""Unit tests for `carpark.connectors.autovit.service.republish_vehicle` —
-the push core extracted from `publish()` (Task 4). Pure mock-based: no DB,
-no network.
+"""Unit tests for `carpark.connectors.autovit.service.republish_vehicle` and
+`refresh_autovit_listing_status` — the push core extracted from `publish()`
+(Task 4) and the live-status pull extracted from `verify_vehicle_status()`
+(Task 1). Pure mock-based: no DB, no network.
 
 Mocking idiom matches test_autovit_push.py: `service.py` calls the shared
 helpers/singletons (`_build_client`, `_verify_advert`, `_fill_location_contact`,
@@ -12,7 +13,7 @@ service.py — see service.py's module docstring for why. These tests patch
 the exact same `routes`-module targets to prove that wiring holds.
 """
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from flask import Flask
@@ -175,3 +176,39 @@ def test_publish_records_photo_lookup_failure_without_swallowing(client, monkeyp
     assert any(w.startswith('photos:') for w in data['warnings'])
     assert 'photos:' in (upsert.call_args.kwargs['last_error'] or '')
     assert 'db blip' in upsert.call_args.kwargs['last_error']
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# `refresh_autovit_listing_status` (Task 1) — the live-status pull shared by
+# the manual "Verifică status" route and (Task 2) the hourly sweep.
+# ─────────────────────────────────────────────────────────────────────────
+
+def test_refresh_status_pulls_and_upserts():
+    listing = {"external_advert_id": "123", "vehicle_id": 7, "account_id": 1,
+               "status": "unpaid", "external_url": "u"}
+    client = MagicMock()
+    client.get_account_advert.return_value = {"status": "active", "url": "new"}
+    with patch.object(r, "_build_client", return_value=client), \
+         patch.object(r, "_listing_repo") as repo:
+        out = svc.refresh_autovit_listing_status({"id": 1}, listing, timeout=10)
+    assert out == "active"
+    repo.upsert.assert_called_once_with(7, 1, status="active",
+                                        external_url="new", last_error=None)
+
+
+def test_refresh_status_skips_when_no_advert_id():
+    with patch.object(r, "_build_client") as bc, patch.object(r, "_listing_repo") as repo:
+        out = svc.refresh_autovit_listing_status(
+            {"id": 1}, {"vehicle_id": 7, "account_id": 1}, timeout=10)
+    assert out is None
+    bc.assert_not_called(); repo.upsert.assert_not_called()
+
+
+def test_refresh_status_swallows_read_failure():
+    client = MagicMock(); client.get_account_advert.side_effect = RuntimeError("timeout")
+    listing = {"external_advert_id": "123", "vehicle_id": 7, "account_id": 1}
+    with patch.object(r, "_build_client", return_value=client), \
+         patch.object(r, "_listing_repo") as repo:
+        out = svc.refresh_autovit_listing_status({"id": 1}, listing, timeout=10)
+    assert out is None
+    repo.upsert.assert_not_called()

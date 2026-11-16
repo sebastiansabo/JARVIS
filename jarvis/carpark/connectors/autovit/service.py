@@ -258,3 +258,46 @@ def republish_vehicle(account: dict, vehicle: dict, photos, taxonomy_map: dict,
         msg = r._autovit_error_message(body) if body else str(e)
         r._listing_repo.set_error(vehicle_id, account_id, msg)
         return {'success': False, 'error': msg}
+
+
+def refresh_autovit_listing_status(connector: dict, listing: dict,
+                                   *, vehicle_id: int | None = None,
+                                   timeout: int = 10) -> str | None:
+    """Pull one listing's LIVE status from Autovit and stamp it on the row.
+
+    Extracted from `verify_vehicle_status()`'s per-listing loop (Task 1) so
+    the manual "Verifică status" route and the hourly self-update sweep
+    (Task 2, next) share one implementation.
+
+    `vehicle_id` lets a caller pass an authoritative id (e.g. the route's
+    ownership-verified URL param) rather than trusting the listing row;
+    it falls back to `listing['vehicle_id']` when omitted.
+
+    Best-effort: a missing id/read failure never raises — it logs (on read
+    failure) and returns None, matching the pre-refactor inline `continue`.
+    Returns the live status string on a successful upsert, else None.
+    """
+    ext_id = listing.get('external_advert_id')
+    vehicle_id = vehicle_id or listing.get('vehicle_id')
+    account_id = listing.get('account_id') or connector['id']
+    if not (ext_id and vehicle_id and account_id):
+        return None
+
+    try:
+        # Bounded like the publish flow — a status refresh must not hang.
+        # Cap client.timeout so the token fetch is bounded too (not just the read).
+        client = r._build_client(connector)
+        client.timeout = timeout
+        live = client.get_account_advert(str(ext_id), timeout=timeout) or {}
+    except Exception as e:
+        logger.warning('Autovit status refresh read failed (vehicle %s advert %s): %s',
+                       vehicle_id, ext_id, e)
+        return None
+
+    status = live.get('status')
+    if not status:
+        return None
+    r._listing_repo.upsert(vehicle_id, account_id, status=status,
+                           external_url=live.get('url') or listing.get('external_url'),
+                           last_error=None)
+    return status

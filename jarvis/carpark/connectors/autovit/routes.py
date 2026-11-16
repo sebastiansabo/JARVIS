@@ -19,7 +19,7 @@ from . import taxonomy_sync
 from .taxonomy_repository import AutovitTaxonomyRepository
 from .client import AutovitClient, AutovitAuthError, PRODUCTION_URL, SANDBOX_URL
 from .freshness import compute_autovit_freshness
-from .service import republish_vehicle
+from .service import republish_vehicle, refresh_autovit_listing_status
 from ..cadence import ensure_auto_schedule
 from ..listing_status_hook import sync_listing_status as sync_listing_status_hook
 from core.connectors.repositories.connector_repository import ConnectorRepository
@@ -302,28 +302,12 @@ def verify_vehicle_status(vehicle_id):
         return err
     refreshed = 0
     for listing in _listing_repo.list_by_vehicle(vehicle_id):
-        ext_id = listing.get('external_advert_id')
         account_id = listing.get('account_id')
-        if not (ext_id and account_id):
-            continue
-        connector = _repo.get(account_id)
+        connector = _repo.get(account_id) if account_id else None
         if not connector or connector.get('connector_type') != CONNECTOR_TYPE:
             continue
-        try:
-            # Bounded like the publish flow — a status refresh must not hang.
-            # Cap client.timeout so the token fetch is bounded too (not just the read).
-            client = _build_client(connector)
-            client.timeout = 10
-            live = client.get_account_advert(str(ext_id), timeout=10) or {}
-        except Exception as e:
-            logger.warning('Autovit verify-status read failed (vehicle %s advert %s): %s',
-                           vehicle_id, ext_id, e)
-            continue
-        status = live.get('status')
-        if status:
-            _listing_repo.upsert(vehicle_id, account_id, status=status,
-                                 external_url=live.get('url') or listing.get('external_url'),
-                                 last_error=None)
+        # Pass the ownership-verified URL vehicle_id as the authoritative upsert key.
+        if refresh_autovit_listing_status(connector, listing, vehicle_id=vehicle_id, timeout=10):
             refreshed += 1
     vehicle = _vehicle_repo.get_by_id(vehicle_id)
     now = datetime.now(timezone.utc)
