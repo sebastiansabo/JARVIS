@@ -355,12 +355,11 @@ def api_create_vehicle():
     # Validation + payload-build live in create_fp_vehicle (services/vehicle_create.py)
     # — the single source of truth shared with the CarPark -> Driving Hub fleet
     # push path, so the two can't drift apart. `repo=_vehicle_repo` reuses this
-    # route's already-imported singleton (tests monkeypatch it directly).
-    try:
-        vehicle, err = create_fp_vehicle(data, repo=_vehicle_repo)
-    except Exception as e:
-        logger.exception('Failed to create vehicle')
-        return jsonify({'success': False, 'error': str(e)[:300]}), 500
+    # route's already-imported singleton (tests monkeypatch it directly). The
+    # helper guards only its INSERT (returning a 500 err tuple); any other failure
+    # (e.g. the duplicate-VIN lookup) propagates to the global errorhandler,
+    # exactly as the original inline route did.
+    vehicle, err = create_fp_vehicle(data, repo=_vehicle_repo)
     if err:
         msg, code = err
         return jsonify({'success': False, 'error': msg}), code
