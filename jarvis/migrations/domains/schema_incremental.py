@@ -2086,6 +2086,9 @@ def create_schema_incremental(conn, cursor):
         ON biostar_punch_logs(biostar_event_id, (event_datetime::date))''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_biostar_punch_user ON biostar_punch_logs(biostar_user_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_biostar_punch_datetime ON biostar_punch_logs(event_datetime)')
+    # Serves get_today_punches' sargable (biostar_user_id, day-range) lookup —
+    # the per-user single-column index alone still scanned a user's whole history.
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_biostar_punch_user_dt ON biostar_punch_logs(biostar_user_id, event_datetime)')
 
     # ── Checkin locations ──
     cursor.execute('''

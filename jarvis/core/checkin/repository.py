@@ -68,12 +68,18 @@ class CheckinRepository(BaseRepository):
     def get_today_punches(self, biostar_user_id, date_str):
         """Get all punches for a user on a given date."""
         return self.query_all(
+            # Half-open range instead of `event_datetime::date = %s` so the
+            # predicate is sargable and uses the (biostar_user_id, event_datetime)
+            # composite index, rather than scanning all of a user's punch history
+            # and casting each row's date (the mobile-checkin/status 504 cause).
             """SELECT id, biostar_event_id, event_datetime, direction,
                       device_name, raw_data
                FROM biostar_punch_logs
-               WHERE biostar_user_id = %s AND event_datetime::date = %s::date
+               WHERE biostar_user_id = %s
+                 AND event_datetime >= %s::date
+                 AND event_datetime < (%s::date + INTERVAL '1 day')
                ORDER BY event_datetime ASC""",
-            (biostar_user_id, date_str),
+            (biostar_user_id, date_str, date_str),
         )
 
     def insert_gps_punch(self, biostar_event_id, biostar_user_id, event_datetime,
