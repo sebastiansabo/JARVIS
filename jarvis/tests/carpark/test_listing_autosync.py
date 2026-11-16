@@ -227,6 +227,7 @@ def test_instant_noop_for_non_instant(monkeypatch):
 def test_resync_autovit_skips_when_not_stale():
     with patch.object(A, 'AutovitListingRepository') as LR, \
          patch.object(A, 'autovit_sweep_stale', return_value=False), \
+         patch.object(A, 'refresh_autovit_listing_status', return_value=None), \
          patch.object(A, 'republish_vehicle') as RV:
         LR.return_value.get.return_value = _autovit_listing(last_published_at=NOW)
         veh = {'id': 5, 'updated_at': NOW - timedelta(hours=3)}   # synced after edit → not stale
@@ -238,6 +239,7 @@ def test_resync_autovit_skips_when_not_stale():
 def test_resync_autovit_skips_unmapped_required():
     with patch.object(A, 'AutovitListingRepository') as LR, \
          patch.object(A, 'autovit_sweep_stale', return_value=True), \
+         patch.object(A, 'refresh_autovit_listing_status', return_value=None), \
          patch.object(A, 'VehiclePhotoRepository') as PR, \
          patch.object(A, 'republish_vehicle',
                        return_value={'success': False, 'unmapped_required': ['fuel_type']}) as RV:
@@ -252,6 +254,7 @@ def test_resync_autovit_skips_unmapped_required():
 def test_resync_autovit_pushes_when_stale():
     with patch.object(A, 'AutovitListingRepository') as LR, \
          patch.object(A, 'autovit_sweep_stale', return_value=True), \
+         patch.object(A, 'refresh_autovit_listing_status', return_value=None), \
          patch.object(A, 'VehiclePhotoRepository') as PR, \
          patch.object(A, 'republish_vehicle', return_value={'success': True}) as RV:
         LR.return_value.get.return_value = _autovit_listing()
@@ -268,6 +271,7 @@ def test_resync_autovit_reports_error():
     same coverage Shopify's resync already has."""
     with patch.object(A, 'AutovitListingRepository') as LR, \
          patch.object(A, 'autovit_sweep_stale', return_value=True), \
+         patch.object(A, 'refresh_autovit_listing_status', return_value=None), \
          patch.object(A, 'VehiclePhotoRepository') as PR, \
          patch.object(A, 'republish_vehicle', return_value={'success': False, 'error': 'boom'}):
         LR.return_value.get.return_value = _autovit_listing()
@@ -275,6 +279,51 @@ def test_resync_autovit_reports_error():
         veh = {'id': 5, 'updated_at': NOW}
         out = A.resync_autovit_vehicle({'id': 1}, veh, {}, NOW)
         assert out == 'error: boom'
+
+
+# ── resync_autovit_vehicle self-update (Task 2: pull live status first) ──
+
+def test_resync_autovit_pulls_status_and_clears_draft():
+    """A draft (unpaid) that's now paid on Autovit flips to active and the
+    stale decision runs against the fresh status."""
+    repo = MagicMock()
+    repo.get.side_effect = [_autovit_listing(status='unpaid'),      # pre-pull
+                            _autovit_listing(status='active')]       # post-pull re-read
+    veh = {'id': 5, 'updated_at': NOW - timedelta(hours=3)}  # synced after edit → up_to_date
+    with patch.object(A, 'AutovitListingRepository', return_value=repo), \
+         patch.object(A, 'refresh_autovit_listing_status', return_value='active') as RF, \
+         patch.object(A, 'sync_listing_status_hook') as HOOK:
+        out = A.resync_autovit_vehicle({'id': 1}, veh, {}, NOW)
+    RF.assert_called_once()
+    assert out == 'status:active; skipped (up_to_date)'
+    HOOK.assert_called_once_with(5)   # unpaid → active is a transition
+
+
+def test_resync_autovit_expired_not_republished():
+    repo = MagicMock()
+    repo.get.side_effect = [_autovit_listing(status='active'),
+                            _autovit_listing(status='expired')]
+    veh = {'id': 5, 'updated_at': NOW - timedelta(minutes=1)}  # would be stale if active
+    with patch.object(A, 'AutovitListingRepository', return_value=repo), \
+         patch.object(A, 'refresh_autovit_listing_status', return_value='expired'), \
+         patch.object(A, 'sync_listing_status_hook'):
+        out = A.resync_autovit_vehicle({'id': 1}, veh, {}, NOW)
+    assert out == 'status:expired; skipped (expired)'
+
+
+def test_resync_autovit_status_pull_failure_still_decides():
+    repo = MagicMock()
+    repo.get.return_value = _autovit_listing(status='active')  # single read; no re-read on None
+    veh = {'id': 5, 'updated_at': NOW - timedelta(minutes=1)}  # stale → would push
+    with patch.object(A, 'AutovitListingRepository', return_value=repo), \
+         patch.object(A, 'refresh_autovit_listing_status', return_value=None), \
+         patch.object(A, 'republish_vehicle', return_value={'success': True}) as PUB, \
+         patch.object(A, 'sync_listing_status_hook') as HOOK, \
+         patch.object(A, 'VehiclePhotoRepository', return_value=MagicMock()):
+        out = A.resync_autovit_vehicle({'id': 1}, veh, {}, NOW)
+    assert out == 'pushed'           # no prefix when nothing pulled
+    PUB.assert_called_once()
+    HOOK.assert_not_called()
 
 
 # ── listing_autosync_tick generalized to the Autovit due loop ──

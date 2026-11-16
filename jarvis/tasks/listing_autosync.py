@@ -34,9 +34,10 @@ from carpark.connectors.shopify.service import build_shopify_connector
 from carpark.connectors.shopify.routes import _pub_repo, _get_single_account, _config, _parse_json
 from carpark.connectors.shopify.schema_repository import SchemaRepository
 from carpark.connectors.autovit.freshness import autovit_sweep_stale, compute_autovit_freshness
-from carpark.connectors.autovit.service import republish_vehicle
+from carpark.connectors.autovit.service import republish_vehicle, refresh_autovit_listing_status
 from carpark.connectors.autovit.taxonomy_repository import AutovitTaxonomyRepository
 from carpark.connectors.autovit import taxonomy_map as _tx_map
+from carpark.connectors.listing_status_hook import sync_listing_status as sync_listing_status_hook
 from carpark.repositories.listing_schedule_repository import ListingScheduleRepository
 from carpark.repositories.vehicle_repository import VehicleRepository
 from carpark.repositories.photo_repository import PhotoRepository
@@ -113,6 +114,16 @@ def resync_autovit_vehicle(account: dict, vehicle: dict, taxonomy_map: dict, now
     reason for the 'skipped (<reason>)' result (not_published/up_to_date/
     inactive/expired/moderation/error/draft).
 
+    Before that decision, pulls the listing's LIVE Autovit status
+    (`refresh_autovit_listing_status`, best-effort — Task 2 self-update) and
+    re-reads the listing so the stale decision runs against the fresh status
+    (e.g. an unpaid Draft that's now paid flips to active and clears the
+    Draft badge without a manual "Verifică status" click). A successful pull
+    prefixes the result with `status:<pulled>; `; a pull failure (None)
+    leaves the result unprefixed and decides off the original read. On an
+    actual status transition, best-effort notifies `sync_listing_status_hook`
+    so the vehicle's own status (READY_FOR_SALE/LISTED) reconciles too.
+
     The actual push goes through `republish_vehicle` (Task 4) — the SAME
     required-dimension 422 guard a manual publish gets: an unmapped REQUIRED
     taxonomy dimension (make/model/body_type/fuel_type/color) is reported as
@@ -120,20 +131,33 @@ def resync_autovit_vehicle(account: dict, vehicle: dict, taxonomy_map: dict, now
     (assembled-but-invalid advert) result is reported the same defensive way
     rather than falling through to an uninformative 'error: None'.
     """
-    listing = AutovitListingRepository().get(vehicle['id'], account['id'])
+    repo = AutovitListingRepository()
+    listing = repo.get(vehicle['id'], account['id'])
+    prefix = ''
+    if listing:
+        old_status = (listing.get('status') or '').lower()
+        pulled = refresh_autovit_listing_status(account, listing, vehicle_id=vehicle['id'], timeout=10)
+        if pulled:
+            prefix = f'status:{pulled}; '
+            listing = repo.get(vehicle['id'], account['id'])  # re-read fresh status
+            if pulled.lower() != old_status:
+                try:
+                    sync_listing_status_hook(vehicle['id'])
+                except Exception:
+                    logger.exception('sync_listing_status_hook failed (vehicle %s)', vehicle['id'])
     if not autovit_sweep_stale(listing, vehicle.get('updated_at'), now):
         reason = compute_autovit_freshness(listing, vehicle.get('updated_at'), now)
-        return f'skipped ({reason})'
+        return f'{prefix}skipped ({reason})'
     photos = VehiclePhotoRepository().urls(vehicle['id'])
     res = republish_vehicle(account, vehicle, photos, taxonomy_map, now=now,
                             catalog_index=catalog_index)
     if res.get('success'):
-        return 'pushed'
+        return f'{prefix}pushed'
     if res.get('unmapped_required'):
-        return 'skipped: unmapped ' + ', '.join(res['unmapped_required'])
+        return f"{prefix}skipped: unmapped " + ', '.join(res['unmapped_required'])
     if res.get('missing'):
-        return 'skipped: missing ' + ', '.join(res['missing'])
-    return f"error: {res.get('error')}"
+        return f"{prefix}skipped: missing " + ', '.join(res['missing'])
+    return f"{prefix}error: {res.get('error')}"
 
 
 def _instant_resync_worker(vehicle_id: int) -> None:
