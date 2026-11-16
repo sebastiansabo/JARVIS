@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { Bot } from 'lucide-react'
 import { useAiAgentStore } from '@/stores/aiAgentStore'
+import { useAuthStore } from '@/stores/authStore'
 import { EphemeralChatPopup } from './EphemeralChatPopup'
 import { useIsMobile } from '@/hooks/useMediaQuery'
 import { Button } from '@/components/ui/button'
@@ -13,6 +14,9 @@ export function AiAgentWidget() {
   const setWidgetOpen = useAiAgentStore((s) => s.setWidgetOpen)
   const { pathname } = useLocation()
   const isMobile = useIsMobile()
+  // Only roles with AI Agent access may use the floating widget — otherwise
+  // opening it fires /ai-agent/api/models and 403s with a broken chat.
+  const canAccess = useAuthStore((s) => s.user?.can_access_ai_agent)
 
   // Hide on the full AI Agent page — the full chat is already there
   const onAiAgentPage = pathname.startsWith('/app/ai-agent')
@@ -26,7 +30,7 @@ export function AiAgentWidget() {
     return () => document.removeEventListener('keydown', handler)
   }, [isWidgetOpen, setWidgetOpen])
 
-  if (onAiAgentPage) return null
+  if (onAiAgentPage || !canAccess) return null
 
   return (
     <>
@@ -64,9 +68,10 @@ export function AiAgentPanel() {
   const setWidgetOpen = useAiAgentStore((s) => s.setWidgetOpen)
   const { pathname } = useLocation()
   const isMobile = useIsMobile()
+  const canAccess = useAuthStore((s) => s.user?.can_access_ai_agent)
 
   // On mobile, the Sheet in AiAgentWidget handles rendering
-  if (!isWidgetOpen || isMobile) return null
+  if (!isWidgetOpen || isMobile || !canAccess) return null
 
   return (
     <aside
