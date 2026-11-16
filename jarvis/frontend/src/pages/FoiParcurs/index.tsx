@@ -2059,6 +2059,13 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
 
   const fileName = `foaie-parcurs-${vin}-${year}-${String(month).padStart(2, '0')}.pdf`
 
+  // Some browsers (or a user setting / extension) refuse to render PDFs inline and
+  // download them instead — the <iframe> then shows the browser's blocked glyph
+  // rather than the document. navigator.pdfViewerEnabled === false is exactly that
+  // case; fall back to a download prompt so the preview doesn't look broken.
+  // (undefined ⇒ older browser without the API ⇒ keep trying the inline viewer.)
+  const pdfInlineBlocked = typeof navigator !== 'undefined' && navigator.pdfViewerEnabled === false
+
   return (
     <Dialog open={!!vin} onOpenChange={(o) => { if (!o) onClose() }}>
       <DialogContent showCloseButton={false} className="w-[95vw] max-w-[1120px] sm:max-w-[1120px] max-h-[92vh] overflow-hidden flex flex-col">
@@ -2169,7 +2176,19 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
                 <Loader2 className="h-5 w-5 animate-spin" /> Se generează documentul cu AI…
               </div>
             ) : url ? (
-              <iframe src={url} title="Foaie de parcurs" className="h-[60vh] w-full" />
+              pdfInlineBlocked ? (
+                <div className="flex h-[60vh] flex-col items-center justify-center gap-3 px-6 text-center">
+                  <FileText className="h-10 w-10 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    Previzualizarea PDF nu e disponibilă în acest browser. Descarcă documentul pentru a-l vedea.
+                  </p>
+                  <a href={url} download={fileName}>
+                    <Button><Download className="mr-1.5 h-4 w-4" /> Descarcă PDF</Button>
+                  </a>
+                </div>
+              ) : (
+                <iframe src={url} title="Foaie de parcurs" className="h-[60vh] w-full" />
+              )
             ) : (
               <div className="flex h-[60vh] items-center justify-center px-6 text-center text-sm text-muted-foreground">
                 Completează normă/alimentări (opțional) și apasă „Generează”.
@@ -2196,7 +2215,19 @@ function RouteSheetPreviewDialog({ vin, year, month, includeInternal = true, sto
       <Dialog open={pdfOpen} onOpenChange={setPdfOpen}>
         <DialogContent className="h-[90vh] w-[95vw] max-w-3xl overflow-hidden p-0">
           <DialogHeader className="sr-only"><DialogTitle>Foaie de parcurs — {vin}</DialogTitle></DialogHeader>
-          {url && <iframe src={url} title="Foaie de parcurs" className="h-full w-full" />}
+          {url && (pdfInlineBlocked ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+              <FileText className="h-10 w-10 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                Previzualizarea PDF nu e disponibilă în acest browser. Descarcă documentul pentru a-l vedea.
+              </p>
+              <a href={url} download={fileName}>
+                <Button><Download className="mr-1.5 h-4 w-4" /> Descarcă PDF</Button>
+              </a>
+            </div>
+          ) : (
+            <iframe src={url} title="Foaie de parcurs" className="h-full w-full" />
+          ))}
         </DialogContent>
       </Dialog>
     </Dialog>
