@@ -216,6 +216,27 @@ class FPVehicleRepository(BaseRepository):
         """Get a single vehicle by VIN (full row, incl. documents)."""
         return self.query_one('SELECT * FROM fp_vehicles WHERE vin = %s', (vin,))
 
+    def list_sales_brand_labels(self, company_id):
+        """The company's exact sales-catalog brand labels (company_brands JOIN
+        brands, honoring fp_dealer_config.show_in_foi_parcurs) — the SAME set
+        the foi-parcurs brand picker offers (api_list_brands in
+        foi_parcurs/routes/vehicles.py). Used to validate a Driving Hub fleet
+        push's chosen brand against the catalog so a pushed car can never carry
+        a brand the hub's exact-string filters would make it invisible under.
+        Returns [] when the company has no sales catalog (courtesy/rental-only)."""
+        rows = self.query_all(
+            '''SELECT b.name
+               FROM company_brands cb
+               JOIN brands b ON b.id = cb.brand_id
+               LEFT JOIN fp_dealer_config dc
+                      ON dc.company_id = cb.company_id AND dc.brand_id = cb.brand_id
+               WHERE cb.company_id = %s AND cb.is_active = TRUE AND b.is_active = TRUE
+                 AND COALESCE(dc.show_in_foi_parcurs, TRUE) = TRUE
+               ORDER BY b.name''',
+            (company_id,),
+        )
+        return [r['name'] for r in (rows or [])]
+
     def get_by_id(self, vehicle_id):
         """Get a single vehicle by ID (full row, incl. documents)."""
         return self.query_one('SELECT * FROM fp_vehicles WHERE id = %s', (vehicle_id,))
