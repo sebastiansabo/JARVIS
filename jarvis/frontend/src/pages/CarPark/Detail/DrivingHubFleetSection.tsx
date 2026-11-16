@@ -7,7 +7,7 @@
 // add button stays visible (disabled) so it's clear re-adding isn't possible
 // from here. Mirrors the react-query + dialog idiom of the sibling
 // AutoworldPublishRow.tsx.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Car } from 'lucide-react'
 import { toast } from 'sonner'
@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { carparkApi, type DrivingHubPushPayload } from '@/api/carpark'
+import { foiParcursApi } from '@/api/foiParcurs'
 
 // Fleet's own (narrower) fuel enum — mirrors the Select in
 // FoiParcurs/index.tsx's own vehicle-create form, which fp_vehicles rows are
@@ -41,12 +42,29 @@ function pushErrorMessage(err: unknown): string {
   return e?.data?.error || e?.message || 'Eroare la adăugarea în Driving Hub'
 }
 
+// Pick the catalog label that best matches the CarPark make: exact
+// (case-insensitive) first, else a catalog entry that starts with or contains
+// the make (e.g. make 'MG' -> 'MG Motor', 'Volkswagen' -> 'Volkswagen (PKW)',
+// 'MAZDA' -> 'Mazda'). Returns '' when nothing matches, forcing a manual pick.
+function bestBrandMatch(catalog: string[], make: string | null | undefined): string {
+  if (catalog.length === 0 || !make) return ''
+  const m = make.trim().toLowerCase()
+  const exact = catalog.find((b) => b.toLowerCase() === m)
+  if (exact) return exact
+  const partial = catalog.find((b) => {
+    const bl = b.toLowerCase()
+    return bl.startsWith(m) || bl.includes(m)
+  })
+  return partial ?? ''
+}
+
 export function DrivingHubFleetSection({ vehicleId, canEdit }: { vehicleId: number; canEdit: boolean }) {
   const queryClient = useQueryClient()
   const statusKey = ['driving-hub', 'status', vehicleId]
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [mark, setMark] = useState('')
+  const [brand, setBrand] = useState('')
   const [model, setModel] = useState('')
   const [registrationNumber, setRegistrationNumber] = useState('')
   const [fuelType, setFuelType] = useState('')
@@ -67,10 +85,38 @@ export function DrivingHubFleetSection({ vehicleId, canEdit }: { vehicleId: numb
   const { data: companiesData } = useQuery({
     queryKey: ['carpark', 'companies'],
     queryFn: () => carparkApi.getCompanies(),
-    enabled: dialogOpen && needsCompanyPick,
+    // Enabled on the read-only path too, so the company NAME resolves for the
+    // disabled input instead of falling back to "#<id>".
+    enabled: dialogOpen,
     staleTime: 60_000,
   })
   const companies = companiesData?.companies ?? []
+
+  // The fleet brand MUST be an exact company_brands catalog label (the Driving
+  // Hub filters its pickers by exact string) — not the free-text CarPark make.
+  // The effective company is the car's own, or the one picked in the no-company
+  // path; fetch its catalog labels (same source as the TD form's Marcă picker).
+  const effectiveCompanyId = suggested?.company_id ?? companyId
+  const { data: brandsData } = useQuery({
+    queryKey: ['fp-brands', effectiveCompanyId],
+    queryFn: () => foiParcursApi.getBrands(effectiveCompanyId as number),
+    enabled: dialogOpen && effectiveCompanyId != null,
+    staleTime: 60_000,
+  })
+  const brands = brandsData?.brands ?? []
+
+  // Default-select the catalog label best matching the make when the catalog
+  // (re)loads; leave unset if nothing matches so the user must pick. Empty
+  // catalog (courtesy/rental-only company) -> no Select, make is used as brand.
+  useEffect(() => {
+    if (!dialogOpen) return
+    const list = brandsData?.brands ?? []
+    if (list.length === 0) {
+      if (brand !== '') setBrand('')
+    } else if (!list.includes(brand)) {
+      setBrand(bestBrandMatch(list, suggested?.mark))
+    }
+  }, [brandsData, dialogOpen, suggested?.mark, brand])
 
   const invalidateStatus = () => queryClient.invalidateQueries({ queryKey: statusKey })
 
@@ -98,6 +144,8 @@ export function DrivingHubFleetSection({ vehicleId, canEdit }: { vehicleId: numb
   function openDialog() {
     if (!suggested) return
     setMark(suggested.mark ?? '')
+    // The brand Select defaults via the catalog-load effect once brands arrive.
+    setBrand('')
     setModel(suggested.model ?? '')
     setRegistrationNumber(suggested.registration_number ?? '')
     setFuelType(suggested.fuel_type ?? '')
@@ -113,13 +161,16 @@ export function DrivingHubFleetSection({ vehicleId, canEdit }: { vehicleId: numb
   const tankOk = !tankRequired || (tankLiters.trim() !== '' && Number(tankLiters) > 0)
   const batteryOk = !batteryRequired || (batteryKwh.trim() !== '' && Number(batteryKwh) > 0)
   const companyOk = !needsCompanyPick || companyId != null
-  const canSubmit = fuelType !== '' && tankOk && batteryOk && companyOk && !pushMutation.isPending
+  // A fleet brand is required whenever the company HAS a sales catalog; an empty
+  // catalog (courtesy/rental-only) falls back to the make, so it never blocks.
+  const brandOk = brands.length === 0 || brand !== ''
+  const canSubmit = fuelType !== '' && tankOk && batteryOk && companyOk && brandOk && !pushMutation.isPending
 
   function handleConfirm() {
     if (!suggested || !canSubmit) return
     const payload: DrivingHubPushPayload = {
       mark: mark.trim() || null,
-      brand: mark.trim() || null,
+      brand: brands.length > 0 ? brand : (mark.trim() || null),
       model: model.trim() || null,
       registration_number: registrationNumber.trim() || null,
       fuel_type: fuelType,
@@ -196,6 +247,24 @@ export function DrivingHubFleetSection({ vehicleId, canEdit }: { vehicleId: numb
               <Label htmlFor="dh-mark">Marcă</Label>
               <Input id="dh-mark" value={mark} onChange={(e) => setMark(e.target.value)} />
             </div>
+
+            {brands.length > 0 && (
+              <div className="space-y-1">
+                <Label htmlFor="dh-brand">Marcă (flotă)</Label>
+                <Select value={brand || undefined} onValueChange={setBrand}>
+                  <SelectTrigger id="dh-brand">
+                    <SelectValue placeholder="Selectează marca din flotă" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {brands.map((b) => (
+                      <SelectItem key={b} value={b}>
+                        {b}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-1">
               <Label htmlFor="dh-model">Model</Label>

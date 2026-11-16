@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { carparkApi } from '@/api/carpark'
+import { foiParcursApi } from '@/api/foiParcurs'
 import { DrivingHubFleetSection } from './DrivingHubFleetSection'
 import type { DrivingHubSuggested } from '@/api/carpark'
 
@@ -11,6 +12,12 @@ vi.mock('@/api/carpark', () => ({
     getDrivingHubStatus: vi.fn(),
     pushToDrivingHub: vi.fn(),
     getCompanies: vi.fn(),
+  },
+}))
+
+vi.mock('@/api/foiParcurs', () => ({
+  foiParcursApi: {
+    getBrands: vi.fn(),
   },
 }))
 
@@ -93,6 +100,12 @@ beforeEach(() => {
       { id: 2, name: 'Next Motors' },
     ],
   })
+  // Default catalog contains the base suggested make ('Dacia'), so the brand
+  // Select auto-selects it and the happy-path tests clear the brand gate.
+  vi.mocked(foiParcursApi.getBrands).mockResolvedValue({
+    success: true,
+    brands: ['Dacia', 'Volkswagen'],
+  })
 })
 
 describe('DrivingHubFleetSection', () => {
@@ -126,7 +139,59 @@ describe('DrivingHubFleetSection', () => {
     expect(confirmButton).toBeDisabled()
 
     fireEvent.change(screen.getByLabelText(/capacitate rezervor/i), { target: { value: '55' } })
-    expect(confirmButton).not.toBeDisabled()
+    // The fleet brand auto-selects from the catalog (make 'Dacia' matches), so
+    // once capacity is filled the submit unlocks.
+    await waitFor(() => expect(confirmButton).not.toBeDisabled())
+  })
+
+  it('renders the fleet brand Select from getBrands', async () => {
+    mockStatus({ in_fleet: false, archived: false, suggested: baseSuggested({ fuel_type: 'Diesel' }) })
+    renderSection()
+    fireEvent.click(await screen.findByRole('button', { name: /adaugă în driving hub/i }))
+
+    expect(await screen.findByText('Marcă (flotă)')).toBeInTheDocument()
+    expect(await screen.findByText('Volkswagen')).toBeInTheDocument()
+    // Dacia appears as both the catalog option and the auto-selected value.
+    expect(await screen.findAllByText('Dacia')).not.toHaveLength(0)
+  })
+
+  it('keeps submit disabled when the make has no catalog match', async () => {
+    mockStatus({
+      in_fleet: false,
+      archived: false,
+      suggested: baseSuggested({ fuel_type: 'Diesel', mark: 'Tesla' }),
+    })
+    renderSection()
+    fireEvent.click(await screen.findByRole('button', { name: /adaugă în driving hub/i }))
+
+    // Wait for the catalog to load (brand Select rendered) — 'Tesla' isn't in
+    // it, so no default is picked and submit stays blocked even with capacity.
+    await screen.findByText('Marcă (flotă)')
+    fireEvent.change(screen.getByLabelText(/capacitate rezervor/i), { target: { value: '55' } })
+    const confirmButton = screen.getByRole('button', { name: /adaugă în flotă/i })
+    await waitFor(() => expect(confirmButton).toBeDisabled())
+  })
+
+  it('falls back to the make as brand when the catalog is empty', async () => {
+    vi.mocked(foiParcursApi.getBrands).mockResolvedValue({ success: true, brands: [] })
+    const suggested = baseSuggested({ fuel_type: 'Diesel', company_id: 7, mark: 'Dacia' })
+    mockStatus({ in_fleet: false, archived: false, suggested })
+    vi.mocked(carparkApi.pushToDrivingHub).mockResolvedValue({ fp_vehicle_id: 77 })
+
+    renderSection(8)
+    fireEvent.click(await screen.findByRole('button', { name: /adaugă în driving hub/i }))
+
+    // No fleet brand Select when the catalog is empty.
+    expect(screen.queryByText('Marcă (flotă)')).not.toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText(/capacitate rezervor/i), { target: { value: '55' } })
+    fireEvent.click(screen.getByRole('button', { name: /adaugă în flotă/i }))
+
+    await waitFor(() =>
+      expect(carparkApi.pushToDrivingHub).toHaveBeenCalledWith(
+        8,
+        expect.objectContaining({ brand: 'Dacia' }),
+      ),
+    )
   })
 
   it('renders a company Select when suggested.company_id is null', async () => {
@@ -139,7 +204,7 @@ describe('DrivingHubFleetSection', () => {
     expect(await screen.findByText('Next Motors')).toBeInTheDocument()
   })
 
-  it('calls pushToDrivingHub with mapped payload on confirm', async () => {
+  it('calls pushToDrivingHub with mapped payload incl. chosen fleet brand on confirm', async () => {
     const suggested = baseSuggested({ fuel_type: 'Diesel', company_id: 7 })
     mockStatus({ in_fleet: false, archived: false, suggested })
     vi.mocked(carparkApi.pushToDrivingHub).mockResolvedValue({ fp_vehicle_id: 99 })
@@ -148,7 +213,10 @@ describe('DrivingHubFleetSection', () => {
     fireEvent.click(await screen.findByRole('button', { name: /adaugă în driving hub/i }))
 
     fireEvent.change(screen.getByLabelText(/capacitate rezervor/i), { target: { value: '55' } })
-    fireEvent.click(screen.getByRole('button', { name: /adaugă în flotă/i }))
+    const confirmButton = screen.getByRole('button', { name: /adaugă în flotă/i })
+    // Wait for the catalog to auto-select the matching brand before submitting.
+    await waitFor(() => expect(confirmButton).not.toBeDisabled())
+    fireEvent.click(confirmButton)
 
     await waitFor(() =>
       expect(carparkApi.pushToDrivingHub).toHaveBeenCalledWith(

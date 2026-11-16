@@ -134,11 +134,20 @@ BASE_CARPARK_VEHICLE = {
 }
 
 
-def _patched(monkeypatch, get_by_vin_return=None, create_fp_vehicle_return=None):
+def _patched(monkeypatch, get_by_vin_return=None, create_fp_vehicle_return=None,
+             brand_labels=None):
     """Wire up the service's module-level repo singletons + create_fp_vehicle
-    as mocks, returning (fp_repo, vehicle_repo, create_mock)."""
+    as mocks, returning (fp_repo, vehicle_repo, create_mock).
+
+    `brand_labels` seeds the catalog the brand guard validates against; it
+    defaults to a catalog containing the BASE vehicle's make ('Volkswagen') so
+    the happy-path tests clear the guard. Pass `[]` to simulate a company with
+    no sales catalog (make fallback), or a list NOT containing the effective
+    brand to trip the 400."""
     fp_repo = MagicMock()
     fp_repo.get_by_vin.return_value = get_by_vin_return
+    fp_repo.list_sales_brand_labels.return_value = (
+        ['Volkswagen'] if brand_labels is None else brand_labels)
     vehicle_repo = MagicMock()
     create_mock = MagicMock(return_value=create_fp_vehicle_return or (None, None))
 
@@ -178,7 +187,8 @@ def test_push_company_not_actable_but_admin_passes(monkeypatch):
              create_fp_vehicle_return=({'id': 11}, None))
 
     result, err = svc.push_to_fleet(
-        BASE_CARPARK_VEHICLE, {'company_id': OTHER_COMPANY_ID}, ACTABLE, is_admin=True)
+        BASE_CARPARK_VEHICLE, {'company_id': OTHER_COMPANY_ID, 'brand': 'Volkswagen'},
+        ACTABLE, is_admin=True)
 
     assert err is None
     assert result == {'fp_vehicle_id': 11}
@@ -209,15 +219,20 @@ def test_push_success_sets_is_test_drive(monkeypatch):
         monkeypatch, get_by_vin_return=None,
         create_fp_vehicle_return=({'id': 7}, None))
 
-    result, err = svc.push_to_fleet(BASE_CARPARK_VEHICLE, {}, ACTABLE, is_admin=False)
+    result, err = svc.push_to_fleet(
+        BASE_CARPARK_VEHICLE, {'brand': 'Volkswagen'}, ACTABLE, is_admin=False)
 
     assert err is None
     assert result == {'fp_vehicle_id': 7}
     # the service's own lookup (BEFORE create_fp_vehicle) used the repo it
     # also hands to create_fp_vehicle, so both agree on duplicate state.
     create_mock.assert_called_once()
-    _, kwargs = create_mock.call_args
+    (payload,), kwargs = create_mock.call_args
     assert kwargs.get('repo') is fp_repo
+    # the validated catalog brand lands on the fp_vehicles payload; mark keeps
+    # the CarPark make.
+    assert payload['brand'] == 'Volkswagen'
+    assert payload['mark'] == 'Volkswagen'
     vehicle_repo.set_test_drive.assert_called_once_with(
         BASE_CARPARK_VEHICLE['id'], True)
 
@@ -228,7 +243,66 @@ def test_push_flag_write_failure_still_succeeds(monkeypatch):
         create_fp_vehicle_return=({'id': 9}, None))
     vehicle_repo.set_test_drive.side_effect = Exception('boom')
 
-    result, err = svc.push_to_fleet(BASE_CARPARK_VEHICLE, {}, ACTABLE, is_admin=False)
+    result, err = svc.push_to_fleet(
+        BASE_CARPARK_VEHICLE, {'brand': 'Volkswagen'}, ACTABLE, is_admin=False)
 
     assert err is None
     assert result == {'fp_vehicle_id': 9}
+
+
+# ── brand / catalog validation ──────────────────────────────────────────────
+
+def test_push_brand_not_in_catalog_400(monkeypatch):
+    """An override brand outside a NON-EMPTY catalog is rejected (never created)."""
+    _, _, create_mock = _patched(
+        monkeypatch, get_by_vin_return=None, brand_labels=['Dacia', 'Ford'])
+
+    result, err = svc.push_to_fleet(
+        BASE_CARPARK_VEHICLE, {'brand': 'Tesla'}, ACTABLE, is_admin=False)
+
+    assert result is None
+    assert err == {'status': 400, 'message': 'Selectează o marcă validă din flotă'}
+    create_mock.assert_not_called()
+
+
+def test_push_make_not_in_nonempty_catalog_400(monkeypatch):
+    """With no override, the make fallback must still be a catalog label."""
+    _patched(monkeypatch, get_by_vin_return=None, brand_labels=['Dacia', 'Ford'])
+
+    result, err = svc.push_to_fleet(BASE_CARPARK_VEHICLE, {}, ACTABLE, is_admin=False)
+
+    assert result is None
+    assert err == {'status': 400, 'message': 'Selectează o marcă validă din flotă'}
+
+
+def test_push_valid_brand_override_written_to_payload(monkeypatch):
+    """The chosen catalog label (e.g. 'MG Motor' vs CarPark make 'MG') is what
+    lands on fp_vehicles.brand, while mark keeps the raw make."""
+    _, _, create_mock = _patched(
+        monkeypatch, get_by_vin_return=None, brand_labels=['MG Motor', 'Volkswagen'],
+        create_fp_vehicle_return=({'id': 31}, None))
+
+    result, err = svc.push_to_fleet(
+        BASE_CARPARK_VEHICLE, {'brand': 'MG Motor'}, ACTABLE, is_admin=False)
+
+    assert err is None
+    assert result == {'fp_vehicle_id': 31}
+    (payload,), _ = create_mock.call_args
+    assert payload['brand'] == 'MG Motor'
+    assert payload['mark'] == 'Volkswagen'
+
+
+def test_push_empty_catalog_allows_make_fallback(monkeypatch):
+    """A company with no sales catalog (courtesy/rental-only) allows the make
+    straight through as the fleet brand."""
+    _, _, create_mock = _patched(
+        monkeypatch, get_by_vin_return=None, brand_labels=[],
+        create_fp_vehicle_return=({'id': 21}, None))
+
+    result, err = svc.push_to_fleet(BASE_CARPARK_VEHICLE, {}, ACTABLE, is_admin=False)
+
+    assert err is None
+    assert result == {'fp_vehicle_id': 21}
+    (payload,), _ = create_mock.call_args
+    assert payload['brand'] == 'Volkswagen'
+    assert payload['mark'] == 'Volkswagen'

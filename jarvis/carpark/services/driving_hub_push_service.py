@@ -101,7 +101,7 @@ def build_suggested(carpark_vehicle):
 
 
 def _normalized_vin(carpark_vehicle):
-    return (carpark_vehicle or {}).get('vin', '').strip().upper()
+    return ((carpark_vehicle or {}).get('vin') or '').strip().upper()
 
 
 def get_fleet_status(carpark_vehicle):
@@ -163,10 +163,29 @@ def push_to_fleet(carpark_vehicle, overrides, actable_company_ids, *, is_admin):
             'fp_vehicle_id': existing.get('id'),
         }
 
-    payload = {**build_suggested(carpark_vehicle), **overrides}
+    suggested = build_suggested(carpark_vehicle)
+
+    # Brand is tenant-scoped catalog data, so validate it server-side (like the
+    # company check) — never trust the client. The Driving Hub filters its
+    # stock / Test-Drive car pickers by the EXACT catalog string
+    # (`v.brand === brand`), so a pushed car whose brand isn't one of the
+    # company's sales-catalog labels is created fine but stays SILENTLY INVISIBLE
+    # in the hub (the known fp_vehicles brand-label gotcha). Effective brand =
+    # the dialog's chosen catalog label (override) or the CarPark make as a
+    # fallback; it must be a real catalog label whenever a catalog exists.
+    effective_brand = overrides.get('brand') or suggested.get('mark')
+    catalog = _fp_repo.list_sales_brand_labels(company_id)
+    if catalog and effective_brand not in catalog:
+        return None, {'status': 400, 'message': 'Selectează o marcă validă din flotă'}
+    # Empty catalog (courtesy/rental-only company) -> no catalog to match
+    # against, so the make fallback is allowed through as-is.
+
+    payload = {**suggested, **overrides}
     payload['vin'] = vin
     payload['company_id'] = company_id
     payload['document_type'] = 'sales'
+    payload['brand'] = effective_brand
+    payload['mark'] = overrides.get('mark') or suggested.get('mark')
 
     vehicle, err = create_fp_vehicle(payload, repo=_fp_repo)
     if err:
