@@ -51,7 +51,7 @@ export function NotificationBell() {
   const { data: countData } = useQuery({
     queryKey: ['notification-unread-count'],
     queryFn: () => notificationsApi.getUnreadCount(),
-    refetchInterval: 30000,
+    refetchInterval: 60000, // halve badge-poll volume (504 relief); server caches 15s, mark-read invalidates
   })
 
   const { data: listData, isLoading } = useQuery({

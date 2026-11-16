@@ -12,11 +12,19 @@ from .engine import (
 )
 from .repositories import FlowRepository, ApprovalAuditRepository, DelegationRepository
 from core.utils.api_helpers import safe_error_response, handle_api_errors
+from core.utils.ttl_cache import TTLCache
 from core.roles.repositories import PermissionRepository
 
 logger = logging.getLogger('jarvis.core.approvals.routes')
 
 _engine = ApprovalEngine()
+
+# Short-TTL per-user cache for the frequently-polled approvals queue badge count
+# (the heaviest of the count queries), so it doesn't hit the DB on every poll
+# and queue behind worker recycles (a 504 cause). Invalidated when the user
+# decides an item (their own queue shrinks immediately); other users' counts
+# self-heal within the TTL.
+_queue_count_cache = TTLCache(ttl_seconds=15)
 _flow_repo = FlowRepository()
 _audit_repo = ApprovalAuditRepository()
 _delegation_repo = DelegationRepository()
@@ -146,6 +154,8 @@ def api_decide(request_id):
             comment=comment, conditions=conditions,
             delegated_to=delegated_to, delegation_reason=delegation_reason,
         )
+        # The decider's own queue just changed — reflect it immediately.
+        _queue_count_cache.invalidate(current_user.id)
         return jsonify({'success': True, 'request': _serialize_request(result)})
     except NotAuthorizedError as e:
         return jsonify({'success': False, 'error': str(e)}), 403
@@ -235,7 +245,8 @@ def api_my_queue():
 @approvals_access_required
 def api_my_queue_count():
     """Badge count for UI."""
-    count = _engine.get_queue_count(current_user.id)
+    uid = current_user.id
+    count = _queue_count_cache.get_or_set(uid, lambda: _engine.get_queue_count(uid))
     return jsonify({'count': count})
 
 

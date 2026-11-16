@@ -32,7 +32,7 @@ export function PunchCard() {
   const { data: status, isLoading } = useQuery<CheckinStatus>({
     queryKey: ['checkin-status'],
     queryFn: checkinApi.getStatus,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000, // halve status-poll volume (mobile-checkin/status 504 relief)
   })
 
   const punch = useMutation({

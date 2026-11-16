@@ -5,7 +5,7 @@ export function ApprovalBadge() {
   const { data } = useQuery({
     queryKey: ['approval-queue-count'],
     queryFn: () => approvalsApi.getMyQueueCount(),
-    refetchInterval: 30000,
+    refetchInterval: 60000, // halve badge-poll volume (504 relief); server caches 15s
   })
 
   const count = data?.count ?? 0

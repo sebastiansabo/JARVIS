@@ -13,10 +13,17 @@ from flask_login import login_required, current_user
 from . import notifications_bp
 from .repositories import NotificationRepository, InAppNotificationRepository, PushCategoryRepository, PushRateLimitRepository
 from core.utils.api_helpers import safe_error_response
+from core.utils.ttl_cache import TTLCache
 from .push_service import _device_repo, get_push_settings_cache, send_push_to_users
 
 _notif_repo = NotificationRepository()
 _in_app_repo = InAppNotificationRepository()
+
+# Short-TTL per-user cache for the frequently-polled unread badge count, so the
+# poller doesn't hit the DB on every poll and queue behind worker recycles (a
+# 504 cause). Invalidated on mark-read/mark-all-read so a user's own action is
+# immediate; a newly-arrived notification appears within the TTL.
+_unread_count_cache = TTLCache(ttl_seconds=15)
 _cat_repo = PushCategoryRepository()
 _rate_repo = PushRateLimitRepository()
 
@@ -176,7 +183,8 @@ def api_get_in_app_notifications():
 @login_required
 def api_get_unread_count():
     """Get count of unread notifications for current user."""
-    count = _in_app_repo.get_unread_count(current_user.id)
+    uid = current_user.id
+    count = _unread_count_cache.get_or_set(uid, lambda: _in_app_repo.get_unread_count(uid))
     return jsonify({'count': count})
 
 
@@ -185,6 +193,7 @@ def api_get_unread_count():
 def api_mark_read(notification_id):
     """Mark a single notification as read."""
     updated = _in_app_repo.mark_read(notification_id, current_user.id)
+    _unread_count_cache.invalidate(current_user.id)
     return jsonify({'success': updated})
 
 
@@ -193,6 +202,7 @@ def api_mark_read(notification_id):
 def api_mark_all_read():
     """Mark all notifications as read for current user."""
     count = _in_app_repo.mark_all_read(current_user.id)
+    _unread_count_cache.invalidate(current_user.id)
     return jsonify({'success': True, 'count': count})
 
 
