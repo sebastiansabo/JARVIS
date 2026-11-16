@@ -266,14 +266,25 @@ class VehicleRepository(BaseRepository):
 
         where_sql = ' AND '.join(where_clauses)
 
-        # Whitelist sort columns to prevent injection
-        allowed_sorts = {
-            'acquisition_date', 'current_price', 'brand', 'model',
-            'year_of_manufacture', 'mileage_km', 'stationary_days',
-            'created_at', 'nr_stoc', 'status',
+        # Whitelist sort keys -> real SQL expressions (prevents injection AND
+        # avoids ordering by a computed SELECT alias). `stationary_days` is NOT
+        # a column on carpark_vehicles — it's the computed alias in
+        # CATALOG_SELECT — so it must map to its expression; `ORDER BY
+        # v.stationary_days` raised UndefinedColumn, swallowed into a 500 on the
+        # "Days" column sort.
+        sort_exprs = {
+            'acquisition_date': 'v.acquisition_date',
+            'current_price': 'v.current_price',
+            'brand': 'v.brand',
+            'model': 'v.model',
+            'year_of_manufacture': 'v.year_of_manufacture',
+            'mileage_km': 'v.mileage_km',
+            'stationary_days': '(CURRENT_DATE - COALESCE(v.arrival_date, v.acquisition_date))',
+            'created_at': 'v.created_at',
+            'nr_stoc': 'v.nr_stoc',
+            'status': 'v.status',
         }
-        if sort_by not in allowed_sorts:
-            sort_by = 'acquisition_date'
+        sort_expr = sort_exprs.get(sort_by, sort_exprs['acquisition_date'])
         sort_dir = 'ASC' if sort_dir.upper() == 'ASC' else 'DESC'
 
         # Count
@@ -287,7 +298,7 @@ class VehicleRepository(BaseRepository):
             SELECT {CATALOG_SELECT}
             FROM carpark_vehicles v
             WHERE {where_sql}
-            ORDER BY v.{sort_by} {sort_dir}
+            ORDER BY {sort_expr} {sort_dir}
             LIMIT %s OFFSET %s
         """
         params.extend([per_page, offset])

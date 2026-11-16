@@ -277,7 +277,13 @@ def list_vehicles():
     except (ValueError, TypeError):
         return jsonify({'success': False, 'error': 'Invalid filter parameters'}), 400
     except Exception as e:
-        logger.error(f'Catalog query failed: {e}', exc_info=True)
+        # Log the request shape alongside the traceback so a swallowed 500 is
+        # diagnosable without reproduction (this blanket catch previously hid a
+        # bad ORDER BY behind a bare "Internal error").
+        logger.error(
+            'Catalog query failed: %s | sort_by=%r sort_dir=%r filters=%r',
+            e, sort_by, sort_dir, filters, exc_info=True,
+        )
         return jsonify({'success': False, 'error': 'Internal error'}), 500
 
 
