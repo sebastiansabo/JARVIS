@@ -1712,9 +1712,6 @@ export default function VehicleForm() {
               <Input type="date" value={(form.acquisition_date as string) ?? ''} onChange={(e) => handleAcqDate(e.target.value)} />
             </div>
           </div>
-          <div className="flex flex-wrap gap-4">
-            <CheckboxField label="Furnizor neplătitor de TVA" name="non_vat_supplier" checked={form.vat_deductible === false} onChange={(_n, checked) => handleNonVatSupplier(checked)} />
-          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-1.5">
               <Label>{form.vat_deductible === false ? 'Preț Achiziție (Lei)' : 'Preț Achiziție Net (Lei)'}</Label>

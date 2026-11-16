@@ -167,3 +167,8 @@ test('new car Preț tab previews TVA deductibil by default', () => {
   renderNewVehicleForm('/edit/new?tab=comercial')
   expect(screen.getByText(/Pe Autovit va apărea/i)).toHaveTextContent(/TVA deductibil/i)
 })
+
+test('the old Furnizor neplătitor de TVA checkbox is gone', () => {
+  renderNewVehicleForm('/edit/new?tab=comercial')
+  expect(screen.queryByText(/Furnizor neplătitor de TVA/i)).not.toBeInTheDocument()
+})
