@@ -430,7 +430,8 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
   const draftClientId = draftData?.contract?.client_id ?? null
   const { data: draftClientData } = useQuery({
     queryKey: ['fp-draft-client', draftClientId],
-    queryFn: () => crmApi.getClient(draftClientId!),
+    // Login-gated hydration — the @crm_required CRM GET 403s for consilieri (Viewer).
+    queryFn: () => foiParcursApi.getCrmClient(draftClientId!),
     enabled: (isActivating || isEditing) && draftClientId != null,
   })
 
@@ -719,7 +720,8 @@ export default function TestDriveForm({ embedded, activateId: activateIdProp, ed
   const [editingClient, setEditingClient] = useState(false)
   const { data: clientFullData } = useQuery({
     queryKey: ['fp-client-full', selectedClient?.id],
-    queryFn: () => crmApi.getClient(Number(selectedClient!.id)),
+    // Login-gated hydration — the @crm_required CRM GET 403s for consilieri (Viewer).
+    queryFn: () => foiParcursApi.getCrmClient(Number(selectedClient!.id)),
     enabled: !!selectedClient?.id,
   })
   useEffect(() => {

@@ -598,6 +598,13 @@ export const foiParcursApi = {
   searchCrmClients: (q: string, limit = 20) =>
     api.get<{ clients: CrmClient[] }>(`${BASE}/crm-clients/search${qs({ q, limit })}`),
 
+  // Login-gated single-client hydration for the Test Drive form. The full CRM
+  // GET (/api/crm/clients/:id) is @crm_required, so a consilier (Viewer role)
+  // hydrating a picked client there got 403 "CRM access denied"; this endpoint
+  // returns the same lean crm_clients row behind @login_required.
+  getCrmClient: (id: number) =>
+    api.get<{ success: boolean; client: CrmClient }>(`${BASE}/crm-clients/${id}`),
+
   createCrmClient: (data: CreateCrmClientPayload) =>
     api.post<{ success: boolean; client: CrmClient }>(`${BASE}/crm-clients`, data),
 
