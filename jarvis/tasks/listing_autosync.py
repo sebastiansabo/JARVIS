@@ -138,7 +138,7 @@ def resync_autovit_vehicle(account: dict, vehicle: dict, taxonomy_map: dict, now
         old_status = (listing.get('status') or '').lower()
         pulled = refresh_autovit_listing_status(account, listing, vehicle_id=vehicle['id'], timeout=10)
         if pulled:
-            prefix = f'status:{pulled}; '
+            prefix = f'status:{pulled.lower()}; '
             listing = repo.get(vehicle['id'], account['id'])  # re-read fresh status
             if pulled.lower() != old_status:
                 try:

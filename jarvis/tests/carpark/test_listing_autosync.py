@@ -326,6 +326,21 @@ def test_resync_autovit_status_pull_failure_still_decides():
     HOOK.assert_not_called()
 
 
+def test_resync_autovit_unchanged_status_no_hook():
+    """unpaid stays unpaid (user hasn't paid yet) — no transition, so no
+    vehicle-level reconcile churn, but the status prefix still rides the result."""
+    repo = MagicMock()
+    repo.get.side_effect = [_autovit_listing(status='unpaid'),   # pre-pull
+                            _autovit_listing(status='unpaid')]    # post-pull re-read
+    veh = {'id': 5, 'updated_at': NOW - timedelta(hours=3)}       # not stale → skipped (draft)
+    with patch.object(A, 'AutovitListingRepository', return_value=repo), \
+         patch.object(A, 'refresh_autovit_listing_status', return_value='unpaid'), \
+         patch.object(A, 'sync_listing_status_hook') as HOOK:
+        out = A.resync_autovit_vehicle({'id': 1}, veh, {}, NOW)
+    assert out == 'status:unpaid; skipped (draft)'
+    HOOK.assert_not_called()
+
+
 # ── listing_autosync_tick generalized to the Autovit due loop ──
 
 def test_tick_processes_autovit_due(monkeypatch):

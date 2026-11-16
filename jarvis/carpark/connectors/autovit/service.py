@@ -279,7 +279,7 @@ def refresh_autovit_listing_status(connector: dict, listing: dict,
     """
     ext_id = listing.get('external_advert_id')
     vehicle_id = vehicle_id or listing.get('vehicle_id')
-    account_id = listing.get('account_id') or connector['id']
+    account_id = listing.get('account_id') or connector.get('id')
     if not (ext_id and vehicle_id and account_id):
         return None
 
