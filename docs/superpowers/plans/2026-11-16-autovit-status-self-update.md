@@ -37,7 +37,7 @@
 - Test: `jarvis/tests/carpark/test_autovit_service.py`
 
 **Interfaces:**
-- Produces: `refresh_autovit_listing_status(connector: dict, listing: dict, *, timeout: int = 10) -> str | None` in `service.py`. Reads `listing['external_advert_id']`, `listing['vehicle_id']`, `account_id = listing.get('account_id') or connector['id']`; returns `None` if any is missing. Builds `client = r._build_client(connector)`, sets `client.timeout = timeout`, reads `live = client.get_account_advert(str(ext_id), timeout=timeout) or {}`. On exception: `logger.warning(...)`, return `None`. If `live.get('status')`: `r._listing_repo.upsert(vehicle_id, account_id, status=status, external_url=live.get('url') or listing.get('external_url'), last_error=None)`; return that status. Else return `None`.
+- Produces: `refresh_autovit_listing_status(connector: dict, listing: dict, *, vehicle_id: int | None = None, timeout: int = 10) -> str | None` in `service.py`. Resolves `vehicle_id = vehicle_id or listing.get('vehicle_id')` (the explicit param is the authoritative, ownership-verified id when the caller has one), reads `listing['external_advert_id']`, `account_id = listing.get('account_id') or connector['id']`; returns `None` if any is missing. Builds `client = r._build_client(connector)`, sets `client.timeout = timeout`, reads `live = client.get_account_advert(str(ext_id), timeout=timeout) or {}`. On exception: `logger.warning(...)`, return `None`. If `live.get('status')`: `r._listing_repo.upsert(vehicle_id, account_id, status=status, external_url=live.get('url') or listing.get('external_url'), last_error=None)`; return that status. Else return `None`.
 - Consumes (route): the above helper, imported alongside `republish_vehicle`.
 
 - [ ] **Step 1: Write the failing tests** in `test_autovit_service.py`
@@ -176,7 +176,7 @@ def resync_autovit_vehicle(account, vehicle, taxonomy_map, now, catalog_index=No
     prefix = ''
     if listing:
         old_status = (listing.get('status') or '').lower()
-        pulled = refresh_autovit_listing_status(account, listing, timeout=10)
+        pulled = refresh_autovit_listing_status(account, listing, vehicle_id=vehicle['id'], timeout=10)
         if pulled:
             prefix = f'status:{pulled}; '
             listing = repo.get(vehicle['id'], account['id'])  # re-read fresh status
