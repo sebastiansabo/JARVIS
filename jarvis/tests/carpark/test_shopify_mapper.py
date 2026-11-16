@@ -357,3 +357,28 @@ def test_putere_kw_empty_when_no_hp_either():
     prod, warnings = mapper.vehicle_to_product(vehicle, PHOTOS, KW_FIELD_MAP, VALUE_MAP, CONFIG)
     assert ('custom', 'putere_kw') not in _mf(prod)
     assert any('putere_kw' in w for w in warnings)
+
+
+# ── compareAtPrice: illustrate a promotion by showing crossed-out list price ──
+
+def test_promo_sets_compare_at_price():
+    v = mapper.vehicle_to_product(
+        {**BASE, 'list_price': 50000, 'current_price': 40000}, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG
+    )[0]['variants'][0]
+    assert v['price'] == '40000.00'
+    assert v['compareAtPrice'] == '50000.00'
+
+
+def test_no_promo_omits_compare_at_price():
+    # list == current (no markdown)
+    v = mapper.vehicle_to_product(
+        {**BASE, 'list_price': 45000, 'current_price': 45000}, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG
+    )[0]['variants'][0]
+    assert 'compareAtPrice' not in v
+
+
+def test_bad_list_price_omits_compare_at_price():
+    v = mapper.vehicle_to_product(
+        {**BASE, 'list_price': None, 'current_price': 45000}, PHOTOS, FIELD_MAP, VALUE_MAP, CONFIG
+    )[0]['variants'][0]
+    assert 'compareAtPrice' not in v
