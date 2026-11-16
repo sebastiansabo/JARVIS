@@ -177,9 +177,13 @@ class SincronSyncService:
                 # Deactivate employees missing from current-month API response.
                 # Skip first 5 days of the month — Sincron data may be
                 # incomplete until the accountant enters all timesheets.
+                # Always pop the set first (like _terminated_ids below) so it can
+                # never leak into the jsonify'd result — a past-month sync skips
+                # the deactivation branch, and a leaked set raised
+                # "TypeError: set is not JSON serializable" -> HTTP 500.
+                synced_ids = result.pop('_synced_ids', set())
                 if is_current_month and now.day > 5 and result.get('success'):
-                    deactivated = self._deactivate_missing_employees(
-                        comp, result.pop('_synced_ids', set()))
+                    deactivated = self._deactivate_missing_employees(comp, synced_ids)
                     result['deactivated'] = deactivated
                     total_deactivated += deactivated
 
