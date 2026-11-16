@@ -101,6 +101,7 @@ import { ReserveDialog } from './Dispo/ReserveDialog'
 import { SellDialog } from './Dispo/SellDialog'
 import { AutovitPublishRow } from './Detail/AutovitPublishRow'
 import { AutoworldPublishRow } from './Detail/AutoworldPublishRow'
+import { DrivingHubFleetSection } from './Detail/DrivingHubFleetSection'
 import { safeStatusTransitions } from './Dispo/statusTransitions'
 import {
   STATUS_LABELS,
@@ -2821,6 +2822,8 @@ function ListingsTab({
           />
         )
       )}
+
+      <DrivingHubFleetSection vehicleId={vehicleId} canEdit={canEdit} />
     </div>
   )
 }
