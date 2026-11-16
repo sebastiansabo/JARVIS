@@ -1,6 +1,16 @@
 import { validateListPriceOnCreate } from './vehicleFormPricing'
 import { CATEGORY_LABELS } from '@/types/carpark'
 
+// ── VAT regime helpers ─────────────────────────────────────────────────────
+
+// Produce a human-readable VAT regime label for preview/summary display.
+// The regime is independent of category/source; it's determined by two flags:
+//   - vatDeductible: true = TVA deductibil, false = Fără TVA (marjă)
+//   - priceIncludesVat: true = preț brut (cu TVA), false = preț net
+export const vatRegimePreview = (vatDeductible: boolean, priceIncludesVat: boolean): string =>
+  `${vatDeductible === false ? 'Fără TVA (marjă)' : 'TVA deductibil'}` +
+  ` · ${priceIncludesVat === false ? 'preț net' : 'preț brut (cu TVA)'}`
+
 // ── Stock-type (category) helpers ──────────────────────────────────────────
 
 // Custody-type stock: the dealer holds the car but never bought it (Custodie,

@@ -122,4 +122,21 @@ describe('clearAcquisitionFields', () => {
     expect(out.brand).toBe('Audi')      // untouched
     expect(out.list_price).toBe(25000)  // untouched
   })
+
+  test('keeps the VAT regime, nulls purchase amounts', () => {
+    const out = clearAcquisitionFields({ vat_deductible: false, acquisition_price: 5, supplier_name: 'X' })
+    expect(out.vat_deductible).toBe(false)
+    expect(out.acquisition_price).toBeNull()
+  })
+})
+
+import { vatRegimePreview } from './vehicleFormValidation'
+
+describe('vatRegimePreview', () => {
+  test('deductible + gross', () => {
+    expect(vatRegimePreview(true, true)).toBe('TVA deductibil · preț brut (cu TVA)')
+  })
+  test('margin + net', () => {
+    expect(vatRegimePreview(false, false)).toBe('Fără TVA (marjă) · preț net')
+  })
 })
