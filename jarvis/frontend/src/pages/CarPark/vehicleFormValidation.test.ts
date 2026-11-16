@@ -139,4 +139,12 @@ describe('vatRegimePreview', () => {
   test('margin + net', () => {
     expect(vatRegimePreview(false, false)).toBe('Fără TVA (marjă) · preț net')
   })
+  // Off-diagonal cases: the two params are distinct here, so a parameter swap
+  // (binding priceIncludesVat to the regime half and vice-versa) now fails.
+  test('deductible + net', () => {
+    expect(vatRegimePreview(true, false)).toBe('TVA deductibil · preț net')
+  })
+  test('margin + gross', () => {
+    expect(vatRegimePreview(false, true)).toBe('Fără TVA (marjă) · preț brut (cu TVA)')
+  })
 })
