@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { SearchSelect } from '@/components/shared/SearchSelect'
 import { DecodePreviewDialog } from './DecodePreviewDialog'
 import { syncCurrentPrice } from './vehicleFormPricing'
-import { findMissingRequiredFields, isCustodyCategory, normalizeCategory, clearAcquisitionFields } from './vehicleFormValidation'
+import { findMissingRequiredFields, isCustodyCategory, normalizeCategory, clearAcquisitionFields, vatRegimePreview } from './vehicleFormValidation'
 import { toCanonical, netLeiFromCanonical, netLeiFromGrossEur, canonicalFromGrossEur } from './acquisitionCanonical'
 import { specFieldsToClear, usesFuelTank, usesBattery } from './vehicleSpecScope'
 import { deriveFabParts, fabToManufactureDate } from './vehicleFabricationDate'
@@ -927,6 +927,21 @@ export default function VehicleForm() {
       price_includes_vat: nonVat ? true : prev.price_includes_vat,
     }))
   }
+  // Regim TVA (anunț) selector on the Preț tab — visible for every car, including
+  // custody (whose Achiziție section, and thus the "Furnizor neplătitor de TVA"
+  // checkbox, is hidden). Reuses the existing acquisition-VAT recompute so the
+  // two controls stay in lockstep rather than duplicating that logic.
+  const handleVatRegime = (value: string) => {
+    // Guard against Radix Select's hidden native "bubble" <select> (rendered
+    // for form/autofill compatibility): it only registers <option> mirrors once
+    // its SelectContent has actually been opened once, so when this control's
+    // value changes programmatically (e.g. on vehicle load, before the user
+    // ever opens the dropdown) it dispatches a spurious native change event
+    // reporting '' — which would otherwise silently flip a loaded margin-regime
+    // custody car back to "TVA deductibil" via handleNonVatSupplier(false).
+    if (value !== 'deductibil' && value !== 'fara') return
+    handleNonVatSupplier(value === 'fara')
+  }
 
   // Submit
   const createMutation = useMutation({
@@ -1807,6 +1822,21 @@ export default function VehicleForm() {
             onChange={handleChange}
           />
         </div>
+        {/* Regim TVA (anunț) — independent of category/source, and rendered here
+            (not in the Achiziție section) so it stays visible for custody cars
+            (CUS/CON), whose Achiziție section is hidden entirely. */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <SelectField
+            label="Regim TVA (anunț)"
+            name="vat_regime"
+            value={form.vat_deductible === false ? 'fara' : 'deductibil'}
+            options={[
+              { value: 'deductibil', label: 'TVA deductibil' },
+              { value: 'fara', label: 'Fără TVA (marjă)' },
+            ]}
+            onChange={(_n, v) => handleVatRegime(v)}
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <CheckboxField
             label="Preț include TVA"
@@ -1815,9 +1845,7 @@ export default function VehicleForm() {
             onChange={(_n, checked) => setForm((prev) => ({ ...prev, price_includes_vat: checked }))}
           />
           <span className="text-xs text-muted-foreground">
-            {form.vat_deductible === false
-              ? 'Achiziție în regim de marjă (fără TVA deductibil) — prețul brut nu poartă TVA separat.'
-              : 'Achiziție cu TVA deductibil — prețul brut include TVA.'}
+            Pe Autovit va apărea: {vatRegimePreview(form.vat_deductible !== false, form.price_includes_vat !== false)}
           </span>
         </div>
         <p className="text-xs text-muted-foreground">

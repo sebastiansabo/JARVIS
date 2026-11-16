@@ -39,6 +39,21 @@ function renderNewVehicleForm(entry = '/edit/new') {
   return result
 }
 
+// Edit-mode render: the talon/CIV scan gate only applies to new-vehicle intake
+// (isEdit = vehicleId !== 'new'), so there is no "Introdu manual" button to click.
+function renderEditVehicleForm(entry: string) {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  return render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route path="/edit/:vehicleId" element={<VehicleForm />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  )
+}
+
 test('the acquisition tab is renamed to "Preț"', () => {
   renderNewVehicleForm()
   expect(screen.getByRole('tab', { name: 'Preț' })).toBeInTheDocument()
@@ -124,4 +139,31 @@ test('editing Net-Lei during an in-flight BNR fetch is not reverted when it reso
     resolveBnr({ kurs: 5, kurs_date: '2026-01-15' })
   })
   expect((screen.getByPlaceholderText('RON') as HTMLInputElement).value).toBe('40000')
+})
+
+test('custody car shows the Regim TVA control on the Preț tab', async () => {
+  // Core fix: a custody car (CUS) hides the whole Achiziție section via
+  // isCustodyCategory, but the Regim TVA control lives in the always-rendered
+  // Preț de vânzare card, so it must still be visible and reflect the car's regime.
+  // NOTE: the task brief's sample payload used vat_deductible: true, which
+  // contradicts its own comment/assertion below ("margin+net car" → Fără TVA).
+  // vatRegimePreview (Task 1, already covered by its own pure tests) renders
+  // vat_deductible: true as "TVA deductibil", not "Fără TVA" — so the margin
+  // scenario this test documents requires vat_deductible: false.
+  vi.mocked(carparkApi.getVehicle).mockResolvedValueOnce({
+    vehicle: { category: 'CUS', vat_deductible: false, price_includes_vat: false, list_price: 69307 },
+  } as never)
+  await act(async () => {
+    renderEditVehicleForm('/edit/40?tab=comercial')
+  })
+  // getVehicle resolves async (react-query), so the Preț tab only mounts after
+  // the fetch settles — findBy* polls for it instead of asserting immediately.
+  expect(await screen.findByText(/Regim TVA/i)).toBeInTheDocument()
+  // margin+net car → preview shows Fără TVA / net
+  expect(await screen.findByText(/Pe Autovit va apărea/i)).toHaveTextContent(/Fără TVA.*preț net/i)
+})
+
+test('new car Preț tab previews TVA deductibil by default', () => {
+  renderNewVehicleForm('/edit/new?tab=comercial')
+  expect(screen.getByText(/Pe Autovit va apărea/i)).toHaveTextContent(/TVA deductibil/i)
 })
