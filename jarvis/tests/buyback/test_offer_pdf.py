@@ -1,5 +1,5 @@
 """Tests for the buyback offer-email vehicle-sheet PDF."""
-from buyback.services.offer_pdf import build_vehicle_sheet_pdf
+from buyback.services.offer_pdf import build_record_export_pdf, build_vehicle_sheet_pdf
 
 
 def test_vehicle_sheet_pdf_is_valid_and_nonempty():
@@ -22,9 +22,33 @@ def test_vehicle_sheet_pdf_includes_retail_price_when_set():
     assert '10000' in text
 
 
+def test_vehicle_sheet_pdf_includes_other_details_when_set():
+    import io
+    from PyPDF2 import PdfReader
+    data = build_vehicle_sheet_pdf({'record_code': 'BB-6', 'brand': 'Suzuki', 'model': 'Vitara',
+                                    'other_details': 'Motor schimbat, are facturi'})
+    text = ''.join(p.extract_text() or '' for p in PdfReader(io.BytesIO(bytes(data))).pages)
+    assert 'Alte detalii' in text
+    assert 'Motor schimbat' in text
+
+
 def test_vehicle_sheet_pdf_handles_missing_fields():
     data = build_vehicle_sheet_pdf({'record_code': 'BB-2', 'brand': 'Audi', 'model': 'A4'})
     assert bytes(data[:4]) == b'%PDF'
+
+
+def test_record_export_pdf_includes_other_details():
+    # "Alte detalii" (other_details) carries free-text the advisor records at
+    # intake — e.g. a replaced engine. It must appear on the exported fisa, not
+    # only in the edit form. Regression guard for ticket #15.
+    import io
+    from PyPDF2 import PdfReader
+    rec = {'record_code': 'BB-5', 'brand': 'Suzuki', 'model': 'Vitara',
+           'other_details': 'Masina are motor schimbat, are facturi'}
+    data = build_record_export_pdf(rec)
+    text = ''.join(p.extract_text() or '' for p in PdfReader(io.BytesIO(bytes(data))).pages)
+    assert 'Alte detalii' in text
+    assert 'motor schimbat' in text
 
 
 def test_vehicle_sheet_pdf_escapes_reportlab_markup():

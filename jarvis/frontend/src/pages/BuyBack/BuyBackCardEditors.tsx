@@ -106,6 +106,7 @@ export function VehicleCardEditor({ record, opts, onClose }: EditorProps) {
     general_condition: record.general_condition ?? '',
     has_damage: !!record.has_damage,
     damage_details: record.damage_details ?? '',
+    other_details: record.other_details ?? '',
   })
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }))
   const save = useCardSave(record.id, onClose)
@@ -145,6 +146,7 @@ export function VehicleCardEditor({ record, opts, onClose }: EditorProps) {
       general_condition: numOrNull(form.general_condition),
       has_damage: form.has_damage,
       damage_details: form.has_damage ? strOrNull(form.damage_details) : null,
+      other_details: strOrNull(form.other_details),
     } as Partial<BuybackRecord>)
   }
 
@@ -308,6 +310,11 @@ export function VehicleCardEditor({ record, opts, onClose }: EditorProps) {
             )
           })}
         </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs">Alte detalii</Label>
+        <Textarea value={form.other_details} onChange={(e) => set('other_details', e.target.value)} rows={2} />
       </div>
 
       <SaveBar pending={save.isPending} disabled={!canSave} onSave={submit} onCancel={onClose} />

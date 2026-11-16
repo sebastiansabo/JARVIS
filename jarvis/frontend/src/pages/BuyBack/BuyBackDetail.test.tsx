@@ -23,6 +23,7 @@ vi.mock('@/api/buyback', () => ({
           seller_name: 'Dan',
           client_asking_price_eur: 12000,
           market_price_eur: 9000,
+          other_details: 'Motor schimbat pe firma, are facturi',
         },
         offers: [{ id: 1, offer_type: 'initial', amount_eur: 11000, client_decision: 'pending', created_at: '2026-09-24' }],
         photos: [],
@@ -97,6 +98,13 @@ describe('BuyBackDetail', () => {
     expect(screen.getByText((8500).toLocaleString('ro-RO') + ' €')).toBeInTheDocument()
   })
 
+  it('shows the Alte detalii free-text note on the Vehicul card (ticket #15)', async () => {
+    wrap('/app/buyback/5')
+    await screen.findByText('Audi A4')
+    expect(screen.getByText('Alte detalii')).toBeInTheDocument()
+    expect(screen.getByText('Motor schimbat pe firma, are facturi')).toBeInTheDocument()
+  })
+
   it('inline-edits the Vehicul card and PUTs the record (even at a non-PENDING status)', async () => {
     updateRecord.mockClear()
     wrap('/app/buyback/5')
@@ -112,6 +120,22 @@ describe('BuyBackDetail', () => {
     const [id, payload] = updateRecord.mock.calls[0] as unknown as [number, Record<string, unknown>]
     expect(id).toBe(5)
     expect(payload).toMatchObject({ brand: 'Audi', model: 'A4', vin: 'WAUZZZ8V9KA000111' })
+  })
+
+  it('inline-edits other_details on the Vehicul card and PUTs it (ticket #15)', async () => {
+    updateRecord.mockClear()
+    wrap('/app/buyback/5')
+    await screen.findByText('Audi A4')
+
+    fireEvent.click(screen.getAllByText('Editează')[0])
+    // Editor pre-fills the existing note so it can be edited in place.
+    const note = await screen.findByDisplayValue('Motor schimbat pe firma, are facturi')
+    fireEvent.change(note, { target: { value: 'Motor nou, 10.000 km' } })
+
+    fireEvent.click(screen.getByText('Salvează'))
+    await waitFor(() => expect(updateRecord).toHaveBeenCalledTimes(1))
+    const [, payload] = updateRecord.mock.calls[0] as unknown as [number, Record<string, unknown>]
+    expect(payload).toMatchObject({ other_details: 'Motor nou, 10.000 km' })
   })
 
   it('exports the record to PDF from the header button', async () => {

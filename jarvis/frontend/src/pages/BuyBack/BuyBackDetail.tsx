@@ -78,7 +78,8 @@ const EDIT_FIELD_LABEL: Record<string, string> = {
   transmission: 'Transmisie', gearbox: 'Cutie', manufacture_date: 'Data fabricație',
   first_registration_date: 'Prima înmatriculare', service_history_uptodate: 'Istoric service',
   extra_wheels: 'Roți extra', keys_count: 'Nr. chei', general_condition: 'Condiție',
-  has_damage: 'Daune', damage_details: 'Detalii daune', client_type: 'Tip client',
+  has_damage: 'Daune', damage_details: 'Detalii daune', other_details: 'Alte detalii',
+  client_type: 'Tip client',
   vat_status: 'Status TVA', seller_name: 'Nume', seller_company_name: 'Denumire firmă',
   seller_email: 'Email', seller_phone: 'Telefon',
   seller_cui: 'CUI', is_trade_in: 'Trade-in', target_vehicle_text: 'Vehicul țintă',
@@ -303,6 +304,11 @@ export default function BuyBackDetail() {
               {record.has_damage && (
                 <div className="col-span-2">
                   <Field label="Detalii daune" value={record.damage_details} />
+                </div>
+              )}
+              {record.other_details && (
+                <div className="col-span-2">
+                  <Field label="Alte detalii" value={record.other_details} />
                 </div>
               )}
             </CardContent>

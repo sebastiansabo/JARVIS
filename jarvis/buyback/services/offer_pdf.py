@@ -85,6 +85,8 @@ def build_vehicle_sheet_pdf(record: dict) -> bytes:
     ]
     if record.get('has_damage') and record.get('damage_details'):
         rows.append(('Detalii daune', record.get('damage_details')))
+    if record.get('other_details'):
+        rows.append(('Alte detalii', record.get('other_details')))
     # Retail value (Pret de piata) so the attached sheet carries the same
     # reference as the offer email. Retail only — never the margin.
     if record.get('market_price_eur') is not None:
@@ -247,6 +249,7 @@ def build_record_export_pdf(record: dict, offers=None, events=None, photos=None)
         ('Conditie generala (1-5)', record.get('general_condition')),
         ('Daune', _yes_no(record.get('has_damage'))),
         ('Detalii daune', record.get('damage_details') if record.get('has_damage') else None),
+        ('Alte detalii', record.get('other_details')),
     ])
 
     _section('Vanzator & Trade-in', [
