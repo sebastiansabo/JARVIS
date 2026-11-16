@@ -27,6 +27,15 @@ def _price(vehicle: Dict[str, Any]):
     return vehicle.get('current_price') or vehicle.get('list_price')
 
 
+def _positive_float(value: Any) -> Optional[float]:
+    """Parse a value to a positive float, returning None if invalid or non-positive."""
+    try:
+        f = float(value)
+        return f if f > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
 def is_eligible(vehicle: Dict[str, Any], photos: List[dict]) -> Tuple[bool, str]:
     if vehicle.get('status') not in ELIGIBLE_STATUSES:
         return False, f"status {vehicle.get('status')!r} not in for-sale set"
@@ -295,6 +304,19 @@ def vehicle_to_product(vehicle: Dict[str, Any], photos: List[dict],
         vehicle.get('brand'), vehicle.get('model'),
     ] if t]
 
+    variant = {
+        'optionValues': [{'optionName': 'Title', 'name': 'Default Title'}],
+        'sku': str(vehicle.get('vin') or ''),
+        'price': f'{float(price):.2f}',
+        'inventoryPolicy': 'DENY',
+    }
+    # Illustrate a promotion: when the list price is above the effective (promo)
+    # price, send it as Shopify compareAtPrice so the storefront crosses out the
+    # original. Same gross basis as `price`; omit the key when there's no markdown.
+    list_price = _positive_float(vehicle.get('list_price'))
+    if list_price is not None and list_price > float(price):
+        variant['compareAtPrice'] = f'{list_price:.2f}'
+
     product_input: Dict[str, Any] = {
         'title': _title(vehicle),
         'descriptionHtml': _description_html(vehicle, spec_pairs, dotari_items),
@@ -306,11 +328,6 @@ def vehicle_to_product(vehicle: Dict[str, Any], photos: List[dict],
         'metafields': metafields,
         'files': files,
         'productOptions': [{'name': 'Title', 'values': [{'name': 'Default Title'}]}],
-        'variants': [{
-            'optionValues': [{'optionName': 'Title', 'name': 'Default Title'}],
-            'sku': str(vehicle.get('vin') or ''),
-            'price': f'{float(price):.2f}',
-            'inventoryPolicy': 'DENY',
-        }],
+        'variants': [variant],
     }
     return product_input, warnings
