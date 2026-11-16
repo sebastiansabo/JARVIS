@@ -418,6 +418,23 @@ class VehicleRepository(BaseRepository):
             tuple(params), returning=True
         )
 
+    def set_test_drive(self, vehicle_id: int, value: bool = True) -> bool:
+        """Best-effort flag write: mark (or unmark) a carpark vehicle as
+        pushed into the Driving Hub test-drive fleet. A dedicated, narrow
+        method (rather than routing through the generic ``update()`` field
+        whitelist) so the Driving Hub push service (carpark/services/
+        driving_hub_push_service.py) can issue this single write directly —
+        keeps the raw SQL inside the repository per the "no SQL outside
+        repositories" rule, while the service only ever calls this method
+        inside a try/except (a failure here must never fail the push).
+        Returns True if a row was updated, False if the id doesn't exist (or
+        is soft-deleted)."""
+        return self.execute(
+            'UPDATE carpark_vehicles SET is_test_drive = %s, updated_at = CURRENT_TIMESTAMP '
+            'WHERE id = %s AND deleted_at IS NULL',
+            (value, vehicle_id),
+        ) > 0
+
     # ── SOFT DELETE ──
 
     def soft_delete(self, vehicle_id: int) -> bool:
