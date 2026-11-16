@@ -34,6 +34,26 @@ import type {
   PendingPriceChange,
 } from '../types/carpark'
 
+// ── Driving Hub fleet push (CarPark -> fp_vehicles, see
+// carpark/services/driving_hub_push_service.py::build_suggested) ─────────
+export type DrivingHubSuggested = {
+  mark: string | null
+  brand: string | null
+  model: string | null
+  registration_number: string | null
+  fuel_type: string | null
+  company_id: number | null
+  odometer_km: number | null
+  color: string | null
+}
+
+export type DrivingHubPushPayload = DrivingHubSuggested & {
+  fuel_type: string
+  fuel_tank_capacity_liters?: number
+  battery_capacity_kwh?: number
+  company_id: number
+}
+
 export const carparkApi = {
   // ── Tenant switcher ──────────────────────────────────────
   getCompanies: () =>
@@ -473,4 +493,16 @@ export const carparkApi = {
       `/api/carpark/vehicles/${vid}/listing-schedule`,
       data,
     ),
+
+  // ── Driving Hub fleet push ──────────────────────────────
+  getDrivingHubStatus: (vid: number) =>
+    api.get<{
+      in_fleet: boolean
+      archived: boolean
+      fp_vehicle_id: number | null
+      suggested: DrivingHubSuggested
+    }>(`/api/carpark/vehicles/${vid}/driving-hub/status`),
+
+  pushToDrivingHub: (vid: number, payload: DrivingHubPushPayload) =>
+    api.post<{ fp_vehicle_id: number }>(`/api/carpark/vehicles/${vid}/driving-hub/push`, payload),
 }
