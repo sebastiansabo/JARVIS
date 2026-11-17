@@ -22,6 +22,7 @@ import { FilterBar, type FilterField } from '@/components/shared/FilterBar'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { TableSkeleton } from '@/components/shared/TableSkeleton'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
+import { saleVatView } from './salePriceVat'
 import { ColumnToggle, useColumnState } from '@/components/shared/ColumnToggle'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -174,6 +175,21 @@ const CARPARK_COLUMNS: CarparkCol[] = [
     render: (v) => (v.current_price != null
       ? <CurrencyDisplay value={v.current_price} currency={v.price_currency} />
       : <span className="text-muted-foreground">-</span>),
+  },
+  {
+    // Ex-VAT (net) sale price. Reuses saleVatView: NORMAL regime → net derived
+    // from current_price; MARGIN has no separable VAT so the cell shows "marjă".
+    key: 'price_net', label: 'Preț fără TVA', headClassName: 'text-right', cellClassName: 'text-right',
+    render: (v) => {
+      const vat = saleVatView(v.current_price, {
+        priceIncludesVat: v.price_includes_vat,
+        vatDeductible: v.vat_deductible,
+        vatRate: v.purchase_vat_rate,
+      })
+      return vat.netEur != null
+        ? <CurrencyDisplay value={vat.netEur} currency={v.price_currency} />
+        : <span className="text-muted-foreground" title={vat.statusLabel}>{vat.regime === 'MARGIN' ? 'marjă' : '-'}</span>
+    },
   },
   {
     key: 'days', label: 'Days', sortKey: 'stationary_days', cellClassName: 'tabular-nums',

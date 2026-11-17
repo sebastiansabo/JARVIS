@@ -34,6 +34,10 @@ export interface VehicleCatalogItem {
   list_price: number | null
   promotional_price: number | null
   price_currency: string
+  // VAT regime fields (added to CATALOG_SELECT for the "Preț fără TVA" column).
+  price_includes_vat: boolean | null
+  vat_deductible: boolean | null
+  purchase_vat_rate: number | null
   acquisition_date: string
   arrival_date: string | null
   is_consignment: boolean
