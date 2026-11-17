@@ -246,6 +246,53 @@ def test_advert_to_vehicle_pulls_euro_country_vintage():
     assert v["is_vintage"] is True
 
 
+# ── Pull-side VAT regime: advert_to_vehicle restores vat_deductible +
+# price_includes_vat from Autovit, symmetric to vehicle_to_advert's push. Before
+# this, import discarded both — so adopting a "cu TVA" or net-priced advert
+# silently reset the car to the DB defaults (margin / gross) and a later
+# re-publish could flip the live listing's VAT flag.
+
+def _advert_params(**params):
+    return {"params": {"make": "bmw", "model": "x3", **params}}
+
+
+def test_advert_to_vehicle_pulls_vat_deductible_true():
+    # Autovit vat="1" (factură cu TVA) -> NORMAL regime.
+    v = tx.advert_to_vehicle(_advert_params(vat="1"))
+    assert v["vat_deductible"] is True
+
+
+def test_advert_to_vehicle_pulls_vat_deductible_false():
+    # Autovit vat="0" (fără TVA) -> margin regime.
+    v = tx.advert_to_vehicle(_advert_params(vat="0"))
+    assert v["vat_deductible"] is False
+
+
+def test_advert_to_vehicle_vat_absent_is_not_set():
+    # No vat on the advert -> don't touch the column (let the DB default / an
+    # existing value stand on update), never force a wrong regime.
+    v = tx.advert_to_vehicle(_advert_params())
+    assert "vat_deductible" not in v
+
+
+def test_advert_to_vehicle_pulls_price_net():
+    v = tx.advert_to_vehicle(_advert_params(
+        price={"1": 20000, "currency": "EUR", "gross_net": "net"}))
+    assert v["price_includes_vat"] is False
+
+
+def test_advert_to_vehicle_pulls_price_gross():
+    v = tx.advert_to_vehicle(_advert_params(
+        price={"1": 20000, "currency": "EUR", "gross_net": "gross"}))
+    assert v["price_includes_vat"] is True
+
+
+def test_advert_to_vehicle_gross_net_absent_is_not_set():
+    # Price present but no gross_net flag -> leave price_includes_vat untouched.
+    v = tx.advert_to_vehicle(_advert_params(price={"1": 20000, "currency": "EUR"}))
+    assert "price_includes_vat" not in v
+
+
 def test_push_normalizes_romanian_and_variant_enum_values():
     # carpark_vehicles stores a MIX of Autovit slugs, Romanian labels and short
     # forms (manual entry / legacy import — see the 2026-10-15 data audit).
