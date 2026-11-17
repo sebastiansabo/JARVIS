@@ -259,6 +259,19 @@ def advert_to_vehicle(advert: Dict[str, Any]) -> Dict[str, Any]:
         except (TypeError, ValueError):
             pass
         v["price_currency"] = price.get("currency", "EUR")
+    # VAT regime, pulled back symmetric to vehicle_to_advert's push so adopting a
+    # live advert restores the car's regime instead of silently defaulting it to
+    # margin/gross (which a later re-publish would then push back, flipping the
+    # listing's VAT flag). `gross_net` governs the price's VAT-inclusive display;
+    # `vat` is the "factură cu TVA" invoice flag — each is set ONLY when present
+    # so an absent flag leaves the column untouched (DB default / existing value
+    # stands on update).
+    gross_net = str(price.get("gross_net") or "").strip().lower()
+    if gross_net:
+        v["price_includes_vat"] = gross_net != "net"
+    vat_flag = p.get("vat")
+    if vat_flag is not None:
+        v["vat_deductible"] = str(vat_flag).strip() == "1"
     if advert.get("new_used"):
         v["state"] = "Nou" if advert["new_used"] == "new" else "Rulat"
 
