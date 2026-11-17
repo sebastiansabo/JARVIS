@@ -132,6 +132,7 @@ CATALOG_SELECT = f"""
     v.year_of_manufacture, v.fuel_type, v.transmission, v.body_type,
     v.mileage_km, v.engine_power_hp, v.color_exterior,
     v.current_price, v.list_price, v.promotional_price, v.price_currency,
+    v.price_includes_vat, v.vat_deductible, v.purchase_vat_rate,
     v.acquisition_date, v.arrival_date,
     v.is_consignment, v.is_test_drive, v.total_cost,
     v.location_text, v.company_id, v.days_listed,
