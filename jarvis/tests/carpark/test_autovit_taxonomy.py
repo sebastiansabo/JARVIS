@@ -430,3 +430,32 @@ def test_validate_mileage_zero_is_not_missing():
     missing = tx.validate_for_publish(advert)
     assert "params.mileage" not in missing
     assert missing == []
+
+
+def _publishable_advert(**param_overrides):
+    params = {"make": "audi", "model": "a6", "year": 2019, "mileage": 80199,
+              "fuel_type": "diesel", "body_type": "sedan", "color": "grey",
+              "price": {"1": 28700, "currency": "EUR"}}
+    params.update(param_overrides)
+    return {"title": "Audi A6", "category_id": 29, "params": params}
+
+
+def test_validate_flags_engine_capacity_over_9000():
+    # Autovit rejects engine_capacity >= 9000; the talon-OCR "cm3" fusion
+    # (2967 cm3 -> 29673) produces exactly such values. It must fail fast here
+    # (before the slow Autovit round-trip -> 504), naming the field to fix.
+    missing = tx.validate_for_publish(_publishable_advert(engine_capacity=29673))
+    assert any("engine_capacity" in m for m in missing), missing
+
+
+def test_validate_accepts_realistic_engine_capacity():
+    # A real displacement (2967 cmc) is fine and must not be flagged.
+    missing = tx.validate_for_publish(_publishable_advert(engine_capacity=2967))
+    assert not any("engine_capacity" in m for m in missing)
+    assert missing == []
+
+
+def test_validate_engine_capacity_absent_is_ok():
+    # engine_capacity is optional — absent must not trip the >=9000 guard.
+    missing = tx.validate_for_publish(_publishable_advert())
+    assert not any("engine_capacity" in m for m in missing)
