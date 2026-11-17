@@ -325,7 +325,7 @@ export default function AddEventPage() {
       toast.success(isEdit ? 'Event updated' : 'Event and bonuses created')
       navigate(eventsPath)
     },
-    onError: () => toast.error(isEdit ? 'Failed to update event' : 'Failed to create event'),
+    onError: (e) => toast.error(e instanceof Error ? e.message : isEdit ? 'Failed to update event' : 'Failed to create event'),
   })
 
   const handleSubmit = () => {

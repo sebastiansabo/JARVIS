@@ -282,7 +282,7 @@ function EventsList() {
       queryClient.invalidateQueries({ queryKey: ['hr-events'] })
       queryClient.invalidateQueries({ queryKey: ['hr-summary'] })
     },
-    onError: () => toast.error('Delete failed'),
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Delete failed'),
   })
 
   const allSelected = displayedEvents.length > 0 && displayedEvents.every((e) => selected.includes(e.id))
@@ -615,7 +615,7 @@ function EventDialog({ open, event, onClose }: { open: boolean; event: HrEvent |
       queryClient.invalidateQueries({ queryKey: ['hr-events'] })
       onClose()
     },
-    onError: () => toast.error('Failed to create event'),
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to create event'),
   })
 
   const updateMutation = useMutation({
@@ -625,7 +625,7 @@ function EventDialog({ open, event, onClose }: { open: boolean; event: HrEvent |
       queryClient.invalidateQueries({ queryKey: ['hr-events'] })
       onClose()
     },
-    onError: () => toast.error('Failed to update event'),
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed to update event'),
   })
 
   const handleSave = () => {
