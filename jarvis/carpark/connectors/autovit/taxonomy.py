@@ -540,4 +540,16 @@ def validate_for_publish(advert: Dict[str, Any]) -> List[str]:
         # valid — only an absent key, None, or "" counts as missing.
         if val is None or val == "":
             missing.append(f"params.{req}")
+    # Autovit rejects engine_capacity >= 9000 ("Must be lower than 9000"). No
+    # passenger-car engine is that big, so a value this large is almost always
+    # the talon-OCR "cm3" fusion (2967 cm3 → 29673, see document_ocr). Block it
+    # HERE — before republish_vehicle spends the slow token/photos/create
+    # round-trip that otherwise drifts past DO's ~60s gateway and surfaces as an
+    # opaque 504 — and name the field so the user can fix Capacitate cilindrică.
+    cap = _int(p.get("engine_capacity"))
+    if cap is not None and cap >= 9000:
+        missing.append(
+            "params.engine_capacity (valoare invalidă ≥9000 — "
+            "verifică «Capacitate cilindrică»)"
+        )
     return missing

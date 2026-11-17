@@ -29,7 +29,9 @@ DOCUMENT_PROMPT = (
     "- variant: varianta / versiunea, dacă e distinctă\n"
     "- year_of_manufacture: anul de fabricație ca număr întreg (ex: 2023)\n"
     "- first_registration_date: prima înmatriculare (câmp B) în format YYYY-MM-DD\n"
-    "- engine_displacement_cc: capacitatea cilindrică în cmc, număr întreg (câmp P.1)\n"
+    "- engine_displacement_cc: capacitatea cilindrică în cmc, ca număr întreg, DOAR "
+    "cifrele valorii — NU include cifra '3' din unitatea 'cm3'/'cm³' (ex: pentru "
+    "'2967 cm3' returnează 2967, NU 29673) (câmp P.1)\n"
     "- engine_power_kw: puterea maximă netă în kW, număr întreg (câmp P.2)\n"
     "- fuel_type: combustibilul (câmp P.3), exact una dintre valorile: "
     "petrol, diesel, electric, hybrid, plugin-hybrid, petrol-lpg, petrol-cng, hydrogen\n"
@@ -78,6 +80,18 @@ def parse_document_response(text):
             fields['engine_power_hp'] = round(float(kw) * 1.35962)
         except (ValueError, TypeError):
             pass
+
+    # The talon prints capacity as "<cc> cm3"; the vision model sometimes fuses
+    # the unit's trailing "3" into the number (2967 cm3 → 29673). No passenger
+    # car engine is ≥ 9000 cmc, so recover the real value by dropping that extra
+    # digit — a deterministic backstop to the prompt hardening above (and the
+    # reason Autovit rejected these adverts with "engine_capacity < 9000").
+    cc = fields.get('engine_displacement_cc')
+    try:
+        if cc is not None and int(cc) >= 9000:
+            fields['engine_displacement_cc'] = int(cc) // 10
+    except (ValueError, TypeError):
+        pass
 
     return fields, document_type
 
