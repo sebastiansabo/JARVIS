@@ -62,6 +62,7 @@ import { publishedChannelCount, PUBLISH_CHANNEL_TOTAL } from './publishChannels'
 import { acquisitionProfitInputs } from './profitInputs'
 import { AutofoxSyncModal } from './AutofoxSyncModal'
 import { activeSellingPrice } from './vehicleFormPricing'
+import { saleVatView } from './salePriceVat'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -1808,6 +1809,38 @@ function DetailsTab({ vehicle: v, photos, onPhotoClick, canEdit, canViewFinance,
                   )}
                 </div>
               )}
+              {(() => {
+                // Ex-VAT (net) price + VAT status under the gross Preț. Net is
+                // shown only in NORMAL regime; MARGIN cars have no separable VAT
+                // so they get a "Fără TVA (marjă)" label instead of a figure.
+                const vat = saleVatView(displayPrice, {
+                  priceIncludesVat: v.price_includes_vat,
+                  vatDeductible: v.vat_deductible,
+                  vatRate: v.purchase_vat_rate,
+                })
+                if (vat.regime === 'MARGIN') {
+                  return <div className="text-sm text-muted-foreground mt-1">Fără TVA (regim marjă)</div>
+                }
+                if (vat.includesVat && vat.netEur != null) {
+                  return (
+                    <div className="text-sm text-muted-foreground mt-1">
+                      fără TVA:{' '}
+                      <span className="font-medium text-foreground tabular-nums">
+                        <CurrencyDisplay value={vat.netEur} currency={v.price_currency} />
+                      </span>{' '}· {vat.statusLabel}
+                    </div>
+                  )
+                }
+                if (!vat.includesVat && vat.grossEur != null) {
+                  return (
+                    <div className="text-sm text-muted-foreground mt-1">
+                      preț fără TVA · cu TVA:{' '}
+                      <span className="tabular-nums"><CurrencyDisplay value={vat.grossEur} currency={v.price_currency} /></span>
+                    </div>
+                  )
+                }
+                return <div className="text-sm text-muted-foreground mt-1">{vat.statusLabel}</div>
+              })()}
             </div>
           )}
           <Separator />
