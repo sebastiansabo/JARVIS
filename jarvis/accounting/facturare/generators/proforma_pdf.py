@@ -279,7 +279,14 @@ class ProformaPdfRenderer:
         return buf.getvalue()
 
     def _render_storno_page(self, c: canvas.Canvas, inv_no: int, items: list[OrderLine]):
-        """Draw one storno page with multiple reversed invoice item blocks."""
+        """Draw a storno page listing one car's reversed advances.
+
+        Paginates when the advance blocks + total would overflow A4 so the PRICE
+        total and signatory are always on a visible page (a car with 3+ reversed
+        advances used to push them below the bottom edge → invisible). All items
+        are the same car, so the model/colour/VIN/comanda block prints once; later
+        advances show only the Ref + Kurs + amount.
+        """
         W, H = A4
         LM = 18 * mm
         RM = W - 18 * mm
@@ -341,39 +348,51 @@ class ProformaPdfRenderer:
         y = min(yl, yr) - 4 * mm
 
         # ── Table header ──
-        c.setFont("Helvetica-Bold", 9.5)
-        c.setLineWidth(0.4)
-        c.line(LM, y + 1, RM, y + 1)
-        for txt, x in [("Denumirea produselor", LM), ("U.m.", LM + 78*mm), ("Cantitatea", LM + 92*mm),
-                       ("Pret unitar", LM + 115*mm), ("Valoarea", LM + 140*mm), ("Valoarea TVA", LM + 160*mm)]:
-            c.drawString(x, y - 4*mm, txt)
-        c.drawString(LM, y - 8*mm, "sau a serviciilor")
-        for txt, x in [("Description", LM), ("Quantity", LM + 92*mm), ("Unit price", LM + 115*mm),
-                       ("Price", LM + 140*mm), ("TVA/ VAT", LM + 160*mm)]:
-            c.drawString(x, y - 12.5*mm, txt)
-        for txt, x in [("EUR", LM + 115*mm), ("EUR", LM + 140*mm), ("EUR", LM + 160*mm)]:
-            c.drawString(x, y - 17*mm, txt)
-        c.line(LM, y - 19*mm, RM, y - 19*mm)
-        y -= 24 * mm
+        y = self._draw_storno_table_header(c, y)
 
         # ── One item block per reversed invoice ──
+        # Reserve exactly the footer's height (+ a bottom margin) so the
+        # Scutire/note/PRICE/signatory block always lands on a visible page —
+        # the reserve is note-aware because `note` is user-editable free text and
+        # may span several lines. We break to a continuation page before any
+        # advance block that would cross into the reserve.
+        note_line_count = len(self.note.split("\n")) if self.note else 0
+        note_h = (8 + 4.5 * note_line_count) if note_line_count else 0  # gap + lines
+        footer_h = 9.7 + note_h + 12 + 14  # Scutire+Livrare + note + PRICE + signatory
+        FOOTER_SPACE = (footer_h + 10) * mm  # + bottom margin
+        car_label = ""
+        if items:
+            car_label = (items[0].model or "").upper()
+            if items[0].vin:
+                car_label += f" · VIN: {items[0].vin}"
         c.setFont("Helvetica", 9.5)
         total_eur = 0.0
         for i, line in enumerate(items):
-            if i > 0:
-                y -= 3 * mm
-            item_y = y
             desc = ["STORNO ADVANCE"]
             if line.storno_description:
                 desc.append(line.storno_description)
-            desc.append((line.model or "").upper())
-            desc.append(f"Culoare: {line.culoare}")
-            if line.vin:
-                desc.append(f"VIN: {line.vin}")
-            comanda_text = f"Comanda: {line.comanda}"
-            if line.anexa_ref:
-                comanda_text += f" / {line.anexa_ref}"
-            desc.append(comanda_text)
+            # Car details (model/colour/VIN/comanda) only on the first advance —
+            # every item on this page is the same vehicle.
+            if i == 0:
+                desc.append((line.model or "").upper())
+                desc.append(f"Culoare: {line.culoare}")
+                if line.vin:
+                    desc.append(f"VIN: {line.vin}")
+                comanda_text = f"Comanda: {line.comanda}"
+                if line.anexa_ref:
+                    comanda_text += f" / {line.anexa_ref}"
+                desc.append(comanda_text)
+
+            gap = 3 * mm if i > 0 else 0
+            block_h = gap + len(desc) * 4.7 * mm + (4.7 * mm if line.kurs else 0)
+            if y - block_h < FOOTER_SPACE:
+                c.showPage()
+                y = self._draw_storno_continuation_header(c, inv_no, car_label)
+                y = self._draw_storno_table_header(c, y)
+                c.setFont("Helvetica", 9.5)
+
+            y -= gap
+            item_y = y
 
             c.drawString(LM + 78*mm, item_y, "buc")
             c.drawRightString(LM + 105*mm, item_y, "-1")
@@ -396,6 +415,7 @@ class ProformaPdfRenderer:
             y = yl
 
         # ── Footer text ──
+        c.setFont("Helvetica", 9.5)
         y -= 5 * mm
         c.drawString(LM, y, "Scutire conform art. 138 din Directiva 2006/112/CE")
         y -= 4.7 * mm
@@ -418,6 +438,42 @@ class ProformaPdfRenderer:
         y -= 14 * mm
         c.setFont("Helvetica", 9.5)
         c.drawString(LM, y, f"Intocmit de {self.intocmit_de}")
+
+    def _draw_storno_table_header(self, c: canvas.Canvas, y: float) -> float:
+        """Draw the storno line-item table header. Returns y after the header."""
+        LM = 18 * mm
+        RM = A4[0] - 18 * mm
+        c.setFont("Helvetica-Bold", 9.5)
+        c.setLineWidth(0.4)
+        c.line(LM, y + 1, RM, y + 1)
+        for txt, x in [("Denumirea produselor", LM), ("U.m.", LM + 78*mm), ("Cantitatea", LM + 92*mm),
+                       ("Pret unitar", LM + 115*mm), ("Valoarea", LM + 140*mm), ("Valoarea TVA", LM + 160*mm)]:
+            c.drawString(x, y - 4*mm, txt)
+        c.drawString(LM, y - 8*mm, "sau a serviciilor")
+        for txt, x in [("Description", LM), ("Quantity", LM + 92*mm), ("Unit price", LM + 115*mm),
+                       ("Price", LM + 140*mm), ("TVA/ VAT", LM + 160*mm)]:
+            c.drawString(x, y - 12.5*mm, txt)
+        for txt, x in [("EUR", LM + 115*mm), ("EUR", LM + 140*mm), ("EUR", LM + 160*mm)]:
+            c.drawString(x, y - 17*mm, txt)
+        c.line(LM, y - 19*mm, RM, y - 19*mm)
+        return y - 24 * mm
+
+    def _draw_storno_continuation_header(self, c: canvas.Canvas, inv_no: int,
+                                         car_label: str = "") -> float:
+        """Light header for storno overflow pages (title + 'No:X (cont.)' + car). Returns y."""
+        H = A4[1]
+        LM = 18 * mm
+        y = H - 20 * mm
+        c.setFont("Helvetica-Bold", 10)
+        for tl in self.title_lines:
+            c.drawString(LM, y, tl)
+            y -= 5 * mm
+        c.setFont("Helvetica", 9)
+        c.drawString(LM, y, f"No:{inv_no} (cont.)")
+        if car_label:
+            y -= 4.5 * mm
+            c.drawString(LM, y, car_label)
+        return y - 7 * mm
 
     def _draw_header(self, c: canvas.Canvas, inv_no: int, date_str: str | None = None):
         """Draw shared header block: logo, title, No:, date, supplier/customer. Returns y position."""
