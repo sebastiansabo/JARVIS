@@ -12,6 +12,7 @@ from carpark.repositories.photo_repository import PhotoRepository
 from carpark.repositories.cost_repository import CostRepository
 from carpark.repositories.cost_line_repository import CostLineRepository
 from carpark.repositories.revenue_repository import RevenueRepository
+from carpark.repositories.document_repository import DocumentRepository
 
 logger = logging.getLogger('jarvis.carpark')
 
@@ -83,6 +84,7 @@ class VehicleService:
         self._cost_repo = CostRepository()
         self._cost_line_repo = CostLineRepository()
         self._revenue_repo = RevenueRepository()
+        self._document_repo = DocumentRepository()
 
     # ── CATALOG ──
 
@@ -402,6 +404,51 @@ class VehicleService:
 
     def link_cost_invoice(self, cost_id: int, invoice_id: int = None) -> bool:
         return self._cost_line_repo.link_cost_invoice(cost_id, invoice_id)
+
+    # ── DOCUMENT -> COST TRANSFER ──
+
+    # Fields copied verbatim from the caller's `data` onto the created cost
+    # row (everything else — cost_type, cost_line_id, source_document_id —
+    # is derived/overridden below).
+    _TRANSFER_COST_FIELDS = (
+        'amount', 'currency', 'vat_rate', 'vat_amount', 'invoice_number',
+        'invoice_date', 'invoice_value', 'supplier_name', 'description', 'date',
+    )
+
+    def transfer_document_to_cost(self, vehicle_id: int, doc_id: int,
+                                  data: Dict[str, Any],
+                                  created_by: int = None) -> Dict[str, Any]:
+        """Turn an uploaded vehicle document (e.g. a purchase invoice) into a
+        cost entry linked back to it via `source_document_id`.
+
+        Finds or creates a cost line for the chosen cost_type (default
+        'other') and inserts the cost under it. Idempotent: raises
+        ValueError if the document doesn't belong to this vehicle, or if it
+        has already been transferred — the partial unique index on
+        carpark_vehicle_costs.source_document_id (Task 1) is the race-safe
+        backstop behind this pre-check.
+        """
+        doc = self._document_repo.get(doc_id)
+        if not doc or doc.get('vehicle_id') != vehicle_id:
+            raise ValueError('document not found for this vehicle')
+
+        if self._cost_repo.find_by_source_document(doc_id):
+            raise ValueError('already transferred')
+
+        cost_type = data.get('cost_type') or 'other'
+        currency = data.get('currency') or 'RON'
+        line_id = self._cost_line_repo.get_or_create_for_type(
+            vehicle_id, cost_type, currency, created_by)
+
+        payload = {k: data[k] for k in self._TRANSFER_COST_FIELDS if k in data}
+        payload['cost_type'] = cost_type
+        payload['cost_line_id'] = line_id
+        payload['source_document_id'] = doc_id
+
+        cost = self._cost_repo.create(vehicle_id, payload, created_by=created_by)
+        logger.info(f'Document transferred to cost: doc={doc_id} cost={cost["id"]} '
+                     f'vehicle={vehicle_id} line={line_id} type={cost_type}')
+        return cost
 
     # ── REVENUES ──
 

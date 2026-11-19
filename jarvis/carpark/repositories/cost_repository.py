@@ -35,6 +35,16 @@ class CostRepository(BaseRepository):
             'SELECT * FROM carpark_vehicle_costs WHERE id = %s', (cost_id,)
         )
 
+    def find_by_source_document(self, doc_id: int) -> Optional[Dict[str, Any]]:
+        """Existing cost row (if any) already linked to this source
+        document. Used as the application-level dedup pre-check for the
+        invoice-document -> cost transfer flow; the partial unique index
+        `uq_vcc_source_document` is the race-safe backstop."""
+        return self.query_one(
+            'SELECT id FROM carpark_vehicle_costs WHERE source_document_id = %s LIMIT 1',
+            (doc_id,)
+        )
+
     def create(self, vehicle_id: int, data: Dict[str, Any],
                created_by: int = None) -> Dict[str, Any]:
         """Create a cost record for a vehicle."""

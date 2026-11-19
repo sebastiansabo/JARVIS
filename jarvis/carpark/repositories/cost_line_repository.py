@@ -61,6 +61,24 @@ class CostLineRepository(BaseRepository):
             return cursor.fetchone()['id']
         return self.execute_many(_work)
 
+    def get_or_create_for_type(self, vehicle_id: int, cost_type: str,
+                               currency: str, created_by: int = None) -> int:
+        """Return the id of an existing cost line for (vehicle_id, cost_type)
+        — picking a stable one (lowest id) when more than one exists — or
+        create a new line (planned_amount=0, the given currency) and return
+        its new id. Used by the invoice-document -> cost transfer flow so
+        each transferred invoice lands under one line per cost_type instead
+        of spawning a fresh line per document."""
+        existing = self.query_one('''
+            SELECT id FROM carpark_vehicle_cost_lines
+            WHERE vehicle_id = %s AND cost_type = %s
+            ORDER BY id LIMIT 1
+        ''', (vehicle_id, cost_type))
+        if existing:
+            return existing['id']
+        return self.create_line(vehicle_id, cost_type, planned_amount=0,
+                                currency=currency, created_by=created_by)
+
     def update_line(self, line_id: int, **kwargs) -> bool:
         allowed = {'cost_type', 'description', 'planned_amount', 'currency', 'notes'}
         updates = []

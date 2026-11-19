@@ -22,6 +22,7 @@ Invocation:
 import pytest
 
 from carpark.repositories.cost_repository import CostRepository, COST_FIELDS
+from carpark.services.vehicle_service import VehicleService
 
 
 def test_source_document_id_in_cost_fields():
@@ -37,3 +38,24 @@ def test_source_document_id_unique_per_document(require_real_db, invoice_transfe
     CostRepository().create(seed['vehicle_id'], {'cost_type': 'other', 'amount': 10, 'source_document_id': seed['doc_id']})
     with pytest.raises(Exception):  # unique_violation
         CostRepository().create(seed['vehicle_id'], {'cost_type': 'other', 'amount': 20, 'source_document_id': seed['doc_id']})
+
+
+# ── Task 4: VehicleService.transfer_document_to_cost ──────────────────────
+
+
+def test_transfer_creates_linked_cost_under_line(require_real_db, invoice_transfer_seed):
+    seed = invoice_transfer_seed
+    cost = VehicleService().transfer_document_to_cost(seed['vehicle_id'], seed['doc_id'],
+        {'cost_type': 'transport', 'amount': 1000, 'vat_rate': 19, 'vat_amount': 190,
+         'invoice_number': 'F1', 'supplier_name': 'AUTO', 'currency': 'RON', 'date': '2026-11-10'},
+        created_by=None)
+    assert cost['source_document_id'] == seed['doc_id']
+    assert cost['cost_line_id'] is not None and cost['cost_type'] == 'transport'
+
+
+def test_second_transfer_of_same_document_is_rejected(require_real_db, invoice_transfer_seed):
+    seed = invoice_transfer_seed
+    svc = VehicleService()
+    svc.transfer_document_to_cost(seed['vehicle_id'], seed['doc_id'], {'cost_type': 'other', 'amount': 5}, None)
+    with pytest.raises(ValueError):
+        svc.transfer_document_to_cost(seed['vehicle_id'], seed['doc_id'], {'cost_type': 'other', 'amount': 9}, None)
