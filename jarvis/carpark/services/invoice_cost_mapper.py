@@ -31,7 +31,10 @@ def map_parsed_invoice_to_cost(parsed: dict, default_cost_type: str = 'other', d
         - date: str | None (defaults to invoice_date)
     """
     gross = parsed.get('invoice_value')
-    currency = parsed.get('currency', 'RON')
+    # `or 'RON'` (not a dict default) so an explicit None from the parser's
+    # JSON-decode-failure path still falls back — else NULL persists to
+    # carpark_vehicle_costs.currency.
+    currency = parsed.get('currency') or 'RON'
     invoice_date = parsed.get('invoice_date')
     supplier_name = parsed.get('supplier')
     description = parsed.get('description')
@@ -46,8 +49,12 @@ def map_parsed_invoice_to_cost(parsed: dict, default_cost_type: str = 'other', d
             net = round(gross / (1 + default_vat_rate / 100), 2)
             vat_amount = round(gross - net, 2)
         except (ValueError, TypeError):
+            # Non-numeric gross (e.g. 'N/A' from the parser's failure path) must
+            # not leak into invoice_value — it is a numeric DB column. Degrade
+            # all three (amount, vat_amount, invoice_value) to None.
             net = None
             vat_amount = None
+            gross = None
     else:
         net = None
         vat_amount = None
