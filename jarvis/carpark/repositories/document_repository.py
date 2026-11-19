@@ -14,9 +14,21 @@ class DocumentRepository(BaseRepository):
     """Data access for vehicle document records."""
 
     def list_for_vehicle(self, vehicle_id: int) -> List[Dict[str, Any]]:
-        """All documents for a vehicle, most recently uploaded first."""
+        """All documents for a vehicle, most recently uploaded first.
+
+        Each row carries `transferred_cost_id` (Task 5 of the invoice->cost
+        feature): the id of the carpark_vehicle_costs row created from this
+        document via transfer-to-cost, or None if it hasn't been
+        transferred — lets the UI show an "already transferred" badge
+        instead of re-offering the action on a document already linked to
+        a cost.
+        """
         return self.query_all('''
-            SELECT * FROM carpark_vehicle_documents
+            SELECT *,
+                   (SELECT c.id FROM carpark_vehicle_costs c
+                    WHERE c.source_document_id = carpark_vehicle_documents.id
+                    LIMIT 1) AS transferred_cost_id
+            FROM carpark_vehicle_documents
             WHERE vehicle_id = %s
             ORDER BY upload_date DESC, id DESC
         ''', (vehicle_id,))
