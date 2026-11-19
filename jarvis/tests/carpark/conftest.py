@@ -228,3 +228,62 @@ def dispo_seed():
             f'teardown left {remaining} orphan carpark_vehicles row(s) for '
             f'company_id={TEST_COMPANY_ID}'
         )
+
+
+@pytest.fixture
+def invoice_transfer_seed():
+    """Seed one vehicle + one 'factura_achizitie' document under
+    TEST_COMPANY_ID, for invoice->cost transfer tests (carpark_vehicle_costs
+    .source_document_id).
+
+    Yields {'vehicle_id': id, 'doc_id': id}.
+
+    Teardown deletes the carpark_vehicles row for TEST_COMPANY_ID; the
+    document row (and any cost rows created mid-test referencing it) cascade
+    automatically via `vehicle_id ... REFERENCES carpark_vehicles(id) ON
+    DELETE CASCADE`, mirroring the `dispo_seed` teardown pattern above.
+    """
+    if not REAL_DB_AVAILABLE:
+        pytest.skip(
+            'Real Postgres not available (DATABASE_URL unreachable or psycopg2 '
+            'mocked) — skipping carpark Dispo DB-backed test'
+        )
+
+    conn = get_db()
+    conn.autocommit = False
+    cur = get_cursor(conn)
+    ids = {}
+    try:
+        # Defensive: clean up any leftover rows from a previously crashed run.
+        cur.execute('DELETE FROM carpark_vehicles WHERE company_id = %s', (TEST_COMPANY_ID,))
+
+        cur.execute('''
+            INSERT INTO carpark_vehicles (vin, brand, model, status, company_id)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        ''', ('TESTINVXFER000001', 'TestBrand', 'TestModelInv', 'READY_FOR_SALE',
+              TEST_COMPANY_ID))
+        ids['vehicle_id'] = cur.fetchone()['id']
+
+        cur.execute('''
+            INSERT INTO carpark_vehicle_documents (vehicle_id, document_type, title)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        ''', (ids['vehicle_id'], 'factura_achizitie', 'Test Factură achiziție'))
+        ids['doc_id'] = cur.fetchone()['id']
+
+        conn.commit()
+        yield ids
+    finally:
+        try:
+            cur.execute('DELETE FROM carpark_vehicles WHERE company_id = %s', (TEST_COMPANY_ID,))
+            conn.commit()
+            cur.execute('SELECT COUNT(*) AS cnt FROM carpark_vehicles WHERE company_id = %s',
+                        (TEST_COMPANY_ID,))
+            remaining = cur.fetchone()['cnt']
+        finally:
+            release_db(conn)
+        assert remaining == 0, (
+            f'teardown left {remaining} orphan carpark_vehicles row(s) for '
+            f'company_id={TEST_COMPANY_ID}'
+        )

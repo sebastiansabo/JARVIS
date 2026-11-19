@@ -430,6 +430,21 @@ def create_schema_carpark(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcd_vehicle ON carpark_vehicle_documents(vehicle_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcd_type ON carpark_vehicle_documents(document_type)')
 
+    # Link a cost back to the document it was transferred from (invoice ->
+    # cost). Nullable + ON DELETE SET NULL: deleting the source document
+    # must not delete the cost it produced. Must come after the
+    # carpark_vehicle_documents CREATE TABLE above, since the FK references it.
+    cursor.execute('''
+        ALTER TABLE carpark_vehicle_costs
+            ADD COLUMN IF NOT EXISTS source_document_id INTEGER
+            REFERENCES carpark_vehicle_documents(id) ON DELETE SET NULL
+    ''')
+    cursor.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_vcc_source_document
+        ON carpark_vehicle_costs(source_document_id)
+        WHERE source_document_id IS NOT NULL
+    ''')
+
     # ── Document templates ──
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS carpark_document_templates (

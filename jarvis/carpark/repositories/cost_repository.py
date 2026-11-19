@@ -7,7 +7,7 @@ COST_FIELDS = (
     'cost_type', 'description', 'amount', 'currency', 'vat_rate', 'vat_amount',
     'exchange_rate_eur', 'invoice_number', 'invoice_date', 'invoice_value',
     'invoice_id', 'supplier_name', 'radio_cost_type', 'document_file',
-    'observation', 'date', 'cost_line_id',
+    'observation', 'date', 'cost_line_id', 'source_document_id',
 )
 
 COST_UPDATABLE = set(COST_FIELDS)
