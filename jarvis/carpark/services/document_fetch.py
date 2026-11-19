@@ -35,21 +35,54 @@ from core.services import spaces_service
 DEFAULT_FILENAME = 'invoice.pdf'
 
 
+# CGNAT / shared address space (RFC 6598). None of the six `ipaddress`
+# is_* flags cover it, so we check membership explicitly.
+_CGNAT_NET = ipaddress.ip_network('100.64.0.0/10')
+
+
 def _assert_public_http_url(url: str) -> None:
     """Raise ValueError unless `url` is an http(s) URL whose host resolves
     exclusively to public (routable, non-internal) IP addresses.
 
     Blocks SSRF: cloud-metadata (link-local 169.254.0.0/16), loopback,
-    RFC1918 private ranges, reserved/multicast/unspecified addresses. ALL
-    resolved addresses must be public — a host that resolves to even one
-    internal IP is rejected (defends against DNS rebinding returning a mix).
+    RFC1918 private ranges, CGNAT (100.64.0.0/10), reserved/multicast/
+    unspecified addresses. ALL resolved addresses must be public — a host that
+    resolves to even one internal IP is rejected.
+
+    Defense-in-depth against *parser divergence*: `urllib.parse` and the
+    `requests`/`urllib3` URL parser disagree on where the authority ends when
+    the raw string contains a backslash, whitespace/control char, or userinfo
+    (`user@host`). e.g. `http://169.254.169.254\\@good.example.com/` — urlparse
+    reads the host as `good.example.com` (which we'd validate as public) while
+    `requests` actually connects to `169.254.169.254`. Rather than rely on the
+    two parsers agreeing, we reject these ambiguous inputs outright up front —
+    they never appear in legitimate document URLs.
     """
+    # 1. Reject chars that make urlparse and urllib3 disagree, BEFORE parsing:
+    #    a backslash, or any whitespace/control char (incl. tab/newline/DEL).
+    for ch in url:
+        if ch == '\\' or ord(ch) < 0x21 or ord(ch) == 0x7f:
+            raise ValueError('malformed URL')
+
     parsed = urlparse(url)
+
+    # 2. Reject userinfo in the authority — `user@host` is the core confusion
+    #    vector and never present in a real document/invoice URL.
+    if parsed.username is not None or '@' in parsed.netloc:
+        raise ValueError('malformed URL')
+
     if parsed.scheme not in ('http', 'https') or not parsed.hostname:
         raise ValueError('refusing to fetch non-public URL')
 
     host = parsed.hostname.rstrip('.').lower()
 
+    # 3. Resolve and reject any non-public address.
+    #    KNOWN, TRACKED residual (do NOT mark resolved): this validates the
+    #    name once here, then `requests` re-resolves it at connect time — a
+    #    DNS-rebinding window remains. Fully closing it needs pinning the
+    #    connection to the validated IP, which conflicts with https presigned
+    #    signatures, so it's out of scope for this helper and carried in the
+    #    ledger into Task 5.
     try:
         infos = socket.getaddrinfo(host, None)
     except Exception as exc:  # unresolvable host, etc.
@@ -58,7 +91,8 @@ def _assert_public_http_url(url: str) -> None:
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
         if (ip.is_private or ip.is_loopback or ip.is_link_local
-                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified
+                or ip in _CGNAT_NET):
             raise ValueError('refusing to fetch non-public URL')
 
 

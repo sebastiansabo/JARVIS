@@ -173,3 +173,66 @@ def test_redirect_is_refused(monkeypatch):
 
     with pytest.raises(ValueError):
         document_fetch.fetch_document_bytes({'file_url': 'https://x/redirects.pdf'})
+
+
+# ---------------------------------------------------------------------------
+# SSRF bypass fix (round 1) — parser-divergence / ambiguous-authority inputs.
+# urlparse and requests/urllib3 disagree on the authority for these strings, so
+# the guard rejects them outright. requests.get is wired to fail if ever called.
+# ---------------------------------------------------------------------------
+
+def _forbid_fetch(monkeypatch):
+    def _must_not_fetch(*a, **k):
+        raise AssertionError('requests.get must NOT be called for a rejected URL')
+    monkeypatch.setattr(document_fetch.requests, 'get', _must_not_fetch)
+    # getaddrinfo should also never be reached for pre-parse rejections, but wire
+    # it to a PUBLIC ip so that if the string ever parsed to a "clean" host the
+    # only thing that could still block the request is the ambiguity check itself.
+    monkeypatch.setattr(
+        document_fetch.socket, 'getaddrinfo',
+        lambda host, port, *a, **k: [(2, 1, 6, '', (PUBLIC_IP, 0))])
+
+
+def test_backslash_authority_is_rejected(monkeypatch):
+    # urlparse sees host 'good.example.com' (public) but requests connects to
+    # 169.254.169.254 (metadata). The backslash makes them diverge -> reject.
+    _forbid_fetch(monkeypatch)
+    with pytest.raises(ValueError):
+        document_fetch.fetch_document_bytes(
+            {'file_url': 'http://169.254.169.254\\@good.example.com/x.pdf'})
+
+
+@pytest.mark.parametrize('url', [
+    'http://user@169.254.169.254/x',
+    'http://good.example.com@169.254.169.254/x',
+])
+def test_userinfo_url_is_rejected(monkeypatch, url):
+    _forbid_fetch(monkeypatch)
+    with pytest.raises(ValueError):
+        document_fetch.fetch_document_bytes({'file_url': url})
+
+
+@pytest.mark.parametrize('url', [
+    'http://good.example.com/x\tpath.pdf',
+    'http://good.example.com/x\npath.pdf',
+    'http://good.exa mple.com/x.pdf',
+])
+def test_whitespace_control_char_url_rejected(monkeypatch, url):
+    _forbid_fetch(monkeypatch)
+    with pytest.raises(ValueError):
+        document_fetch.fetch_document_bytes({'file_url': url})
+
+
+def test_cgnat_ip_blocked(monkeypatch):
+    # RFC 6598 100.64.0.0/10 shared address space — not covered by the six
+    # ipaddress is_* flags, so checked explicitly.
+    monkeypatch.setattr(
+        document_fetch.socket, 'getaddrinfo',
+        lambda host, port, *a, **k: [(2, 1, 6, '', ('100.64.0.1', 0))])
+
+    def _must_not_fetch(*a, **k):
+        raise AssertionError('requests.get must NOT be called for a CGNAT host')
+    monkeypatch.setattr(document_fetch.requests, 'get', _must_not_fetch)
+
+    with pytest.raises(ValueError):
+        document_fetch.fetch_document_bytes({'file_url': 'http://cgnat.test/x.pdf'})
