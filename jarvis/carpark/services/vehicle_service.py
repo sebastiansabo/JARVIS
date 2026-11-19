@@ -442,6 +442,7 @@ class VehicleService:
 
         payload = {k: data[k] for k in self._TRANSFER_COST_FIELDS if k in data}
         payload['cost_type'] = cost_type
+        payload['currency'] = currency  # same normalization the cost line got
         payload['cost_line_id'] = line_id
         payload['source_document_id'] = doc_id
 

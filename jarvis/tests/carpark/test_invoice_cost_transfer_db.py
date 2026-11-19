@@ -22,6 +22,8 @@ Invocation:
 import pytest
 
 from carpark.repositories.cost_repository import CostRepository, COST_FIELDS
+from carpark.repositories.cost_line_repository import CostLineRepository
+from carpark.repositories.document_repository import DocumentRepository
 from carpark.services.vehicle_service import VehicleService
 
 
@@ -59,3 +61,30 @@ def test_second_transfer_of_same_document_is_rejected(require_real_db, invoice_t
     svc.transfer_document_to_cost(seed['vehicle_id'], seed['doc_id'], {'cost_type': 'other', 'amount': 5}, None)
     with pytest.raises(ValueError):
         svc.transfer_document_to_cost(seed['vehicle_id'], seed['doc_id'], {'cost_type': 'other', 'amount': 9}, None)
+
+
+def test_second_transfer_reuses_existing_cost_line(require_real_db, invoice_transfer_seed):
+    """Two different documents of the same cost_type on one vehicle land under
+    the SAME cost line — exercises the find/reuse branch of
+    get_or_create_for_type (the 'idempotent' half of find-or-create). The
+    second document references the same vehicle_id, so the fixture's
+    vehicle-delete teardown cascades it away — no extra cleanup needed."""
+    seed = invoice_transfer_seed
+    vehicle_id = seed['vehicle_id']
+    svc = VehicleService()
+
+    # A second invoice document on the SAME vehicle.
+    doc2 = DocumentRepository().create(vehicle_id, {
+        'document_type': 'factura_achizitie', 'title': 'Test Factură achiziție 2'})
+
+    cost1 = svc.transfer_document_to_cost(
+        vehicle_id, seed['doc_id'], {'cost_type': 'transport', 'amount': 100}, None)
+    cost2 = svc.transfer_document_to_cost(
+        vehicle_id, doc2['id'], {'cost_type': 'transport', 'amount': 200}, None)
+
+    # Reuse branch: both costs hang off one shared line (not two).
+    assert cost1['cost_line_id'] == cost2['cost_line_id']
+
+    transport_lines = [l for l in CostLineRepository().get_lines_by_vehicle(vehicle_id)
+                       if l['cost_type'] == 'transport']
+    assert len(transport_lines) == 1
