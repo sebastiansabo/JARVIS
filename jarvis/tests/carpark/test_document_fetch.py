@@ -236,3 +236,20 @@ def test_cgnat_ip_blocked(monkeypatch):
 
     with pytest.raises(ValueError):
         document_fetch.fetch_document_bytes({'file_url': 'http://cgnat.test/x.pdf'})
+
+
+@pytest.mark.parametrize('mapped_ip', ['::ffff:100.64.0.1', '::ffff:169.254.169.254'])
+def test_ipv4_mapped_ipv6_cgnat_blocked(monkeypatch, mapped_ip):
+    # An IPv4-mapped IPv6 literal must be unwrapped to its embedded IPv4 before
+    # the checks, else ::ffff:100.64.0.1 (CGNAT) slips past the IPv4-only
+    # membership test (`v6 in v4_net` is silently False).
+    monkeypatch.setattr(
+        document_fetch.socket, 'getaddrinfo',
+        lambda host, port, *a, **k: [(10, 1, 6, '', (mapped_ip, 0, 0, 0))])
+
+    def _must_not_fetch(*a, **k):
+        raise AssertionError('requests.get must NOT be called for a mapped-IPv6 host')
+    monkeypatch.setattr(document_fetch.requests, 'get', _must_not_fetch)
+
+    with pytest.raises(ValueError):
+        document_fetch.fetch_document_bytes({'file_url': 'http://mapped.test/x.pdf'})

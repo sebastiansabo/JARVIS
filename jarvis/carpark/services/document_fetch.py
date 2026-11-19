@@ -90,6 +90,14 @@ def _assert_public_http_url(url: str) -> None:
 
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
+        # Unwrap IPv4-mapped IPv6 (::ffff:a.b.c.d) to its embedded IPv4 so the
+        # checks are representation-agnostic. The is_* flags already delegate
+        # for mapped addresses, but the hand-rolled CGNAT membership below is
+        # version-specific (`v6 in v4_net` is silently False), so an attacker
+        # could otherwise smuggle 100.64.0.0/10 past us as ::ffff:100.64.0.1.
+        mapped = getattr(ip, 'ipv4_mapped', None)
+        if mapped is not None:
+            ip = mapped
         if (ip.is_private or ip.is_loopback or ip.is_link_local
                 or ip.is_reserved or ip.is_multicast or ip.is_unspecified
                 or ip in _CGNAT_NET):
