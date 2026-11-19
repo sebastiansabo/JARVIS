@@ -14,6 +14,8 @@ import type {
   TransferDestination,
   TransferOut,
   TransferBody,
+  CostPrefill,
+  VehicleCost,
 } from '../types/carpark'
 
 // Query-string params shared by getSummary and exportUrl: every non-empty
@@ -161,6 +163,23 @@ export const carparkDispoApi = {
 
   deleteDocument: (docId: number) =>
     api.delete<{ success: boolean }>(`/api/carpark/documents/${docId}`),
+
+  // Best-effort parse of an invoice document into cost-prefill fields for
+  // the create-cost dialog; never errors — a failed parse still 200s with
+  // cost_prefill: null + reason (see parse_invoice_document in
+  // carpark/routes/documents.py).
+  parseDocumentInvoice: (vehicleId: number, docId: number) =>
+    api.post<{ cost_prefill: CostPrefill | null; reason?: string }>(
+      `/api/carpark/vehicles/${vehicleId}/documents/${docId}/parse-invoice`,
+    ),
+
+  // Persists the user-confirmed (possibly edited) cost-prefill fields as a
+  // VehicleCost linked back to this document.
+  transferDocumentToCost: (vehicleId: number, docId: number, body: Record<string, unknown>) =>
+    api.post<{ cost: VehicleCost }>(
+      `/api/carpark/vehicles/${vehicleId}/documents/${docId}/transfer-to-cost`,
+      body,
+    ),
 
   getChecklist: (vehicleId: number) =>
     api.get<DocumentChecklist>(`/api/carpark/vehicles/${vehicleId}/documents/checklist`),

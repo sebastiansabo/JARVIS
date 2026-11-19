@@ -301,6 +301,24 @@ export type CostType =
 export type RevenueType =
   | 'sale' | 'rental' | 'lease' | 'commission' | 'refund' | 'other'
 
+// Best-effort fields extracted from an invoice document by
+// POST .../documents/:docId/parse-invoice, for prefilling the create-cost
+// dialog. Mirrors carpark/services/invoice_cost_mapper.map_parsed_invoice_to_cost's
+// output shape — all fields nullable since parsing is best-effort.
+export interface CostPrefill {
+  cost_type: CostType
+  amount: number | null
+  currency: string
+  vat_rate: number
+  vat_amount: number | null
+  invoice_number: string | null
+  invoice_date: string | null
+  invoice_value: number | null
+  supplier_name: string | null
+  description: string | null
+  date: string | null
+}
+
 export interface VehicleCostLine {
   id: number
   vehicle_id: number
@@ -1002,7 +1020,7 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   contract_achizitie: 'Contract achiziție',
   civ: 'CIV',
   talon: 'Talon',
-  factura_achizitie: 'Factură achiziție',
+  factura_achizitie: 'Factură',
   contract_vanzare: 'Contract vânzare',
   factura_vanzare: 'Factură vânzare',
   pv_livrare: 'PV livrare',
@@ -1011,8 +1029,19 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   itp: 'ITP',
   mandat: 'Mandat',
   altele: 'Altele',
-  factura_transfer: 'Factură transfer',
+  factura_transfer: 'Factură internă',
   garantie: 'Certificat garanție',
+}
+
+// Document types that carry an invoice body eligible for the parse-invoice /
+// transfer-to-cost flow (invoice->cost feature, Task 5/6) — must match the
+// backend's INVOICE_DOCUMENT_TYPES in carpark/routes/documents.py exactly.
+export const INVOICE_DOCUMENT_TYPES: readonly DocumentType[] = [
+  'factura_achizitie', 'factura_vanzare', 'factura_transfer',
+]
+
+export function isInvoiceDocumentType(t: string): boolean {
+  return (INVOICE_DOCUMENT_TYPES as readonly string[]).includes(t)
 }
 
 // ── Sale documents ("Documente vânzare") ────────────────────────────────
@@ -1233,6 +1262,10 @@ export interface DispoDocument {
   uploaded_by: number | null
   upload_date: string
   created_at: string
+  // Set once this invoice document has been transferred into a VehicleCost
+  // via transfer-to-cost (Task 5/6 of the invoice->cost feature); null/absent
+  // for non-invoice documents or invoices not yet transferred.
+  transferred_cost_id?: number | null
 }
 
 // Body for POST /vehicles/:id/documents in LINK MODE (JSON, no file part).
