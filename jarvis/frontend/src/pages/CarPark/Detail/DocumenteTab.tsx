@@ -39,8 +39,11 @@ import { apiErrorMessage } from '../Dispo/dispoApiError'
 import {
   DOCUMENT_TYPES,
   DOCUMENT_TYPE_LABELS,
+  isInvoiceDocumentType,
+  type DispoDocument,
   type DocumentType,
 } from '@/types/carpark'
+import { TransferToCostDialog } from './TransferToCostDialog'
 
 function formatDate(d: string | null): string {
   if (!d) return '-'
@@ -65,6 +68,7 @@ export function DocumenteTab({ vehicleId, status }: { vehicleId: number; status?
   const user = useAuthStore((s) => s.user)
   const canEdit = user?.can_edit_carpark ?? false
   const canDelete = user?.can_delete_carpark ?? false
+  const canFinance = user?.can_view_carpark_finance ?? false
   // Once a vehicle is DELIVERED, the "can't deliver without PV" banner is
   // moot — the delivery already happened — so it's suppressed past that
   // point instead of nagging on a closed vehicle.
@@ -142,6 +146,9 @@ export function DocumenteTab({ vehicleId, status }: { vehicleId: number; status?
   })
 
   const canSubmit = !!documentType && (mode === 'file' ? !!file : !!fileUrl || !!dmsDocumentId)
+
+  // ── Transfer invoice → cost ───────────────────────────────
+  const [transferDoc, setTransferDoc] = useState<DispoDocument | null>(null)
 
   // ── Delete ──────────────────────────────────────────────
   const [deleteId, setDeleteId] = useState<number | null>(null)
@@ -289,6 +296,7 @@ export function DocumenteTab({ vehicleId, status }: { vehicleId: number; status?
                 <TableHead>Titlu</TableHead>
                 <TableHead>Fișier</TableHead>
                 <TableHead>Data</TableHead>
+                <TableHead>Acțiuni</TableHead>
                 {canDelete && <TableHead className="w-[60px]" />}
               </TableRow>
             </TableHeader>
@@ -322,6 +330,19 @@ export function DocumenteTab({ vehicleId, status }: { vehicleId: number; status?
                     )}
                   </TableCell>
                   <TableCell>{formatDate(doc.upload_date)}</TableCell>
+                  <TableCell>
+                    {isInvoiceDocumentType(doc.document_type) && canFinance && canEdit ? (
+                      doc.transferred_cost_id ? (
+                        <Badge variant="outline" className="gap-1 border-green-500 text-green-700 dark:text-green-400">
+                          ✓ În costuri
+                        </Badge>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => setTransferDoc(doc)}>
+                          Transferă în cost
+                        </Button>
+                      )
+                    ) : null}
+                  </TableCell>
                   {canDelete && (
                     <TableCell>
                       <Button
@@ -350,6 +371,19 @@ export function DocumenteTab({ vehicleId, status }: { vehicleId: number; status?
         confirmLabel="Șterge"
         variant="destructive"
         onConfirm={() => { if (deleteId != null) deleteMutation.mutate(deleteId) }}
+      />
+
+      <TransferToCostDialog
+        vehicleId={vehicleId}
+        doc={transferDoc}
+        open={transferDoc !== null}
+        onOpenChange={(o) => { if (!o) setTransferDoc(null) }}
+        onSuccess={() => {
+          invalidateAll()
+          queryClient.invalidateQueries({ queryKey: ['carpark', 'cost-lines', vehicleId] })
+          queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
+          setTransferDoc(null)
+        }}
       />
     </div>
   )
