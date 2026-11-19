@@ -375,7 +375,12 @@ def parse_invoice_document(vehicle_id, doc_id):
         cost_prefill = map_parsed_invoice_to_cost(parsed)
         return jsonify({'cost_prefill': cost_prefill}), 200
     except Exception as e:
-        logger.warning(f'Invoice parse failed for doc {doc_id} (vehicle {vehicle_id}): {e}')
+        # error-level + traceback (not warning): this catch-all deliberately
+        # swallows genuine parser/mapper bugs into a 200 cost_prefill:null, so
+        # a real regression must still be visible with a stack trace rather
+        # than shipping silently below error-level alerting. Response contract
+        # is unchanged — the UI still falls back to a blank dialog.
+        logger.error(f'Invoice parse failed for doc {doc_id} (vehicle {vehicle_id}): {e}', exc_info=True)
         return jsonify({'cost_prefill': None, 'reason': str(e)[:200]}), 200
 
 
