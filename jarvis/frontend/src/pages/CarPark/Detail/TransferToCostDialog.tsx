@@ -107,6 +107,23 @@ export function TransferToCostDialog({
     }
   }, [parseResult, open])
 
+  // Editing the net amount directly must keep vat_amount/grossValue in sync
+  // with it — otherwise grossValue (sent to the backend as invoice_value)
+  // stays anchored to whatever the parse-invoice prefill (or a prior TVA%
+  // edit) last set it to, and stored gross no longer equals amount+vat_amount.
+  // Recompute vat_amount from the current TVA%, and re-anchor grossValue to
+  // net+vat_amount so a later TVA%-change recomputes from a gross that still
+  // reflects this edit.
+  const handleAmountChange = (value: string) => {
+    setAmount(value)
+    const net = Number(value)
+    const rate = Number(vatRate)
+    if (value === '' || Number.isNaN(net) || vatRate === '' || Number.isNaN(rate)) return
+    const vat = round2((net * rate) / 100)
+    setVatAmount(String(vat))
+    setGrossValue(round2(net + vat))
+  }
+
   // Changing TVA % recomputes from the stored gross when known (net+VAT
   // from the fixed invoice total); otherwise it recomputes VAT from the
   // currently entered net.
@@ -182,7 +199,7 @@ export function TransferToCostDialog({
                 <div>
                   <Label>Sumă (net) *</Label>
                   <Input type="number" step="0.01" placeholder="0.00" value={amount} autoFocus
-                    onChange={(e) => setAmount(e.target.value)} />
+                    onChange={(e) => handleAmountChange(e.target.value)} />
                 </div>
                 <div>
                   <Label>Dată *</Label>

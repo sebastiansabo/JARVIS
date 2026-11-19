@@ -88,3 +88,29 @@ def test_second_transfer_reuses_existing_cost_line(require_real_db, invoice_tran
     transport_lines = [l for l in CostLineRepository().get_lines_by_vehicle(vehicle_id)
                        if l['cost_type'] == 'transport']
     assert len(transport_lines) == 1
+
+
+# ── Fix wave (post-review hardening) ───────────────────────────────────────
+
+
+def test_transfer_rejects_nonpositive_amount(require_real_db, invoice_transfer_seed):
+    """Server-side guard: a missing/non-positive amount must be rejected even
+    though the UI disables the confirm button for the same case — never trust
+    the client on a financial write."""
+    seed = invoice_transfer_seed
+    with pytest.raises(ValueError):
+        VehicleService().transfer_document_to_cost(
+            seed['vehicle_id'], seed['doc_id'], {'cost_type': 'other', 'amount': 0}, None)
+
+
+def test_transfer_updates_line_spent_amount(require_real_db, invoice_transfer_seed):
+    """CostRepository.create() (used by the transfer path) is a flat insert
+    that doesn't recalc the parent line's stored spent_amount the way
+    CostLineRepository.create_cost() does — assert the service closes that
+    gap by recalculating it explicitly after the transfer."""
+    seed = invoice_transfer_seed
+    cost = VehicleService().transfer_document_to_cost(
+        seed['vehicle_id'], seed['doc_id'], {'cost_type': 'transport', 'amount': 250}, None)
+
+    line = CostLineRepository().get_line_by_id(cost['cost_line_id'])
+    assert float(line['spent_amount']) == 250

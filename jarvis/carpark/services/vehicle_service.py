@@ -6,6 +6,8 @@ and pricing history.
 import logging
 from typing import Optional, Dict, Any, List
 
+from psycopg2 import errors as pg_errors
+
 from carpark.audit_diff import value_changed
 from carpark.repositories.vehicle_repository import VehicleRepository, _NO_SCOPE
 from carpark.repositories.photo_repository import PhotoRepository
@@ -423,14 +425,25 @@ class VehicleService:
 
         Finds or creates a cost line for the chosen cost_type (default
         'other') and inserts the cost under it. Idempotent: raises
-        ValueError if the document doesn't belong to this vehicle, or if it
-        has already been transferred — the partial unique index on
+        ValueError if the document doesn't belong to this vehicle, if
+        `amount` is missing/non-positive (server-side guard — never trust
+        the client's disabled-button validation on a financial write), or
+        if it has already been transferred — the partial unique index on
         carpark_vehicle_costs.source_document_id (Task 1) is the race-safe
-        backstop behind this pre-check.
+        backstop behind the `find_by_source_document` pre-check below. A
+        true concurrent double-submit of the SAME document can still slip
+        past that pre-check (both requests read "not yet transferred"
+        before either commits); the INSERT below is the backstop for that
+        case, caught as a UniqueViolation and re-raised as the same
+        ValueError so the route maps either path to 409.
         """
         doc = self._document_repo.get(doc_id)
         if not doc or doc.get('vehicle_id') != vehicle_id:
             raise ValueError('document not found for this vehicle')
+
+        amount = data.get('amount')
+        if amount is None or float(amount) <= 0:
+            raise ValueError('amount must be positive')
 
         if self._cost_repo.find_by_source_document(doc_id):
             raise ValueError('already transferred')
@@ -446,7 +459,23 @@ class VehicleService:
         payload['cost_line_id'] = line_id
         payload['source_document_id'] = doc_id
 
-        cost = self._cost_repo.create(vehicle_id, payload, created_by=created_by)
+        try:
+            cost = self._cost_repo.create(vehicle_id, payload, created_by=created_by)
+        except pg_errors.UniqueViolation:
+            # Race backstop (see docstring above). base_repository.execute()
+            # rolls back and releases the connection cleanly on any
+            # exception (its `except Exception: conn.rollback(); raise`
+            # ahead of the `finally: release_db(conn)`), so re-raising here
+            # doesn't leave a poisoned connection in the pool.
+            raise ValueError('already transferred')
+
+        # CostRepository.create() is a flat insert — unlike
+        # CostLineRepository.create_cost(), it doesn't recalculate the
+        # parent line's stored spent_amount. Nothing currently reads that
+        # stored column (the UI sums computed_spent live), but keep it
+        # accurate rather than leave a latent trap for a future reader.
+        self._cost_line_repo.recalc_spent(line_id)
+
         logger.info(f'Document transferred to cost: doc={doc_id} cost={cost["id"]} '
                      f'vehicle={vehicle_id} line={line_id} type={cost_type}')
         return cost

@@ -379,9 +379,14 @@ def parse_invoice_document(vehicle_id, doc_id):
         # swallows genuine parser/mapper bugs into a 200 cost_prefill:null, so
         # a real regression must still be visible with a stack trace rather
         # than shipping silently below error-level alerting. Response contract
-        # is unchanged — the UI still falls back to a blank dialog.
+        # is unchanged — the UI still falls back to a blank dialog. The
+        # client-facing `reason` is intentionally generic (not str(e)): the
+        # raw exception text could leak internal details (file paths, DMS/
+        # Drive URLs, parser/AI-client internals) to whoever can view this
+        # vehicle's documents — the full exception stays server-side via
+        # exc_info=True above.
         logger.error(f'Invoice parse failed for doc {doc_id} (vehicle {vehicle_id}): {e}', exc_info=True)
-        return jsonify({'cost_prefill': None, 'reason': str(e)[:200]}), 200
+        return jsonify({'cost_prefill': None, 'reason': 'could not read invoice automatically'}), 200
 
 
 @carpark_bp.route('/vehicles/<int:vehicle_id>/documents/<int:doc_id>/transfer-to-cost', methods=['POST'])

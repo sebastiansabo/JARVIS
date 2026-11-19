@@ -218,3 +218,24 @@ class CostLineRepository(BaseRepository):
                 updated_at = NOW()
             WHERE id = %s
         ''', (cost_line_id, cost_line_id))
+
+    def recalc_spent(self, line_id: int) -> None:
+        """Public standalone recompute of spent_amount on a cost line.
+
+        Same recalculation as `_recalc_line_spent` above, but runs on its
+        own connection (via `self.execute`) instead of an existing cursor —
+        for callers outside this repo that insert child cost rows via a
+        different path. Specifically: VehicleService.transfer_document_to_cost
+        creates its cost row through CostRepository.create() (a flat
+        insert) rather than through create_cost() above, so nothing
+        recalculates the parent line's stored total unless the caller does
+        it explicitly."""
+        self.execute('''
+            UPDATE carpark_vehicle_cost_lines SET
+                spent_amount = COALESCE(
+                    (SELECT SUM(amount) FROM carpark_vehicle_costs
+                     WHERE cost_line_id = %s), 0
+                ),
+                updated_at = NOW()
+            WHERE id = %s
+        ''', (line_id, line_id))
