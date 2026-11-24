@@ -200,7 +200,7 @@ export default function MobileCheckin() {
 
   // Punch mutation — accepts optional GPS coords or QR token
   const punchMutation = useMutation({
-    mutationFn: (data: { lat?: number; lng?: number; qr_token?: string }) =>
+    mutationFn: (data: { lat?: number; lng?: number; accuracy?: number; qr_token?: string }) =>
       checkinApi.punch(data),
     onSuccess: (result) => {
       setLastResult(result)
@@ -259,7 +259,7 @@ export default function MobileCheckin() {
         if (outsideAll) {
           autoCheckoutFired.current = true
           // Auto punch OUT
-          checkinApi.punch({ lat: uLat, lng: uLng, direction: 'OUT' })
+          checkinApi.punch({ lat: uLat, lng: uLng, accuracy: pos.coords.accuracy, direction: 'OUT' })
             .then((res: any) => {
               const data = res?.data ?? res
               setLastResult(data?.success ? data : { success: true, direction: 'OUT', time: new Date().toLocaleTimeString('ro-RO'), location: 'Auto-checkout (left area)' })
@@ -320,7 +320,7 @@ export default function MobileCheckin() {
     setLastResult(null)
     setSuggestionDismissed(true)
     if (gps.position) {
-      punchMutation.mutate({ lat: gps.position.lat, lng: gps.position.lng })
+      punchMutation.mutate({ lat: gps.position.lat, lng: gps.position.lng, accuracy: gps.accuracy ?? undefined })
     } else {
       punchMutation.mutate({})
     }

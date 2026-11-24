@@ -13,6 +13,12 @@ from .repository import CheckinRepository
 
 _RO_TZ = ZoneInfo('Europe/Bucharest')
 
+# Max GPS-accuracy slack added to a location's radius. Lets an imprecise fix
+# (indoor/urban drift — the dominant false-reject at ~150-300m) still punch when
+# the device's OWN reported accuracy explains the gap, while the cap stops a
+# spoofed/huge accuracy from becoming an unbounded "punch from anywhere" bypass.
+_GPS_ACCURACY_TOLERANCE_CAP_M = 150
+
 
 def haversine(lat1, lon1, lat2, lon2):
     """Distance in meters between two (lat, lng) points."""
@@ -69,7 +75,7 @@ class CheckinService:
 
     # ── Punch ──
 
-    def punch(self, jarvis_user_id, lat=None, lng=None, direction=None, client_ip=None, qr_token=None):
+    def punch(self, jarvis_user_id, lat=None, lng=None, direction=None, client_ip=None, qr_token=None, accuracy=None):
         """Validate GPS, IP, or QR and insert punch. Returns dict with success/error.
 
         A punch is accepted only when the user is inside a configured location's
@@ -100,7 +106,14 @@ class CheckinService:
                 if d < nearest_dist:
                     nearest_dist, nearest = d, loc
 
-            if nearest_dist <= nearest['allowed_radius_meters']:
+            # Forgive a fix just outside the radius when the device's reported
+            # accuracy explains the gap (capped against spoofing). accuracy=None
+            # or 0 → strict radius, so clients that don't send it are unchanged.
+            try:
+                tolerance = min(float(accuracy), _GPS_ACCURACY_TOLERANCE_CAP_M) if accuracy else 0.0
+            except (TypeError, ValueError):
+                tolerance = 0.0
+            if nearest_dist <= nearest['allowed_radius_meters'] + tolerance:
                 matched_loc = nearest
                 match_source = 'gps_mobile'
                 match_dist = round(nearest_dist, 1)

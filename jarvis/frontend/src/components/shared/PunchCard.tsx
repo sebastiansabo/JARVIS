@@ -10,11 +10,11 @@ import { emit, tappedEvent, succeededEvent, rejectedEvent } from '@/lib/punchTel
 
 // Promise wrapper around the browser Geolocation API so we can `await` the fix
 // on the button click (no permission prompt until the user actually punches).
-function getPosition(): Promise<{ lat: number; lng: number } | null> {
+function getPosition(): Promise<{ lat: number; lng: number; accuracy?: number } | null> {
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(null)
     navigator.geolocation.getCurrentPosition(
-      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude }),
+      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: p.coords.accuracy }),
       () => resolve(null),
       { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
     )
@@ -36,7 +36,7 @@ export function PunchCard() {
   })
 
   const punch = useMutation({
-    mutationFn: (data: { lat?: number; lng?: number }) => checkinApi.punch(data),
+    mutationFn: (data: { lat?: number; lng?: number; accuracy?: number }) => checkinApi.punch(data),
     onSuccess: (r) => {
       setResult(r)
       qc.invalidateQueries({ queryKey: ['checkin-status'] })
@@ -54,13 +54,13 @@ export function PunchCard() {
     // acquisition is still captured.
     emit(tappedEvent(intent, gps ? 'gps' : 'wifi'))
     const startedAt = Date.now()
-    let coords: { lat?: number; lng?: number } = {}
+    let coords: { lat?: number; lng?: number; accuracy?: number } = {}
     let gpsUnavailable = false
     if (gps) {
       setLocating(true)
       const pos = await getPosition()
       setLocating(false)
-      if (pos) coords = { lat: pos.lat, lng: pos.lng }
+      if (pos) coords = { lat: pos.lat, lng: pos.lng, accuracy: pos.accuracy }
       else gpsUnavailable = true // GPS failed/denied — falls through to IP match
     }
     // The mutation's onSuccess/onError still drive the UI banner; the try/catch

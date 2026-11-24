@@ -14,7 +14,7 @@ export const checkinApi = {
     return res.data
   },
 
-  punch: (data: { lat?: number; lng?: number; direction?: string; qr_token?: string }) =>
+  punch: (data: { lat?: number; lng?: number; accuracy?: number; direction?: string; qr_token?: string }) =>
     api.post<PunchResult>(`${BASE}/punch`, data),
 
   // Admin

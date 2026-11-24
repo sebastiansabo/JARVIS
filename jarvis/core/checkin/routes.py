@@ -71,6 +71,7 @@ def punch():
             direction=data.get('direction'),
             client_ip=client_ip,
             qr_token=data.get('qr_token'),
+            accuracy=data.get('accuracy'),
         )
         status_code = 200 if result['success'] else 400
         return jsonify(result), status_code
