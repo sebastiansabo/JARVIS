@@ -335,15 +335,16 @@ class DispoService:
         under the vehicle's minimum_price, and/or a negative prospective gross
         margin.
 
-        gross_margin = sale_price - net_buy - SUM(cost.amount), using net_buy
+        gross_margin = sale_price - net_buy - cost_total_eur, using net_buy
         (the VAT-recoverable acquisition basis) and the VAT-EXCLUSIVE cost basis
         so this number reconciles with the canonical gross_margin the salesperson
         sees in the Dispo summary table: DispoRepository (dispo_repository.py)
-        computes `sale_price - NET_BUY_SQL - COALESCE(SUM(amount), 0)` where the
-        cost total is `SUM(carpark_vehicle_costs.amount)` — base amounts only,
-        excluding the separate vat_amount column. We use `money.net_buy(vehicle)`
-        (the Python twin of NET_BUY_SQL: net EUR, legacy-RON aware) for the buy
-        side and `get_cost_totals()['total_amount']` (= SUM(amount)) for costs."""
+        computes `sale_price - NET_BUY_SQL - COALESCE(SUM(COST_EUR_SQL), 0)` where
+        each non-EUR cost is converted to EUR at its stored exchange_rate_eur
+        (base amounts only, excluding the separate vat_amount column). We use
+        `money.net_buy(vehicle)` (the Python twin of NET_BUY_SQL: net EUR,
+        legacy-RON aware) for the buy side and `get_cost_totals()['total_amount']`
+        (the EUR-converted SUM, via the same COST_EUR_SQL rule) for costs."""
         reasons: List[str] = []
         sale_price = float(sale_price)
 
@@ -353,7 +354,7 @@ class DispoService:
 
         buy = float(net_buy(vehicle))
         cost_totals = self._vehicle_service.get_cost_totals(vehicle_id) or {}
-        total_costs = float(cost_totals.get('total_amount') or 0)  # VAT-exclusive: SUM(amount)
+        total_costs = float(cost_totals.get('total_amount') or 0)  # VAT-exclusive, EUR-converted
         gross_margin = sale_price - buy - total_costs
         if gross_margin < 0:
             reasons.append(f'gross margin would be negative ({gross_margin:.2f})')

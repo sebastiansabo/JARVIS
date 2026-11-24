@@ -209,7 +209,11 @@ class OpenAIProvider(BaseProvider):
                 formatted.append(msg)
                 continue
 
-            content = msg.get('content', '')
+            # Translate Anthropic-style content blocks (notably image blocks)
+            # into the OpenAI chat format so the Claude->OpenAI fallback can
+            # serve vision requests (e.g. invoice OCR) instead of 400ing on an
+            # 'image' block OpenAI doesn't understand.
+            content = self._to_openai_content(msg.get('content', ''))
 
             # OpenAI accepts system, user, assistant roles
             if role not in ('system', 'user', 'assistant'):
@@ -221,6 +225,30 @@ class OpenAIProvider(BaseProvider):
             })
 
         return formatted
+
+    @staticmethod
+    def _to_openai_content(content):
+        """Translate Anthropic-style content blocks to the OpenAI chat format.
+
+        Anthropic image blocks are {"type":"image","source":{"type":"base64",
+        "media_type":..,"data":..}}; OpenAI expects {"type":"image_url",
+        "image_url":{"url":"data:<mt>;base64,<data>"}}. Text blocks and plain
+        string content pass through unchanged. Without this the Claude->OpenAI
+        fallback 400s on vision requests (e.g. invoice OCR)."""
+        if not isinstance(content, list):
+            return content
+        out = []
+        for block in content:
+            if not isinstance(block, dict) or block.get('type') != 'image':
+                out.append(block)
+                continue
+            src = block.get('source') or {}
+            if src.get('type') == 'base64':
+                url = f"data:{src.get('media_type', 'image/png')};base64,{src.get('data', '')}"
+            else:
+                url = src.get('url', '')
+            out.append({'type': 'image_url', 'image_url': {'url': url}})
+        return out
 
     def generate_stream(
         self,

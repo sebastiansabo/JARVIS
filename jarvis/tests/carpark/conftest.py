@@ -133,6 +133,24 @@ from database import get_db, get_cursor, release_db  # noqa: E402
 TEST_COMPANY_ID = 990001
 
 
+@pytest.fixture(autouse=True)
+def _no_live_bnr(monkeypatch):
+    """Never let a carpark test hit the live BNR endpoint. The cost FX write-path
+    (VehicleService._with_eur_rate) and the rate backfill call get_exchange_rate;
+    default it to None here (→ non-EUR costs get no rate = raw, the pre-FX
+    behavior) so no test makes a network call. Tests that need a specific rate
+    monkeypatch it themselves (their per-test setattr wins over this)."""
+    import carpark.services.vehicle_service as _vs
+    monkeypatch.setattr(_vs, 'get_exchange_rate', lambda *a, **k: None, raising=False)
+    for _mod in ('scripts.backfill_cost_exchange_rate', 'scripts.backfill_revenue_exchange_rate'):
+        try:
+            import importlib
+            monkeypatch.setattr(importlib.import_module(_mod), 'get_exchange_rate',
+                                lambda *a, **k: None, raising=False)
+        except Exception:
+            pass
+
+
 @pytest.fixture
 def require_real_db():
     """Skip the test if no real Postgres connection is available."""
@@ -212,6 +230,65 @@ def dispo_seed():
             INSERT INTO carpark_vehicle_revenues (vehicle_id, revenue_type, amount)
             VALUES (%s, %s, %s)
         ''', (ids['vehicle_sold'], 'bonus_leasing', 300))
+
+        conn.commit()
+        yield ids
+    finally:
+        try:
+            cur.execute('DELETE FROM carpark_vehicles WHERE company_id = %s', (TEST_COMPANY_ID,))
+            conn.commit()
+            cur.execute('SELECT COUNT(*) AS cnt FROM carpark_vehicles WHERE company_id = %s',
+                        (TEST_COMPANY_ID,))
+            remaining = cur.fetchone()['cnt']
+        finally:
+            release_db(conn)
+        assert remaining == 0, (
+            f'teardown left {remaining} orphan carpark_vehicles row(s) for '
+            f'company_id={TEST_COMPANY_ID}'
+        )
+
+
+@pytest.fixture
+def invoice_transfer_seed():
+    """Seed one vehicle + one 'factura_achizitie' document under
+    TEST_COMPANY_ID, for invoice->cost transfer tests (carpark_vehicle_costs
+    .source_document_id).
+
+    Yields {'vehicle_id': id, 'doc_id': id}.
+
+    Teardown deletes the carpark_vehicles row for TEST_COMPANY_ID; the
+    document row (and any cost rows created mid-test referencing it) cascade
+    automatically via `vehicle_id ... REFERENCES carpark_vehicles(id) ON
+    DELETE CASCADE`, mirroring the `dispo_seed` teardown pattern above.
+    """
+    if not REAL_DB_AVAILABLE:
+        pytest.skip(
+            'Real Postgres not available (DATABASE_URL unreachable or psycopg2 '
+            'mocked) — skipping carpark Dispo DB-backed test'
+        )
+
+    conn = get_db()
+    conn.autocommit = False
+    cur = get_cursor(conn)
+    ids = {}
+    try:
+        # Defensive: clean up any leftover rows from a previously crashed run.
+        cur.execute('DELETE FROM carpark_vehicles WHERE company_id = %s', (TEST_COMPANY_ID,))
+
+        cur.execute('''
+            INSERT INTO carpark_vehicles (vin, brand, model, status, company_id)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING id
+        ''', ('TESTINVXFER000001', 'TestBrand', 'TestModelInv', 'READY_FOR_SALE',
+              TEST_COMPANY_ID))
+        ids['vehicle_id'] = cur.fetchone()['id']
+
+        cur.execute('''
+            INSERT INTO carpark_vehicle_documents (vehicle_id, document_type, title)
+            VALUES (%s, %s, %s)
+            RETURNING id
+        ''', (ids['vehicle_id'], 'factura_achizitie', 'Test Factură achiziție'))
+        ids['doc_id'] = cur.fetchone()['id']
 
         conn.commit()
         yield ids

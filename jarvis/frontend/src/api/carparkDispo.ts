@@ -14,6 +14,10 @@ import type {
   TransferDestination,
   TransferOut,
   TransferBody,
+  CostPrefill,
+  RevenuePrefill,
+  VehicleCost,
+  VehicleRevenue,
 } from '../types/carpark'
 
 // Query-string params shared by getSummary and exportUrl: every non-empty
@@ -161,6 +165,31 @@ export const carparkDispoApi = {
 
   deleteDocument: (docId: number) =>
     api.delete<{ success: boolean }>(`/api/carpark/documents/${docId}`),
+
+  // Best-effort parse of an invoice document into cost-prefill fields for
+  // the create-cost dialog; never errors — a failed parse still 200s with
+  // cost_prefill: null + reason (see parse_invoice_document in
+  // carpark/routes/documents.py).
+  parseDocumentInvoice: (vehicleId: number, docId: number) =>
+    api.post<{ cost_prefill: CostPrefill | null; revenue_prefill: RevenuePrefill | null; reason?: string }>(
+      `/api/carpark/vehicles/${vehicleId}/documents/${docId}/parse-invoice`,
+    ),
+
+  // Persists the user-confirmed (possibly edited) cost-prefill fields as a
+  // VehicleCost linked back to this document.
+  transferDocumentToCost: (vehicleId: number, docId: number, body: Record<string, unknown>) =>
+    api.post<{ cost: VehicleCost }>(
+      `/api/carpark/vehicles/${vehicleId}/documents/${docId}/transfer-to-cost`,
+      body,
+    ),
+
+  // Income mirror — persists the confirmed revenue-prefill fields as a
+  // VehicleRevenue (Venituri) linked back to this document.
+  transferDocumentToRevenue: (vehicleId: number, docId: number, body: Record<string, unknown>) =>
+    api.post<{ revenue: VehicleRevenue }>(
+      `/api/carpark/vehicles/${vehicleId}/documents/${docId}/transfer-to-revenue`,
+      body,
+    ),
 
   getChecklist: (vehicleId: number) =>
     api.get<DocumentChecklist>(`/api/carpark/vehicles/${vehicleId}/documents/checklist`),

@@ -9,7 +9,7 @@ from datetime import date, datetime, time
 from typing import Optional, Dict, Any, List
 
 from core.base_repository import BaseRepository
-from carpark.money import NET_BUY_SQL
+from carpark.money import NET_BUY_SQL, COST_EUR_SQL, REVENUE_EUR_SQL
 
 
 # Pipeline stage -> underlying carpark_vehicles.status values.
@@ -62,16 +62,16 @@ _SORTABLE_COLUMNS: Dict[str, str] = {
 # reservation, and the distinct set of uploaded document types. Each CTE is
 # GROUP BY/DISTINCT ON vehicle_id, so every LEFT JOIN below is at most
 # one-row-per-vehicle — joining them never fans out the vehicle row count.
-_CTE = """
+_CTE = f"""
 WITH cost_totals AS (
-    SELECT vehicle_id, COALESCE(SUM(amount), 0) AS total_costs
+    SELECT vehicle_id, COALESCE(SUM({COST_EUR_SQL}), 0) AS total_costs
     FROM carpark_vehicle_costs
     GROUP BY vehicle_id
 ),
 rev_totals AS (
     SELECT vehicle_id,
-           COALESCE(SUM(amount), 0) AS total_revenues,
-           COALESCE(SUM(amount) FILTER (WHERE revenue_type = 'bonus_leasing'), 0) AS bonus_leasing
+           COALESCE(SUM({REVENUE_EUR_SQL}), 0) AS total_revenues,
+           COALESCE(SUM({REVENUE_EUR_SQL}) FILTER (WHERE revenue_type = 'bonus_leasing'), 0) AS bonus_leasing
     FROM carpark_vehicle_revenues
     GROUP BY vehicle_id
 ),

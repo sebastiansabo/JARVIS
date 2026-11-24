@@ -74,6 +74,22 @@ const fmtEur = (v: number) => `${nf(v)} €`
 const fmtPct = (v: number) => `${v < 0 ? '−' : ''}${new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(Math.abs(v) * 100)}%`
 const money = (v: number) => `${v < 0 ? '−' : ''}${fmtEur(Math.abs(v))}`
 
+// Composes the Fișă's cost-line input from the legacy `cost_lines` JSON plus
+// the structured `achizitie` total (Task 2: cost-model unification). Pre-
+// migration, `cost_lines` carries the acquisition extras and `costsBreakdown`
+// has no `achizitie` row. Post-migration (backfill nulls `cost_lines`), the
+// JSON sum is 0 and the structured `achizitie` total takes over — so the
+// landed cost the Fișă computes never moves across the cutover. Only
+// `achizitie` is added: repair/transport/etc. were never part of this sheet.
+export function composeSheetCostLines(
+  parsedJsonLines: Line[],
+  costsBreakdown: { cost_type: string; total_amount: number }[] | null | undefined,
+): Line[] {
+  const achizitie = costsBreakdown?.find((b) => b.cost_type === 'achizitie')
+  if (!achizitie || achizitie.total_amount <= 0) return parsedJsonLines
+  return [...parsedJsonLines, { eur: achizitie.total_amount }]
+}
+
 export type PricingModel = ReturnType<typeof computePricingModel>
 
 // Pure engine model for a vehicle + one set of inputs. Shared by the editor

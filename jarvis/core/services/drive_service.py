@@ -5,7 +5,7 @@ import json
 import base64
 from datetime import datetime
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 
 # Google Drive API scopes
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
@@ -252,6 +252,27 @@ def extract_file_id_from_link(drive_link: str) -> str | None:
         return match.group(1)
 
     return None
+
+
+def download_file_from_drive(drive_link: str) -> bytes:
+    """Download the raw bytes of a Drive file from its web-view / share link.
+
+    The DB stores a web-view link (…/file/d/{id}/view), which resolves to an
+    HTML viewer page, not the file — so callers that need the actual bytes
+    (e.g. invoice OCR) must pull them through the Drive API via the file id,
+    not an http GET on the link.
+    """
+    file_id = extract_file_id_from_link(drive_link)
+    if not file_id:
+        raise ValueError(f'Could not extract a Drive file id from link: {drive_link}')
+    service = get_drive_service()
+    request = service.files().get_media(fileId=file_id, supportsAllDrives=True)
+    buf = io.BytesIO()
+    downloader = MediaIoBaseDownload(buf, request)
+    done = False
+    while not done:
+        _, done = downloader.next_chunk()
+    return buf.getvalue()
 
 
 def delete_file_from_drive(drive_link: str) -> bool:

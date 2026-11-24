@@ -295,11 +295,47 @@ export interface ModificationEntry {
 // ── Cost & Revenue types ──
 
 export type CostType =
+  | 'achizitie'
   | 'repair' | 'maintenance' | 'insurance' | 'registration' | 'transport'
   | 'inspection' | 'cleaning' | 'fuel' | 'parking' | 'tax' | 'other'
 
 export type RevenueType =
   | 'sale' | 'rental' | 'lease' | 'commission' | 'refund' | 'other'
+
+// Best-effort fields extracted from an invoice document by
+// POST .../documents/:docId/parse-invoice, for prefilling the create-cost
+// dialog. Mirrors carpark/services/invoice_cost_mapper.map_parsed_invoice_to_cost's
+// output shape — all fields nullable since parsing is best-effort.
+export interface CostPrefill {
+  cost_type: CostType
+  amount: number | null
+  currency: string
+  vat_rate: number
+  vat_amount: number | null
+  invoice_number: string | null
+  invoice_date: string | null
+  invoice_value: number | null
+  supplier_name: string | null
+  description: string | null
+  date: string | null
+}
+
+// Revenue-side prefill from parse-invoice (map_parsed_invoice_to_revenue):
+// the money side flips vs CostPrefill — the invoice's customer becomes the
+// client. vat_rate / invoice_date / invoice_value are UI helpers (not stored).
+export interface RevenuePrefill {
+  revenue_type: RevenueType
+  amount: number | null
+  currency: string
+  vat_rate: number
+  vat_amount: number | null
+  invoice_number: string | null
+  invoice_date: string | null
+  invoice_value: number | null
+  client_name: string | null
+  description: string | null
+  date: string | null
+}
 
 export interface VehicleCostLine {
   id: number
@@ -328,6 +364,10 @@ export interface VehicleCost {
   vat_rate: number
   vat_amount: number
   exchange_rate_eur: number | null
+  /** amount/vat converted to EUR via the cost's rate (server-computed); for an
+   *  EUR cost these equal amount/vat_amount. */
+  amount_eur?: number
+  vat_amount_eur?: number
   invoice_number: string | null
   invoice_date: string | null
   invoice_value: number | null
@@ -351,6 +391,10 @@ export interface VehicleRevenue {
   amount: number
   currency: string
   vat_amount: number
+  exchange_rate_eur?: number | null
+  /** amount/vat converted to EUR via the revenue's rate (server-computed). */
+  amount_eur?: number
+  vat_amount_eur?: number
   invoice_number: string | null
   invoice_id: number | null
   client_name: string | null
@@ -384,6 +428,7 @@ export interface Profitability {
 }
 
 export const COST_TYPE_LABELS: Record<CostType, string> = {
+  achizitie: 'Achiziție',
   repair: 'Reparație',
   maintenance: 'Mentenanță',
   insurance: 'Asigurare',
@@ -990,11 +1035,13 @@ export type DocumentType =
   | 'pv_intrare' | 'contract_achizitie' | 'civ' | 'talon' | 'factura_achizitie'
   | 'contract_vanzare' | 'factura_vanzare' | 'pv_livrare' | 'dosar_gw'
   | 'asigurare' | 'itp' | 'mandat' | 'altele' | 'factura_transfer' | 'garantie'
+  | 'factura_service'
 
 export const DOCUMENT_TYPES: DocumentType[] = [
   'pv_intrare', 'contract_achizitie', 'civ', 'talon', 'factura_achizitie',
   'contract_vanzare', 'factura_vanzare', 'pv_livrare', 'dosar_gw',
   'asigurare', 'itp', 'mandat', 'altele', 'factura_transfer', 'garantie',
+  'factura_service',
 ]
 
 export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
@@ -1002,7 +1049,7 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   contract_achizitie: 'Contract achiziție',
   civ: 'CIV',
   talon: 'Talon',
-  factura_achizitie: 'Factură achiziție',
+  factura_achizitie: 'Factură',
   contract_vanzare: 'Contract vânzare',
   factura_vanzare: 'Factură vânzare',
   pv_livrare: 'PV livrare',
@@ -1011,8 +1058,31 @@ export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   itp: 'ITP',
   mandat: 'Mandat',
   altele: 'Altele',
-  factura_transfer: 'Factură transfer',
+  factura_transfer: 'Factură internă',
   garantie: 'Certificat garanție',
+  factura_service: 'Factură service',
+}
+
+// Document types grouped for a scannable picker (the flat 15-item list is
+// hard to skim). Order is intentional — invoices first, since that's the most
+// frequent upload and the one that feeds the transfer-to-cost flow. Every
+// DocumentType must appear in exactly one group or it won't be selectable.
+export const DOCUMENT_TYPE_GROUPS: { label: string; types: DocumentType[] }[] = [
+  { label: 'Facturi', types: ['factura_achizitie', 'factura_transfer', 'factura_vanzare', 'factura_service'] },
+  { label: 'Documente mașină', types: ['talon', 'civ', 'itp', 'asigurare'] },
+  { label: 'Contracte & procese-verbale', types: ['contract_achizitie', 'contract_vanzare', 'pv_intrare', 'pv_livrare', 'mandat'] },
+  { label: 'Altele', types: ['dosar_gw', 'garantie', 'altele'] },
+]
+
+// Document types that carry an invoice body eligible for the parse-invoice /
+// transfer-to-cost flow (invoice->cost feature, Task 5/6) — must match the
+// backend's INVOICE_DOCUMENT_TYPES in carpark/routes/documents.py exactly.
+export const INVOICE_DOCUMENT_TYPES: readonly DocumentType[] = [
+  'factura_achizitie', 'factura_vanzare', 'factura_transfer', 'factura_service',
+]
+
+export function isInvoiceDocumentType(t: string): boolean {
+  return (INVOICE_DOCUMENT_TYPES as readonly string[]).includes(t)
 }
 
 // ── Sale documents ("Documente vânzare") ────────────────────────────────
@@ -1233,6 +1303,11 @@ export interface DispoDocument {
   uploaded_by: number | null
   upload_date: string
   created_at: string
+  // Set once this invoice document has been transferred into a VehicleCost
+  // via transfer-to-cost (Task 5/6 of the invoice->cost feature); null/absent
+  // for non-invoice documents or invoices not yet transferred.
+  transferred_cost_id?: number | null
+  transferred_revenue_id?: number | null
 }
 
 // Body for POST /vehicles/:id/documents in LINK MODE (JSON, no file part).

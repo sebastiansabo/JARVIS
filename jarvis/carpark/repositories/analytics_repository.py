@@ -1,7 +1,7 @@
 """Analytics Repository — Aggregated queries for CarPark KPIs & dashboard."""
 from typing import Dict, Any, List, Optional
 from core.base_repository import BaseRepository
-from carpark.money import NET_BUY_SQL
+from carpark.money import NET_BUY_SQL, COST_EUR_SQL
 
 
 class AnalyticsRepository(BaseRepository):
@@ -160,7 +160,7 @@ class AnalyticsRepository(BaseRepository):
         """
         return self.query_one(f'''
             WITH costs AS (
-                SELECT vehicle_id, COALESCE(SUM(amount), 0) AS extra_costs
+                SELECT vehicle_id, COALESCE(SUM({COST_EUR_SQL}), 0) AS extra_costs
                 FROM carpark_vehicle_costs
                 GROUP BY vehicle_id
             ),
@@ -223,7 +223,7 @@ class AnalyticsRepository(BaseRepository):
         """
         return self.query_all(f'''
             WITH costs AS (
-                SELECT vehicle_id, COALESCE(SUM(amount), 0) AS extra_costs
+                SELECT vehicle_id, COALESCE(SUM({COST_EUR_SQL}), 0) AS extra_costs
                 FROM carpark_vehicle_costs
                 GROUP BY vehicle_id
             )
@@ -265,11 +265,11 @@ class AnalyticsRepository(BaseRepository):
 
     def get_cost_overview(self, company_id: int) -> List[Dict[str, Any]]:
         """Aggregate costs by type across all in-stock vehicles."""
-        return self.query_all('''
+        return self.query_all(f'''
             SELECT c.cost_type,
                    COUNT(*) AS entries,
                    COUNT(DISTINCT c.vehicle_id) AS vehicles,
-                   COALESCE(SUM(c.amount), 0) AS total_amount
+                   COALESCE(SUM({COST_EUR_SQL}), 0) AS total_amount
             FROM carpark_vehicle_costs c
             JOIN carpark_vehicles v ON v.id = c.vehicle_id
             WHERE v.company_id = %s

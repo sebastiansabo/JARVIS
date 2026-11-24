@@ -64,3 +64,55 @@ def net_buy(vehicle) -> float:
     if gross is None:
         return 0.0
     return float(gross) / (1 + vat / 100.0)
+
+
+# ── Cost currency → EUR ──────────────────────────────────────────────────────
+# A cost's amount/vat is stored in its own `currency` (RON stays the source of
+# truth). Its EUR value divides by `exchange_rate_eur` (= units of the cost's
+# currency per 1 EUR, frozen at the cost's date by the write-path/backfill). A
+# non-EUR cost with no rate falls back to its raw amount — today's behavior,
+# never worse. Bare column names (amount/currency/exchange_rate_eur/vat_amount)
+# are unambiguous in every reader: carpark_vehicles has none of those names.
+COST_EUR_SQL = (
+    "CASE WHEN currency = 'EUR' THEN amount "
+    "WHEN COALESCE(exchange_rate_eur, 0) > 0 THEN amount / exchange_rate_eur "
+    "ELSE amount END"
+)
+
+COST_VAT_EUR_SQL = (
+    "CASE WHEN currency = 'EUR' THEN vat_amount "
+    "WHEN COALESCE(exchange_rate_eur, 0) > 0 THEN vat_amount / exchange_rate_eur "
+    "ELSE vat_amount END"
+)
+
+
+def _cost_field_eur(cost, field: str) -> float:
+    """Python twin of COST_EUR_SQL for a cost dict's numeric field."""
+    if not cost:
+        return 0.0
+    val = float(cost.get(field) or 0)
+    if cost.get('currency') == 'EUR':
+        return val
+    rate = cost.get('exchange_rate_eur')
+    if rate is not None and float(rate) > 0:
+        return val / float(rate)
+    return val
+
+
+def cost_amount_eur(cost) -> float:
+    """A cost's `amount` in EUR (Python twin of COST_EUR_SQL)."""
+    return _cost_field_eur(cost, 'amount')
+
+
+def cost_vat_eur(cost) -> float:
+    """A cost's `vat_amount` in EUR (Python twin of COST_VAT_EUR_SQL)."""
+    return _cost_field_eur(cost, 'vat_amount')
+
+
+# Revenues convert identically (carpark_vehicle_revenues has the same
+# amount/currency/exchange_rate_eur/vat_amount columns) — alias the one rule
+# under revenue-named symbols for clarity at the revenue call sites.
+REVENUE_EUR_SQL = COST_EUR_SQL
+REVENUE_VAT_EUR_SQL = COST_VAT_EUR_SQL
+revenue_amount_eur = cost_amount_eur
+revenue_vat_eur = cost_vat_eur

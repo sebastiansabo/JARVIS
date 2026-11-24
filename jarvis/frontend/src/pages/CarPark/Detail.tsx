@@ -56,7 +56,7 @@ import { PageHeader } from '@/components/shared/PageHeader'
 import { CurrencyDisplay } from '@/components/shared/CurrencyDisplay'
 import { reductionPct, formatReductionPct } from './priceReduction'
 import { useDragScroll } from './useDragScroll'
-import { PricingSheet, PriceZone, computePricingModel, type PricingModel, type PricingSheetSnapshot, type SheetInputs } from './PricingSheet'
+import { PricingSheet, PriceZone, computePricingModel, composeSheetCostLines, type PricingModel, type PricingSheetSnapshot, type SheetInputs } from './PricingSheet'
 import { econ, type EngineParams } from './pricingEngine'
 import { publishedChannelCount, PUBLISH_CHANNEL_TOTAL } from './publishChannels'
 import { acquisitionProfitInputs } from './profitInputs'
@@ -64,6 +64,8 @@ import { AutofoxSyncModal } from './AutofoxSyncModal'
 import { activeSellingPrice } from './vehicleFormPricing'
 import { saleVatView } from './salePriceVat'
 import { EmptyState } from '@/components/shared/EmptyState'
+import { CostsTab } from './Detail/CostsTab'
+import { RevenuesTab } from './Detail/RevenuesTab'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
@@ -107,20 +109,13 @@ import { safeStatusTransitions } from './Dispo/statusTransitions'
 import {
   STATUS_LABELS,
   CATEGORY_LABELS,
-  COST_TYPE_LABELS,
-  REVENUE_TYPE_LABELS,
   PROMO_TYPE_LABELS,
   LISTING_STATUS_LABELS,
   type Vehicle,
   type VehiclePhoto,
-  type VehicleCostLine,
-  type VehicleCost,
-  type VehicleRevenue,
   type VehicleStatus,
   type VehicleListing,
   type ListingStatus,
-  type CostType,
-  type RevenueType,
   type Profitability,
   type PricingHistoryEntry,
   type Promotion,
@@ -190,6 +185,11 @@ type CostLineJson = {
 }
 
 // Parse the vehicle.cost_lines TEXT column (a JSON string) → [] on any error.
+// Tab badge suffix: show the count only when non-zero — an empty "(0)" is noise.
+function tabCount(n: number): string {
+  return n > 0 ? ` (${n})` : ''
+}
+
 function parseCostLines(raw: string | null | undefined): CostLineJson[] {
   if (!raw) return []
   try {
@@ -450,16 +450,10 @@ export default function CarParkDetail() {
     enabled: !!id,
   })
 
-  // Finance-gated queries: /cost-lines, /revenues, /profitability and
-  // /pricing-history are all @carpark_finance_required on the backend, so
-  // firing them for a non-finance user only yields 403s + retry noise. Gate
-  // on canViewFinance to match the server permission.
-  const { data: costLinesData } = useQuery({
-    queryKey: ['carpark', 'cost-lines', id],
-    queryFn: () => carparkApi.getCostLines(id),
-    enabled: !!id && canViewFinance,
-  })
-
+  // Finance-gated queries: /revenues, /profitability and /pricing-history are
+  // all @carpark_finance_required on the backend, so firing them for a
+  // non-finance user only yields 403s + retry noise. Gate on canViewFinance to
+  // match the server permission. (CostsTab fetches /costs itself.)
   const { data: revenuesData } = useQuery({
     queryKey: ['carpark', 'revenues', id],
     queryFn: () => carparkApi.getRevenues(id),
@@ -513,8 +507,18 @@ export default function CarParkDetail() {
   const vehicleLinks = linksData?.links ?? []
   const history = historyData?.history ?? []
   const modifications = modsData?.modifications ?? []
-  const costLines = costLinesData?.cost_lines ?? []
   const revenues = revenuesData?.revenues ?? []
+  // Financiar summary — same basis as ProfitabilitySummary (EUR): Costuri totale
+  // = acquisition cost lines (costLinesEur) + recorded structured costs
+  // (profitData.total_costs); Venituri = profitData.total_revenues. Taken from
+  // the profitability endpoint so the Balanță matches the car's margin rather
+  // than diverging. (Raw-amount FX is a pre-existing app-wide limitation,
+  // addressed by the cost-model unification.)
+  const financialRevenuesTotal = Number(profitData?.total_revenues ?? 0)
+  const financialCostsTotal =
+    (profitData && vehicle ? acquisitionProfitInputs(vehicle).costLinesEur : 0) +
+    Number(profitData?.total_costs ?? 0)
+  const financialBalance = financialRevenuesTotal - financialCostsTotal
   const pricingHistory = pricingHistoryData?.history ?? []
   const vehiclePromos = vehiclePromosData?.promotions ?? []
   const listings = listingsData?.listings ?? []
@@ -698,13 +702,10 @@ export default function CarParkDetail() {
           <TabsTrigger value="vanzare">Vânzare</TabsTrigger>
           <TabsTrigger value="pricing">Pricing</TabsTrigger>
           {canViewFinance && (
-            <TabsTrigger value="costs">Costuri ({parseCostLines(vehicle.cost_lines).length})</TabsTrigger>
+            <TabsTrigger value="financial">Financiar</TabsTrigger>
           )}
-          {canViewFinance && (
-            <TabsTrigger value="revenues">Venituri ({revenues.length})</TabsTrigger>
-          )}
-          <TabsTrigger value="listings">Anunțuri ({listings.length})</TabsTrigger>
-          <TabsTrigger value="links">Linkuri ({vehicleLinks.length})</TabsTrigger>
+          <TabsTrigger value="listings">Anunțuri{tabCount(listings.length)}</TabsTrigger>
+          <TabsTrigger value="links">Linkuri{tabCount(vehicleLinks.length)}</TabsTrigger>
           <TabsTrigger value="documente">Documente</TabsTrigger>
           <TabsTrigger value="cronologie">Cronologie</TabsTrigger>
           <TabsTrigger value="history">Istoric</TabsTrigger>
@@ -728,21 +729,39 @@ export default function CarParkDetail() {
             pricingHistory={pricingHistory}
             promotions={vehiclePromos}
             canEdit={canEdit}
+            profitData={profitData}
           />
         </TabsContent>
 
         {canViewFinance && (
-          <TabsContent value="costs" className="mt-4 space-y-4">
-            <AcqCostLines vehicle={vehicle} canEdit={canEdit} />
-            {costLines.length > 0 && (
-              <CostsTab vehicleId={id} costLines={costLines} canEdit={canEdit} currency={vehicle.price_currency || 'EUR'} />
-            )}
-          </TabsContent>
-        )}
+          <TabsContent value="financial" className="mt-4 space-y-6">
+            {/* Summary: Venituri vs Costuri → Balanță */}
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-2 rounded-md border bg-muted/30 px-4 py-3 text-sm">
+              <div>
+                <span className="text-muted-foreground">Venituri: </span>
+                <span className="font-medium tabular-nums">{fmtMoney(financialRevenuesTotal)}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Costuri: </span>
+                <span className="font-medium tabular-nums">{fmtMoney(financialCostsTotal)}</span>
+              </div>
+              <div className="sm:ml-auto">
+                <span className="text-muted-foreground">Balanță: </span>
+                <span className={`font-semibold tabular-nums ${financialBalance >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                  {financialBalance >= 0 ? '+' : ''}{fmtMoney(financialBalance)} EUR
+                </span>
+              </div>
+            </div>
 
-        {canViewFinance && (
-          <TabsContent value="revenues" className="mt-4">
-            <RevenuesTab vehicleId={id} revenues={revenues} canEdit={canEdit} currency={vehicle.price_currency || 'RON'} />
+            <section className="space-y-4">
+              <h3 className="text-sm font-semibold text-muted-foreground">Costuri</h3>
+              <CostsTab vehicleId={id} canEdit={canEdit} currency={vehicle.price_currency || 'EUR'} />
+            </section>
+
+            <section className="space-y-4 border-t pt-6">
+              <h3 className="text-sm font-semibold text-muted-foreground">Venituri</h3>
+              <RevenuesTab vehicleId={id} revenues={revenues} canEdit={canEdit} />
+            </section>
           </TabsContent>
         )}
 
@@ -2215,11 +2234,13 @@ function PricingTab({
   pricingHistory,
   promotions,
   canEdit,
+  profitData,
 }: {
   vehicle: Vehicle
   pricingHistory: PricingHistoryEntry[]
   promotions: Promotion[]
   canEdit: boolean
+  profitData?: Profitability | null
 }) {
   const queryClient = useQueryClient()
 
@@ -2230,8 +2251,11 @@ function PricingTab({
     [sheets],
   )
   const costLinesForSheet = useMemo(
-    () => parseCostLines(v.cost_lines).map((l) => ({ eur: typeof l.eur === 'number' ? l.eur : null })),
-    [v.cost_lines],
+    () => composeSheetCostLines(
+      parseCostLines(v.cost_lines).map((l) => ({ eur: typeof l.eur === 'number' ? l.eur : null })),
+      profitData?.costs_breakdown,
+    ),
+    [v.cost_lines, profitData],
   )
 
   // Adding a fișă: "Deschide fișă nouă" starts a blank editable draft shown as a
@@ -3141,934 +3165,6 @@ function ProfitabilitySummary({ data, vehicle }: { data: Profitability; vehicle:
           {vehicle.stationary_days}
         </span>
       </Card>
-    </div>
-  )
-}
-
-// ── Costs Tab ─────────────────────────────────────────────
-// Read-only view of the vehicle's acquisition cost lines (the edit-form model,
-// stored in cost_lines JSON) — the same costs that feed the profile's Costuri
-// totale / Marjă. Edited from the Comercial tab of the edit form.
-function AcqCostLines({ vehicle, canEdit }: { vehicle: Vehicle; canEdit: boolean }) {
-  const queryClient = useQueryClient()
-  const original = useMemo(
-    () => parseCostLines(vehicle.cost_lines).map((l) => ({
-      type: String(l.type ?? ''),
-      description: String(l.description ?? ''),
-      eur: typeof l.eur === 'number' ? l.eur : null,
-    })),
-    [vehicle.cost_lines],
-  )
-  const [lines, setLines] = useState(original)
-  const total = lines.reduce((s, l) => s + (l.eur ?? 0), 0)
-  const dirty = JSON.stringify(lines) !== JSON.stringify(original)
-  const saveMut = useMutation({
-    mutationFn: () => carparkApi.updateVehicle(vehicle.id, { cost_lines: lines.length ? JSON.stringify(lines) : null } as Partial<Vehicle>),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'vehicle', vehicle.id] })
-      toast.success('Costuri salvate')
-    },
-    onError: () => toast.error('Salvarea costurilor a eșuat'),
-  })
-  const patch = (i: number, k: 'type' | 'description' | 'eur', v: string | number | null) =>
-    setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, [k]: v } : l)))
-  return (
-    <Card className="p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold">Costuri achiziție</h3>
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium tabular-nums">Total: {total.toLocaleString('ro-RO')} EUR</span>
-          {canEdit && (
-            <>
-              <Button variant="ghost" size="sm" onClick={() => setLines((ls) => [...ls, { type: '', description: '', eur: null }])}>+ Adaugă linie</Button>
-              <Button size="sm" onClick={() => saveMut.mutate()} disabled={!dirty || saveMut.isPending}>{saveMut.isPending ? 'Se salvează…' : 'Salvează'}</Button>
-            </>
-          )}
-        </div>
-      </div>
-      {lines.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nicio linie de cost.{canEdit ? ' Apasă „Adaugă linie".' : ''}</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-muted-foreground">
-                <th className="py-1 pr-3 font-normal">Tip</th>
-                <th className="py-1 pr-3 font-normal">Descriere</th>
-                <th className="py-1 pr-3 font-normal text-right">EUR (net)</th>
-                {canEdit && <th className="w-8" />}
-              </tr>
-            </thead>
-            <tbody>
-              {lines.map((l, i) => (
-                <tr key={i} className="border-t">
-                  {canEdit ? (
-                    <>
-                      <td className="py-1 pr-3"><Input className="h-8" value={l.type} placeholder="Recondiționare…" onChange={(e) => patch(i, 'type', e.target.value)} /></td>
-                      <td className="py-1 pr-3"><Input className="h-8" value={l.description} onChange={(e) => patch(i, 'description', e.target.value)} /></td>
-                      <td className="py-1 pr-3 text-right"><Input className="h-8 text-right" type="number" step="10" value={l.eur ?? ''} onChange={(e) => patch(i, 'eur', e.target.value === '' ? null : Number(e.target.value))} /></td>
-                      <td className="py-1"><Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setLines((ls) => ls.filter((_, idx) => idx !== i))}><X className="h-4 w-4" /></Button></td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="py-1 pr-3">{l.type || '-'}</td>
-                      <td className="py-1 pr-3">{l.description || '-'}</td>
-                      <td className="py-1 pr-3 text-right tabular-nums">{l.eur != null ? l.eur.toLocaleString('ro-RO') : '-'}</td>
-                    </>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </Card>
-  )
-}
-
-function CostsTab({
-  vehicleId, costLines, canEdit, currency,
-}: {
-  vehicleId: number; costLines: VehicleCostLine[]; canEdit: boolean; currency: string
-}) {
-  const queryClient = useQueryClient()
-  const [expandedLineId, setExpandedLineId] = useState<number | null>(null)
-
-  // Dialogs
-  const [showAddLine, setShowAddLine] = useState(false)
-  const [addLineForm, setAddLineForm] = useState({ cost_type: 'other' as CostType, description: '', planned_amount: '', currency })
-  const [addCostLineId, setAddCostLineId] = useState<number | null>(null)
-  const [editCostId, setEditCostId] = useState<number | null>(null)
-  const [deleteLineId, setDeleteLineId] = useState<number | null>(null)
-  const [deleteCostId, setDeleteCostId] = useState<number | null>(null)
-  const [costForm, setCostForm] = useState({ amount: '', description: '', supplier_name: '', invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_rate: '19', vat_amount: '' })
-  const [linkInvoiceCostId, setLinkInvoiceCostId] = useState<number | null>(null)
-  const [invoiceSearch, setInvoiceSearch] = useState('')
-  const [editingPlanned, setEditingPlanned] = useState<{ id: number; draft: string } | null>(null)
-
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['carpark', 'cost-lines', vehicleId] })
-    queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
-  }
-
-  // Cost line queries for expanded line
-  const { data: lineCostsData } = useQuery({
-    queryKey: ['carpark', 'line-costs', expandedLineId],
-    queryFn: () => carparkApi.getLineCosts(expandedLineId!),
-    enabled: !!expandedLineId,
-  })
-  const lineCosts = lineCostsData?.costs ?? []
-
-  // Invoice search for link dialog
-  const { data: invoiceSearchData } = useQuery({
-    queryKey: ['carpark', 'invoice-search', invoiceSearch],
-    queryFn: () => carparkApi.searchLinkableEntities('invoice', invoiceSearch),
-    enabled: linkInvoiceCostId !== null && invoiceSearch.length >= 1,
-  })
-  const invoiceResults = invoiceSearchData?.results ?? []
-
-  // Mutations
-  const createLineMut = useMutation({
-    mutationFn: (data: Record<string, unknown>) => carparkApi.createCostLine(vehicleId, data),
-    onSuccess: () => { invalidate(); toast.success('Linie de cost adăugată'); setShowAddLine(false); setAddLineForm({ cost_type: 'other', description: '', planned_amount: '', currency }) },
-    onError: () => toast.error('Crearea liniei de cost a eșuat'),
-  })
-
-  const deleteLineMut = useMutation({
-    mutationFn: (id: number) => carparkApi.deleteCostLine(id),
-    onSuccess: () => { invalidate(); toast.success('Linie de cost ștearsă'); setDeleteLineId(null); if (expandedLineId === deleteLineId) setExpandedLineId(null) },
-    onError: () => toast.error('Ștergerea liniei de cost a eșuat'),
-  })
-
-  const updateLineMut = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) => carparkApi.updateCostLine(id, data),
-    onSuccess: () => { invalidate() },
-    onError: () => toast.error('Actualizarea liniei de cost a eșuat'),
-  })
-
-  const createCostMut = useMutation({
-    mutationFn: ({ lineId, data }: { lineId: number; data: Record<string, unknown> }) => carparkApi.createLineCost(lineId, data),
-    onSuccess: () => {
-      invalidate()
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
-      toast.success('Cost adăugat')
-      setAddCostLineId(null)
-      setCostForm({ amount: '', description: '', supplier_name: '', invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_rate: '19', vat_amount: '' })
-    },
-    onError: () => toast.error('Adăugarea costului a eșuat'),
-  })
-
-  const updateCostMut = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) => carparkApi.updateLineCost(id, data),
-    onSuccess: () => {
-      invalidate()
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
-      toast.success('Cost actualizat')
-      setEditCostId(null)
-    },
-    onError: () => toast.error('Actualizarea costului a eșuat'),
-  })
-
-  const deleteCostMut = useMutation({
-    mutationFn: (id: number) => carparkApi.deleteLineCost(id),
-    onSuccess: () => {
-      invalidate()
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
-      toast.success('Cost șters')
-      setDeleteCostId(null)
-    },
-    onError: () => toast.error('Ștergerea costului a eșuat'),
-  })
-
-  const linkInvoiceMut = useMutation({
-    mutationFn: ({ costId, invoiceId }: { costId: number; invoiceId: number }) =>
-      carparkApi.linkCostInvoice(costId, invoiceId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
-      toast.success('Factură asociată')
-      setLinkInvoiceCostId(null)
-      setInvoiceSearch('')
-    },
-    onError: () => toast.error('Asocierea facturii a eșuat'),
-  })
-
-  const unlinkInvoiceMut = useMutation({
-    mutationFn: (costId: number) => carparkApi.linkCostInvoice(costId, null),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['carpark', 'line-costs', expandedLineId] })
-      toast.success('Factură disociată')
-    },
-  })
-
-  // Summaries
-  const totalPlanned = costLines.reduce((s, l) => s + Number(l.planned_amount || 0), 0)
-  const totalSpent = costLines.reduce((s, l) => s + Number(l.computed_spent ?? l.spent_amount ?? 0), 0)
-
-  const fmt = (v: number) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
-
-  const openAddCost = (lineId: number) => {
-    setCostForm({ amount: '', description: '', supplier_name: '', invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_rate: '19', vat_amount: '' })
-    setEditCostId(null)
-    setAddCostLineId(lineId)
-  }
-
-  const openEditCost = (c: VehicleCost) => {
-    setCostForm({
-      amount: String(c.amount),
-      description: c.description ?? '',
-      supplier_name: c.supplier_name ?? '',
-      invoice_number: c.invoice_number ?? '',
-      date: c.date,
-      vat_rate: String(c.vat_rate ?? 19),
-      vat_amount: String(c.vat_amount ?? 0),
-    })
-    setEditCostId(c.id)
-    setAddCostLineId(c.cost_line_id)
-  }
-
-  const handleCostSubmit = () => {
-    const payload = {
-      amount: Number(costForm.amount),
-      description: costForm.description || null,
-      supplier_name: costForm.supplier_name || null,
-      invoice_number: costForm.invoice_number || null,
-      date: costForm.date,
-      vat_rate: costForm.vat_rate ? Number(costForm.vat_rate) : 19,
-      vat_amount: costForm.vat_amount ? Number(costForm.vat_amount) : 0,
-    }
-    if (editCostId) {
-      updateCostMut.mutate({ id: editCostId, data: payload })
-    } else if (addCostLineId) {
-      createCostMut.mutate({ lineId: addCostLineId, data: payload })
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Summary Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="text-muted-foreground">
-            Planificat: <strong className="text-foreground tabular-nums">{fmt(totalPlanned)} {currency}</strong>
-          </span>
-          <span className="text-muted-foreground">
-            Cheltuit: <strong className="text-foreground tabular-nums">{fmt(totalSpent)} {currency}</strong>
-          </span>
-          {totalPlanned > 0 && (
-            <span className="text-muted-foreground">
-              Execuție: <strong className={totalSpent > totalPlanned ? 'text-red-500' : 'text-foreground'}>{Math.round((totalSpent / totalPlanned) * 100)}%</strong>
-            </span>
-          )}
-        </div>
-        {canEdit && (
-          <Button size="sm" onClick={() => setShowAddLine(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Adaugă linie
-          </Button>
-        )}
-      </div>
-
-      {/* Cost Lines Table */}
-      {costLines.length === 0 ? (
-        <EmptyState title="Nicio linie de cost" icon={<DollarSign className="h-8 w-8" />} />
-      ) : (
-        <Card className="overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
-                <th className="w-8 px-2 py-2"></th>
-                <th className="text-left px-3 py-2 font-medium">Tip</th>
-                <th className="text-left px-3 py-2 font-medium">Descriere</th>
-                <th className="text-right px-3 py-2 font-medium">Planificat</th>
-                <th className="text-right px-3 py-2 font-medium">Cheltuit</th>
-                <th className="text-left px-3 py-2 font-medium w-32">Execuție</th>
-                {canEdit && <th className="px-2 py-2 w-24"></th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {costLines.map((l) => {
-                const planned = Number(l.planned_amount || 0)
-                const spent = Number(l.computed_spent ?? l.spent_amount ?? 0)
-                const exec = planned > 0 ? Math.round((spent / planned) * 100) : 0
-                const isExpanded = expandedLineId === l.id
-                return (
-                  <>{/* eslint-disable-next-line react/jsx-key */}
-                    <tr
-                      key={l.id}
-                      className="cursor-pointer hover:bg-muted/30 transition-colors"
-                      onClick={() => setExpandedLineId(isExpanded ? null : l.id)}
-                    >
-                      <td className="px-2 py-2 text-center">
-                        {isExpanded
-                          ? <ChevronDown className="h-4 w-4 text-muted-foreground inline" />
-                          : <ChevronRight className="h-4 w-4 text-muted-foreground inline" />}
-                      </td>
-                      <td className="px-3 py-2">
-                        <Badge variant="outline" className="text-[11px]">
-                          {COST_TYPE_LABELS[l.cost_type] ?? l.cost_type}
-                        </Badge>
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground">
-                        {l.description || '-'}
-                        {(l.cost_count ?? 0) > 0 && (
-                          <span className="ml-2 text-[10px] text-muted-foreground/60">({l.cost_count} costuri)</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums">
-                        {editingPlanned?.id === l.id ? (
-                          <Input
-                            type="number"
-                            value={editingPlanned.draft}
-                            onChange={(e) => setEditingPlanned({ id: l.id, draft: e.target.value })}
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={() => {
-                              const n = Number(editingPlanned.draft)
-                              if (!isNaN(n) && n !== planned) updateLineMut.mutate({ id: l.id, data: { planned_amount: n } })
-                              setEditingPlanned(null)
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') { const n = Number(editingPlanned.draft); if (!isNaN(n) && n !== planned) updateLineMut.mutate({ id: l.id, data: { planned_amount: n } }); setEditingPlanned(null) }
-                              if (e.key === 'Escape') setEditingPlanned(null)
-                            }}
-                            className="h-7 w-28 text-sm text-right tabular-nums ml-auto"
-                            autoFocus
-                          />
-                        ) : (
-                          <span
-                            className="cursor-pointer hover:bg-muted/50 rounded px-1 -mx-1"
-                            onDoubleClick={(e) => { e.stopPropagation(); setEditingPlanned({ id: l.id, draft: String(planned || '') }) }}
-                            title="Dublu-clic pentru editare"
-                          >
-                            {fmt(planned)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(spent)}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <div className="w-14 h-1.5 rounded-full bg-muted overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${exec > 90 ? 'bg-red-500' : exec > 70 ? 'bg-yellow-500' : 'bg-blue-500'}`}
-                              style={{ width: `${Math.min(exec, 100)}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-muted-foreground tabular-nums">{exec}%</span>
-                        </div>
-                      </td>
-                      {canEdit && (
-                        <td className="px-2 py-2 text-right whitespace-nowrap">
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Înregistrează cost"
-                            onClick={(e) => { e.stopPropagation(); openAddCost(l.id) }}>
-                            <DollarSign className="h-3 w-3" />
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600" title="Șterge linia"
-                            onClick={(e) => { e.stopPropagation(); setDeleteLineId(l.id) }}>
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </td>
-                      )}
-                    </tr>
-
-                    {/* Expanded: costs under this line */}
-                    {isExpanded && (
-                      <tr key={`${l.id}-expand`} className="bg-muted/20 hover:bg-muted/20">
-                        <td colSpan={canEdit ? 7 : 6} className="p-0">
-                          <div className="px-6 py-3 space-y-3">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Costuri</span>
-                              {canEdit && (
-                                <div className="flex gap-1.5">
-                                  <Button variant="outline" size="sm" className="h-7 text-xs"
-                                    onClick={(e) => { e.stopPropagation(); openAddCost(l.id) }}>
-                                    <DollarSign className="h-3 w-3 mr-1" /> Înregistrează cost
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                            {lineCosts.length === 0 ? (
-                              <div className="text-xs text-muted-foreground text-center py-3">Niciun cost înregistrat încă.</div>
-                            ) : (
-                              <div className="rounded-md border bg-background">
-                                <table className="w-full text-xs">
-                                  <thead>
-                                    <tr className="border-b bg-muted/30 text-muted-foreground">
-                                      <th className="text-left px-3 py-1.5 font-medium">Dată</th>
-                                      <th className="text-right px-3 py-1.5 font-medium">Sumă</th>
-                                      <th className="text-right px-3 py-1.5 font-medium">TVA</th>
-                                      <th className="text-left px-3 py-1.5 font-medium">Furnizor</th>
-                                      <th className="text-left px-3 py-1.5 font-medium">Factură</th>
-                                      <th className="text-left px-3 py-1.5 font-medium">Descriere</th>
-                                      {canEdit && <th className="px-2 py-1.5 w-24"></th>}
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y">
-                                    {lineCosts.map((c) => (
-                                      <tr key={c.id} className="hover:bg-muted/20">
-                                        <td className="px-3 py-1.5 tabular-nums">{formatDate(c.date)}</td>
-                                        <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmt(Number(c.amount))}</td>
-                                        <td className="px-3 py-1.5 text-right tabular-nums text-muted-foreground">
-                                          {Number(c.vat_amount) > 0 ? fmt(Number(c.vat_amount)) : '-'}
-                                        </td>
-                                        <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[120px]">{c.supplier_name || '-'}</td>
-                                        <td className="px-3 py-1.5">
-                                          {c.invoice_id ? (
-                                            <div className="flex items-center gap-1">
-                                              <Badge variant="secondary" className="text-[10px] font-mono">
-                                                {c.invoice_number_ref || c.invoice_number || `#${c.invoice_id}`}
-                                              </Badge>
-                                              {canEdit && (
-                                                <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground hover:text-red-500"
-                                                  onClick={(e) => { e.stopPropagation(); unlinkInvoiceMut.mutate(c.id) }}>
-                                                  <Unlink className="h-3 w-3" />
-                                                </Button>
-                                              )}
-                                            </div>
-                                          ) : c.invoice_number ? (
-                                            <span className="font-mono text-muted-foreground">{c.invoice_number}</span>
-                                          ) : canEdit ? (
-                                            <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2 text-muted-foreground"
-                                              onClick={(e) => { e.stopPropagation(); setLinkInvoiceCostId(c.id); setInvoiceSearch('') }}>
-                                              <Link2 className="h-3 w-3 mr-1" /> Asociază
-                                            </Button>
-                                          ) : (
-                                            <span className="text-muted-foreground">-</span>
-                                          )}
-                                        </td>
-                                        <td className="px-3 py-1.5 text-muted-foreground truncate max-w-[150px]">{c.description || '-'}</td>
-                                        {canEdit && (
-                                          <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={(e) => { e.stopPropagation(); openEditCost(c) }}>
-                                              <Pencil className="h-3 w-3" />
-                                            </Button>
-                                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-red-500 hover:text-red-600"
-                                              onClick={(e) => { e.stopPropagation(); setDeleteCostId(c.id) }}>
-                                              <Trash2 className="h-3 w-3" />
-                                            </Button>
-                                          </td>
-                                        )}
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                )
-              })}
-            </tbody>
-          </table>
-        </Card>
-      )}
-
-      {/* Add Cost Line Dialog */}
-      <Dialog open={showAddLine} onOpenChange={setShowAddLine}>
-        <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle>Adaugă linie de cost</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Tip</Label>
-                <Select value={addLineForm.cost_type} onValueChange={(v) => setAddLineForm((p) => ({ ...p, cost_type: v as CostType }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(COST_TYPE_LABELS).map(([k, label]) => (
-                      <SelectItem key={k} value={k}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Sumă planificată</Label>
-                <Input type="number" step="0.01" placeholder="0.00" value={addLineForm.planned_amount}
-                  onChange={(e) => setAddLineForm((p) => ({ ...p, planned_amount: e.target.value }))} />
-              </div>
-            </div>
-            <div>
-              <Label>Descriere</Label>
-              <Input placeholder="ex. Asigurare OMNIASIG, Transport din Germania" value={addLineForm.description}
-                onChange={(e) => setAddLineForm((p) => ({ ...p, description: e.target.value }))} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddLine(false)}>Anulează</Button>
-            <Button disabled={createLineMut.isPending} onClick={() => createLineMut.mutate({
-              cost_type: addLineForm.cost_type,
-              description: addLineForm.description || null,
-              planned_amount: addLineForm.planned_amount ? Number(addLineForm.planned_amount) : 0,
-              currency: addLineForm.currency,
-            })}>
-              {createLineMut.isPending ? 'Se creează...' : 'Creează'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add/Edit Cost Dialog */}
-      <Dialog open={addCostLineId !== null} onOpenChange={(open) => { if (!open) { setAddCostLineId(null); setEditCostId(null) } }}>
-        <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle>{editCostId ? 'Editează cost' : 'Înregistrează cost'}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Sumă (net) *</Label>
-                <Input type="number" step="0.01" placeholder="0.00" value={costForm.amount} autoFocus
-                  onChange={(e) => setCostForm((p) => ({ ...p, amount: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Dată *</Label>
-                <Input type="date" value={costForm.date}
-                  onChange={(e) => setCostForm((p) => ({ ...p, date: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <Label>TVA %</Label>
-                <Input type="number" step="0.01" value={costForm.vat_rate}
-                  onChange={(e) => setCostForm((p) => ({ ...p, vat_rate: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Valoare TVA</Label>
-                <Input type="number" step="0.01" placeholder="0.00" value={costForm.vat_amount}
-                  onChange={(e) => setCostForm((p) => ({ ...p, vat_amount: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Nr. factură</Label>
-                <Input placeholder="Număr factură" value={costForm.invoice_number}
-                  onChange={(e) => setCostForm((p) => ({ ...p, invoice_number: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Furnizor</Label>
-                <Input placeholder="Nume furnizor" value={costForm.supplier_name}
-                  onChange={(e) => setCostForm((p) => ({ ...p, supplier_name: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Descriere</Label>
-                <Input placeholder="Descriere opțională" value={costForm.description}
-                  onChange={(e) => setCostForm((p) => ({ ...p, description: e.target.value }))} />
-              </div>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setAddCostLineId(null); setEditCostId(null) }}>Anulează</Button>
-            <Button disabled={!costForm.amount || Number(costForm.amount) <= 0 || createCostMut.isPending || updateCostMut.isPending}
-              onClick={handleCostSubmit}>
-              {createCostMut.isPending || updateCostMut.isPending ? 'Se salvează...' : editCostId ? 'Actualizează' : 'Înregistrează'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Link Invoice Dialog */}
-      <Dialog open={linkInvoiceCostId !== null} onOpenChange={(open) => { if (!open) { setLinkInvoiceCostId(null); setInvoiceSearch('') } }}>
-        <DialogContent className="sm:max-w-lg" aria-describedby={undefined}>
-          <DialogHeader>
-            <DialogTitle>Asociază factură</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Caută facturi..." className="pl-9" value={invoiceSearch}
-                onChange={(e) => setInvoiceSearch(e.target.value)} autoFocus />
-            </div>
-            {invoiceResults && invoiceResults.length > 0 ? (
-              <div className="max-h-60 overflow-y-auto rounded-md border">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b bg-muted/30">
-                      <th className="text-left px-3 py-1.5 font-medium">Nr. factură</th>
-                      <th className="text-left px-3 py-1.5 font-medium">Furnizor</th>
-                      <th className="px-2 py-1.5 w-16"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {invoiceResults.map((inv) => (
-                      <tr key={inv.id} className="hover:bg-muted/20">
-                        <td className="px-3 py-1.5 font-mono">{inv.label}</td>
-                        <td className="px-3 py-1.5 text-muted-foreground">{inv.sublabel || '-'}</td>
-                        <td className="px-2 py-1.5 text-right">
-                          <Button size="sm" className="h-6 text-[10px] px-2" disabled={linkInvoiceMut.isPending}
-                            onClick={() => linkInvoiceCostId && linkInvoiceMut.mutate({ costId: linkInvoiceCostId, invoiceId: inv.id })}>
-                            Asociază
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : invoiceSearch.length >= 1 ? (
-              <div className="text-xs text-center text-muted-foreground py-4">Nicio factură găsită</div>
-            ) : (
-              <div className="text-xs text-center text-muted-foreground py-4">Scrie pentru a căuta facturi</div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Cost Line Confirmation */}
-      <Dialog open={deleteLineId !== null} onOpenChange={(open) => { if (!open) setDeleteLineId(null) }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Șterge linia de cost</DialogTitle>
-            <DialogDescription>Aceasta va șterge linia de cost și toate intrările sale. Acțiunea nu poate fi anulată.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteLineId(null)}>Anulează</Button>
-            <Button variant="destructive" disabled={deleteLineMut.isPending}
-              onClick={() => deleteLineId && deleteLineMut.mutate(deleteLineId)}>
-              {deleteLineMut.isPending ? 'Se șterge...' : 'Șterge'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Cost Entry Confirmation */}
-      <Dialog open={deleteCostId !== null} onOpenChange={(open) => { if (!open) setDeleteCostId(null) }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Șterge cost</DialogTitle>
-            <DialogDescription>Ești sigur? Această acțiune nu poate fi anulată.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteCostId(null)}>Anulează</Button>
-            <Button variant="destructive" disabled={deleteCostMut.isPending}
-              onClick={() => deleteCostId && deleteCostMut.mutate(deleteCostId)}>
-              {deleteCostMut.isPending ? 'Se șterge...' : 'Șterge'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
-}
-
-// ── Revenues Tab ──────────────────────────────────────────
-function RevenuesTab({
-  vehicleId, revenues, canEdit, currency,
-}: {
-  vehicleId: number; revenues: VehicleRevenue[]; canEdit: boolean; currency: string
-}) {
-  const queryClient = useQueryClient()
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null)
-  const [form, setForm] = useState({
-    revenue_type: 'sale' as RevenueType,
-    amount: '',
-    description: '',
-    client_name: '',
-    invoice_number: '',
-    date: new Date().toISOString().slice(0, 10),
-    vat_amount: '',
-  })
-
-  const resetForm = () => {
-    setForm({
-      revenue_type: 'sale', amount: '', description: '', client_name: '',
-      invoice_number: '', date: new Date().toISOString().slice(0, 10), vat_amount: '',
-    })
-    setEditingId(null)
-    setDialogOpen(false)
-  }
-
-  const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['carpark', 'revenues', vehicleId] })
-    queryClient.invalidateQueries({ queryKey: ['carpark', 'profitability', vehicleId] })
-  }
-
-  const createMutation = useMutation({
-    mutationFn: (data: Record<string, unknown>) => carparkApi.createRevenue(vehicleId, data),
-    onSuccess: () => { invalidate(); toast.success('Venit adăugat'); resetForm() },
-    onError: () => toast.error('Adăugarea venitului a eșuat'),
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
-      carparkApi.updateRevenue(id, data),
-    onSuccess: () => { invalidate(); toast.success('Venit actualizat'); resetForm() },
-    onError: () => toast.error('Actualizarea venitului a eșuat'),
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => carparkApi.deleteRevenue(id),
-    onSuccess: () => { invalidate(); toast.success('Venit șters'); setDeleteConfirmId(null) },
-    onError: () => toast.error('Ștergerea venitului a eșuat'),
-  })
-
-  const handleSubmit = () => {
-    const payload = {
-      revenue_type: form.revenue_type,
-      amount: Number(form.amount),
-      description: form.description || null,
-      client_name: form.client_name || null,
-      invoice_number: form.invoice_number || null,
-      date: form.date,
-      vat_amount: form.vat_amount ? Number(form.vat_amount) : 0,
-    }
-    if (editingId) {
-      updateMutation.mutate({ id: editingId, data: payload })
-    } else {
-      createMutation.mutate(payload)
-    }
-  }
-
-  const startEdit = (r: VehicleRevenue) => {
-    setForm({
-      revenue_type: r.revenue_type,
-      amount: String(r.amount),
-      description: r.description ?? '',
-      client_name: r.client_name ?? '',
-      invoice_number: r.invoice_number ?? '',
-      date: r.date,
-      vat_amount: String(r.vat_amount ?? 0),
-    })
-    setEditingId(r.id)
-    setDialogOpen(true)
-  }
-
-  const totalNet = revenues.reduce((s, r) => s + Number(r.amount), 0)
-  const totalVat = revenues.reduce((s, r) => s + Number(r.vat_amount ?? 0), 0)
-  const totalGross = totalNet + totalVat
-
-  const byType = useMemo(() => {
-    const map: Record<string, number> = {}
-    revenues.forEach((r) => {
-      const key = r.revenue_type
-      map[key] = (map[key] ?? 0) + Number(r.amount)
-    })
-    return Object.entries(map).sort(([, a], [, b]) => b - a)
-  }, [revenues])
-
-  const fmt = (v: number) => new Intl.NumberFormat('ro-RO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v)
-
-  return (
-    <div className="space-y-4">
-      {/* Summary Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-4 text-sm">
-          <span className="text-muted-foreground">
-            Net: <span className="font-semibold text-emerald-600 tabular-nums">{fmt(totalNet)} {currency}</span>
-          </span>
-          {totalVat > 0 && (
-            <span className="text-muted-foreground">
-              TVA: <span className="font-medium tabular-nums">{fmt(totalVat)} {currency}</span>
-            </span>
-          )}
-          <span className="text-muted-foreground">
-            Total: <span className="font-bold text-emerald-600 tabular-nums">{fmt(totalGross)} {currency}</span>
-          </span>
-        </div>
-        {canEdit && (
-          <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true) }}>
-            <Plus className="h-4 w-4 mr-1" /> Adaugă venit
-          </Button>
-        )}
-      </div>
-
-      {/* Type Breakdown */}
-      {byType.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          {byType.map(([type, amount]) => {
-            const pct = totalNet > 0 ? Math.round((amount / totalNet) * 100) : 0
-            return (
-              <div key={type} className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs">
-                <span className="font-medium">{REVENUE_TYPE_LABELS[type as RevenueType] ?? type}</span>
-                <span className="tabular-nums text-muted-foreground">{fmt(amount)}</span>
-                <span className="text-[10px] text-muted-foreground">({pct}%)</span>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Revenues Table */}
-      {revenues.length === 0 ? (
-        <EmptyState title="Niciun venit înregistrat" icon={<TrendingUp className="h-8 w-8" />} />
-      ) : (
-        <Card className="overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-muted/40 text-xs text-muted-foreground">
-                <th className="text-left px-3 py-2 font-medium">Dată</th>
-                <th className="text-left px-3 py-2 font-medium">Tip</th>
-                <th className="text-left px-3 py-2 font-medium hidden sm:table-cell">Client</th>
-                <th className="text-left px-3 py-2 font-medium hidden lg:table-cell">Nr. factură</th>
-                <th className="text-left px-3 py-2 font-medium hidden md:table-cell">Descriere</th>
-                <th className="text-right px-3 py-2 font-medium">Net</th>
-                <th className="text-right px-3 py-2 font-medium hidden sm:table-cell">TVA</th>
-                <th className="text-right px-3 py-2 font-medium">Total</th>
-                {canEdit && <th className="px-2 py-2 w-20"></th>}
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {revenues.map((r) => {
-                const net = Number(r.amount)
-                const vat = Number(r.vat_amount ?? 0)
-                return (
-                  <tr key={r.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="px-3 py-2 tabular-nums text-xs">{formatDate(r.date)}</td>
-                    <td className="px-3 py-2">
-                      <Badge variant="outline" className="text-[11px]">
-                        {REVENUE_TYPE_LABELS[r.revenue_type] ?? r.revenue_type}
-                      </Badge>
-                    </td>
-                    <td className="px-3 py-2 hidden sm:table-cell text-muted-foreground truncate max-w-[140px]">{r.client_name || '-'}</td>
-                    <td className="px-3 py-2 hidden lg:table-cell font-mono text-xs text-muted-foreground">{r.invoice_number || '-'}</td>
-                    <td className="px-3 py-2 hidden md:table-cell text-muted-foreground truncate max-w-[180px]">{r.description || '-'}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{fmt(net)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{vat > 0 ? fmt(vat) : '-'}</td>
-                    <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(net + vat)}</td>
-                    {canEdit && (
-                      <td className="px-2 py-2 text-right whitespace-nowrap">
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => startEdit(r)}>
-                          <Pencil className="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-600" onClick={() => setDeleteConfirmId(r.id)}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </td>
-                    )}
-                  </tr>
-                )
-              })}
-            </tbody>
-            {revenues.length > 1 && (
-              <tfoot>
-                <tr className="border-t bg-muted/30 font-medium text-xs">
-                  <td className="px-3 py-2" colSpan={5}></td>
-                  <td className="px-3 py-2 text-right tabular-nums">{fmt(totalNet)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground hidden sm:table-cell">{totalVat > 0 ? fmt(totalVat) : '-'}</td>
-                  <td className="px-3 py-2 text-right tabular-nums font-bold">{fmt(totalGross)}</td>
-                  {canEdit && <td></td>}
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </Card>
-      )}
-
-      {/* Add/Edit Revenue Dialog */}
-      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) resetForm() }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{editingId ? 'Editează venit' : 'Adaugă venit'}</DialogTitle>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Tip</Label>
-                <Select value={form.revenue_type} onValueChange={(v) => setForm((p) => ({ ...p, revenue_type: v as RevenueType }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(REVENUE_TYPE_LABELS).map(([k, label]) => (
-                      <SelectItem key={k} value={k}>{label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Dată</Label>
-                <Input type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Sumă (net)</Label>
-                <Input type="number" step="0.01" placeholder="0.00" value={form.amount} onChange={(e) => setForm((p) => ({ ...p, amount: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Valoare TVA</Label>
-                <Input type="number" step="0.01" placeholder="0.00" value={form.vat_amount} onChange={(e) => setForm((p) => ({ ...p, vat_amount: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Client</Label>
-                <Input placeholder="Nume client" value={form.client_name} onChange={(e) => setForm((p) => ({ ...p, client_name: e.target.value }))} />
-              </div>
-              <div>
-                <Label>Nr. factură</Label>
-                <Input placeholder="Număr factură" value={form.invoice_number} onChange={(e) => setForm((p) => ({ ...p, invoice_number: e.target.value }))} />
-              </div>
-            </div>
-            <div>
-              <Label>Descriere</Label>
-              <Input placeholder="Descriere opțională" value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={resetForm}>Anulează</Button>
-            <Button onClick={handleSubmit} disabled={!form.amount || Number(form.amount) <= 0 || createMutation.isPending || updateMutation.isPending}>
-              {createMutation.isPending || updateMutation.isPending ? 'Se salvează...' : editingId ? 'Actualizează' : 'Adaugă'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Delete Confirmation */}
-      <Dialog open={deleteConfirmId !== null} onOpenChange={(open) => { if (!open) setDeleteConfirmId(null) }}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Șterge venit</DialogTitle>
-            <DialogDescription>Ești sigur? Această acțiune nu poate fi anulată.</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteConfirmId(null)}>Anulează</Button>
-            <Button variant="destructive" disabled={deleteMutation.isPending} onClick={() => deleteConfirmId && deleteMutation.mutate(deleteConfirmId)}>
-              {deleteMutation.isPending ? 'Se șterge...' : 'Șterge'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

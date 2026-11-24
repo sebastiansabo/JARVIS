@@ -409,6 +409,12 @@ def create_schema_carpark(conn, cursor):
         )
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcr_vehicle ON carpark_vehicle_revenues(vehicle_id)')
+    # BNR rate (units of the revenue's currency per 1 EUR, frozen at its date)
+    # so non-EUR revenues convert to EUR in the totals — mirrors the cost side.
+    cursor.execute('''
+        ALTER TABLE carpark_vehicle_revenues
+            ADD COLUMN IF NOT EXISTS exchange_rate_eur DECIMAL(10,4)
+    ''')
 
     # ── Documents ──
     cursor.execute('''
@@ -429,6 +435,44 @@ def create_schema_carpark(conn, cursor):
     ''')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcd_vehicle ON carpark_vehicle_documents(vehicle_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_vcd_type ON carpark_vehicle_documents(document_type)')
+
+    # Cache the first successful invoice OCR on the document so repeat
+    # transfer-to-cost/income opens reuse it instead of re-fetching the file
+    # and re-running the AI parser every time.
+    cursor.execute('''
+        ALTER TABLE carpark_vehicle_documents
+            ADD COLUMN IF NOT EXISTS parsed_invoice JSONB
+    ''')
+
+    # Link a cost back to the document it was transferred from (invoice ->
+    # cost). Nullable + ON DELETE SET NULL: deleting the source document
+    # must not delete the cost it produced. Must come after the
+    # carpark_vehicle_documents CREATE TABLE above, since the FK references it.
+    cursor.execute('''
+        ALTER TABLE carpark_vehicle_costs
+            ADD COLUMN IF NOT EXISTS source_document_id INTEGER
+            REFERENCES carpark_vehicle_documents(id) ON DELETE SET NULL
+    ''')
+    cursor.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_vcc_source_document
+        ON carpark_vehicle_costs(source_document_id)
+        WHERE source_document_id IS NOT NULL
+    ''')
+
+    # Same link for a revenue produced from a document (invoice -> income).
+    # A given document goes to one place — a cost OR a revenue — so each table
+    # has its own partial-unique index; the service pre-checks both before
+    # inserting. Must also come after the carpark_vehicle_documents CREATE.
+    cursor.execute('''
+        ALTER TABLE carpark_vehicle_revenues
+            ADD COLUMN IF NOT EXISTS source_document_id INTEGER
+            REFERENCES carpark_vehicle_documents(id) ON DELETE SET NULL
+    ''')
+    cursor.execute('''
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_vcr_source_document
+        ON carpark_vehicle_revenues(source_document_id)
+        WHERE source_document_id IS NOT NULL
+    ''')
 
     # ── Document templates ──
     cursor.execute('''

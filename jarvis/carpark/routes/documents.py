@@ -1,7 +1,9 @@
-"""Document API routes — link/upload, delete, checklist, timeline.
+"""Document API routes — link/upload, delete, checklist, timeline,
+invoice->cost (parse-invoice, transfer-to-cost).
 
 No SQL lives here (per repo convention) — every route delegates to
-DocumentRepository, DispoRepository (timeline), or DispoService (checklist).
+DocumentRepository, DispoRepository (timeline), DispoService (checklist), or
+VehicleService (invoice->cost transfer).
 
 Two input modes for POST /vehicles/<id>/documents:
   - LINK MODE (primary, always available): JSON body with file_url and/or
@@ -24,6 +26,13 @@ convention):
   PermissionError -> 403 (cross-tenant vehicle)
   ValueError      -> 400 (validation / guard failure)
   anything else   -> 500 (logged)
+
+transfer-to-cost is the one exception: ValueError('already transferred')
+(the dedup pre-check in VehicleService.transfer_document_to_cost) maps to
+409 instead of 400 — it's a conflict with existing state, not a bad
+request. parse-invoice never raises past the route at all: any fetch/parse
+failure degrades to {'cost_prefill': None} with HTTP 200 (see its
+docstring).
 """
 import logging
 from datetime import date
@@ -34,12 +43,18 @@ from flask_login import login_required, current_user
 from carpark import carpark_bp
 from carpark.repositories.document_repository import DocumentRepository
 from carpark.services.photo_urls import public_photo_url
+from carpark.services.vehicle_service import VehicleService
+from carpark.services.invoice_cost_mapper import map_parsed_invoice_to_cost, map_parsed_invoice_to_revenue
+from carpark.services.document_fetch import fetch_document_bytes
+from carpark.services.invoice_parse import parse_invoice_resilient
 from carpark.repositories.dispo_repository import DispoRepository
 from carpark.services.dispo_service import DispoService
 from carpark.routes.vehicles import (
     carpark_required, carpark_edit_required, carpark_delete_required,
+    carpark_finance_edit_required,
     _serialize, _verify_vehicle_ownership, _user_company_id,
 )
+from carpark.routes.costs import VALID_COST_TYPES, VALID_REVENUE_TYPES
 
 logger = logging.getLogger('jarvis.carpark')
 
@@ -61,6 +76,7 @@ except ImportError:
 _document_repo = DocumentRepository()
 _dispo_repo = DispoRepository()
 _dispo_service = DispoService()
+_service = VehicleService()
 
 # Known document types (matches the CarPark Dispo document checklist —
 # see DispoService.REQUIRED_DOCS for the subset that's actually
@@ -75,9 +91,24 @@ VALID_DOCUMENT_TYPES = frozenset({
     # Sale-documents module (carpark/routes/sale_documents.py) — the
     # commercial warranty certificate generated/saved for a sold vehicle.
     'garantie',
+    # Service / repair invoice — a vehicle cost, so transfer-to-cost eligible.
+    'factura_service',
 })
 
 _MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10MB
+
+# Document types that carry an invoice body eligible for the parse-invoice /
+# transfer-to-cost flow below (Task 5 of the invoice->cost feature) — the
+# invoice-shaped entries already present in VALID_DOCUMENT_TYPES above.
+INVOICE_DOCUMENT_TYPES = frozenset({
+    'factura_achizitie', 'factura_vanzare', 'factura_transfer', 'factura_service',
+})
+
+
+def is_invoice_document_type(document_type: str) -> bool:
+    """True if `document_type` is one of the invoice-shaped document types
+    eligible for parse-invoice / transfer-to-cost."""
+    return document_type in INVOICE_DOCUMENT_TYPES
 
 
 # ═══════════════════════════════════════════════
@@ -225,7 +256,16 @@ def _create_via_upload(vehicle_id, vehicle, uploaded_file):
         )
     except Exception as e:
         logger.error(f'Drive upload failed for vehicle {vehicle_id}: {e}', exc_info=True)
-        return jsonify({'error': 'File upload failed'}), 500
+        # Drive is importable but the upload failed at runtime (missing/expired
+        # credentials, API error, ...). File upload isn't working on this server
+        # right now, so return the same actionable 400 as the drive-disabled
+        # path — the client auto-switches to link mode instead of hitting a
+        # dead-end 500. (The real cause is in the logs above.)
+        return jsonify({
+            'error': 'File upload is unavailable (Google Drive is not reachable '
+                     'on this server). Upload the file elsewhere and submit it via '
+                     'file_url / a link instead.'
+        }), 400
 
     payload = {
         'document_type': document_type,
@@ -283,6 +323,171 @@ def delete_document(doc_id):
     if not deleted:
         return jsonify({'error': 'Document not found'}), 404
     return jsonify({'success': True})
+
+
+# ═══════════════════════════════════════════════
+# DOCUMENTS — INVOICE → COST (parse-invoice, transfer-to-cost)
+# ═══════════════════════════════════════════════
+
+def _load_invoice_document(vehicle_id, doc_id):
+    """Shared lookup+guard for parse-invoice/transfer-to-cost: loads the
+    document and checks it belongs to this vehicle and is an invoice-shaped
+    type. Returns (document, None) on success, or (None, error_response)
+    where error_response is a ready-to-return (body, status) tuple — 404 for
+    missing/cross-vehicle (same oracle-avoidance pattern as delete_document
+    above: a cross-tenant doc_id 404s exactly like an unknown one), 400 for
+    a non-invoice document_type."""
+    try:
+        document = _document_repo.get(doc_id)
+    except Exception as e:
+        logger.error(f'Document lookup failed for doc {doc_id}: {e}', exc_info=True)
+        return None, (jsonify({'error': 'Internal error'}), 500)
+
+    if not document or document.get('vehicle_id') != vehicle_id:
+        return None, (jsonify({'error': 'Document not found'}), 404)
+
+    if not is_invoice_document_type(document.get('document_type')):
+        return None, (jsonify({'error': 'Document is not an invoice type'}), 400)
+
+    return document, None
+
+
+@carpark_bp.route('/vehicles/<int:vehicle_id>/documents/<int:doc_id>/parse-invoice', methods=['POST'])
+@login_required
+@carpark_finance_edit_required
+def parse_invoice_document(vehicle_id, doc_id):
+    """Best-effort parse of an uploaded invoice document into cost-prefill
+    fields for the create-cost dialog. NO persistence happens here — see
+    transfer_document_to_cost_route below for that.
+
+    Always returns HTTP 200: any failure fetching or parsing the file (an
+    un-fetchable/DMS-only document, a non-PDF/image the AI parser can't
+    read, the invoice_parser module itself unavailable, ...) degrades to
+    {'cost_prefill': None, 'reason': '...'} so the UI falls back to a blank
+    cost dialog instead of being blocked by a 500. This carries forward
+    document_fetch's documented residual TOCTOU/DNS-rebind gap unresolved —
+    not this route's job to close it, hence best-effort rather than a hard
+    failure."""
+    _, err = _verify_vehicle_ownership(vehicle_id)
+    if err:
+        return err
+
+    document, err = _load_invoice_document(vehicle_id, doc_id)
+    if err:
+        return err
+
+    # Serve a previously-cached parse — don't re-fetch + re-run the AI on a
+    # document that's already been read once (parsed_invoice JSONB, set below).
+    cached = document.get('parsed_invoice')
+    if cached:
+        return jsonify({
+            'cost_prefill': map_parsed_invoice_to_cost(cached),
+            'revenue_prefill': map_parsed_invoice_to_revenue(cached),
+        }), 200
+
+    try:
+        file_bytes, filename = fetch_document_bytes(document)
+        # parse_invoice_resilient lazily imports the AI parser (keeps the
+        # poppler/LLM-client import cost off blueprint registration) and, when
+        # the first render fails on a structurally-broken PDF (bad xref — some
+        # "COPIE FACTURA INTERNA" dumps), repairs it with pikepdf and retries.
+        parsed = parse_invoice_resilient(file_bytes, filename)
+        # Cache the result so the next transfer reuses it instead of re-parsing
+        # — only when the OCR actually extracted something, so a failed read
+        # retries next time rather than locking in a blank.
+        if parsed and (parsed.get('invoice_value') is not None
+                       or parsed.get('supplier') or parsed.get('invoice_number')):
+            try:
+                _document_repo.set_parsed_invoice(doc_id, parsed)
+            except Exception as cache_err:
+                logger.warning(f'Could not cache parsed invoice for doc {doc_id}: {cache_err}')
+        # Map once to both destinations — the user picks cost vs revenue in the
+        # dialog, so return both prefills (cheap; no extra OCR).
+        return jsonify({
+            'cost_prefill': map_parsed_invoice_to_cost(parsed),
+            'revenue_prefill': map_parsed_invoice_to_revenue(parsed),
+        }), 200
+    except Exception as e:
+        # error-level + traceback (not warning): this catch-all deliberately
+        # swallows genuine parser/mapper bugs into a 200 cost_prefill:null, so
+        # a real regression must still be visible with a stack trace rather
+        # than shipping silently below error-level alerting. Response contract
+        # is unchanged — the UI still falls back to a blank dialog. The
+        # client-facing `reason` is intentionally generic (not str(e)): the
+        # raw exception text could leak internal details (file paths, DMS/
+        # Drive URLs, parser/AI-client internals) to whoever can view this
+        # vehicle's documents — the full exception stays server-side via
+        # exc_info=True above.
+        logger.error(f'Invoice parse failed for doc {doc_id} (vehicle {vehicle_id}): {e}', exc_info=True)
+        return jsonify({'cost_prefill': None, 'revenue_prefill': None, 'reason': 'could not read invoice automatically'}), 200
+
+
+@carpark_bp.route('/vehicles/<int:vehicle_id>/documents/<int:doc_id>/transfer-to-cost', methods=['POST'])
+@login_required
+@carpark_finance_edit_required
+def transfer_document_to_cost_route(vehicle_id, doc_id):
+    """Persist the user-confirmed cost fields (typically parse-invoice's
+    prefill, edited) as a cost entry linked back to this document via
+    source_document_id. Delegates the find-or-create-cost-line + dedup +
+    insert to VehicleService.transfer_document_to_cost (Task 4)."""
+    _, err = _verify_vehicle_ownership(vehicle_id)
+    if err:
+        return err
+
+    _, err = _load_invoice_document(vehicle_id, doc_id)
+    if err:
+        return err
+
+    data = request.get_json(silent=True) or {}
+    if data.get('cost_type') and data['cost_type'] not in VALID_COST_TYPES:
+        return jsonify({
+            'error': f'Invalid cost_type. Allowed: {", ".join(sorted(VALID_COST_TYPES))}'
+        }), 400
+
+    try:
+        cost = _service.transfer_document_to_cost(vehicle_id, doc_id, data, created_by=current_user.id)
+        return jsonify({'cost': _serialize(cost)}), 201
+    except ValueError as e:
+        if str(e) == 'already transferred':
+            return jsonify({'error': 'already transferred'}), 409
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f'Transfer-to-cost failed for doc {doc_id} (vehicle {vehicle_id}): {e}', exc_info=True)
+        return jsonify({'error': 'Internal error'}), 500
+
+
+@carpark_bp.route('/vehicles/<int:vehicle_id>/documents/<int:doc_id>/transfer-to-revenue', methods=['POST'])
+@login_required
+@carpark_finance_edit_required
+def transfer_document_to_revenue_route(vehicle_id, doc_id):
+    """Persist the user-confirmed revenue fields (typically parse-invoice's
+    revenue_prefill, edited) as a Venituri entry linked back to this document
+    via source_document_id. Income mirror of transfer_document_to_cost_route;
+    rejects a document already transferred to a cost OR a revenue with 409."""
+    _, err = _verify_vehicle_ownership(vehicle_id)
+    if err:
+        return err
+
+    _, err = _load_invoice_document(vehicle_id, doc_id)
+    if err:
+        return err
+
+    data = request.get_json(silent=True) or {}
+    if data.get('revenue_type') and data['revenue_type'] not in VALID_REVENUE_TYPES:
+        return jsonify({
+            'error': f'Invalid revenue_type. Allowed: {", ".join(sorted(VALID_REVENUE_TYPES))}'
+        }), 400
+
+    try:
+        revenue = _service.transfer_document_to_revenue(vehicle_id, doc_id, data, created_by=current_user.id)
+        return jsonify({'revenue': _serialize(revenue)}), 201
+    except ValueError as e:
+        if str(e) == 'already transferred':
+            return jsonify({'error': 'already transferred'}), 409
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.error(f'Transfer-to-revenue failed for doc {doc_id} (vehicle {vehicle_id}): {e}', exc_info=True)
+        return jsonify({'error': 'Internal error'}), 500
 
 
 # ═══════════════════════════════════════════════

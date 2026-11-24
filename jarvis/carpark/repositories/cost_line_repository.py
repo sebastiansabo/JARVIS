@@ -61,6 +61,24 @@ class CostLineRepository(BaseRepository):
             return cursor.fetchone()['id']
         return self.execute_many(_work)
 
+    def get_or_create_for_type(self, vehicle_id: int, cost_type: str,
+                               currency: str, created_by: int = None) -> int:
+        """Return the id of an existing cost line for (vehicle_id, cost_type)
+        — picking a stable one (lowest id) when more than one exists — or
+        create a new line (planned_amount=0, the given currency) and return
+        its new id. Used by the invoice-document -> cost transfer flow so
+        each transferred invoice lands under one line per cost_type instead
+        of spawning a fresh line per document."""
+        existing = self.query_one('''
+            SELECT id FROM carpark_vehicle_cost_lines
+            WHERE vehicle_id = %s AND cost_type = %s
+            ORDER BY id LIMIT 1
+        ''', (vehicle_id, cost_type))
+        if existing:
+            return existing['id']
+        return self.create_line(vehicle_id, cost_type, planned_amount=0,
+                                currency=currency, created_by=created_by)
+
     def update_line(self, line_id: int, **kwargs) -> bool:
         allowed = {'cost_type', 'description', 'planned_amount', 'currency', 'notes'}
         updates = []
@@ -83,10 +101,20 @@ class CostLineRepository(BaseRepository):
         return self.execute_many(_work)
 
     def delete_line(self, line_id: int) -> bool:
-        """Delete a cost line — cascades to child costs."""
-        return self.execute(
-            'DELETE FROM carpark_vehicle_cost_lines WHERE id = %s', (line_id,)
-        ) > 0
+        """Delete a cost line and all its child cost entries.
+
+        The cost_line_id FK is ON DELETE SET NULL, so deleting the line alone
+        would ORPHAN its costs (cost_line_id -> NULL) rather than remove them —
+        leaving invisible ghost rows that still count in profitability and, for
+        a transfer-created cost, keep its source document locked ("already
+        transferred"). Delete the children in the same transaction so the
+        line's costs don't outlive it.
+        """
+        def _work(cursor):
+            cursor.execute('DELETE FROM carpark_vehicle_costs WHERE cost_line_id = %s', (line_id,))
+            cursor.execute('DELETE FROM carpark_vehicle_cost_lines WHERE id = %s', (line_id,))
+            return cursor.rowcount > 0
+        return self.execute_many(_work)
 
     # ── Cost Entries (children) ───────────────────────────
 
@@ -200,3 +228,24 @@ class CostLineRepository(BaseRepository):
                 updated_at = NOW()
             WHERE id = %s
         ''', (cost_line_id, cost_line_id))
+
+    def recalc_spent(self, line_id: int) -> None:
+        """Public standalone recompute of spent_amount on a cost line.
+
+        Same recalculation as `_recalc_line_spent` above, but runs on its
+        own connection (via `self.execute`) instead of an existing cursor —
+        for callers outside this repo that insert child cost rows via a
+        different path. Specifically: VehicleService.transfer_document_to_cost
+        creates its cost row through CostRepository.create() (a flat
+        insert) rather than through create_cost() above, so nothing
+        recalculates the parent line's stored total unless the caller does
+        it explicitly."""
+        self.execute('''
+            UPDATE carpark_vehicle_cost_lines SET
+                spent_amount = COALESCE(
+                    (SELECT SUM(amount) FROM carpark_vehicle_costs
+                     WHERE cost_line_id = %s), 0
+                ),
+                updated_at = NOW()
+            WHERE id = %s
+        ''', (line_id, line_id))

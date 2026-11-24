@@ -1,13 +1,18 @@
 """Revenue Repository — Data access for carpark_vehicle_revenues."""
 from typing import Optional, Dict, Any, List
 from core.base_repository import BaseRepository
+from carpark.money import REVENUE_EUR_SQL, REVENUE_VAT_EUR_SQL
 
 
 REVENUE_FIELDS = (
     'revenue_type', 'description', 'amount', 'currency', 'vat_amount',
-    'invoice_number', 'invoice_id', 'client_name', 'date',
+    'exchange_rate_eur', 'invoice_number', 'invoice_id', 'client_name', 'date',
 )
 
+# source_document_id is intentionally NOT in REVENUE_FIELDS/REVENUE_UPDATABLE:
+# it's server-controlled (set only by the invoice->income transfer via the
+# create() kwarg below), so a user can't mass-assign it on the generic revenue
+# create/update routes to fake/steal a document->revenue link.
 REVENUE_UPDATABLE = set(REVENUE_FIELDS)
 
 
@@ -33,14 +38,28 @@ class RevenueRepository(BaseRepository):
             'SELECT * FROM carpark_vehicle_revenues WHERE id = %s', (revenue_id,)
         )
 
+    def find_by_source_document(self, doc_id: int) -> Optional[Dict[str, Any]]:
+        """Existing revenue row (if any) already linked to this source
+        document — the dedup pre-check for the invoice->income transfer."""
+        return self.query_one(
+            'SELECT * FROM carpark_vehicle_revenues WHERE source_document_id = %s LIMIT 1',
+            (doc_id,)
+        )
+
     def create(self, vehicle_id: int, data: Dict[str, Any],
-               created_by: int = None) -> Dict[str, Any]:
-        """Create a revenue record for a vehicle."""
+               created_by: int = None, source_document_id: int = None) -> Dict[str, Any]:
+        """Create a revenue record for a vehicle.
+
+        `source_document_id` is passed explicitly (by the invoice->income
+        transfer), never read from `data`, so it can't be mass-assigned.
+        """
         safe = {k: data[k] for k in REVENUE_FIELDS if k in data and data[k] is not None}
         if 'revenue_type' not in safe:
             raise ValueError('revenue_type is required')
         if 'amount' not in safe:
             raise ValueError('amount is required')
+        if source_document_id is not None:
+            safe['source_document_id'] = source_document_id
 
         cols = ['vehicle_id'] + list(safe.keys())
         vals = [vehicle_id] + list(safe.values())
@@ -79,11 +98,11 @@ class RevenueRepository(BaseRepository):
 
     def get_totals_by_vehicle(self, vehicle_id: int) -> Dict[str, Any]:
         """Get revenue totals grouped by revenue_type for a vehicle."""
-        rows = self.query_all('''
+        rows = self.query_all(f'''
             SELECT revenue_type,
                    COUNT(*) AS count,
-                   SUM(amount) AS total_amount,
-                   SUM(vat_amount) AS total_vat
+                   SUM({REVENUE_EUR_SQL}) AS total_amount,
+                   SUM({REVENUE_VAT_EUR_SQL}) AS total_vat
             FROM carpark_vehicle_revenues
             WHERE vehicle_id = %s
             GROUP BY revenue_type

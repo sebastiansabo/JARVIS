@@ -1,6 +1,7 @@
 """Cost Repository — Data access for carpark_vehicle_costs."""
 from typing import Optional, Dict, Any, List
 from core.base_repository import BaseRepository
+from carpark.money import COST_EUR_SQL, COST_VAT_EUR_SQL
 
 
 COST_FIELDS = (
@@ -10,6 +11,10 @@ COST_FIELDS = (
     'observation', 'date', 'cost_line_id',
 )
 
+# source_document_id is intentionally NOT in COST_FIELDS/COST_UPDATABLE: it's
+# server-controlled (set only by the invoice->cost transfer via the create()
+# kwarg below), so a user can't mass-assign it on the generic cost
+# create/update routes to fake/steal a document->cost link.
 COST_UPDATABLE = set(COST_FIELDS)
 
 
@@ -35,14 +40,30 @@ class CostRepository(BaseRepository):
             'SELECT * FROM carpark_vehicle_costs WHERE id = %s', (cost_id,)
         )
 
+    def find_by_source_document(self, doc_id: int) -> Optional[Dict[str, Any]]:
+        """Existing cost row (if any) already linked to this source
+        document. Used as the application-level dedup pre-check for the
+        invoice-document -> cost transfer flow; the partial unique index
+        `uq_vcc_source_document` is the race-safe backstop."""
+        return self.query_one(
+            'SELECT id FROM carpark_vehicle_costs WHERE source_document_id = %s LIMIT 1',
+            (doc_id,)
+        )
+
     def create(self, vehicle_id: int, data: Dict[str, Any],
-               created_by: int = None) -> Dict[str, Any]:
-        """Create a cost record for a vehicle."""
+               created_by: int = None, source_document_id: int = None) -> Dict[str, Any]:
+        """Create a cost record for a vehicle.
+
+        `source_document_id` is passed explicitly (by the invoice->cost
+        transfer), never read from `data`, so it can't be mass-assigned.
+        """
         safe = {k: data[k] for k in COST_FIELDS if k in data and data[k] is not None}
         if 'cost_type' not in safe:
             raise ValueError('cost_type is required')
         if 'amount' not in safe:
             raise ValueError('amount is required')
+        if source_document_id is not None:
+            safe['source_document_id'] = source_document_id
 
         cols = ['vehicle_id'] + list(safe.keys())
         vals = [vehicle_id] + list(safe.values())
@@ -81,11 +102,11 @@ class CostRepository(BaseRepository):
 
     def get_totals_by_vehicle(self, vehicle_id: int) -> Dict[str, Any]:
         """Get cost totals grouped by cost_type for a vehicle."""
-        rows = self.query_all('''
+        rows = self.query_all(f'''
             SELECT cost_type,
                    COUNT(*) AS count,
-                   SUM(amount) AS total_amount,
-                   SUM(vat_amount) AS total_vat
+                   SUM({COST_EUR_SQL}) AS total_amount,
+                   SUM({COST_VAT_EUR_SQL}) AS total_vat
             FROM carpark_vehicle_costs
             WHERE vehicle_id = %s
             GROUP BY cost_type
@@ -110,8 +131,8 @@ class CostRepository(BaseRepository):
         placeholders = ','.join(['%s'] * len(vehicle_ids))
         rows = self.query_all(f'''
             SELECT vehicle_id,
-                   COALESCE(SUM(amount), 0) AS total_amount,
-                   COALESCE(SUM(vat_amount), 0) AS total_vat
+                   COALESCE(SUM({COST_EUR_SQL}), 0) AS total_amount,
+                   COALESCE(SUM({COST_VAT_EUR_SQL}), 0) AS total_vat
             FROM carpark_vehicle_costs
             WHERE vehicle_id IN ({placeholders})
             GROUP BY vehicle_id

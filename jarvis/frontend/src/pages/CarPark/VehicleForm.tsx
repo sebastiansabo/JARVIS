@@ -56,14 +56,6 @@ import {
 } from '@/data/autovitData'
 
 type FormData = Record<string, string | number | boolean | null | string[]>
-type CostLine = {
-  type: string
-  description: string
-  date: string
-  lei: number | null
-  kurs: number | null
-  eur: number | null
-}
 
 /** Safely extract a numeric/string value for <Input value=...> (excludes boolean) */
 function inputVal(v: string | number | boolean | string[] | null | undefined): string | number {
@@ -475,35 +467,6 @@ export default function VehicleForm() {
       // Keep an existing custom title / manual Preț critic — don't auto-overwrite them.
       if (v.listing_title) titleTouched.current = true
       if (v.minimum_price != null) criticTouched.current = true
-      // Cost lines: parse the stored JSON, else migrate the old fixed columns.
-      const vAny = v as unknown as Record<string, unknown>
-      let lines: CostLine[] = []
-      if (typeof vAny.cost_lines === 'string' && vAny.cost_lines) {
-        try {
-          const parsed = JSON.parse(vAny.cost_lines as string) as Array<Record<string, unknown>>
-          lines = parsed.map((l) => ({
-            type: String(l.type ?? l.label ?? ''),
-            description: String(l.description ?? ''),
-            date: String(l.date ?? ''),
-            lei: l.lei == null ? null : Number(l.lei),
-            kurs: l.kurs == null ? null : Number(l.kurs),
-            eur: l.eur != null ? Number(l.eur) : l.amount != null ? Number(l.amount) : null,
-          }))
-        } catch {
-          lines = []
-        }
-      } else {
-        lines = (
-          [
-            ['Recondiționare', vAny.reconditioning_cost],
-            ['Transport', vAny.transport_cost],
-            ['Alte costuri', vAny.other_costs],
-          ] as [string, unknown][]
-        )
-          .filter(([, a]) => a != null && a !== 0)
-          .map(([type, a]) => ({ type, description: '', date: '', lei: null, kurs: null, eur: Number(a) }))
-      }
-      setCostLines(lines)
     }
     // Only run when existingData changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -793,15 +756,12 @@ export default function VehicleForm() {
     setPendingDraft(null)
   }
 
-  // Freeform acquisition cost lines — each entered in LEI on a date, converted
-  // to EUR via BNR for that date. Sum of EUR feeds the cost total.
-  const [costLines, setCostLines] = useState<CostLine[]>([])
   const _num = (v: unknown) => (typeof v === 'number' ? v : 0)
   const numOrNull = (v: unknown): number | null => (typeof v === 'number' ? v : null)
-  const costLinesTotal = costLines.reduce((s, l) => s + (l.eur ?? 0), 0)
-  // purchase_price_net is the canonical NET EUR value (VAT already excluded) →
-  // cost total is simply net + extra costs, in EUR.
-  const totalCost = Math.round((_num(form.purchase_price_net) + costLinesTotal) * 100) / 100
+  // purchase_price_net is the canonical NET EUR value (VAT already excluded) —
+  // acquisition costs beyond the buy price are entered as structured `achizitie`
+  // costs via the Costuri tab, not folded into this preview.
+  const totalCost = Math.round(_num(form.purchase_price_net) * 100) / 100
 
   // Acquisition price is entered in LEI (RON, net of VAT). Every edit re-derives
   // the canonical EUR pair via toCanonical(): acquisition_price = GROSS EUR,
@@ -1011,12 +971,6 @@ export default function VehicleForm() {
     if (Array.isArray(payload.equipment_options) && (payload.equipment_options as string[]).length === 0) {
       payload.equipment_options = null
     }
-    // Cost lines (JSON) replace the old fixed cost columns.
-    payload.cost_lines = costLines.length ? JSON.stringify(costLines) : null
-    payload.reconditioning_cost = null
-    payload.transport_cost = null
-    payload.other_costs = null
-
     // On create, seed the active price (current_price) from the selling price so
     // the new car shows a price in the catalog list immediately, and re-sync it on
     // edit so the catalog (which reads current_price) doesn't drift after a

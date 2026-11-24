@@ -16,7 +16,7 @@ logger = logging.getLogger('jarvis.carpark')
 _service = VehicleService()
 
 VALID_COST_TYPES = {
-    'repair', 'maintenance', 'insurance', 'registration', 'transport',
+    'achizitie', 'repair', 'maintenance', 'insurance', 'registration', 'transport',
     'inspection', 'cleaning', 'fuel', 'parking', 'tax', 'other',
 }
 

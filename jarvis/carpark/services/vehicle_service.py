@@ -4,14 +4,20 @@ Handles creation, updates (with audit trail), status transitions,
 and pricing history.
 """
 import logging
+from datetime import date as _date
 from typing import Optional, Dict, Any, List
 
+from psycopg2 import errors as pg_errors
+
+from core.services.currency_converter import get_exchange_rate
+from carpark.money import cost_amount_eur, cost_vat_eur, revenue_amount_eur, revenue_vat_eur
 from carpark.audit_diff import value_changed
 from carpark.repositories.vehicle_repository import VehicleRepository, _NO_SCOPE
 from carpark.repositories.photo_repository import PhotoRepository
 from carpark.repositories.cost_repository import CostRepository
 from carpark.repositories.cost_line_repository import CostLineRepository
 from carpark.repositories.revenue_repository import RevenueRepository
+from carpark.repositories.document_repository import DocumentRepository
 
 logger = logging.getLogger('jarvis.carpark')
 
@@ -83,6 +89,7 @@ class VehicleService:
         self._cost_repo = CostRepository()
         self._cost_line_repo = CostLineRepository()
         self._revenue_repo = RevenueRepository()
+        self._document_repo = DocumentRepository()
 
     # ── CATALOG ──
 
@@ -347,19 +354,80 @@ class VehicleService:
 
     def get_costs(self, vehicle_id: int,
                   cost_type: str = None) -> List[Dict[str, Any]]:
-        return self._cost_repo.get_by_vehicle(vehicle_id, cost_type)
+        # Enrich each cost with its EUR equivalents (derived via the shared rule)
+        # so the flat Costuri table can show original + EUR without re-deriving.
+        costs = self._cost_repo.get_by_vehicle(vehicle_id, cost_type)
+        for c in costs:
+            c['amount_eur'] = round(cost_amount_eur(c), 2)
+            c['vat_amount_eur'] = round(cost_vat_eur(c), 2)
+        return costs
 
     def get_cost(self, cost_id: int) -> Optional[Dict[str, Any]]:
         return self._cost_repo.get_by_id(cost_id)
 
+    def _with_eur_rate(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Stamp `exchange_rate_eur` (units of the cost's currency per 1 EUR, at
+        the cost's date) for a non-EUR cost that doesn't already carry one, from
+        BNR. On a BNR miss leave it unset (readers fall back to the raw amount)
+        — never crash. RON stays the source of truth; only the rate is added."""
+        currency = (data.get('currency') or 'EUR')
+        if currency == 'EUR' or data.get('exchange_rate_eur'):
+            return data
+        cost_date = str(data.get('date') or _date.today().isoformat())[:10]
+        try:
+            if currency == 'RON':
+                rate = get_exchange_rate('EUR', cost_date)
+            else:  # cross-rate via RON: (RON per EUR) / (RON per cost-currency)
+                eur = get_exchange_rate('EUR', cost_date)
+                cur = get_exchange_rate(currency, cost_date)
+                rate = (eur / cur) if (eur and cur and float(cur) > 0) else None
+        except Exception as e:
+            logger.warning(f'BNR rate lookup failed ({currency} {cost_date}): {e}')
+            rate = None
+        if rate and float(rate) > 0:
+            return {**data, 'exchange_rate_eur': float(rate)}
+        logger.warning(f'No BNR rate for {currency} on {cost_date}; cost saved without exchange_rate_eur')
+        return data
+
     def create_cost(self, vehicle_id: int, data: Dict[str, Any],
                     created_by: int = None) -> Dict[str, Any]:
+        data = self._with_eur_rate(data)
+        # Auto-file under a cost line by type when the caller didn't pick one,
+        # so the single-step "Adaugă cost" flow never leaves an orphan
+        # (cost_line_id NULL) cost — preserving the invariant the old two-step
+        # add guaranteed. An explicit cost_line_id is respected unchanged.
+        if not data.get('cost_line_id') and data.get('cost_type'):
+            line_id = self._cost_line_repo.get_or_create_for_type(
+                vehicle_id, data['cost_type'], data.get('currency') or 'EUR', created_by)
+            data = {**data, 'cost_line_id': line_id}
         cost = self._cost_repo.create(vehicle_id, data, created_by=created_by)
+        # CostRepository.create is a flat insert (doesn't recalc the parent
+        # line's stored spent_amount), so recalc it here — same as the
+        # invoice->cost transfer path.
+        if cost.get('cost_line_id'):
+            self._cost_line_repo.recalc_spent(cost['cost_line_id'])
         logger.info(f'Cost created: id={cost["id"]} vehicle={vehicle_id} '
                      f'type={cost["cost_type"]} amount={cost["amount"]}')
         return cost
 
     def update_cost(self, cost_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        # The rate is frozen at the cost's date, so re-derive it only when the
+        # date or currency actually changes — never on an unrelated edit (which
+        # would cost a needless BNR lookup).
+        if 'date' in data or 'currency' in data:
+            existing = self._cost_repo.get_by_id(cost_id) or {}
+            new_date = str(data.get('date', existing.get('date')) or '')[:10]
+            old_date = str(existing.get('date') or '')[:10]
+            new_cur = data.get('currency', existing.get('currency'))
+            if new_date != old_date or new_cur != existing.get('currency'):
+                new_rate = self._with_eur_rate(
+                    {'currency': new_cur, 'date': new_date}).get('exchange_rate_eur')
+                if new_rate is not None:
+                    data = {**data, 'exchange_rate_eur': new_rate}
+                elif new_cur == 'EUR':
+                    data = {**data, 'exchange_rate_eur': None}  # EUR needs no rate
+                # else: non-EUR but BNR missed — keep the existing rate rather than
+                # clearing it (clearing would silently revert to the raw amount).
         return self._cost_repo.update(cost_id, data)
 
     def delete_cost(self, cost_id: int) -> bool:
@@ -403,23 +471,177 @@ class VehicleService:
     def link_cost_invoice(self, cost_id: int, invoice_id: int = None) -> bool:
         return self._cost_line_repo.link_cost_invoice(cost_id, invoice_id)
 
+    # ── DOCUMENT -> COST TRANSFER ──
+
+    # Fields copied verbatim from the caller's `data` onto the created cost
+    # row (everything else — cost_type, cost_line_id, source_document_id —
+    # is derived/overridden below).
+    _TRANSFER_COST_FIELDS = (
+        'amount', 'currency', 'vat_rate', 'vat_amount', 'invoice_number',
+        'invoice_date', 'invoice_value', 'supplier_name', 'description', 'date',
+    )
+    # Revenue has no cost_line / vat_rate / invoice_value / invoice_date columns
+    # — only the carpark_vehicle_revenues columns below persist (the rest the
+    # dialog sends are UI helpers, dropped by RevenueRepository's own filter).
+    _TRANSFER_REVENUE_FIELDS = (
+        'amount', 'currency', 'vat_amount', 'invoice_number', 'client_name',
+        'description', 'date',
+    )
+
+    def transfer_document_to_cost(self, vehicle_id: int, doc_id: int,
+                                  data: Dict[str, Any],
+                                  created_by: int = None) -> Dict[str, Any]:
+        """Turn an uploaded vehicle document (e.g. a purchase invoice) into a
+        cost entry linked back to it via `source_document_id`.
+
+        Finds or creates a cost line for the chosen cost_type (default
+        'other') and inserts the cost under it. Idempotent: raises
+        ValueError if the document doesn't belong to this vehicle, if
+        `amount` is missing/non-positive (server-side guard — never trust
+        the client's disabled-button validation on a financial write), or
+        if it has already been transferred — the partial unique index on
+        carpark_vehicle_costs.source_document_id (Task 1) is the race-safe
+        backstop behind the `find_by_source_document` pre-check below. A
+        true concurrent double-submit of the SAME document can still slip
+        past that pre-check (both requests read "not yet transferred"
+        before either commits); the INSERT below is the backstop for that
+        case, caught as a UniqueViolation and re-raised as the same
+        ValueError so the route maps either path to 409.
+        """
+        doc = self._document_repo.get(doc_id)
+        if not doc or doc.get('vehicle_id') != vehicle_id:
+            raise ValueError('document not found for this vehicle')
+
+        amount = data.get('amount')
+        if amount is None or float(amount) <= 0:
+            raise ValueError('amount must be positive')
+
+        # One document goes to one place — reject if it's already a cost OR a
+        # revenue (cross-table; each table also has its own partial unique index
+        # as the single-table race backstop).
+        if (self._cost_repo.find_by_source_document(doc_id)
+                or self._revenue_repo.find_by_source_document(doc_id)):
+            raise ValueError('already transferred')
+
+        cost_type = data.get('cost_type') or 'other'
+        currency = data.get('currency') or 'RON'
+        line_id = self._cost_line_repo.get_or_create_for_type(
+            vehicle_id, cost_type, currency, created_by)
+
+        payload = {k: data[k] for k in self._TRANSFER_COST_FIELDS if k in data}
+        payload['cost_type'] = cost_type
+        payload['currency'] = currency  # same normalization the cost line got
+        payload['cost_line_id'] = line_id
+        payload = self._with_eur_rate(payload)  # stamp BNR rate for non-EUR
+
+        try:
+            # source_document_id passed as a server-controlled kwarg (not in the
+            # payload) so it can't be mass-assigned via the generic cost routes.
+            cost = self._cost_repo.create(vehicle_id, payload, created_by=created_by,
+                                          source_document_id=doc_id)
+        except pg_errors.UniqueViolation:
+            # Race backstop (see docstring above). base_repository.execute()
+            # rolls back and releases the connection cleanly on any
+            # exception (its `except Exception: conn.rollback(); raise`
+            # ahead of the `finally: release_db(conn)`), so re-raising here
+            # doesn't leave a poisoned connection in the pool.
+            raise ValueError('already transferred')
+
+        # CostRepository.create() is a flat insert — unlike
+        # CostLineRepository.create_cost(), it doesn't recalculate the
+        # parent line's stored spent_amount. Nothing currently reads that
+        # stored column (the UI sums computed_spent live), but keep it
+        # accurate rather than leave a latent trap for a future reader.
+        self._cost_line_repo.recalc_spent(line_id)
+
+        logger.info(f'Document transferred to cost: doc={doc_id} cost={cost["id"]} '
+                     f'vehicle={vehicle_id} line={line_id} type={cost_type}')
+        return cost
+
+    def transfer_document_to_revenue(self, vehicle_id: int, doc_id: int,
+                                     data: Dict[str, Any],
+                                     created_by: int = None) -> Dict[str, Any]:
+        """Turn an uploaded vehicle document (e.g. a sale invoice) into a
+        revenue (Venituri) entry linked back to it via `source_document_id`.
+
+        The income mirror of transfer_document_to_cost — no cost line (revenues
+        are flat). Idempotent: raises ValueError if the document doesn't belong
+        to this vehicle, if `amount` is missing/non-positive, or if it has
+        already been transferred (to a cost OR a revenue). The partial unique
+        index on carpark_vehicle_revenues.source_document_id is the single-table
+        race backstop, caught as a UniqueViolation and re-raised as the same
+        ValueError so the route maps either path to 409.
+        """
+        doc = self._document_repo.get(doc_id)
+        if not doc or doc.get('vehicle_id') != vehicle_id:
+            raise ValueError('document not found for this vehicle')
+
+        amount = data.get('amount')
+        if amount is None or float(amount) <= 0:
+            raise ValueError('amount must be positive')
+
+        if (self._cost_repo.find_by_source_document(doc_id)
+                or self._revenue_repo.find_by_source_document(doc_id)):
+            raise ValueError('already transferred')
+
+        payload = {k: data[k] for k in self._TRANSFER_REVENUE_FIELDS if k in data}
+        payload['revenue_type'] = data.get('revenue_type') or 'sale'
+        payload['currency'] = data.get('currency') or 'RON'
+        payload = self._with_eur_rate(payload)  # stamp BNR rate for non-EUR
+
+        try:
+            # source_document_id passed as a server-controlled kwarg (not in the
+            # payload) so it can't be mass-assigned via the generic revenue routes.
+            revenue = self._revenue_repo.create(vehicle_id, payload, created_by=created_by,
+                                                source_document_id=doc_id)
+        except pg_errors.UniqueViolation:
+            # Race backstop — base_repository.execute() rolls back + releases
+            # the connection cleanly on any exception, so re-raising is pool-safe.
+            raise ValueError('already transferred')
+
+        logger.info(f'Document transferred to revenue: doc={doc_id} '
+                     f'revenue={revenue["id"]} vehicle={vehicle_id} '
+                     f'type={payload["revenue_type"]}')
+        return revenue
+
     # ── REVENUES ──
 
     def get_revenues(self, vehicle_id: int,
                      revenue_type: str = None) -> List[Dict[str, Any]]:
-        return self._revenue_repo.get_by_vehicle(vehicle_id, revenue_type)
+        # Enrich with EUR equivalents (derived via the shared rule) for the flat
+        # Venituri table — mirrors get_costs.
+        revs = self._revenue_repo.get_by_vehicle(vehicle_id, revenue_type)
+        for r in revs:
+            r['amount_eur'] = round(revenue_amount_eur(r), 2)
+            r['vat_amount_eur'] = round(revenue_vat_eur(r), 2)
+        return revs
 
     def get_revenue(self, revenue_id: int) -> Optional[Dict[str, Any]]:
         return self._revenue_repo.get_by_id(revenue_id)
 
     def create_revenue(self, vehicle_id: int, data: Dict[str, Any],
                        created_by: int = None) -> Dict[str, Any]:
+        data = self._with_eur_rate(data)
         rev = self._revenue_repo.create(vehicle_id, data, created_by=created_by)
         logger.info(f'Revenue created: id={rev["id"]} vehicle={vehicle_id} '
                      f'type={rev["revenue_type"]} amount={rev["amount"]}')
         return rev
 
     def update_revenue(self, revenue_id: int, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        # Re-derive the rate only when date/currency changes; a BNR miss keeps
+        # the existing rate (mirror update_cost).
+        if 'date' in data or 'currency' in data:
+            existing = self._revenue_repo.get_by_id(revenue_id) or {}
+            new_date = str(data.get('date', existing.get('date')) or '')[:10]
+            old_date = str(existing.get('date') or '')[:10]
+            new_cur = data.get('currency', existing.get('currency'))
+            if new_date != old_date or new_cur != existing.get('currency'):
+                new_rate = self._with_eur_rate(
+                    {'currency': new_cur, 'date': new_date}).get('exchange_rate_eur')
+                if new_rate is not None:
+                    data = {**data, 'exchange_rate_eur': new_rate}
+                elif new_cur == 'EUR':
+                    data = {**data, 'exchange_rate_eur': None}
         return self._revenue_repo.update(revenue_id, data)
 
     def delete_revenue(self, revenue_id: int) -> bool:
