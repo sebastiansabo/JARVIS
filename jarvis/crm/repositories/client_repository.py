@@ -514,8 +514,13 @@ class ClientRepository(BaseRepository):
             cursor.execute('UPDATE client_profiles SET client_id = %s WHERE client_id = %s AND client_id NOT IN (SELECT client_id FROM client_profiles WHERE client_id = %s)',
                            (keep_id, remove_id, keep_id))
             cursor.execute('DELETE FROM client_profiles WHERE client_id = %s', (remove_id,))
-            # Merge visit notes
-            cursor.execute('UPDATE kam_visit_notes SET client_id = %s WHERE client_id = %s', (keep_id, remove_id))
+            # Repoint KAM field-sales visits. The client_id FK lives on
+            # kam_visit_plans; its notes follow automatically via
+            # kam_visit_notes.visit_id. (The old statement targeted
+            # kam_visit_notes.client_id, a column that does not exist — it
+            # raised "column client_id does not exist" and rolled back EVERY
+            # merge, breaking the CRM Sanitize "Unifică" button.)
+            cursor.execute('UPDATE kam_visit_plans SET client_id = %s WHERE client_id = %s', (keep_id, remove_id))
             # Merge phones (skip conflicts on duplicate phone numbers)
             cursor.execute('''
                 INSERT INTO client_phones (client_id, phone, phone_raw, label, source)

@@ -6,7 +6,7 @@ import {
   Star, RefreshCw, Search, Loader2, Phone, Mail, Hash, Globe, User,
   Shield, Database, ChevronDown, ChevronUp, Sparkles, Lightbulb,
   AlertTriangle, TrendingUp, Target, Brain, CreditCard, BarChart3,
-  ShieldCheck, ChevronRight,
+  ShieldCheck, ChevronRight, Users, UserPlus, Trash2, CheckCircle2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -17,7 +17,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { crmApi, type CrmDeal, type CrmVisit, type FleetVehicle, type ClientInteraction } from '@/api/crm'
+import { crmApi, type CrmDeal, type CrmVisit, type FleetVehicle, type ClientInteraction, type ClientContact } from '@/api/crm'
 
 function InfoRow({ icon: Icon, label, value, className }: { icon?: React.ElementType; label: string; value: string | number | null | undefined; className?: string }) {
   return (
@@ -47,6 +47,223 @@ const CONNECTOR_META: Record<string, { icon: string; label: string }> = {
   termene: { icon: '⚖️', label: 'Termene.ro' },
   openapi_ro: { icon: '🔌', label: 'OpenAPI.ro' },
   firmeapi: { icon: '⚡', label: 'FirmeAPI' },
+}
+
+// A company client's drivable contact is gate-valid iff it carries all five
+// personal + licence fields — mirrors the backend GATE_FIELDS (contact_
+// repository.py) and the mobile TD gate (serie is NOT one of them).
+const CONTACT_GATE_FIELDS: (keyof ClientContact)[] = [
+  'full_name', 'email', 'phone', 'driver_license_photo', 'driver_license_number',
+]
+function contactGateValid(c: ClientContact): boolean {
+  return CONTACT_GATE_FIELDS.every((f) => !!c[f])
+}
+
+interface ContactDraft {
+  full_name: string
+  email: string
+  phone: string
+  driver_license_serie: string
+  driver_license_number: string
+  driver_license_expiry: string
+}
+const EMPTY_CONTACT: ContactDraft = {
+  full_name: '', email: '', phone: '',
+  driver_license_serie: '', driver_license_number: '', driver_license_expiry: '',
+}
+function toDraft(c: ClientContact): ContactDraft {
+  return {
+    full_name: c.full_name || '', email: c.email || '', phone: c.phone || '',
+    driver_license_serie: c.driver_license_serie || '',
+    driver_license_number: c.driver_license_number || '',
+    driver_license_expiry: c.driver_license_expiry || '',
+  }
+}
+
+function ContactForm({ initial, pending, onSave, onCancel }: {
+  initial: ContactDraft
+  pending: boolean
+  onSave: (d: ContactDraft) => void
+  onCancel: () => void
+}) {
+  const [d, setD] = useState<ContactDraft>(initial)
+  const set = (k: keyof ContactDraft, v: string) => setD((p) => ({ ...p, [k]: v }))
+  return (
+    <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="col-span-2">
+          <Label className="text-xs">Nume complet</Label>
+          <Input value={d.full_name} onChange={(e) => set('full_name', e.target.value)} />
+        </div>
+        <div>
+          <Label className="text-xs">Email</Label>
+          <Input value={d.email} onChange={(e) => set('email', e.target.value)} />
+        </div>
+        <div>
+          <Label className="text-xs">Telefon</Label>
+          <Input value={d.phone} onChange={(e) => set('phone', e.target.value)} />
+        </div>
+        <div>
+          <Label className="text-xs">Serie permis</Label>
+          <Input value={d.driver_license_serie} onChange={(e) => set('driver_license_serie', e.target.value)} />
+        </div>
+        <div>
+          <Label className="text-xs">Nr. permis</Label>
+          <Input value={d.driver_license_number} onChange={(e) => set('driver_license_number', e.target.value)} />
+        </div>
+        <div className="col-span-2">
+          <Label className="text-xs">Expirare permis</Label>
+          <Input value={d.driver_license_expiry} onChange={(e) => set('driver_license_expiry', e.target.value)} placeholder="AAAA-LL-ZZ" />
+        </div>
+      </div>
+      <div className="flex justify-end gap-2">
+        <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onCancel} disabled={pending}>Anulează</Button>
+        <Button size="sm" className="h-7 text-xs gap-1" onClick={() => onSave(d)} disabled={pending || !d.full_name.trim()}>
+          {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />} Salvează
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+// Contact persons (drivers) for a company client — view/add/edit/delete +
+// set-primary, wired to the existing crmApi contact CRUD. The ⚠ badge mirrors
+// the TD gate so an incomplete contact is visible here before it blocks a drive.
+function ContactPersonsCard({ clientId, alwaysShow }: { clientId: number; alwaysShow: boolean }) {
+  const qc = useQueryClient()
+  const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const { data, isLoading } = useQuery({
+    queryKey: ['client-contacts', clientId],
+    queryFn: () => crmApi.listClientContacts(clientId),
+    enabled: !!clientId,
+  })
+  const contacts = data?.contacts ?? []
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['client-contacts', clientId] })
+
+  const createM = useMutation({
+    mutationFn: (d: ContactDraft) => crmApi.createClientContact(clientId, d),
+    onSuccess: () => { invalidate(); setAdding(false); toast.success('Persoană de contact adăugată') },
+    onError: () => toast.error('Adăugare eșuată'),
+  })
+  const updateM = useMutation({
+    mutationFn: ({ contactId, patch }: { contactId: number; patch: Partial<ClientContact> }) =>
+      crmApi.updateClientContact(clientId, contactId, patch),
+    onSuccess: () => { invalidate(); setEditingId(null); toast.success('Contact actualizat') },
+    onError: () => toast.error('Actualizare eșuată'),
+  })
+  const deleteM = useMutation({
+    mutationFn: (contactId: number) => crmApi.deleteClientContact(clientId, contactId),
+    onSuccess: () => { invalidate(); setConfirmDeleteId(null); toast.success('Contact șters') },
+    onError: (err: unknown) => {
+      const status = (err as { status?: number })?.status
+      toast.error(status === 409
+        ? 'Contactul este șofer pe o sesiune activă — nu poate fi șters.'
+        : 'Ștergere eșuată')
+    },
+  })
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-1.5"><Users className="h-4 w-4" />Persoane de contact</CardTitle>
+        </CardHeader>
+        <CardContent><Skeleton className="h-16 w-full" /></CardContent>
+      </Card>
+    )
+  }
+  if (!alwaysShow && contacts.length === 0 && !adding) return null
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-1.5"><Users className="h-4 w-4" />Persoane de contact</CardTitle>
+          {!adding && (
+            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1 text-muted-foreground"
+              onClick={() => { setEditingId(null); setAdding(true) }}>
+              <UserPlus className="h-3 w-3" /> Adaugă
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {contacts.length === 0 && !adding && (
+          <p className="text-sm text-muted-foreground">Nicio persoană de contact.</p>
+        )}
+        {contacts.map((c) => {
+          if (editingId === c.id) {
+            return (
+              <ContactForm
+                key={c.id}
+                initial={toDraft(c)}
+                pending={updateM.isPending}
+                onSave={(d) => updateM.mutate({ contactId: c.id, patch: d })}
+                onCancel={() => setEditingId(null)}
+              />
+            )
+          }
+          const valid = contactGateValid(c)
+          return (
+            <div key={c.id} className="rounded-lg border p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    {c.is_primary && <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />}
+                    <span className="text-sm font-medium truncate">{c.full_name}</span>
+                    {valid ? (
+                      <Badge variant="secondary" className="gap-0.5 text-[10px] px-1 py-0 text-emerald-600"><CheckCircle2 className="h-2.5 w-2.5" />Complet</Badge>
+                    ) : (
+                      <Badge variant="secondary" className="gap-0.5 text-[10px] px-1 py-0 text-destructive"><AlertTriangle className="h-2.5 w-2.5" />Date incomplete</Badge>
+                    )}
+                  </div>
+                  <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+                    <div>Email: {c.email || '—'}</div>
+                    <div>Tel: {c.phone || '—'}</div>
+                    <div>Permis: {[c.driver_license_serie, c.driver_license_number].filter(Boolean).join(' ') || '—'}{c.driver_license_photo ? ' · poză ✓' : ' · fără poză'}</div>
+                  </div>
+                </div>
+                {confirmDeleteId === c.id ? (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="text-xs text-muted-foreground">Ștergi?</span>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs text-destructive" disabled={deleteM.isPending} onClick={() => deleteM.mutate(c.id)}>Da</Button>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setConfirmDeleteId(null)}>Nu</Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1 shrink-0">
+                    {!c.is_primary && (
+                      <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Setează principal" disabled={updateM.isPending}
+                        onClick={() => updateM.mutate({ contactId: c.id, patch: { is_primary: true } })}>
+                        <Star className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0" title="Editează"
+                      onClick={() => { setAdding(false); setEditingId(c.id) }}>
+                      <Pencil className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-destructive" title="Șterge"
+                      onClick={() => setConfirmDeleteId(c.id)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+        {adding && (
+          <ContactForm
+            initial={EMPTY_CONTACT}
+            pending={createM.isPending}
+            onSave={(d) => createM.mutate(d)}
+            onCancel={() => setAdding(false)}
+          />
+        )}
+      </CardContent>
+    </Card>
+  )
 }
 
 export default function ClientProfile() {
@@ -460,6 +677,9 @@ export default function ClientProfile() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Contact persons (company drivers) */}
+      {client && <ContactPersonsCard clientId={id} alwaysShow={client.client_type === 'company'} />}
 
       {/* AI Company Intelligence */}
       <Card className="border-primary/20 bg-gradient-to-br from-primary/[0.02] to-transparent">

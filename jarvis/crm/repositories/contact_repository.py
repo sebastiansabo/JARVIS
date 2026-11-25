@@ -29,6 +29,19 @@ class ContactRepository(BaseRepository):
     def get(self, contact_id):
         return self.query_one('SELECT * FROM crm_client_contacts WHERE id = %s', (contact_id,))
 
+    def find_by_license(self, client_id, license_number):
+        """The existing contact for this client carrying `license_number`, or
+        None. The driving-licence number is a company contact's identity — it's
+        how create() recognises a re-submitted person and dedupes instead of
+        inserting a duplicate."""
+        if not license_number:
+            return None
+        return self.query_one(
+            'SELECT * FROM crm_client_contacts '
+            'WHERE client_id = %s AND driver_license_number = %s '
+            'ORDER BY is_primary DESC, id LIMIT 1',
+            (client_id, license_number))
+
     def active_session_count(self, contact_id):
         """How many active (PLANNED/FILLED) foi_de_parcurs sessions have this
         contact as their driver. Guards deletion — a contact still assigned to a
@@ -45,6 +58,22 @@ class ContactRepository(BaseRepository):
         return self.execute('DELETE FROM crm_client_contacts WHERE id = %s', (contact_id,))
 
     def create(self, client_id, data):
+        # Dedup on the driving-licence number: re-submitting the same person for
+        # this client (the mobile "Adaugă persoană de contact" retry path) must
+        # UPDATE the existing row — filling only still-empty fields, never
+        # clobbering data already captured — instead of minting a duplicate.
+        # Correcting a non-empty field is an explicit edit (update()), not a
+        # re-add, so it deliberately isn't overwritten here.
+        license_number = (data.get('driver_license_number') or '').strip() or None
+        if license_number:
+            existing = self.find_by_license(client_id, license_number)
+            if existing:
+                fill = {c: data.get(c) for c in _COLS
+                        if data.get(c) and not existing.get(c)}
+                if data.get('is_primary') and not existing.get('is_primary'):
+                    fill['is_primary'] = True
+                return self.update(existing['id'], fill) if fill else existing
+
         first = not self.query_one(
             'SELECT 1 FROM crm_client_contacts WHERE client_id = %s LIMIT 1', (client_id,))
         # Insert as primary only when it's safely true (first contact for the
