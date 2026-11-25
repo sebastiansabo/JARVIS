@@ -30,6 +30,6 @@ else
   echo "Sending $PERIOD digest locally..."
   FORCE_RUN=1 \
   DIGEST_PERIOD="$PERIOD" \
-  MOBILE_PATH="${MOBILE_PATH:-$REPO_ROOT/../jarvis-mobile}" \
+  MOBILE_PATH="${MOBILE_PATH:-$REPO_ROOT/../jarvis-mobile-2}" \
   python3 "$REPO_ROOT/scripts/daily_digest.py"
 fi

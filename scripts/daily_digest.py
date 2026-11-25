@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Commit digest — collects commits across JARVIS and jarvis-mobile over a
+"""Commit digest — collects commits across JARVIS and jarvis-mobile-2 over a
 configurable period, asks Claude to translate + group them in Romanian, then
 emails the digest via SMTP (defaults to the same Office365 account JARVIS uses
 for invoice notifications).
@@ -21,7 +21,7 @@ os.environ values taking precedence):
     SMTP_FROM_EMAIL        - From address (default: SMTP_USERNAME)
     SMTP_FROM_NAME         - From display name    (default: "JARVIS Digest")
     JARVIS_PATH            - Filesystem path to JARVIS checkout (default: .)
-    MOBILE_PATH            - Filesystem path to jarvis-mobile checkout
+    MOBILE_PATH            - Filesystem path to jarvis-mobile-2 checkout
     FORCE_RUN              - "1" to bypass the time-of-day / day-of-week guard
 
 .env files are searched in this order (first match wins per key):
@@ -175,11 +175,11 @@ def get_db_overrides(period: str) -> dict:
 ROMANIA_TZ = ZoneInfo("Europe/Bucharest")
 _BASE_RECIPIENTS = "sebastian.sabo@gmail.com, sebastian.sabo@autoworld.ro"
 _EXTENDED_RECIPIENTS = "sebastian.sabo@gmail.com, sebastian.sabo@autoworld.ro, boardaw@autoworld.ro"
-MODEL = "claude-opus-4-6"
+MODEL = "claude-opus-4-8"
 
 REPOS = [
     {"name": "JARVIS", "env": "JARVIS_PATH", "default": "."},
-    {"name": "jarvis-mobile", "env": "MOBILE_PATH", "default": "../jarvis-mobile"},
+    {"name": "jarvis-mobile-2", "env": "MOBILE_PATH", "default": "../jarvis-mobile-2"},
     {"name": "jarvis-alpha", "env": "ALPHA_PATH", "default": "../jarvis-alpha"},
 ]
 
@@ -235,7 +235,7 @@ RO_MONTHS_SHORT = {
 RO_WEEKDAYS_SHORT = ["Lun", "Mar", "Mie", "Joi", "Vin", "Sâm", "Dum"]
 
 # Module classification — maps file paths to business-meaningful areas.
-# Patterns are tried in order; first match wins. Commits from jarvis-mobile
+# Patterns are tried in order; first match wins. Commits from jarvis-mobile-2
 # are forced to "Aplicația mobilă" regardless of internal path.
 MODULE_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("Resurse Umane & Pontaje",
@@ -279,7 +279,7 @@ def format_ro_date(dt: datetime, short_month: bool = False) -> str:
 
 def classify_module(file_path: str, repo_name: str) -> str:
     """Map a repo-relative file path to a business-meaningful module label."""
-    if repo_name == "jarvis-mobile":
+    if repo_name == "jarvis-mobile-2":
         return "Aplicația mobilă"
     for label, pattern in MODULE_PATTERNS:
         if pattern.search(file_path):

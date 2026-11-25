@@ -55,14 +55,14 @@ jobs:
           fetch-depth: 0
           path: JARVIS
 
-      - name: Checkout jarvis-mobile
+      - name: Checkout jarvis-mobile-2
         if: github.event_name != 'workflow_dispatch' || github.event.inputs.period == matrix.period
         uses: actions/checkout@v4
         with:
-          repository: sebastiansabo/jarvis-mobile
+          repository: sebastiansabo/jarvis-mobile-2
           token: ${{ secrets.GH_PAT }}
           fetch-depth: 0
-          path: jarvis-mobile
+          path: jarvis-mobile-2
 
       - name: Checkout jarvis-alpha
         if: github.event_name != 'workflow_dispatch' || github.event.inputs.period == matrix.period
@@ -94,7 +94,7 @@ jobs:
           SMTP_FROM_EMAIL: ${{ secrets.SMTP_FROM_EMAIL }}
           SMTP_FROM_NAME: JARVIS Digest
           JARVIS_PATH: ${{ github.workspace }}/JARVIS
-          MOBILE_PATH: ${{ github.workspace }}/jarvis-mobile
+          MOBILE_PATH: ${{ github.workspace }}/jarvis-mobile-2
           ALPHA_PATH: ${{ github.workspace }}/jarvis-alpha
           DIGEST_PERIOD: ${{ matrix.period }}
           FORCE_RUN: ${{ github.event.inputs.force_run == 'true' && '1' || '0' }}
