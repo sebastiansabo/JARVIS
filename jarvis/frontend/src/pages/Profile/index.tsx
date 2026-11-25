@@ -39,6 +39,7 @@ import {
   Ticket,
   MoreHorizontal,
   FileCheck2,
+  Bell,
 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -85,15 +86,17 @@ import type { ProfileInvoice, ProfileActivity, ProfileBonus, OrgTreeNode } from 
 import type { BioStarDayHistory, BioStarPunchLog, BioStarDailySummary, BioStarRangeSummary } from '@/types/biostar'
 
 const VouchersPanel = lazy(() => import('./VouchersPanel'))
+const NotificationPreferencesPanel = lazy(() => import('./NotificationPreferencesPanel'))
 const CreateTicketDialog = lazy(() => import('@/pages/Ticketing/CreateTicketDialog'))
 
-type Tab = 'invoices' | 'hr' | 'vouchers'
+type Tab = 'invoices' | 'hr' | 'vouchers' | 'notificari'
 type HrSubTab = 'hr-events' | 'pontaje' | 'team-pontaje' | 'sincron' | 'leave-permits'
 
 const mainTabs: { key: Tab; label: string; icon: React.ElementType }[] = [
   { key: 'invoices', label: 'My Invoices', icon: FileText },
   { key: 'hr', label: 'HR', icon: Activity },
   { key: 'vouchers', label: 'Vouchers', icon: Ticket },
+  { key: 'notificari', label: 'Notificări', icon: Bell },
 ]
 
 const hrSubTabs: { key: HrSubTab; label: string; icon: React.ElementType }[] = [
@@ -402,6 +405,7 @@ export default function Profile() {
       {activeTab === 'hr' && activeHrSubTab === 'sincron' && <SincronPanel />}
       {activeTab === 'hr' && activeHrSubTab === 'leave-permits' && user && <LeavePermitsPanel userId={user.id} />}
       {activeTab === 'vouchers' && <Suspense fallback={<div className="py-8 text-center text-muted-foreground">Loading...</div>}><VouchersPanel /></Suspense>}
+      {activeTab === 'notificari' && <Suspense fallback={<div className="py-8 text-center text-muted-foreground">Loading...</div>}><NotificationPreferencesPanel /></Suspense>}
     </div>
   )
 }

@@ -1,7 +1,16 @@
 import { api } from './client'
-import type { InAppNotification } from '@/types/notifications'
+import type {
+  InAppNotification, NotificationPreferencesView, UpdatePreferenceBody, ChannelFlags,
+} from '@/types/notifications'
 
 export const notificationsApi = {
+  getPreferences: () =>
+    api.get<NotificationPreferencesView>('/notifications/api/preferences'),
+
+  updatePreference: (body: UpdatePreferenceBody) =>
+    api.post<{ success: boolean; preferences: ChannelFlags }>(
+      '/notifications/api/preferences', body),
+
   getNotifications: (params?: { limit?: number; offset?: number; unread_only?: boolean }) => {
     const qs = new URLSearchParams()
     if (params?.limit) qs.set('limit', String(params.limit))
