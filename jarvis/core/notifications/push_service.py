@@ -231,8 +231,15 @@ def send_push_to_users(user_ids, title, body, data=None, category='system', bypa
     settings = _cache.get_settings()
     cat_info = _cache.get_category(category)
 
-    # --- Pre-send pipeline (skipped when bypass_rules=True) ---
-    if not bypass_rules:
+    # Mandatory categories (approvals / system) are truly unstoppable: they skip
+    # the admin pipeline (kill-switch / is_active / quiet hours / rate limits)
+    # AND the per-user gate below, exactly like an admin bypass but to real
+    # recipients. Documented, accepted trade-off (see the design doc).
+    from .categories import is_mandatory
+    mandatory = is_mandatory(category)
+
+    # --- Pre-send pipeline (skipped when bypass_rules=True or mandatory) ---
+    if not bypass_rules and not mandatory:
         # 1. Global kill-switch
         if settings.get('push_global_enabled') != 'true':
             logger.debug('Push globally disabled, skipping')
@@ -263,6 +270,20 @@ def send_push_to_users(user_ids, title, body, data=None, category='system', bypa
             if not user_ids:
                 logger.debug('All users rate-limited for category %s', category)
                 return
+
+    # Per-user push preference gate. Skipped for admin bypass; for mandatory
+    # categories preference_filter returns everyone (no query). Fails open so a
+    # preference-table hiccup never silently drops pushes.
+    if not bypass_rules:
+        try:
+            from .repositories import UserNotificationPreferenceRepository
+            user_ids = UserNotificationPreferenceRepository().preference_filter(
+                list(user_ids), category, 'push')
+        except Exception as e:
+            logger.error('push preference gate failed (%s); delivering to all: %s', category, e)
+        if not user_ids:
+            logger.debug('All users disabled push for category %s', category)
+            return
 
     # --- Firebase init ---
     if not _init_firebase():

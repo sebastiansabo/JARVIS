@@ -22,21 +22,39 @@ logger = logging.getLogger('jarvis.core.notifications.notify')
 _repo = InAppNotificationRepository()
 
 
+def _gate(user_ids, category, channel):
+    """Recipients allowed to receive ``category`` on ``channel`` per their
+    per-user preferences. Fails open (returns everyone) on any error so a
+    preference-table hiccup never silently drops notifications."""
+    try:
+        from .repositories import UserNotificationPreferenceRepository
+        return UserNotificationPreferenceRepository().preference_filter(
+            list(user_ids), category, channel)
+    except Exception as e:
+        logger.error(
+            f'notification preference gate failed ({channel}/{category}); '
+            f'delivering to all: {e}')
+        return list(user_ids)
+
+
 def notify_user(user_id, title, message=None, link=None,
                 entity_type=None, entity_id=None, type='info',
                 category='system'):
     """Send an in-app notification + push to a single user."""
-    try:
-        result = _repo.create(
-            user_id=user_id, title=title, type=type,
-            message=message, link=link,
-            entity_type=entity_type, entity_id=entity_id,
-        )
-    except Exception as e:
-        logger.error(f'Failed to create notification for user {user_id}: {e}')
-        result = None
+    result = None
+    # In-app gate: only insert if the user hasn't disabled in-app for this category.
+    if _gate([user_id], category, 'in_app'):
+        try:
+            result = _repo.create(
+                user_id=user_id, title=title, type=type,
+                message=message, link=link,
+                entity_type=entity_type, entity_id=entity_id,
+            )
+        except Exception as e:
+            logger.error(f'Failed to create notification for user {user_id}: {e}')
 
-    # Also send push notification
+    # Push goes to the user regardless of the in-app choice — push has its own
+    # gate inside send_push_to_users (a user may want push but not the bell feed).
     try:
         from .push_service import send_push_to_users
         send_push_to_users([user_id], title, message or title, category=category)
@@ -57,15 +75,19 @@ def notify_users(user_ids, title, message=None, link=None,
     """
     if not user_ids:
         return []
-    try:
-        results = _repo.create_bulk(
-            user_ids=user_ids, title=title, type=type,
-            message=message, link=link,
-            entity_type=entity_type, entity_id=entity_id,
-        )
-    except Exception as e:
-        logger.error(f'Failed to create notifications for {len(user_ids)} users: {e}')
-        results = []
+    results = []
+    # In-app gate: insert only for users who haven't disabled in-app for this
+    # category. Push below still targets the full list (its own gate applies).
+    in_app_ids = _gate(user_ids, category, 'in_app')
+    if in_app_ids:
+        try:
+            results = _repo.create_bulk(
+                user_ids=in_app_ids, title=title, type=type,
+                message=message, link=link,
+                entity_type=entity_type, entity_id=entity_id,
+            )
+        except Exception as e:
+            logger.error(f'Failed to create notifications for {len(in_app_ids)} users: {e}')
 
     # Also send push notification (unless the caller sends its own)
     if send_push:
