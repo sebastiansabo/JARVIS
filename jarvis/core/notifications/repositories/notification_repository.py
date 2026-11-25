@@ -7,6 +7,7 @@ push notification categories, and rate limiting.
 import logging
 
 from core.base_repository import BaseRepository
+from core.notifications.categories import is_mandatory, filter_recipients
 
 logger = logging.getLogger('jarvis.core.notifications.repository')
 
@@ -118,6 +119,76 @@ class PushRateLimitRepository(BaseRepository):
                 COUNT(*) FILTER (WHERE sent_at > NOW() - INTERVAL '30 days') AS sends_30d
             FROM push_rate_limit_log
         ''')
+
+
+# ============== Per-User Notification Preferences (4-channel) ==============
+
+class UserNotificationPreferenceRepository(BaseRepository):
+    """Per-user, per-category channel preferences + the shared delivery gate.
+
+    Backs the in-app / push / email / SMS gates: a single indexed lookup over
+    the already-bounded recipient set, with mandatory categories short-circuited
+    (forced to everyone, no query). Effective-value resolution lives in
+    core/notifications/categories.py so it stays pure and unit-tested.
+    """
+
+    def get_prefs_for_users(self, user_ids, category_slug):
+        """Return {user_id: {in_app, push, email, sms}} for users with a row."""
+        if not user_ids:
+            return {}
+        rows = self.query_all(
+            '''SELECT user_id, in_app_enabled, push_enabled,
+                      email_enabled, sms_enabled
+               FROM user_notification_preferences
+               WHERE category_slug = %s AND user_id = ANY(%s)''',
+            (category_slug, list(user_ids)),
+        )
+        return {
+            r['user_id']: {
+                'in_app': r['in_app_enabled'], 'push': r['push_enabled'],
+                'email': r['email_enabled'], 'sms': r['sms_enabled'],
+            }
+            for r in rows
+        }
+
+    def preference_filter(self, user_ids, category_slug, channel):
+        """Subset of user_ids that should receive category_slug on channel.
+
+        Mandatory categories are forced to the full list without a query.
+        """
+        if not user_ids:
+            return []
+        if is_mandatory(category_slug):
+            return list(user_ids)
+        prefs = self.get_prefs_for_users(user_ids, category_slug)
+        return filter_recipients(user_ids, category_slug, channel, prefs)
+
+    def get_all_for_user(self, user_id):
+        """Raw preference rows for a user (for the GET preferences endpoint)."""
+        return self.query_all(
+            '''SELECT category_slug, in_app_enabled, push_enabled,
+                      email_enabled, sms_enabled
+               FROM user_notification_preferences
+               WHERE user_id = %s''',
+            (user_id,),
+        )
+
+    def upsert(self, user_id, category_slug, in_app=None, push=None,
+               email=None, sms=None):
+        """Insert or replace a user's full preference row for a category."""
+        return self.execute(
+            '''INSERT INTO user_notification_preferences
+                   (user_id, category_slug, in_app_enabled, push_enabled,
+                    email_enabled, sms_enabled, updated_at)
+               VALUES (%s, %s, %s, %s, %s, %s, NOW())
+               ON CONFLICT (user_id, category_slug) DO UPDATE SET
+                   in_app_enabled = EXCLUDED.in_app_enabled,
+                   push_enabled   = EXCLUDED.push_enabled,
+                   email_enabled  = EXCLUDED.email_enabled,
+                   sms_enabled    = EXCLUDED.sms_enabled,
+                   updated_at     = NOW()''',
+            (user_id, category_slug, in_app, push, email, sms),
+        )
 
 
 class NotificationRepository(BaseRepository):

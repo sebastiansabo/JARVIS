@@ -83,3 +83,35 @@ def default_channels(slug):
     meta = CATEGORY_REGISTRY.get(slug)
     base = meta.get('defaults', _STANDARD) if meta else _STANDARD
     return dict(base)
+
+
+def effective_channels(slug, pref=None):
+    """Resolve the effective per-channel posture for a user + category.
+
+    - Mandatory categories are forced ON on every channel (user cannot mute).
+    - Otherwise start from the category default; an explicit (non-None) value in
+      the user's preference row overrides it. A None column inherits the default,
+      so only a deliberate toggle opts a user in/out.
+
+    ``pref`` is a dict keyed by channel with bool/None values, or None.
+    """
+    if is_mandatory(slug):
+        return {ch: True for ch in CHANNELS}
+    eff = default_channels(slug)
+    if pref:
+        for ch in CHANNELS:
+            val = pref.get(ch)
+            if val is not None:
+                eff[ch] = bool(val)
+    return eff
+
+
+def filter_recipients(user_ids, slug, channel, prefs=None):
+    """Return the subset of user_ids that should receive slug on channel.
+
+    ``prefs`` maps user_id -> preference dict (or None); users absent from it
+    follow the category default. Input order is preserved.
+    """
+    prefs = prefs or {}
+    return [uid for uid in user_ids
+            if effective_channels(slug, prefs.get(uid)).get(channel)]

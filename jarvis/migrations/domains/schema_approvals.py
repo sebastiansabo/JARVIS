@@ -212,6 +212,27 @@ def create_schema_approvals(conn, cursor):
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, is_read) WHERE is_read = FALSE')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC)')
 
+    # ============== Per-User Notification Preferences (4-channel) ==============
+    # One row per (user, category) only when the user has set at least one
+    # explicit channel choice. Channel columns are nullable: NULL = inherit the
+    # category default (see core/notifications/categories.py). Absence of a row =
+    # all channels at their category default, which keeps rollout silent-safe and
+    # the table small. Mandatory categories bypass this table entirely.
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_notification_preferences (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            category_slug TEXT NOT NULL,
+            in_app_enabled BOOLEAN,
+            push_enabled BOOLEAN,
+            email_enabled BOOLEAN,
+            sms_enabled BOOLEAN,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_user_notif_pref UNIQUE (user_id, category_slug)
+        )
+    ''')
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_notif_pref_user ON user_notification_preferences(user_id)')
+
     # ============== Smart Notification State ==============
 
     cursor.execute('''
