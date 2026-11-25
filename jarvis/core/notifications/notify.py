@@ -83,6 +83,17 @@ def _deliver_email(user_ids, title, message, link, category):
             logger.debug(f'notification email skipped for user {uid}: {e}')
 
 
+def _deliver_sms(user_ids, title, message, category):
+    """SMS recipients opted into the sms channel for this category (mandatory
+    forces it). Fire-and-forget; never blocks or raises into the caller."""
+    try:
+        from .sms_service import send_sms_to_users
+        body = f'{title}: {message}' if message else title
+        send_sms_to_users(list(user_ids), body[:320], category=category)
+    except Exception as e:
+        logger.debug(f'SMS delivery skipped ({category}): {e}')
+
+
 def notify_user(user_id, title, message=None, link=None,
                 entity_type=None, entity_id=None, type='info',
                 category='system'):
@@ -107,8 +118,9 @@ def notify_user(user_id, title, message=None, link=None,
     except Exception as e:
         logger.debug(f'Push notification skipped for user {user_id}: {e}')
 
-    # Email channel (opt-in; fire-and-forget)
+    # Email + SMS channels (opt-in; fire-and-forget)
     _deliver_email([user_id], title, message, link, category)
+    _deliver_sms([user_id], title, message, category)
 
     return result
 
@@ -146,8 +158,9 @@ def notify_users(user_ids, title, message=None, link=None,
         except Exception as e:
             logger.debug(f'Push notifications skipped for {len(user_ids)} users: {e}')
 
-    # Email channel (opt-in; independent of the in-app/push choices above)
+    # Email + SMS channels (opt-in; independent of the in-app/push choices above)
     _deliver_email(user_ids, title, message, link, category)
+    _deliver_sms(user_ids, title, message, category)
 
     return results
 
