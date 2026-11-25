@@ -417,51 +417,61 @@ Va rugam sa nu raspundeti la acest email.
 """
 
 
+def _allocation_email_allowed(user_ids: list) -> set:
+    """Return the subset of user_ids whose 'allocation' email channel is on.
+
+    Migrated from the legacy ``users.notify_on_allocation`` flag to the per-user
+    notification preferences (category 'allocation', email channel), which
+    defaults ON — so behaviour is unchanged for anyone who hasn't opted out.
+    Fails OPEN (returns everyone) so a preference-table hiccup never silently
+    drops allocation emails.
+    """
+    ids = [u for u in (user_ids or []) if u is not None]
+    if not ids:
+        return set()
+    try:
+        from core.notifications.repositories import UserNotificationPreferenceRepository
+        from core.notifications.categories import effective_channels
+        prefs = UserNotificationPreferenceRepository().get_prefs_for_users(ids, 'allocation')
+        return {uid for uid in ids
+                if effective_channels('allocation', prefs.get(uid)).get('email', True)}
+    except Exception as e:
+        logger.error('allocation email-pref lookup failed; sending to all active: %s', e)
+        return set(ids)
+
+
 def find_responsables_for_allocation(allocation: dict) -> list[dict]:
     """
     Find all responsables that should be notified for a given allocation.
 
     Matches responsables based on their company AND department assignments.
-    If reinvoice_to is set, also notifies the reinvoice company/department's responsables.
+    If reinvoice_to is set, also notifies the reinvoice company/department's
+    responsables. Active responsables are then filtered by their per-user
+    'allocation' email preference (migrated from users.notify_on_allocation).
     """
-    all_responsables = []
+    gathered = []
     seen_ids = set()
 
-    # Get responsables for the main department, filtered by company
+    def _gather(responsables):
+        for r in responsables:
+            rid = r.get('id')
+            if r.get('is_active', True) and rid is not None and rid not in seen_ids:
+                gathered.append(r)
+                seen_ids.add(rid)
+
     company = allocation.get('company', '')
     department = allocation.get('department', '')
     logger.info(f"Finding responsables for allocation: company='{company}', department='{department}'")
     if department:
-        # Pass company to filter responsables by both company AND department
-        responsables = get_managers_for_department(department, company)
-        logger.info(f"Found {len(responsables)} responsables for company='{company}', dept='{department}'")
-        for r in responsables:
-            if r.get('is_active', True) and r.get('notify_on_allocation', True):
-                if r.get('id') not in seen_ids:
-                    all_responsables.append(r)
-                    seen_ids.add(r.get('id'))
-                else:
-                    logger.debug(f"Skipped responsable {r.get('name')}: already seen")
-            else:
-                logger.debug(
-                    f"Skipped responsable {r.get('name')}: "
-                    f"is_active={r.get('is_active')}, notify={r.get('notify_on_allocation')}"
-                )
+        _gather(get_managers_for_department(department, company))
 
-    # If reinvoice_to is set, also get responsables for the reinvoice company/department
     reinvoice_to = allocation.get('reinvoice_to', '')  # This is the reinvoice company
     reinvoice_department = allocation.get('reinvoice_department', '')
     if reinvoice_to and reinvoice_department:
-        # Pass reinvoice company to filter by both company AND department
-        reinvoice_responsables = get_managers_for_department(reinvoice_department, reinvoice_to)
-        logger.debug(f"Found {len(reinvoice_responsables)} responsables for reinvoice company '{reinvoice_to}', department '{reinvoice_department}'")
-        for r in reinvoice_responsables:
-            if r.get('is_active', True) and r.get('notify_on_allocation', True):
-                if r.get('id') not in seen_ids:
-                    all_responsables.append(r)
-                    seen_ids.add(r.get('id'))
+        _gather(get_managers_for_department(reinvoice_department, reinvoice_to))
 
-    return all_responsables
+    allowed = _allocation_email_allowed([r.get('id') for r in gathered])
+    return [r for r in gathered if r.get('id') in allowed]
 
 
 def notify_allocation(invoice_data: dict, allocation: dict) -> list[dict]:

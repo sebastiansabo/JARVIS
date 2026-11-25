@@ -706,9 +706,9 @@ function UserFormDialog({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-center gap-2">
-            <Switch checked={form.notify_on_allocation} onCheckedChange={(v) => setForm({ ...form, notify_on_allocation: v })} />
-            <Label>Notify on Allocation</Label>
+          <div className="text-xs text-muted-foreground sm:col-span-2">
+            Notificările pe alocare se configurează acum de fiecare utilizator în
+            Profil → Notificări (categoria „Alocări facturi").
           </div>
         </div>
         <DialogFooter>

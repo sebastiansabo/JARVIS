@@ -81,7 +81,7 @@ export default function NotificationPreferencesPanel() {
         <p className="text-sm text-muted-foreground">
           Alege pe ce canale primești fiecare tip de notificare. Categoriile
           obligatorii (<Lock className="inline h-3 w-3" />) nu pot fi dezactivate.
-          Livrarea pe Email și SMS se activează în curând.
+          Livrarea pe SMS se activează în curând.
         </p>
       </CardHeader>
       <CardContent>

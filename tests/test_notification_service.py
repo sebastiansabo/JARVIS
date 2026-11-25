@@ -378,18 +378,21 @@ class TestFindResponsablesForAllocation:
         assert len(result) == 1
         assert result[0]['name'] == 'Active'
 
+    @patch('core.services.notification_service._allocation_email_allowed')
     @patch('core.services.notification_service.get_managers_for_department')
-    def test_excludes_no_notify_responsables(self, mock_get):
+    def test_excludes_users_who_disabled_allocation_email(self, mock_get, mock_allowed):
+        # Filtering is now by the per-user 'allocation' email preference (migrated
+        # from users.notify_on_allocation), not the legacy column.
         mock_get.return_value = [
-            {'id': 1, 'name': 'Notify', 'is_active': True, 'notify_on_allocation': True},
-            {'id': 2, 'name': 'NoNotify', 'is_active': True, 'notify_on_allocation': False}
+            {'id': 1, 'name': 'Wants', 'is_active': True},
+            {'id': 2, 'name': 'Opted out', 'is_active': True},
         ]
+        mock_allowed.return_value = {1}  # user 2 disabled allocation email
 
-        allocation = {'department': 'Marketing'}
-        result = find_responsables_for_allocation(allocation)
+        result = find_responsables_for_allocation({'department': 'Marketing'})
 
-        assert len(result) == 1
-        assert result[0]['name'] == 'Notify'
+        assert [r['id'] for r in result] == [1]
+        assert result[0]['name'] == 'Wants'
 
     @patch('core.services.notification_service.get_managers_for_department')
     def test_includes_reinvoice_department(self, mock_get):
