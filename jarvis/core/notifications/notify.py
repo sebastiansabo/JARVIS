@@ -15,9 +15,13 @@ For in-app + push:
 """
 
 import logging
+from html import escape
 from .repositories.in_app_repo import InAppNotificationRepository
 
 logger = logging.getLogger('jarvis.core.notifications.notify')
+
+# Relative notify links (e.g. "/app/accounting") become absolute in emails/SMS.
+_LINK_BASE = 'https://jarvis.autoworld.ro'
 
 _repo = InAppNotificationRepository()
 
@@ -35,6 +39,48 @@ def _gate(user_ids, category, channel):
             f'notification preference gate failed ({channel}/{category}); '
             f'delivering to all: {e}')
         return list(user_ids)
+
+
+def _abs_link(link):
+    return _LINK_BASE + link if link and link.startswith('/') else link
+
+
+def _render_email_html(title, message, link):
+    body = escape(message or '').replace('\n', '<br>')
+    href = _abs_link(link)
+    btn = (f'<p style="margin-top:20px"><a href="{escape(href)}" '
+           'style="background:#111;color:#fff;padding:10px 18px;border-radius:6px;'
+           'text-decoration:none;display:inline-block">Deschide în JARVIS</a></p>'
+           if href else '')
+    return ('<div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;color:#222">'
+            f'<h2 style="color:#111;font-size:18px">{escape(title)}</h2>'
+            f'<p style="font-size:14px;line-height:1.5;white-space:pre-wrap">{body}</p>'
+            f'{btn}</div>')
+
+
+def _deliver_email(user_ids, title, message, link, category):
+    """Email recipients opted into the email channel for this category.
+    Fire-and-forget; never blocks or raises into the caller."""
+    recipients = _gate(user_ids, category, 'email')
+    if not recipients:
+        return
+    try:
+        from .repositories import UserNotificationPreferenceRepository
+        from core.services.notification_service import send_email
+        contacts = UserNotificationPreferenceRepository().get_contacts(recipients)
+    except Exception as e:
+        logger.error(f'notification email lookup failed ({category}): {e}')
+        return
+    html = _render_email_html(title, message, link)
+    text = message or title
+    for uid in recipients:
+        email = (contacts.get(uid) or {}).get('email')
+        if not email:
+            continue
+        try:
+            send_email(email, title, html, text, skip_global_cc=True)
+        except Exception as e:
+            logger.debug(f'notification email skipped for user {uid}: {e}')
 
 
 def notify_user(user_id, title, message=None, link=None,
@@ -60,6 +106,9 @@ def notify_user(user_id, title, message=None, link=None,
         send_push_to_users([user_id], title, message or title, category=category)
     except Exception as e:
         logger.debug(f'Push notification skipped for user {user_id}: {e}')
+
+    # Email channel (opt-in; fire-and-forget)
+    _deliver_email([user_id], title, message, link, category)
 
     return result
 
@@ -96,6 +145,9 @@ def notify_users(user_ids, title, message=None, link=None,
             send_push_to_users(list(user_ids), title, message or title, category=category)
         except Exception as e:
             logger.debug(f'Push notifications skipped for {len(user_ids)} users: {e}')
+
+    # Email channel (opt-in; independent of the in-app/push choices above)
+    _deliver_email(user_ids, title, message, link, category)
 
     return results
 

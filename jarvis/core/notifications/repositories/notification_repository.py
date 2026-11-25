@@ -163,6 +163,16 @@ class UserNotificationPreferenceRepository(BaseRepository):
         prefs = self.get_prefs_for_users(user_ids, category_slug)
         return filter_recipients(user_ids, category_slug, channel, prefs)
 
+    def get_contacts(self, user_ids):
+        """Return {user_id: {'email': ..., 'phone': ...}} for the email/SMS channels."""
+        if not user_ids:
+            return {}
+        rows = self.query_all(
+            'SELECT id, email, phone FROM users WHERE id = ANY(%s)',
+            (list(user_ids),),
+        )
+        return {r['id']: {'email': r.get('email'), 'phone': r.get('phone')} for r in rows}
+
     def get_all_for_user(self, user_id):
         """Raw preference rows for a user (for the GET preferences endpoint)."""
         return self.query_all(
