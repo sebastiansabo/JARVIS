@@ -115,3 +115,43 @@ def filter_recipients(user_ids, slug, channel, prefs=None):
     prefs = prefs or {}
     return [uid for uid in user_ids
             if effective_channels(slug, prefs.get(uid)).get(channel)]
+
+
+def build_preferences_view(rows):
+    """Assemble the GET /preferences payload from a user's stored rows.
+
+    Returns effective (defaults-applied, mandatory-forced) per-channel values for
+    every registry category, plus the category list, mandatory set, and channel
+    order — so the client renders without re-implementing the rules.
+    """
+    pref_map = {
+        r['category_slug']: {
+            'in_app': r.get('in_app_enabled'),
+            'push': r.get('push_enabled'),
+            'email': r.get('email_enabled'),
+            'sms': r.get('sms_enabled'),
+        }
+        for r in (rows or [])
+    }
+    return {
+        'categories': [
+            {'slug': slug, 'name': meta['name'], 'mandatory': is_mandatory(slug)}
+            for slug, meta in CATEGORY_REGISTRY.items()
+        ],
+        'preferences': {
+            slug: effective_channels(slug, pref_map.get(slug))
+            for slug in CATEGORY_REGISTRY
+        },
+        'mandatory': sorted(MANDATORY_CATEGORIES),
+        'channels': list(CHANNELS),
+    }
+
+
+def validate_preference_update(slug):
+    """Validate a POST /preferences target. Returns (message, status) on reject,
+    or None if the slug may be updated by the user."""
+    if slug not in CATEGORY_REGISTRY:
+        return ('unknown category', 400)
+    if is_mandatory(slug):
+        return ('category is mandatory and cannot be changed', 422)
+    return None

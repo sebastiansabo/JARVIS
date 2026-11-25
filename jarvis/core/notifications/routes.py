@@ -11,7 +11,11 @@ from flask import jsonify, request
 from flask_login import login_required, current_user
 
 from . import notifications_bp
-from .repositories import NotificationRepository, InAppNotificationRepository, PushCategoryRepository, PushRateLimitRepository
+from .repositories import (
+    NotificationRepository, InAppNotificationRepository, PushCategoryRepository,
+    PushRateLimitRepository, UserNotificationPreferenceRepository,
+)
+from .categories import build_preferences_view, validate_preference_update
 from core.utils.api_helpers import safe_error_response
 from core.utils.ttl_cache import TTLCache
 from .push_service import _device_repo, get_push_settings_cache, send_push_to_users
@@ -26,6 +30,7 @@ _in_app_repo = InAppNotificationRepository()
 _unread_count_cache = TTLCache(ttl_seconds=15)
 _cat_repo = PushCategoryRepository()
 _rate_repo = PushRateLimitRepository()
+_pref_repo = UserNotificationPreferenceRepository()
 
 
 @notifications_bp.route('/api/notification-settings', methods=['GET'])
@@ -204,6 +209,51 @@ def api_mark_all_read():
     count = _in_app_repo.mark_all_read(current_user.id)
     _unread_count_cache.invalidate(current_user.id)
     return jsonify({'success': True, 'count': count})
+
+
+# ============== Per-User Notification Preferences ==============
+
+@notifications_bp.route('/notifications/api/preferences', methods=['GET'])
+@login_required
+def api_get_notification_preferences():
+    """Current user's per-category channel preferences (effective values)."""
+    try:
+        rows = _pref_repo.get_all_for_user(current_user.id)
+        view = build_preferences_view(rows)
+        view['has_phone'] = bool(getattr(current_user, 'phone', None))
+        return jsonify(view)
+    except Exception as e:
+        return safe_error_response(e)
+
+
+@notifications_bp.route('/notifications/api/preferences', methods=['POST'])
+@login_required
+def api_update_notification_preference():
+    """Upsert the current user's channel preferences for one category.
+
+    Body: {category_slug, in_app_enabled, push_enabled, email_enabled,
+    sms_enabled} (channel values bool or null). Mandatory / unknown slugs are
+    rejected; only the caller's own rows are touched.
+    """
+    data = request.get_json(silent=True) or {}
+    slug = (data.get('category_slug') or '').strip()
+    err = validate_preference_update(slug)
+    if err:
+        message, status = err
+        return jsonify({'success': False, 'error': message}), status
+    try:
+        _pref_repo.upsert(
+            current_user.id, slug,
+            in_app=data.get('in_app_enabled'),
+            push=data.get('push_enabled'),
+            email=data.get('email_enabled'),
+            sms=data.get('sms_enabled'),
+        )
+        rows = _pref_repo.get_all_for_user(current_user.id)
+        effective = build_preferences_view(rows)['preferences'].get(slug)
+        return jsonify({'success': True, 'preferences': effective})
+    except Exception as e:
+        return safe_error_response(e)
 
 
 # ============== Push Notification Manager (Admin) ==============
