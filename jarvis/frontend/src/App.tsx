@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './components/Layout'
 import { SpotlightProvider } from '@/components/happy/SpotlightProvider'
+import { UpdateBanner } from '@/components/UpdateBanner'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAuthStore } from '@/stores/authStore'
 import { useIsMobile } from '@/hooks/useMediaQuery'
@@ -177,7 +178,9 @@ function DashboardOrRedirect() {
 
 export default function App() {
   return (
-    <Routes>
+    <>
+      <UpdateBanner />
+      <Routes>
       {/* Root redirect */}
       <Route path="/" element={<Navigate to="/app" replace />} />
 
@@ -307,6 +310,7 @@ export default function App() {
 
         <Route path="*" element={<DefaultRedirect />} />
       </Route>
-    </Routes>
+      </Routes>
+    </>
   )
 }
