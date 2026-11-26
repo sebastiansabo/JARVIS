@@ -560,6 +560,29 @@ def _register_routes(flask_app: Flask):
             return resp
         return 'Not found', 404
 
+    @flask_app.route('/version.json')
+    def version_json():
+        # Current frontend build id, emitted by the Vite build (see
+        # frontend/vite.config.ts). An open tab polls this and compares to its
+        # baked __APP_BUILD__ to offer a reload after a deploy. no-store so the
+        # poll always sees the fresh value; no auth so an expired session gets
+        # JSON (never a login-redirect that would read as a false "new version").
+        # Read + jsonify (not send_from_directory) so the response isn't in
+        # direct-passthrough mode — add_cache_headers reads response.data for its
+        # JSON ETag and would raise on a passthrough file response.
+        import json as _json
+        f = os.path.join(_react_dir, 'version.json')
+        build = None
+        if os.path.exists(f):
+            try:
+                with open(f) as fh:
+                    build = _json.load(fh).get('build')
+            except (ValueError, OSError):
+                build = None
+        resp = jsonify({'build': build})
+        resp.headers['Cache-Control'] = 'no-store'
+        return resp
+
     @flask_app.route('/assets/<path:filename>')
     def react_assets(filename):
         return send_from_directory(os.path.join(_react_dir, 'assets'), filename)
