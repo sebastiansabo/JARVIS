@@ -63,18 +63,16 @@ interface ContactDraft {
   full_name: string
   email: string
   phone: string
-  driver_license_serie: string
   driver_license_number: string
   driver_license_expiry: string
 }
 const EMPTY_CONTACT: ContactDraft = {
   full_name: '', email: '', phone: '',
-  driver_license_serie: '', driver_license_number: '', driver_license_expiry: '',
+  driver_license_number: '', driver_license_expiry: '',
 }
 function toDraft(c: ClientContact): ContactDraft {
   return {
     full_name: c.full_name || '', email: c.email || '', phone: c.phone || '',
-    driver_license_serie: c.driver_license_serie || '',
     driver_license_number: c.driver_license_number || '',
     driver_license_expiry: c.driver_license_expiry || '',
   }
@@ -103,12 +101,8 @@ function ContactForm({ initial, pending, onSave, onCancel }: {
           <Label className="text-xs">Telefon</Label>
           <Input value={d.phone} onChange={(e) => set('phone', e.target.value)} />
         </div>
-        <div>
-          <Label className="text-xs">Serie permis</Label>
-          <Input value={d.driver_license_serie} onChange={(e) => set('driver_license_serie', e.target.value)} />
-        </div>
-        <div>
-          <Label className="text-xs">Nr. permis</Label>
+        <div className="col-span-2">
+          <Label className="text-xs">Serie/nr permis</Label>
           <Input value={d.driver_license_number} onChange={(e) => set('driver_license_number', e.target.value)} />
         </div>
         <div className="col-span-2">
@@ -222,7 +216,7 @@ function ContactPersonsCard({ clientId, alwaysShow }: { clientId: number; always
                   <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
                     <div>Email: {c.email || '—'}</div>
                     <div>Tel: {c.phone || '—'}</div>
-                    <div>Permis: {[c.driver_license_serie, c.driver_license_number].filter(Boolean).join(' ') || '—'}{c.driver_license_photo ? ' · poză ✓' : ' · fără poză'}</div>
+                    <div>Permis: {c.driver_license_number || '—'}{c.driver_license_photo ? ' · poză ✓' : ' · fără poză'}</div>
                   </div>
                 </div>
                 {confirmDeleteId === c.id ? (
