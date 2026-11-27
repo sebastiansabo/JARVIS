@@ -127,11 +127,16 @@ const navItemsDef: NavItem[] = [
     // `permission` yet: role_permissions_v2 can_access_logistics wiring is
     // Phase-2 (see spine plan progress.md "spine perm" + "nav" rulings) —
     // visible to any authenticated user for now.
-    // No moduleKey: not (yet) registered in module_menu_items, so a DB-menu
-    // filter would hide it entirely once dbModuleMap loads (see Cost
-    // Centers / Evenimente TD above for the same pattern) -- visibility
-    // rides the `return true` fallthrough in isItemVisible() instead.
+    // No moduleKey (on the parent OR either child): not (yet) registered in
+    // module_menu_items, so a DB-menu filter would hide it entirely once
+    // dbModuleMap loads (see Cost Centers / Evenimente TD above for the
+    // same pattern) -- visibility rides the `return true` fallthrough in
+    // isItemVisible() instead.
     path: '/app/logistics', label: 'Parc', icon: Warehouse,
+    children: [
+      { path: '/app/logistics', label: 'Parc', icon: Warehouse },
+      { path: '/app/logistics/kanban', label: 'Kanban', icon: LayoutGrid },
+    ],
   },
   {
     path: '/app/others',

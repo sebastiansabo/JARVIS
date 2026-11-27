@@ -76,6 +76,7 @@ const TestDriveReturn = lazy(() => import('./pages/FoiParcurs/TestDriveReturn'))
 const ServiceCatalog = lazy(() => import('./pages/Service/Catalog'))
 const Parc = lazy(() => import('./pages/Logistics/Parc'))
 const ParcVehicleDetail = lazy(() => import('./pages/Logistics/VehicleDetail'))
+const LogisticsKanban = lazy(() => import('./pages/Logistics/Kanban'))
 const Hub = lazy(() => import('./pages/Hub'))
 const HappyBoard = lazy(() => import('./pages/HappyBoard'))
 const HappyTransparency = lazy(() => import('./pages/Happy/Transparency'))
@@ -296,6 +297,7 @@ export default function App() {
             (see spine plan progress.md "spine perm" ruling). */}
         <Route path="logistics" element={<SuspensePage><Parc /></SuspensePage>} />
         <Route path="logistics/parc/:id" element={<SuspensePage><ParcVehicleDetail /></SuspensePage>} />
+        <Route path="logistics/kanban" element={<SuspensePage><LogisticsKanban /></SuspensePage>} />
 
         {/* AI Agent — requires can_access_ai_agent */}
         <Route path="ai-agent" element={<Guard flag="can_access_ai_agent"><SuspensePage><AiAgent /></SuspensePage></Guard>} />

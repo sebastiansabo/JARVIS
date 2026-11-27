@@ -41,6 +41,35 @@ export interface ListVehiclesFilters {
   dir?: ParcSortDir
 }
 
+// ── Kanban board (GET /api/logistics/board) ─────────────────────────────
+// Mirrors jarvis/logistics/repositories/task_repository.py::get_board
+// response shape: a dict keyed by the 4 fixed-order statuses (BOARD_STATUSES
+// there / KANBAN_STATUSES in Kanban.helpers.ts here), each a list of card
+// dicts. Card shape is exactly these 9 fields -- Task 8's move handler
+// relies on `id` (plus the column a card is currently rendered under for
+// its "current status"), so this must not drift from the backend's SELECT.
+export interface KanbanCard {
+  id: number
+  title: string
+  type: string
+  vehicle_model: string | null
+  order_ref: string
+  location_name: string | null
+  position_code: string | null
+  assignee: string | null
+  due_at: string | null
+}
+
+export type KanbanBoardStatus = 'De făcut' | 'În lucru' | 'Blocat' | 'Finalizat'
+
+export type KanbanBoardDict = Partial<Record<KanbanBoardStatus, KanbanCard[]>>
+
+export interface GetBoardFilters {
+  q?: string
+  location_id?: number
+  assignee?: string
+}
+
 export const logisticsApi = {
   // company_id is never sent from the client -- the backend resolves the
   // acting company from current_user (see jarvis/logistics/routes/vehicles.py).
@@ -54,5 +83,15 @@ export const logisticsApi = {
     if (filters.sort) params.sort = filters.sort
     if (filters.dir) params.dir = filters.dir
     return api.get<{ vehicles: ParcVehicleRow[] }>('/api/logistics/vehicles', params)
+  },
+
+  // Same company-scoping note as listVehicles -- see
+  // jarvis/logistics/routes/tasks.py::get_board / _user_company_id.
+  getBoard: (filters: GetBoardFilters = {}) => {
+    const params: Record<string, string> = {}
+    if (filters.q) params.q = filters.q
+    if (filters.location_id != null) params.location_id = String(filters.location_id)
+    if (filters.assignee) params.assignee = filters.assignee
+    return api.get<{ board: KanbanBoardDict }>('/api/logistics/board', params)
   },
 }

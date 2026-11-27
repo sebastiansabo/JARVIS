@@ -18,3 +18,4 @@ logistics_bp = Blueprint('logistics', __name__)
 # Import routes to register them on the blueprint
 from .routes import intake  # noqa: F401, E402
 from .routes import vehicles  # noqa: F401, E402
+from .routes import tasks  # noqa: F401, E402
