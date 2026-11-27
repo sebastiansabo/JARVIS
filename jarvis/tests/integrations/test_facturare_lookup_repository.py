@@ -65,3 +65,22 @@ def test_by_order_numbers_returns_chain_and_bare_line(seeded):
     b = [r for r in rows if r["nr_comanda"] == ord_b]
     assert len(b) == 1 and b[0]["invoice_number"] is None   # line present, no invoice
     assert all(r["nr_comanda"] != absent for r in rows)      # unknown order absent
+
+
+def test_repo_output_flows_through_build_results_and_is_json_serializable(seeded):
+    """End-to-end over the type seam: real repo rows (ISO-string dates, float
+    amounts from dict_from_row) must flow through _build_results without crashing
+    and produce a JSON-serializable payload."""
+    import json
+    from core.integrations.routes_facturare import _build_results
+
+    repo, ord_a, ord_b, absent = seeded
+    rows = FacturareLookupRepository().by_order_numbers([ord_a, ord_b, absent])
+    results, not_found = _build_results([ord_a, ord_b, absent], rows)
+
+    json.dumps(results)  # jsonify would raise on a date/Decimal leaking through
+    a = next(r for r in results if r["nr_comanda"] == ord_a)
+    assert a["has_invoice"] is True and a["invoice_type"] == "FINAL"
+    assert a["invoice_date"] == "2026-03-17"          # FINAL's date, as ISO string
+    assert all(isinstance(d["date"], str) for d in a["documents"])
+    assert absent in not_found
