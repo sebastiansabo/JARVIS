@@ -15,8 +15,12 @@ import {
   isReceptionFormValid,
   buildReceptionContext,
   EMPTY_RECEPTION_FORM,
+  isMeasuredFormValid,
+  buildMeasuredContext,
+  EMPTY_MEASURED_FORM,
   type KanbanFiltersState,
   type ReceptionFormState,
+  type MeasuredFormState,
 } from './Kanban.helpers'
 import type { KanbanBoardDict, KanbanCard } from '@/api/logistics'
 
@@ -233,6 +237,44 @@ describe('buildReceptionContext', () => {
         keys: 0,
         condition: 'Bună',
       },
+    })
+  })
+})
+
+const measuredForm = (overrides: Partial<MeasuredFormState> = {}): MeasuredFormState => ({
+  value: '12.4',
+  unit: 'V',
+  ...overrides,
+})
+
+describe('isMeasuredFormValid', () => {
+  it('is valid when value is a real number and unit is non-empty', () => {
+    expect(isMeasuredFormValid(measuredForm())).toBe(true)
+    expect(isMeasuredFormValid(measuredForm({ value: '0' }))).toBe(true)
+    expect(isMeasuredFormValid(measuredForm({ value: '-5' }))).toBe(true)
+    expect(isMeasuredFormValid(measuredForm({ unit: '%' }))).toBe(true)
+  })
+
+  it('is invalid when the empty starting form is untouched', () => {
+    expect(isMeasuredFormValid(EMPTY_MEASURED_FORM)).toBe(false)
+  })
+
+  it('is invalid when value is non-numeric, blank, or whitespace-only', () => {
+    expect(isMeasuredFormValid(measuredForm({ value: 'abc' }))).toBe(false)
+    expect(isMeasuredFormValid(measuredForm({ value: '' }))).toBe(false)
+    expect(isMeasuredFormValid(measuredForm({ value: '   ' }))).toBe(false)
+  })
+
+  it('is invalid when unit is blank or whitespace-only', () => {
+    expect(isMeasuredFormValid(measuredForm({ unit: '' }))).toBe(false)
+    expect(isMeasuredFormValid(measuredForm({ unit: '   ' }))).toBe(false)
+  })
+})
+
+describe('buildMeasuredContext', () => {
+  it('coerces value to a number and trims the unit', () => {
+    expect(buildMeasuredContext(measuredForm({ value: '  12.4  ', unit: '  V  ' }))).toEqual({
+      measured: { value: 12.4, unit: 'V' },
     })
   })
 })

@@ -37,10 +37,21 @@ FUTURE handler that DOES update an existing vehicle: Task 4's
 only_confirmed_fields`) would then strip a confirmed column from that handler's
 patch.
 
-Gate seam for a later task (deliberately left open, not hardcoded shut):
-  - Task 10 adds a `type == 'Îngrijire'` branch for `to_status == 'Finalizat'`
-    (measured-result gate) — another `elif` in `_build_patch()` keyed off
-    `task['type']`, alongside Blocat and Recepție.
+Task 10 (Îngrijire -> Finalizat, "measured-result gate" — e.g. a 12V battery
+check) is the sibling of Task 9's reception gate, minus the vehicle write:
+`_build_patch()` validates `ctx['measured'] = {"value": number, "unit": str}`
+via `_require_measured_fields()` (a real number — `int`/`float`, never
+`bool` — and a non-empty, stripped `unit`), raising BEFORE any write if
+either is missing/wrong-typed. `measured_result` IS a `TASK_FIELDS` column
+(Task 1), so it rides straight through to the task UPDATE; the SAME
+validated dict is also stashed on the patch under a `measured` key
+`TaskRepository.update_task` doesn't recognize (Task 9's `reception`
+side-channel pattern) — `move_task()` pops it back off and, once present,
+routes to `_finalize_care_measurement()`, which writes the task-status+
+measured_result UPDATE and a dedicated `care_measured` history row
+(carrying `value`/`unit`/`status`) atomically via `execute_many()`. Unlike
+reception, there's no separate generic `task_moved` row for this path — the
+one `care_measured` row IS this move's history entry.
 """
 from typing import Any, Dict, Optional
 
@@ -52,9 +63,11 @@ from logistics.repositories.vehicle_repository import LogisticsVehicleRepository
 _BLOCAT = 'Blocat'
 _FINALIZAT = 'Finalizat'
 _RECEPTIE = 'Recepție'
+_INGRIJIRE = 'Îngrijire'
 _ETAPA_IN_PREGATIRE = 'În pregătire'
 _HISTORY_TASK_MOVED = 'task_moved'
 _HISTORY_RECEPTION_CONFIRMED = 'reception_confirmed'
+_HISTORY_CARE_MEASURED = 'care_measured'
 _DEFAULT_ACTOR = 'user:unknown'
 
 # ctx['reception'] = {"vin","location_id","position_id","keys","condition"} --
@@ -108,6 +121,23 @@ def _require_reception_fields(ctx: Dict[str, Any]) -> Dict[str, Any]:
             raise MoveError('reception_incomplete')
         validated[field] = value
     return validated
+
+
+def _require_measured_fields(ctx: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate ctx['measured'] = {"value": number, "unit": str} -- `value`
+    must be a real number (`int`/`float`, NOT `bool` -- booleans are ints in
+    Python and must never pass as a measurement), `unit` a non-empty string
+    after stripping -- raises MoveError('measured_result_required')
+    otherwise. Returns the validated {"value", "unit"} dict (unit stripped,
+    value passed through unchanged)."""
+    measured = ctx.get('measured') or {}
+    value = measured.get('value')
+    unit = measured.get('unit')
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise MoveError('measured_result_required')
+    if not isinstance(unit, str) or not unit.strip():
+        raise MoveError('measured_result_required')
+    return {'value': value, 'unit': unit.strip()}
 
 
 def _is_positive_int(value: Any) -> bool:
@@ -174,11 +204,23 @@ def _build_patch(task: Dict[str, Any], to_status: str, ctx: Dict[str, Any]) -> D
         patch['reception'] = reception
         return patch
 
-    # Seam for Task 10 (Îngrijire -> Finalizat: measured-result gate) -- keys
-    # off task['type'] for this same `elif` chain, without touching
-    # move_task() itself. Any other transition (De făcut/În lucru/Finalizat
-    # with no matching gate) is a plain status change.
+    if to_status == _FINALIZAT and task.get('type') == _INGRIJIRE:
+        # Measured-result gate (Task 10): a care task (e.g. a 12V battery
+        # check) can't finalize without a real reading. Validated BEFORE any
+        # write, same discipline as Blocat/Recepție above. `measured_result`
+        # is a real TASK_FIELDS column (Task 1) so it rides straight through
+        # to the task UPDATE; the `measured` key is Task 10's own
+        # side-channel (mirrors Task 9's `reception`) -- not a TASK_FIELDS
+        # column, popped back off by move_task() to decide the atomic
+        # _finalize_care_measurement() path and to build the
+        # care_measured history row.
+        measured = _require_measured_fields(ctx)
+        patch['measured_result'] = measured
+        patch['measured'] = measured
+        return patch
 
+    # Any other transition (De făcut/În lucru/Finalizat with no matching
+    # gate) is a plain status change.
     return patch
 
 
@@ -249,6 +291,45 @@ def _confirm_reception(task: Dict[str, Any], to_status: str, task_patch: Dict[st
     return task_repo.execute_many(_work)
 
 
+def _finalize_care_measurement(task: Dict[str, Any], task_patch: Dict[str, Any],
+                                old_status: str, measured: Dict[str, Any], actor: str) -> Dict[str, Any]:
+    """The whole measured-result finalize (Task 10), run ATOMICALLY in one
+    execute_many() transaction: the task UPDATE (status + measured_result)
+    and the dedicated `care_measured` history row share one cursor, so a
+    mid-write failure rolls back both -- the task can never land in
+    `Finalizat` with no history row proving what was measured, or vice versa.
+
+    Unlike `_confirm_reception`, there's no vehicle row to touch here, and
+    no separate generic `task_moved` row -- `care_measured` (which already
+    carries the resulting `status`) IS this move's one history entry.
+    Returns the updated task dict (move_task()'s return value for this
+    path)."""
+    task_id = task['id']
+    vehicle_id = task['vehicle_id']
+    company_id = task.get('company_id')
+
+    task_repo = TaskRepository()
+    history_repo = HistoryRepository()
+
+    old_value = {'status': old_status, 'task_id': task_id}
+    new_value = {
+        'status': _FINALIZAT,
+        'task_id': task_id,
+        'value': measured['value'],
+        'unit': measured['unit'],
+    }
+
+    def _work(cursor):
+        updated = task_repo.update_task(task_id, task_patch, cursor=cursor)
+        history_repo.record_history(
+            vehicle_id, _HISTORY_CARE_MEASURED, old_value, new_value,
+            actor=actor, company_id=company_id, cursor=cursor,
+        )
+        return updated
+
+    return task_repo.execute_many(_work)
+
+
 def move_task(task_id: int, to_status: str, ctx: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Transition one Kanban card to `to_status`, enforcing whichever gate
     applies to this (current task, to_status) pair, and recording one audit
@@ -276,17 +357,24 @@ def move_task(task_id: int, to_status: str, ctx: Optional[Dict[str, Any]] = None
 
     old_status = task['status']
     patch = _build_patch(task, to_status, ctx)  # raises MoveError before any write
-    # Task 9's side-channel (see _build_patch) -- never a TaskRepository
-    # column, popped off before the task UPDATE so it can't leak into it.
+    # Task 9/10's side-channels (see _build_patch) -- neither is a
+    # TaskRepository column, popped off before the task UPDATE so they can't
+    # leak into it.
     reception = patch.pop('reception', None)
+    measured = patch.pop('measured', None)
     actor = ctx.get('actor') or _DEFAULT_ACTOR
 
     # Reception-confirm is its own atomic write path: the task status +
     # task_moved history + vehicle update + reception_confirmed history all
-    # commit together or not at all (see _confirm_reception). Every other
-    # move is a plain task update + one task_moved history row.
+    # commit together or not at all (see _confirm_reception). Measured-
+    # result finalize is likewise atomic but simpler (see
+    # _finalize_care_measurement): task status+measured_result + one
+    # care_measured history row. Every other move is a plain task update +
+    # one task_moved history row.
     if reception is not None:
         return _confirm_reception(task, to_status, patch, old_status, reception, actor)
+    if measured is not None:
+        return _finalize_care_measurement(task, patch, old_status, measured, actor)
 
     updated = task_repo.update_task(task_id, patch)
 

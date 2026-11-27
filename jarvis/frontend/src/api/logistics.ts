@@ -75,8 +75,11 @@ export interface GetBoardFilters {
 // `block` is required only when `to_status === 'Blocat'` (both fields
 // non-empty); `reception` is required only when moving a `Recepție` task to
 // `Finalizat` ("Confirmă recepția" -- Task 9, all 5 fields non-empty, else
-// the backend rejects with `MoveError('reception_incomplete')`). Omit
-// whichever one doesn't apply to the transition being made.
+// the backend rejects with `MoveError('reception_incomplete')`); `measured`
+// is required only when moving an `Îngrijire` task to `Finalizat`
+// (measured-result gate -- Task 10, `value` a real number + non-empty
+// `unit`, else `MoveError('measured_result_required')`). Omit whichever one
+// doesn't apply to the transition being made.
 export interface MoveTaskContext {
   block?: { responsible: string; next_action: string }
   reception?: {
@@ -86,6 +89,7 @@ export interface MoveTaskContext {
     keys: number
     condition: string
   }
+  measured?: { value: number; unit: string }
 }
 
 // Returned task shape is the raw logistics_tasks row (TaskRepository.

@@ -219,3 +219,48 @@ export function buildReceptionContext(form: ReceptionFormState): MoveTaskContext
     },
   }
 }
+
+// ── Measured-result gate (Task 10: Îngrijire -> Finalizat) ──────────────
+
+/** Raw <input> values for the MeasuredResultDialog -- both fields are
+ * strings (what a controlled <input> hands back); see buildMeasuredContext
+ * for the string -> number conversion on `value`. */
+export interface MeasuredFormState {
+  value: string
+  unit: string
+}
+
+export const EMPTY_MEASURED_FORM: MeasuredFormState = { value: '', unit: '' }
+
+/** A finite decimal number, as typed into a plain text/number <input>
+ * (optional surrounding whitespace, optional sign, optional decimal point)
+ * -- deliberately more permissive than isWholeNumberString above, since a
+ * measurement (e.g. a 12.4V battery reading) isn't necessarily a whole
+ * number. */
+function isNumericString(value: string): boolean {
+  const trimmed = value.trim()
+  if (trimmed === '') return false
+  return Number.isFinite(Number(trimmed))
+}
+
+/** The measured-result gate's own validation, mirrored client-side so the
+ * "Finalizează" button in MeasuredResultDialog disables itself instead of
+ * round-tripping to the server just to learn the reading is missing/invalid
+ * (backend's `move_task` in jarvis/logistics/services/moves.py enforces the
+ * same rule via `_require_measured_fields` -- this is a UX head start, not a
+ * replacement for it). Whitespace-only `unit` doesn't count as filled in. */
+export function isMeasuredFormValid(form: MeasuredFormState): boolean {
+  return isNumericString(form.value) && form.unit.trim().length > 0
+}
+
+/** Build the `ctx.measured` body `moveTask()` sends for the measured-result
+ * finalize (value coerced to a number, unit trimmed) -- call only once
+ * `isMeasuredFormValid` is true. */
+export function buildMeasuredContext(form: MeasuredFormState): MoveTaskContext {
+  return {
+    measured: {
+      value: Number(form.value.trim()),
+      unit: form.unit.trim(),
+    },
+  }
+}

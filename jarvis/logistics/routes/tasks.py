@@ -79,10 +79,12 @@ def get_board():
 @login_required
 def move_task_route(task_id):
     """Move a Kanban card to a new status. Body: `{to_status, block?,
-    reception?}` where `block` (required only when `to_status == 'Blocat'`)
-    is `{responsible, next_action}`, and `reception` (required only when
-    moving a `Recepție` task to `Finalizat` — "Confirmă recepția") is
-    `{vin, location_id, position_id, keys, condition}`.
+    reception?, measured?}` where `block` (required only when
+    `to_status == 'Blocat'`) is `{responsible, next_action}`, `reception`
+    (required only when moving a `Recepție` task to `Finalizat` —
+    "Confirmă recepția") is `{vin, location_id, position_id, keys,
+    condition}`, and `measured` (required only when moving an `Îngrijire`
+    task to `Finalizat`) is `{value, unit}`.
 
     Cross-tenant write guard: the task's own company (via its vehicle) must
     match the caller's company (see `_user_company_id`) — a task from
@@ -115,6 +117,7 @@ def move_task_route(task_id):
     ctx = {
         'block': body.get('block'),
         'reception': body.get('reception'),
+        'measured': body.get('measured'),
         'actor': getattr(current_user, 'name', None) or getattr(current_user, 'email', None),
     }
 

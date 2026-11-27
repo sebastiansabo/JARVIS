@@ -51,11 +51,16 @@ import {
   EMPTY_RECEPTION_FORM,
   isReceptionFormValid,
   buildReceptionContext,
+  EMPTY_MEASURED_FORM,
+  isMeasuredFormValid,
+  buildMeasuredContext,
   type KanbanFiltersState,
   type ReceptionFormState,
+  type MeasuredFormState,
 } from './Kanban.helpers'
 import { extractErrorMessage } from './Parc.helpers'
 import { ConfirmReceptionDialog, type PendingReception } from './components/ConfirmReceptionDialog'
+import { MeasuredResultDialog, type PendingMeasured } from './components/MeasuredResultDialog'
 
 /** The card + target status currently pending the "Blocat" dialog's
  * Responsabil/Următoarea acțiune input -- null when the dialog is closed. */
@@ -335,14 +340,19 @@ export default function Kanban() {
   // (the backend gate in jarvis/logistics/services/moves.py rejects a bare
   // move), so that transition opens a small dialog instead of mutating
   // immediately; moving a `Recepție` card to 'Finalizat' ("Confirmă
-  // recepția" -- Task 9) needs its own 5-field dialog for the same reason.
-  // Every other transition mutates straight away.
+  // recepția" -- Task 9) needs its own 5-field dialog for the same reason;
+  // moving an `Îngrijire` card to 'Finalizat' (measured-result gate --
+  // Task 10) needs a Valoare + Unitate reading for the same reason. Every
+  // other transition mutates straight away.
   const [pendingBlock, setPendingBlock] = useState<PendingBlock | null>(null)
   const [blockResponsible, setBlockResponsible] = useState('')
   const [blockNextAction, setBlockNextAction] = useState('')
 
   const [pendingReception, setPendingReception] = useState<PendingReception | null>(null)
   const [receptionForm, setReceptionForm] = useState<ReceptionFormState>(EMPTY_RECEPTION_FORM)
+
+  const [pendingMeasured, setPendingMeasured] = useState<PendingMeasured | null>(null)
+  const [measuredForm, setMeasuredForm] = useState<MeasuredFormState>(EMPTY_MEASURED_FORM)
 
   const moveMutation = useMutation({
     mutationFn: ({ card, toStatus, ctx }: {
@@ -352,7 +362,7 @@ export default function Kanban() {
     }) => logisticsApi.moveTask(card.id, toStatus, ctx),
     onSuccess: () => {
       // Refetch instead of a local patch -- a move can change which column
-      // (and, via Task 9/10's later gates, which vehicle fields) a card
+      // (and, via Task 9/10's gates, which vehicle/task fields) a card
       // belongs to, so the board query is the single source of truth.
       queryClient.invalidateQueries({ queryKey: ['logistics', 'board'] })
       setPendingBlock(null)
@@ -360,6 +370,8 @@ export default function Kanban() {
       setBlockNextAction('')
       setPendingReception(null)
       setReceptionForm(EMPTY_RECEPTION_FORM)
+      setPendingMeasured(null)
+      setMeasuredForm(EMPTY_MEASURED_FORM)
     },
     onError: (err) => {
       toast.error(extractErrorMessage(err))
@@ -376,6 +388,11 @@ export default function Kanban() {
     if (toStatus === 'Finalizat' && card.type === 'Recepție') {
       setReceptionForm(EMPTY_RECEPTION_FORM)
       setPendingReception({ card })
+      return
+    }
+    if (toStatus === 'Finalizat' && card.type === 'Îngrijire') {
+      setMeasuredForm(EMPTY_MEASURED_FORM)
+      setPendingMeasured({ card })
       return
     }
     moveMutation.mutate({ card, toStatus, ctx: buildMoveContext(toStatus, { responsible: '', nextAction: '' }) })
@@ -408,6 +425,23 @@ export default function Kanban() {
       card: pendingReception.card,
       toStatus: 'Finalizat',
       ctx: buildReceptionContext(receptionForm),
+    })
+  }
+
+  function handleMeasuredCancel() {
+    setPendingMeasured(null)
+  }
+
+  function handleMeasuredFieldChange(field: keyof MeasuredFormState, value: string) {
+    setMeasuredForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  function handleMeasuredConfirm() {
+    if (!pendingMeasured || !isMeasuredFormValid(measuredForm)) return
+    moveMutation.mutate({
+      card: pendingMeasured.card,
+      toStatus: 'Finalizat',
+      ctx: buildMeasuredContext(measuredForm),
     })
   }
 
@@ -544,6 +578,15 @@ export default function Kanban() {
         onFieldChange={handleReceptionFieldChange}
         onCancel={handleReceptionCancel}
         onConfirm={handleReceptionConfirm}
+      />
+
+      <MeasuredResultDialog
+        pending={pendingMeasured}
+        form={measuredForm}
+        isPending={moveMutation.isPending}
+        onFieldChange={handleMeasuredFieldChange}
+        onCancel={handleMeasuredCancel}
+        onConfirm={handleMeasuredConfirm}
       />
     </div>
   )
