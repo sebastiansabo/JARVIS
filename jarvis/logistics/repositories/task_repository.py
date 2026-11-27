@@ -40,8 +40,14 @@ def _adapt_jsonb(column: str, value: Any) -> Any:
 class TaskRepository(BaseRepository):
     """Data access for logistics_tasks."""
 
-    def create_task(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Insert a new task. Returns the created record."""
+    def create_task(self, data: Dict[str, Any], cursor=None) -> Dict[str, Any]:
+        """Insert a new task. Returns the created record.
+
+        `cursor` (optional): run on an already-open shared cursor inside an
+        execute_many() transaction instead of auto-committing — lets the
+        intake create-vehicle-plus-reception-task path (rules.py) write the
+        vehicle, task, and history rows atomically.
+        """
         safe_data = {k: v for k, v in data.items() if k in TASK_FIELDS}
         if not safe_data.get('vehicle_id'):
             raise ValueError('vehicle_id is required')
@@ -55,10 +61,10 @@ class TaskRepository(BaseRepository):
         col_names = ', '.join(columns)
         values = [_adapt_jsonb(c, safe_data[c]) for c in columns]
 
-        return self.execute(
-            f'INSERT INTO logistics_tasks ({col_names}) VALUES ({placeholders}) RETURNING *',
-            tuple(values), returning=True
-        )
+        sql = f'INSERT INTO logistics_tasks ({col_names}) VALUES ({placeholders}) RETURNING *'
+        if cursor is not None:
+            return self._execute_on_cursor(cursor, sql, tuple(values), returning=True)
+        return self.execute(sql, tuple(values), returning=True)
 
     def get_task_by_id(self, task_id: int) -> Optional[Dict[str, Any]]:
         return self.query_one('SELECT * FROM logistics_tasks WHERE id = %s', (task_id,))

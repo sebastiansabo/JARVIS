@@ -74,27 +74,43 @@ def _create_vehicle_with_reception_task(ctx: RuleContext) -> Dict[str, Any]:
     can be the very first thing jarvis-alpha sends for an order, in which
     case it must stand up the same vehicle+card shape, just with the ETA
     already attached.
+
+    All three writes — vehicle insert, task insert, `created` history row —
+    run inside ONE `execute_many()` transaction (same discipline as
+    moves.py's `_confirm_reception`), so a mid-write failure rolls back all
+    of them. Without this, a crash right after the vehicle commits would
+    leave a vehicle with NO Recepție card; on retry,
+    `handle_transport_in_derulare`'s `if existing: return 'duplicate'` guard
+    would then permanently prevent the card from ever being created — a
+    vehicle stranded with no card and no way to get one.
     """
-    vehicle = ctx.vehicle_repo.create_vehicle({
+    vehicle_data = {
         'order_ref': ctx.order_ref,
         'etapa_parc': _ETAPA_IN_TRANZIT,
         'destinatie': ctx.payload.get('destinatie'),
         'company_id': ctx.company_id,
         'last_event_ts': ctx.event_ts,
-    })
+    }
 
-    task = ctx.task_repo.create_task({
-        'vehicle_id': vehicle['id'],
-        'action': _RECEPTIE_ACTION,
-        'type': _RECEPTIE_TASK_TYPE,
-        'due_at': ctx.payload.get('eta'),
-        'company_id': ctx.company_id,
-    })
+    def _work(cursor):
+        vehicle = ctx.vehicle_repo.create_vehicle(vehicle_data, cursor=cursor)
 
-    ctx.history_repo.record_history(
-        vehicle['id'], _HISTORY_CREATED, None, vehicle,
-        actor=_INTAKE_ACTOR, company_id=ctx.company_id,
-    )
+        task = ctx.task_repo.create_task({
+            'vehicle_id': vehicle['id'],
+            'action': _RECEPTIE_ACTION,
+            'type': _RECEPTIE_TASK_TYPE,
+            'due_at': ctx.payload.get('eta'),
+            'company_id': ctx.company_id,
+        }, cursor=cursor)
+
+        ctx.history_repo.record_history(
+            vehicle['id'], _HISTORY_CREATED, None, vehicle,
+            actor=_INTAKE_ACTOR, company_id=ctx.company_id, cursor=cursor,
+        )
+
+        return vehicle, task
+
+    vehicle, task = ctx.task_repo.execute_many(_work)
 
     return {'result': 'created', 'vehicle_id': vehicle['id'], 'task_id': task['id']}
 
@@ -142,7 +158,6 @@ def handle_eta_actualizat(ctx: RuleContext) -> Dict[str, Any]:
 
     old_due_at = task.get('due_at')
     new_eta = ctx.payload.get('eta')
-    updated_task = ctx.task_repo.update_task(task['id'], {'due_at': new_eta})
 
     # Stamp last_event_ts so a *later* stale/out-of-order event for this
     # order is caught by intake.py's ordering guard (deferred from Task 3 —
@@ -151,16 +166,34 @@ def handle_eta_actualizat(ctx: RuleContext) -> Dict[str, Any]:
     # Guarded on event_ts not being None: it's Optional on RuleContext, and
     # writing a NULL here would erase the vehicle's existing guard value,
     # letting a later genuinely-stale event slip past intake.py's check.
+    # Computed up front (pure, no write) so the actual writes below can run
+    # inside one transaction.
+    vehicle_patch = None
     if ctx.event_ts is not None:
-        vehicle_patch = _apply_confirmed_guard(existing, {'last_event_ts': ctx.event_ts})
-        if vehicle_patch:
-            ctx.vehicle_repo.update_vehicle(existing['id'], vehicle_patch)
+        candidate_patch = _apply_confirmed_guard(existing, {'last_event_ts': ctx.event_ts})
+        if candidate_patch:
+            vehicle_patch = candidate_patch
 
-    ctx.history_repo.record_history(
-        existing['id'], _HISTORY_ETA_UPDATED,
-        {'due_at': old_due_at}, {'due_at': new_eta},
-        actor=_INTAKE_ACTOR, company_id=ctx.company_id,
-    )
+    # All writes — task due_at update, optional vehicle last_event_ts stamp,
+    # `eta_updated` history row — run inside ONE `execute_many()`
+    # transaction (same discipline as moves.py's `_confirm_reception`), so a
+    # mid-write failure rolls back all of them instead of leaving the task's
+    # due_at changed with no corresponding audit row (or vice versa).
+    def _work(cursor):
+        updated = ctx.task_repo.update_task(task['id'], {'due_at': new_eta}, cursor=cursor)
+
+        if vehicle_patch:
+            ctx.vehicle_repo.update_vehicle(existing['id'], vehicle_patch, cursor=cursor)
+
+        ctx.history_repo.record_history(
+            existing['id'], _HISTORY_ETA_UPDATED,
+            {'due_at': old_due_at}, {'due_at': new_eta},
+            actor=_INTAKE_ACTOR, company_id=ctx.company_id, cursor=cursor,
+        )
+
+        return updated
+
+    updated_task = ctx.task_repo.execute_many(_work)
 
     return {
         'result': 'updated',

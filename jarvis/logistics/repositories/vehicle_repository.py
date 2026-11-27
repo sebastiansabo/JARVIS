@@ -80,12 +80,17 @@ class LogisticsVehicleRepository(BaseRepository):
         """Full vehicle record by id."""
         return self.query_one('SELECT * FROM logistics_vehicles WHERE id = %s', (vehicle_id,))
 
-    def create_vehicle(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def create_vehicle(self, data: Dict[str, Any], cursor=None) -> Dict[str, Any]:
         """Insert a new vehicle. Returns the created record.
 
         Raises psycopg2.errors.UniqueViolation (via the DB) if order_ref
         already exists — callers rely on that for the intake pipeline's
         idempotent-create behaviour (Task 2).
+
+        `cursor` (optional): run on an already-open shared cursor inside an
+        execute_many() transaction instead of auto-committing — lets the
+        intake create-vehicle-plus-reception-task path (rules.py) write the
+        vehicle, task, and history rows atomically.
         """
         safe_data = {k: v for k, v in data.items() if k in VEHICLE_FIELDS}
         if not safe_data.get('order_ref'):
@@ -96,10 +101,10 @@ class LogisticsVehicleRepository(BaseRepository):
         col_names = ', '.join(columns)
         values = [_adapt_jsonb(c, safe_data[c]) for c in columns]
 
-        return self.execute(
-            f'INSERT INTO logistics_vehicles ({col_names}) VALUES ({placeholders}) RETURNING *',
-            tuple(values), returning=True
-        )
+        sql = f'INSERT INTO logistics_vehicles ({col_names}) VALUES ({placeholders}) RETURNING *'
+        if cursor is not None:
+            return self._execute_on_cursor(cursor, sql, tuple(values), returning=True)
+        return self.execute(sql, tuple(values), returning=True)
 
     def update_vehicle(self, vehicle_id: int, patch: Dict[str, Any], cursor=None) -> Optional[Dict[str, Any]]:
         """Update vehicle fields. Returns the updated record (or the
