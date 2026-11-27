@@ -123,7 +123,19 @@ function SelectField({
         {label}
         {required && <span className="text-red-500 ml-0.5">*</span>}
       </Label>
-      <Select value={value ?? ''} onValueChange={(v) => onChange(name, v)}>
+      <Select
+        value={value ?? ''}
+        onValueChange={(v) => {
+          // Guard against Radix Select's hidden native "bubble" <select>: it only
+          // registers its <option> mirrors after the dropdown has been opened once,
+          // so a PROGRAMMATIC value change (e.g. on vehicle load) makes it dispatch
+          // a spurious change event reporting '' — which, routed to onChange, wiped
+          // a just-loaded value (e.g. «Tip stoc» Custodie) straight back to blank.
+          // A real selection is always one of our options; anything else is noise.
+          if (!options.some((o) => o.value === v)) return
+          onChange(name, v)
+        }}
+      >
         <SelectTrigger>
           <SelectValue placeholder={`Select ${label.toLowerCase()}`} />
         </SelectTrigger>
