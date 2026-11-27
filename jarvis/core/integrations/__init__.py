@@ -14,3 +14,4 @@ integrations_bp = Blueprint('integrations', __name__)
 # Import routes to attach view functions to the blueprint. Kept at the bottom to
 # avoid a circular import (routes import ``integrations_bp`` from this module).
 from core.integrations import routes  # noqa: E402,F401
+from core.integrations import routes_facturare  # noqa: E402,F401

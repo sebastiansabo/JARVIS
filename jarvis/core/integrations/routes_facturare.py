@@ -26,6 +26,9 @@ from core.integrations.facturare_lookup_repository import FacturareLookupReposit
 _rate_limiter = RateLimiter()
 _RATE_MAX_REQUESTS = 120
 _RATE_WINDOW_SECONDS = 60
+_MAX_ORDERS = 1000
+
+_repo = FacturareLookupRepository()
 
 # Only these document types count as an issued fiscal invoice (the summary).
 _FISCAL_TYPES = {"FINAL", "INVOICE"}
@@ -104,3 +107,39 @@ def _build_results(order_inputs: list, rows: list):
                 "documents": documents,
             })
     return results, not_found
+
+
+# ── Route ──────────────────────────────────────────────────────────────────────
+
+@integrations_bp.route('/api/integrations/business-control/facturare/invoices', methods=['POST'])
+def facturare_invoices_lookup():
+    """Batch facturare invoice lookup by nr_comanda. Same auth/permission gate as
+    the business-control endpoints (session cookie or alpha's Bearer token +
+    ``business_control.access``)."""
+    if not current_user.is_authenticated:
+        return error_response('Authentication required', 401)
+
+    allowed, retry_after = _rate_limiter.is_allowed(
+        f'bc:facturare:{current_user.id}',
+        max_requests=_RATE_MAX_REQUESTS, window_seconds=_RATE_WINDOW_SECONDS)
+    if not allowed:
+        resp, code = error_response('Too many requests', 429)
+        resp.headers['Retry-After'] = str(retry_after)
+        return resp, code
+
+    if not getattr(current_user, 'is_active', False) or not _has_business_control_access(current_user):
+        return error_response('Permission denied', 403)
+
+    data = request.get_json(silent=True) or {}
+    orders = data.get('orders')
+    if not isinstance(orders, list) or not orders:
+        return error_response('orders must be a non-empty list', 400)
+    if len(orders) > _MAX_ORDERS:
+        return error_response(f'orders exceeds the {_MAX_ORDERS}-item limit', 400)
+    if not all(isinstance(o, str) for o in orders):
+        return error_response('orders must be a list of strings', 400)
+
+    rows = _repo.by_order_numbers(orders)
+    results, not_found = _build_results(orders, rows)
+    _audit('business_control.facturare_lookup', current_user, f'{len(orders)} orders', True)
+    return jsonify({'success': True, 'results': results, 'not_found': not_found})
