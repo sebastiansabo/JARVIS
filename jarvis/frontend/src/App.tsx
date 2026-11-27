@@ -74,6 +74,8 @@ const TestDriveForm = lazy(() => import('./pages/FoiParcurs/TestDriveForm'))
 const InternalSessionForm = lazy(() => import('./pages/FoiParcurs/InternalSessionForm'))
 const TestDriveReturn = lazy(() => import('./pages/FoiParcurs/TestDriveReturn'))
 const ServiceCatalog = lazy(() => import('./pages/Service/Catalog'))
+const Parc = lazy(() => import('./pages/Logistics/Parc'))
+const ParcVehicleDetail = lazy(() => import('./pages/Logistics/VehicleDetail'))
 const Hub = lazy(() => import('./pages/Hub'))
 const HappyBoard = lazy(() => import('./pages/HappyBoard'))
 const HappyTransparency = lazy(() => import('./pages/Happy/Transparency'))
@@ -288,6 +290,12 @@ export default function App() {
 
         {/* Service Catalog */}
         <Route path="service/catalog" element={<SuspensePage><ServiceCatalog /></SuspensePage>} />
+
+        {/* JARVIS Parc (logistics) — open to all authenticated users for now;
+            proper role_permissions_v2 can_access_logistics wiring is Phase-2
+            (see spine plan progress.md "spine perm" ruling). */}
+        <Route path="logistics" element={<SuspensePage><Parc /></SuspensePage>} />
+        <Route path="logistics/parc/:id" element={<SuspensePage><ParcVehicleDetail /></SuspensePage>} />
 
         {/* AI Agent — requires can_access_ai_agent */}
         <Route path="ai-agent" element={<Guard flag="can_access_ai_agent"><SuspensePage><AiAgent /></SuspensePage></Guard>} />

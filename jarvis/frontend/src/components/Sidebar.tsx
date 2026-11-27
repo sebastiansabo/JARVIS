@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, CalendarClock, Building2, Network, MapPin, PartyPopper, ClipboardList, Car, DollarSign, Tag, BarChart3, Receipt, Headset, MoreHorizontal, GraduationCap, Wrench, Activity, Ticket, Home, MessageSquare, Target, LayoutGrid, Coins, ArrowLeftRight } from 'lucide-react'
+import { LayoutDashboard, Bot, Calculator, Users, Landmark, FileText, Settings, LogOut, UserCircle, PanelLeftClose, PanelLeft, ChevronDown, ChevronRight, ClipboardCheck, Megaphone, Scale, TrendingUp, Contact, FolderOpen, Award, CalendarDays, CalendarClock, Building2, Network, MapPin, PartyPopper, ClipboardList, Car, DollarSign, Tag, BarChart3, Receipt, Headset, MoreHorizontal, GraduationCap, Wrench, Activity, Ticket, Home, MessageSquare, Target, LayoutGrid, Coins, ArrowLeftRight, Warehouse } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { ThemeToggle } from './ThemeToggle'
@@ -120,6 +120,18 @@ const navItemsDef: NavItem[] = [
     children: [
       { path: '/app/service/catalog', label: 'Service Catalog', icon: Tag, moduleKey: 'service_catalog', permission: 'can_access_service' },
     ],
+  },
+  {
+    // JARVIS Parc (logistics/yard-ops) — top-level, own workspace (not
+    // nested under Service/CarPark; mirrors the prototype's framing). No
+    // `permission` yet: role_permissions_v2 can_access_logistics wiring is
+    // Phase-2 (see spine plan progress.md "spine perm" + "nav" rulings) —
+    // visible to any authenticated user for now.
+    // No moduleKey: not (yet) registered in module_menu_items, so a DB-menu
+    // filter would hide it entirely once dbModuleMap loads (see Cost
+    // Centers / Evenimente TD above for the same pattern) -- visibility
+    // rides the `return true` fallthrough in isItemVisible() instead.
+    path: '/app/logistics', label: 'Parc', icon: Warehouse,
   },
   {
     path: '/app/others',

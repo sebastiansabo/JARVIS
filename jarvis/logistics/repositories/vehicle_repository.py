@@ -4,7 +4,7 @@ Mirrors carpark/repositories/vehicle_repository.py's style: BaseRepository
 for connection handling, a server-field-safe whitelist for create/update, and
 Json() wrapping for the JSONB column.
 """
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from psycopg2.extras import Json
 
@@ -32,6 +32,23 @@ def _adapt_jsonb(column: str, value: Any) -> Any:
     if column in VEHICLE_JSONB_FIELDS and isinstance(value, (dict, list)):
         return Json(value)
     return value
+
+
+# Parc register (Task 6) — whitelist mapping each sortable display column to
+# its real SQL expression. Keys are exactly the 8 display columns from the
+# design spec (§4.1); `filters['sort']` is looked up here, never interpolated
+# raw, so an unknown/absent key can never become a SQL-injection vector or an
+# "unknown column" error -- it just falls through to the stable default order.
+_VEHICLE_SORT_COLUMNS = {
+    'vehicul': 'v.model',
+    'comanda': 'v.order_ref',
+    'locatie': 'l.name',
+    'pozitie': 'p.code',
+    'destinatie': 'v.destinatie',
+    'etapa_parc': 'v.etapa_parc',
+    'predare': 'v.predare',
+    'vin': 'v.vin',
+}
 
 
 class LogisticsVehicleRepository(BaseRepository):
@@ -103,3 +120,82 @@ class LogisticsVehicleRepository(BaseRepository):
             f"UPDATE logistics_vehicles SET {', '.join(sets)} WHERE id = %s RETURNING *",
             tuple(params), returning=True
         )
+
+    def list_vehicles(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Parc register — the flat vehicle list behind GET /api/logistics/vehicles.
+
+        `filters` (all optional except `company_id`):
+          q            — free-text search against VIN / order_ref / model / plate
+                         (NULL vin is treated as empty via COALESCE, so a
+                         not-yet-received car with no VIN still matches on
+                         order_ref/model without the query erroring).
+          location_id  — exact match on logistics_vehicles.location_id
+          destinatie   — exact match (`Intern`/`AAP`/`Export`/`Expunere`)
+          etapa        — exact match on etapa_parc
+          predare      — exact match on predare
+          sort         — one of the 8 display columns (see
+                         `_VEHICLE_SORT_COLUMNS`); unknown/absent -> default order
+          dir          — 'asc' (default) or 'desc'; anything else -> 'asc'
+          company_id   — tenant scope (every query is scoped by this)
+
+        Returns rows shaped for the Parc table: the 8 display columns
+        (vehicul, comanda, locatie, pozitie, destinatie, etapa_parc, predare,
+        vin) plus id/location_id/position_id for the row-click -> detail nav.
+
+        Order is always stable: an explicit `sort` is tie-broken by `v.id`,
+        and with no (or an unrecognized) `sort` the whole result falls back
+        to `v.id ASC` (insertion order) -- never "whatever Postgres felt like
+        today" for two rows with equal sort keys.
+        """
+        where = ['v.company_id = %s']
+        params: list = [filters.get('company_id')]
+
+        q = filters.get('q')
+        if q:
+            like = f'%{q}%'
+            where.append(
+                "(COALESCE(v.vin, '') ILIKE %s OR v.order_ref ILIKE %s "
+                "OR COALESCE(v.model, '') ILIKE %s OR COALESCE(v.plate, '') ILIKE %s)"
+            )
+            params.extend([like, like, like, like])
+
+        location_id = filters.get('location_id')
+        if location_id is not None:
+            where.append('v.location_id = %s')
+            params.append(location_id)
+
+        destinatie = filters.get('destinatie')
+        if destinatie:
+            where.append('v.destinatie = %s')
+            params.append(destinatie)
+
+        etapa = filters.get('etapa')
+        if etapa:
+            where.append('v.etapa_parc = %s')
+            params.append(etapa)
+
+        predare = filters.get('predare')
+        if predare:
+            where.append('v.predare = %s')
+            params.append(predare)
+
+        sort_col = _VEHICLE_SORT_COLUMNS.get(filters.get('sort'))
+        if sort_col is None:
+            order_clause = 'v.id ASC'
+        else:
+            direction = 'DESC' if str(filters.get('dir', 'asc')).lower() == 'desc' else 'ASC'
+            order_clause = f'{sort_col} {direction}, v.id ASC'
+
+        sql = f'''
+            SELECT
+                v.id, v.model AS vehicul, v.order_ref AS comanda,
+                l.name AS locatie, p.code AS pozitie,
+                v.destinatie, v.etapa_parc, v.predare, v.vin,
+                v.location_id, v.position_id
+            FROM logistics_vehicles v
+            LEFT JOIN logistics_locations l ON v.location_id = l.id
+            LEFT JOIN logistics_positions p ON v.position_id = p.id
+            WHERE {' AND '.join(where)}
+            ORDER BY {order_clause}
+        '''
+        return self.query_all(sql, tuple(params))
