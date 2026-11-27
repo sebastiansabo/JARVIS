@@ -11,8 +11,6 @@ company tenant model — the permission grant is the gate.
 This module also hosts the pure builders the route composes (``_pick_current``,
 ``_build_results``), kept free of Flask/DB so they unit-test in isolation.
 """
-from datetime import date
-
 from flask import jsonify, request
 from flask_login import current_user
 
@@ -34,6 +32,13 @@ _repo = FacturareLookupRepository()
 _FISCAL_TYPES = {"FINAL", "INVOICE"}
 
 
+def _iso(value):
+    """Normalize a date-ish value to an ISO ``YYYY-MM-DD`` string. The repo returns
+    dates already ISO-stringified (BaseRepository.dict_from_row), but accept real
+    ``date`` objects too so the builders are robust to either caller."""
+    return value.isoformat() if hasattr(value, "isoformat") else value
+
+
 def _pick_current(documents: list):
     """Pick the live fiscal invoice from a document chain: the latest non-archived
     ``FINAL``, else the latest non-archived ``INVOICE``. ``documents`` are rows
@@ -42,8 +47,10 @@ def _pick_current(documents: list):
               if d.get("invoice_type") in _FISCAL_TYPES and not d.get("archived")]
     if not fiscal:
         return None
+    # Sort in the string domain — ISO dates sort chronologically and "" (missing
+    # date) sorts before any real date, so date/None/str mix never raises.
     return max(fiscal, key=lambda d: (
-        d.get("issued_date") or date.min,
+        _iso(d.get("issued_date")) or "",
         1 if d.get("invoice_type") == "FINAL" else 0,
         d.get("invoice_number") or 0,
     ))
@@ -52,7 +59,7 @@ def _pick_current(documents: list):
 def _document(row: dict) -> dict:
     return {
         "number": str(row["invoice_number"]),
-        "date": row["issued_date"].isoformat() if row.get("issued_date") else None,
+        "date": _iso(row.get("issued_date")),
         "type": row.get("invoice_type"),
         "archived": bool(row.get("archived")),
     }
@@ -91,7 +98,7 @@ def _build_results(order_inputs: list, rows: list):
             results.append({
                 "nr_comanda": o, "vin": vin, "has_invoice": True,
                 "invoice_number": str(current["invoice_number"]),
-                "invoice_date": current["issued_date"].isoformat() if current.get("issued_date") else None,
+                "invoice_date": _iso(current.get("issued_date")),
                 "invoice_type": current.get("invoice_type"),
                 "item": item,
                 "amount_eur": float(current["total_amount_eur"]) if current.get("total_amount_eur") is not None else None,

@@ -50,3 +50,28 @@ def test_build_results_line_without_invoice_is_has_invoice_false():
              "total_amount_ron": None, "currency": None, "archived": None}]
     results, not_found = _build_results(["B"], rows)
     assert results[0]["has_invoice"] is False and results[0]["documents"] == [] and not_found == []
+
+
+def test_build_results_accepts_real_repo_types_strings_and_floats():
+    # BaseRepository.query_all -> dict_from_row yields ISO-STRING dates and FLOAT
+    # amounts (never date/Decimal). The builder must handle those and stay JSON-safe.
+    import json
+    rows = [{"nr_comanda": "150019", "vin": "WAU", "model": "Audi Q3", "line_id": 1,
+             "invoice_number": 9202036, "invoice_type": "INVOICE", "issued_date": "2026-09-09",
+             "total_amount_eur": 31828.0, "total_amount_ron": 167170.2,
+             "currency": "EUR", "archived": False}]
+    results, _ = _build_results(["150019"], rows)
+    r = results[0]
+    assert r["invoice_date"] == "2026-09-09"
+    assert r["documents"][0]["date"] == "2026-09-09"
+    assert isinstance(r["amount_eur"], float)
+    json.dumps(results)  # must be JSON-serializable (jsonify would raise otherwise)
+
+
+def test_pick_current_handles_string_dates_with_null_no_crash():
+    # Real repo dates are strings; a FINAL/INVOICE with NULL date must not crash the sort.
+    docs = [
+        {"invoice_number": 9200939, "invoice_type": "FINAL", "issued_date": "2026-03-17", "archived": False},
+        {"invoice_number": 9200999, "invoice_type": "INVOICE", "issued_date": None, "archived": False},
+    ]
+    assert _pick_current(docs)["invoice_number"] == 9200939
