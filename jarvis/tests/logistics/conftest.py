@@ -4,7 +4,7 @@ defaultdb only.
 jarvis/conftest.py installs a MagicMock for psycopg2 (and .pool/.extras/
 .errors) in sys.modules at collection time so the rest of the suite can run
 without a real DB. test_schema.py is DB-backed (it exercises real SQL
-against VehicleRepository/TaskRepository), so it needs the real driver
+against LogisticsVehicleRepository/TaskRepository), so it needs the real driver
 against localhost/defaultdb.
 
 This mirrors the probe/restore idiom already used by

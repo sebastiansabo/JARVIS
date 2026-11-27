@@ -34,8 +34,13 @@ def _adapt_jsonb(column: str, value: Any) -> Any:
     return value
 
 
-class VehicleRepository(BaseRepository):
-    """Data access for logistics_vehicles."""
+class LogisticsVehicleRepository(BaseRepository):
+    """Data access for logistics_vehicles.
+
+    Named `LogisticsVehicleRepository` (not `VehicleRepository`) — the
+    modularity hook flags any class name duplicated across modules, and
+    carpark already owns a `VehicleRepository`.
+    """
 
     def get_vehicle_by_order_ref(self, order_ref: str, company_id: int = None) -> Optional[Dict[str, Any]]:
         """Lookup a vehicle by its order reference (the intake dedup key).

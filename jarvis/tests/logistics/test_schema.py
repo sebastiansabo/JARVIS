@@ -18,13 +18,13 @@ Invocation:
 import pytest
 
 from logistics.repositories.task_repository import TaskRepository
-from logistics.repositories.vehicle_repository import VehicleRepository
+from logistics.repositories.vehicle_repository import LogisticsVehicleRepository
 
 from .conftest import TEST_COMPANY_ID
 
 
 def test_create_vehicle_and_task_then_read_back(require_real_db, logistics_cleanup):
-    vehicle_repo = VehicleRepository()
+    vehicle_repo = LogisticsVehicleRepository()
     task_repo = TaskRepository()
 
     order_ref = 'AW-TEST-0001'
@@ -65,7 +65,7 @@ def test_create_vehicle_and_task_then_read_back(require_real_db, logistics_clean
 
 
 def test_duplicate_order_ref_raises_unique_violation(require_real_db, logistics_cleanup):
-    vehicle_repo = VehicleRepository()
+    vehicle_repo = LogisticsVehicleRepository()
 
     order_ref = 'AW-TEST-0002'
     vehicle_repo.create_vehicle({'order_ref': order_ref, 'company_id': TEST_COMPANY_ID})
