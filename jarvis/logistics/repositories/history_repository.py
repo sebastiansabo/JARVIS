@@ -21,19 +21,25 @@ class HistoryRepository(BaseRepository):
     """Data access for logistics_vehicle_history."""
 
     def record_history(self, vehicle_id: int, event_type: str, old: Any, new: Any,
-                        actor: str, company_id: int = None) -> Dict[str, Any]:
+                        actor: str, company_id: int = None, cursor=None) -> Dict[str, Any]:
         """Insert one audit-trail row for a vehicle state change. Returns the
-        created record."""
-        return self.execute(
-            '''
+        created record.
+
+        `cursor` (optional): run on an already-open shared cursor inside an
+        execute_many() transaction instead of auto-committing — lets the
+        reception-confirm move (moves.py) write its history rows atomically
+        alongside the task-status and vehicle updates.
+        """
+        sql = '''
             INSERT INTO logistics_vehicle_history
                 (vehicle_id, event_type, old_value, new_value, actor, company_id)
             VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING *
-            ''',
-            (vehicle_id, event_type, _adapt_jsonb(old), _adapt_jsonb(new), actor, company_id),
-            returning=True,
-        )
+        '''
+        params = (vehicle_id, event_type, _adapt_jsonb(old), _adapt_jsonb(new), actor, company_id)
+        if cursor is not None:
+            return self._execute_on_cursor(cursor, sql, params, returning=True)
+        return self.execute(sql, params, returning=True)
 
     def get_history_by_id(self, history_id: int) -> Optional[Dict[str, Any]]:
         return self.query_one('SELECT * FROM logistics_vehicle_history WHERE id = %s', (history_id,))

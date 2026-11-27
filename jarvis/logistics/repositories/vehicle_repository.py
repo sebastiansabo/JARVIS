@@ -101,9 +101,15 @@ class LogisticsVehicleRepository(BaseRepository):
             tuple(values), returning=True
         )
 
-    def update_vehicle(self, vehicle_id: int, patch: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def update_vehicle(self, vehicle_id: int, patch: Dict[str, Any], cursor=None) -> Optional[Dict[str, Any]]:
         """Update vehicle fields. Returns the updated record (or the
-        unchanged current record if patch has no whitelisted fields)."""
+        unchanged current record if patch has no whitelisted fields).
+
+        `cursor` (optional): run on an already-open shared cursor inside an
+        execute_many() transaction instead of auto-committing — lets the
+        reception-confirm move (moves.py) write the vehicle, task status, and
+        history rows atomically.
+        """
         safe_data = {k: v for k, v in patch.items() if k in VEHICLE_FIELDS}
         if not safe_data:
             return self.get_vehicle_by_id(vehicle_id)
@@ -116,10 +122,10 @@ class LogisticsVehicleRepository(BaseRepository):
         sets.append('updated_at = CURRENT_TIMESTAMP')
 
         params.append(vehicle_id)
-        return self.execute(
-            f"UPDATE logistics_vehicles SET {', '.join(sets)} WHERE id = %s RETURNING *",
-            tuple(params), returning=True
-        )
+        sql = f"UPDATE logistics_vehicles SET {', '.join(sets)} WHERE id = %s RETURNING *"
+        if cursor is not None:
+            return self._execute_on_cursor(cursor, sql, tuple(params), returning=True)
+        return self.execute(sql, tuple(params), returning=True)
 
     def list_vehicles(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Parc register — the flat vehicle list behind GET /api/logistics/vehicles.

@@ -120,3 +120,17 @@ class BaseRepository:
             raise
         finally:
             release_db(conn)
+
+    def _execute_on_cursor(self, cursor, sql, params=None, returning=False):
+        """Run one statement on an already-open shared cursor (inside an
+        execute_many() transaction). Unlike execute(), this neither commits
+        nor releases — the execute_many() owner does both once, so several
+        repo writes can share one atomic transaction. Mirrors execute()'s
+        return contract: a dict (the RETURNING row) when returning=True,
+        else the rowcount.
+        """
+        cursor.execute(sql, params or ())
+        if returning:
+            row = cursor.fetchone()
+            return dict_from_row(row) if row else None
+        return cursor.rowcount
