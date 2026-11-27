@@ -31,6 +31,7 @@ from database import get_cursor, get_db, release_db
 from logistics.repositories.location_repository import LocationRepository, PositionRepository
 from logistics.repositories.vehicle_repository import LogisticsVehicleRepository
 from logistics.services.intake import apply_event
+from logistics.services.rules import _apply_confirmed_guard
 
 from .conftest import TEST_COMPANY_ID
 
@@ -72,6 +73,24 @@ def bay(require_real_db):
             conn.commit()
         finally:
             release_db(conn)
+
+
+def test_apply_confirmed_guard_strips_only_confirmed_fields():
+    """`_apply_confirmed_guard` is a pure filter (reads only
+    vehicle['confirmed_fields']) — no DB needed. Direct coverage proving it
+    actually strips a human-confirmed column from an intake update while
+    letting a non-confirmed column through. Task 9 (Confirmă recepția) sets
+    confirmed_fields={vin, location_id, position_id, …}: true and relies on
+    this guard to protect them from later intake overwrites."""
+    vehicle = {'confirmed_fields': {'position_id': True}}
+    patch = {'position_id': 777, 'destinatie': 'Export'}
+
+    filtered = _apply_confirmed_guard(vehicle, patch)
+
+    # Confirmed field stripped — intake must not overwrite it.
+    assert 'position_id' not in filtered
+    # Non-confirmed field passes through unchanged.
+    assert filtered == {'destinatie': 'Export'}
 
 
 def test_older_event_does_not_overwrite_confirmed_bay(require_real_db, bay, logistics_cleanup):
