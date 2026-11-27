@@ -48,6 +48,22 @@ class RuleContext:
 RuleHandler = Callable[[RuleContext], Dict[str, Any]]
 
 
+def _apply_confirmed_guard(vehicle: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
+    """Strip any key from `patch` that's marked confirmed (truthy) in
+    `vehicle['confirmed_fields']` before it reaches `update_vehicle`.
+
+    Human-confirmed data at Recepție (bay, VIN, keys, condition…) is
+    authoritative over the intake feed (design spec §2 acceptance test 3) —
+    an intake-driven update to an EXISTING vehicle's columns must never
+    silently overwrite it. The ordering guard in intake.py already stops
+    the one required scenario (a stale event) before any handler runs;
+    this is the belt-and-suspenders for any vehicle-column update a
+    handler makes on a *non-stale* event.
+    """
+    confirmed = vehicle.get('confirmed_fields') or {}
+    return {k: v for k, v in patch.items() if not confirmed.get(k)}
+
+
 def _create_vehicle_with_reception_task(ctx: RuleContext) -> Dict[str, Any]:
     """Create a new vehicle (etapa_parc='În tranzit', destinatie from
     payload) plus its first Recepție task (due_at from payload['eta']), and
@@ -127,6 +143,18 @@ def handle_eta_actualizat(ctx: RuleContext) -> Dict[str, Any]:
     old_due_at = task.get('due_at')
     new_eta = ctx.payload.get('eta')
     updated_task = ctx.task_repo.update_task(task['id'], {'due_at': new_eta})
+
+    # Stamp last_event_ts so a *later* stale/out-of-order event for this
+    # order is caught by intake.py's ordering guard (deferred from Task 3 —
+    # the create path already sets last_event_ts; this is the only other
+    # path that applies an event to an existing vehicle, so it must too).
+    # Guarded on event_ts not being None: it's Optional on RuleContext, and
+    # writing a NULL here would erase the vehicle's existing guard value,
+    # letting a later genuinely-stale event slip past intake.py's check.
+    if ctx.event_ts is not None:
+        vehicle_patch = _apply_confirmed_guard(existing, {'last_event_ts': ctx.event_ts})
+        if vehicle_patch:
+            ctx.vehicle_repo.update_vehicle(existing['id'], vehicle_patch)
 
     ctx.history_repo.record_history(
         existing['id'], _HISTORY_ETA_UPDATED,
