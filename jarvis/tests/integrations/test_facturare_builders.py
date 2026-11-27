@@ -3,6 +3,10 @@
 _pick_current: choose the live fiscal invoice from a document chain.
 _build_results: group repo rows into the JSON-ready response + not_found list.
 """
+import os
+os.environ.setdefault('DATABASE_URL', 'postgresql://localhost/defaultdb')
+import database  # noqa: F401  prime the import graph before core.integrations (avoids the core.* cold-import cycle)
+
 from datetime import date
 from decimal import Decimal
 
