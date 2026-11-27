@@ -18,6 +18,7 @@ Invocation:
     DATABASE_URL=postgresql://localhost/defaultdb \
         venv/bin/python -m pytest jarvis/tests/logistics/test_intake_eta.py -v
 """
+from logistics.repositories.history_repository import HistoryRepository
 from logistics.repositories.task_repository import TaskRepository
 from logistics.repositories.vehicle_repository import LogisticsVehicleRepository
 from logistics.services.intake import apply_event
@@ -95,3 +96,48 @@ def test_eta_for_unknown_order_upserts(require_real_db, logistics_cleanup):
     assert len(tasks) == 1
     assert tasks[0]['id'] == result['task_id']
     assert tasks[0]['due_at'] == '2026-12-05T09:00:00'
+
+
+def test_eta_for_known_order_without_open_task_is_ignored(require_real_db, logistics_cleanup):
+    task_repo = TaskRepository()
+    history_repo = HistoryRepository()
+
+    order_ref = 'AW-2421'
+    created = apply_event({
+        'order_ref': order_ref,
+        'code': 'Transport in derulare',
+        'event_ts': 1732600000,
+        'payload': {
+            'company_id': TEST_COMPANY_ID,
+            'destinatie': 'Intern',
+            'eta': '2026-12-01T10:00:00',
+        },
+    })
+    assert created['result'] == 'created'
+
+    # Close the Recepție card so the order has no open task left.
+    task_repo.update_task(created['task_id'], {'status': 'Finalizat'})
+
+    result = apply_event({
+        'order_ref': order_ref,
+        'code': 'ETA actualizat',
+        'event_ts': 1732600500,
+        'payload': {
+            'company_id': TEST_COMPANY_ID,
+            'eta': '2026-12-04T12:00:00',
+        },
+    })
+    assert result['result'] == 'ignored'
+    assert result['vehicle_id'] == created['vehicle_id']
+    assert result['task_id'] is None
+
+    # No second Recepție card was created.
+    tasks = task_repo.list_tasks({'vehicle_id': created['vehicle_id'], 'type': 'Recepție'})
+    assert len(tasks) == 1
+    assert tasks[0]['id'] == created['task_id']
+
+    # The late ETA push is still captured in the audit trail.
+    history = history_repo.list_history_for_vehicle(created['vehicle_id'])
+    no_task_rows = [h for h in history if h['event_type'] == 'eta_no_open_task']
+    assert len(no_task_rows) == 1
+    assert no_task_rows[0]['new_value'] == {'eta': '2026-12-04T12:00:00'}

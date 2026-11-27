@@ -28,6 +28,7 @@ _RECEPTIE_ACTION = 'Recepționează mașina'
 _ETAPA_IN_TRANZIT = 'În tranzit'
 _HISTORY_CREATED = 'created'
 _HISTORY_ETA_UPDATED = 'eta_updated'
+_HISTORY_ETA_NO_OPEN_TASK = 'eta_no_open_task'
 _INTAKE_ACTOR = 'intake:jarvis-alpha'
 
 
@@ -113,8 +114,15 @@ def handle_eta_actualizat(ctx: RuleContext) -> Dict[str, Any]:
     task = ctx.task_repo.get_open_reception_task(existing['id'])
     if task is None:
         # No open Recepție card left on this order (e.g. already received) —
-        # nothing to move; still acknowledge the order is known.
-        return {'result': 'updated', 'vehicle_id': existing['id'], 'task_id': None}
+        # nothing to move, so the event had no effect: `ignored` (not
+        # `updated`, which would mislead downstream consumers). Still record
+        # an audit row so the trail captures the late ETA push.
+        ctx.history_repo.record_history(
+            existing['id'], _HISTORY_ETA_NO_OPEN_TASK,
+            None, {'eta': ctx.payload.get('eta')},
+            actor=_INTAKE_ACTOR, company_id=ctx.company_id,
+        )
+        return {'result': 'ignored', 'vehicle_id': existing['id'], 'task_id': None}
 
     old_due_at = task.get('due_at')
     new_eta = ctx.payload.get('eta')
