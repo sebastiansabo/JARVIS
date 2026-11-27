@@ -70,6 +70,25 @@ export interface GetBoardFilters {
   assignee?: string
 }
 
+// ── Move engine (POST /api/logistics/tasks/:id/move) ───────────────────
+// Mirrors jarvis/logistics/services/moves.py::move_task's ctx shape --
+// `block` is required only when `to_status === 'Blocat'` (both fields
+// non-empty); omit it entirely for every other transition.
+export interface MoveTaskContext {
+  block?: { responsible: string; next_action: string }
+}
+
+// Returned task shape is the raw logistics_tasks row (TaskRepository.
+// update_task's RETURNING *) -- wider than KanbanCard, but callers here
+// only need to know the move succeeded before refetching the board.
+export interface MovedTask {
+  id: number
+  status: KanbanBoardStatus
+  block_reason: string | null
+  block_next_action: string | null
+  [key: string]: unknown
+}
+
 export const logisticsApi = {
   // company_id is never sent from the client -- the backend resolves the
   // acting company from current_user (see jarvis/logistics/routes/vehicles.py).
@@ -94,4 +113,10 @@ export const logisticsApi = {
     if (filters.assignee) params.assignee = filters.assignee
     return api.get<{ board: KanbanBoardDict }>('/api/logistics/board', params)
   },
+
+  // See jarvis/logistics/routes/tasks.py::move_task_route -- `ctx` is sent
+  // as-is in the body alongside `to_status`; the backend ignores `block`
+  // for any to_status other than 'Blocat'.
+  moveTask: (id: number, to_status: KanbanBoardStatus, ctx: MoveTaskContext = {}) =>
+    api.post<{ task: MovedTask }>(`/api/logistics/tasks/${id}/move`, { to_status, ...ctx }),
 }

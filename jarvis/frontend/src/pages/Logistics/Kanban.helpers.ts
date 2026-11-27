@@ -3,7 +3,7 @@
 // React (Kanban.helpers.test.ts). No side effects, no API imports -- just
 // plain-object mapping and small derivations over the already-fetched
 // board dict.
-import type { GetBoardFilters, KanbanBoardDict, KanbanBoardStatus, KanbanCard } from '@/api/logistics'
+import type { GetBoardFilters, KanbanBoardDict, KanbanBoardStatus, KanbanCard, MoveTaskContext } from '@/api/logistics'
 
 // Re-export of the fixed column order per the design spec §4.2 -- must stay
 // in sync with BOARD_STATUSES in jarvis/logistics/repositories/task_repository.py.
@@ -131,4 +131,34 @@ export function distinctLocationNames(board: KanbanBoardDict | undefined): strin
     }
   }
   return Array.from(set).sort((a, b) => a.localeCompare(b))
+}
+
+// ── Move engine (Task 8) ─────────────────────────────────────────────────
+
+/** The `Blocat` gate's own validation, mirrored client-side so the "Blochează"
+ * button in the dialog disables itself instead of round-tripping to the
+ * server just to learn both fields are required (backend's `move_task` in
+ * jarvis/logistics/services/moves.py enforces the same rule — this is a UX
+ * head start, not a replacement for it). Whitespace-only input doesn't
+ * count as filled in. */
+export function isBlockFormValid(responsible: string, nextAction: string): boolean {
+  return responsible.trim().length > 0 && nextAction.trim().length > 0
+}
+
+/** Build the `ctx` body `moveTask()` sends for a given transition. Only
+ * `to_status === 'Blocat'` carries a `block` payload (trimmed); every other
+ * transition sends an empty ctx -- the backend only looks at `block` when
+ * moving to Blocat, but there's no reason to send stale/irrelevant form
+ * values along for the ride. */
+export function buildMoveContext(
+  toStatus: KanbanBoardStatus,
+  block: { responsible: string; nextAction: string },
+): MoveTaskContext {
+  if (toStatus !== 'Blocat') return {}
+  return {
+    block: {
+      responsible: block.responsible.trim(),
+      next_action: block.nextAction.trim(),
+    },
+  }
 }

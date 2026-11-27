@@ -1,5 +1,5 @@
 import { useMemo, useState, type DragEvent } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { GripVertical, MoreVertical } from 'lucide-react'
 
@@ -9,6 +9,16 @@ import { EmptyState } from '@/components/shared/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Select,
   SelectTrigger,
@@ -36,22 +46,88 @@ import {
   filterBoardByLocation,
   distinctAssignees,
   distinctLocationNames,
+  isBlockFormValid,
+  buildMoveContext,
   type KanbanFiltersState,
 } from './Kanban.helpers'
 import { extractErrorMessage } from './Parc.helpers'
 
-/**
- * Task 8's move action is NOT implemented here (read-only board per Task 7
- * of the spine plan) -- this is the single, clearly-named seam both the
- * "Mută" dropdown and the desktop drag affordance call into. Task 8 wires
- * it to `POST /api/logistics/tasks/:id/move`; for now it's a no-op that
- * just surfaces a toast so a user who tries isn't left wondering whether
- * anything happened.
- */
-function onMove(card: KanbanCard, toStatus: KanbanBoardStatus) {
-  toast.info(`Mutare în "${toStatus}" — disponibilă într-un pas următor.`, {
-    description: `${card.vehicle_model ?? card.order_ref} · ${card.title}`,
-  })
+/** The card + target status currently pending the "Blocat" dialog's
+ * Responsabil/Următoarea acțiune input -- null when the dialog is closed. */
+interface PendingBlock {
+  card: KanbanCard
+}
+
+function BlockTaskDialog({
+  pending,
+  responsible,
+  nextAction,
+  isPending,
+  onResponsibleChange,
+  onNextActionChange,
+  onCancel,
+  onConfirm,
+}: {
+  pending: PendingBlock | null
+  responsible: string
+  nextAction: string
+  isPending: boolean
+  onResponsibleChange: (value: string) => void
+  onNextActionChange: (value: string) => void
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <Dialog open={pending !== null} onOpenChange={(open) => { if (!open) onCancel() }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Blochează task-ul</DialogTitle>
+        </DialogHeader>
+
+        {pending && (
+          <p className="-mt-2 text-xs text-muted-foreground">
+            {pending.card.vehicle_model ?? pending.card.order_ref} · {pending.card.title}
+          </p>
+        )}
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="block-responsible">Responsabil</Label>
+            <Input
+              id="block-responsible"
+              value={responsible}
+              onChange={(e) => onResponsibleChange(e.target.value)}
+              placeholder="Cine se ocupă de deblocare"
+              autoFocus
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="block-next-action">Următoarea acțiune</Label>
+            <Textarea
+              id="block-next-action"
+              value={nextAction}
+              onChange={(e) => onNextActionChange(e.target.value)}
+              placeholder="Ce trebuie făcut pentru a debloca task-ul"
+              rows={3}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onCancel} disabled={isPending}>
+            Anulează
+          </Button>
+          <Button
+            type="button"
+            onClick={onConfirm}
+            disabled={!isBlockFormValid(responsible, nextAction) || isPending}
+          >
+            Blochează
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 function TypeBadge({ type }: { type: string }) {
@@ -64,12 +140,14 @@ function KanbanTaskCard({
   isDragging,
   onDragStart,
   onDragEnd,
+  onMove,
 }: {
   card: KanbanCard
   currentStatus: KanbanBoardStatus
   isDragging: boolean
   onDragStart: (e: DragEvent<HTMLDivElement>) => void
   onDragEnd: () => void
+  onMove: (card: KanbanCard, toStatus: KanbanBoardStatus) => void
 }) {
   const targets = moveTargets(currentStatus)
 
@@ -153,6 +231,7 @@ function KanbanColumn({
   onDragOver,
   onDragLeave,
   onDrop,
+  onMove,
 }: {
   status: KanbanBoardStatus
   cards: KanbanCard[]
@@ -165,6 +244,7 @@ function KanbanColumn({
   onDragOver: (e: DragEvent<HTMLDivElement>) => void
   onDragLeave: (e: DragEvent<HTMLDivElement>) => void
   onDrop: (e: DragEvent<HTMLDivElement>) => void
+  onMove: (card: KanbanCard, toStatus: KanbanBoardStatus) => void
 }) {
   return (
     <div
@@ -197,6 +277,7 @@ function KanbanColumn({
                 isDragging={draggedCardId === card.id}
                 onDragStart={(e) => onCardDragStart(e, card)}
                 onDragEnd={onCardDragEnd}
+                onMove={onMove}
               />
             ))}
           </div>
@@ -207,6 +288,7 @@ function KanbanColumn({
 }
 
 export default function Kanban() {
+  const queryClient = useQueryClient()
   const [filters, setFilters] = useState<KanbanFiltersState>(EMPTY_KANBAN_FILTERS)
   const apiFilters = useMemo(() => toGetBoardFilters(filters), [filters])
 
@@ -242,10 +324,62 @@ export default function Kanban() {
     setFilters(EMPTY_KANBAN_FILTERS)
   }
 
+  // ── Move engine (Task 8) ────────────────────────────────────────────────
+  // The single write path every "Mută" affordance (dropdown + drag) calls
+  // into. Moving to 'Blocat' needs a Responsabil + Următoarea acțiune first
+  // (the backend gate in jarvis/logistics/services/moves.py rejects a bare
+  // move), so that transition opens a small dialog instead of mutating
+  // immediately; every other transition mutates straight away.
+  const [pendingBlock, setPendingBlock] = useState<PendingBlock | null>(null)
+  const [blockResponsible, setBlockResponsible] = useState('')
+  const [blockNextAction, setBlockNextAction] = useState('')
+
+  const moveMutation = useMutation({
+    mutationFn: ({ card, toStatus, ctx }: {
+      card: KanbanCard
+      toStatus: KanbanBoardStatus
+      ctx: ReturnType<typeof buildMoveContext>
+    }) => logisticsApi.moveTask(card.id, toStatus, ctx),
+    onSuccess: () => {
+      // Refetch instead of a local patch -- a move can change which column
+      // (and, via Task 9/10's later gates, which vehicle fields) a card
+      // belongs to, so the board query is the single source of truth.
+      queryClient.invalidateQueries({ queryKey: ['logistics', 'board'] })
+      setPendingBlock(null)
+      setBlockResponsible('')
+      setBlockNextAction('')
+    },
+    onError: (err) => {
+      toast.error(extractErrorMessage(err))
+    },
+  })
+
+  function onMove(card: KanbanCard, toStatus: KanbanBoardStatus) {
+    if (toStatus === 'Blocat') {
+      setBlockResponsible('')
+      setBlockNextAction('')
+      setPendingBlock({ card })
+      return
+    }
+    moveMutation.mutate({ card, toStatus, ctx: buildMoveContext(toStatus, { responsible: '', nextAction: '' }) })
+  }
+
+  function handleBlockCancel() {
+    setPendingBlock(null)
+  }
+
+  function handleBlockConfirm() {
+    if (!pendingBlock || !isBlockFormValid(blockResponsible, blockNextAction)) return
+    moveMutation.mutate({
+      card: pendingBlock.card,
+      toStatus: 'Blocat',
+      ctx: buildMoveContext('Blocat', { responsible: blockResponsible, nextAction: blockNextAction }),
+    })
+  }
+
   // Drag state -- the card currently being dragged (read by handleDrop) and
   // which column it's hovering over (highlight only). Mirrors
-  // CarPark/Dispo/KanbanBoard.tsx's established pattern; the actual move is
-  // still a no-op stub (onMove) -- Task 8 wires the real transition.
+  // CarPark/Dispo/KanbanBoard.tsx's established pattern.
   const [draggedCard, setDraggedCard] = useState<KanbanCard | null>(null)
   const [dragOverStatus, setDragOverStatus] = useState<KanbanBoardStatus | null>(null)
 
@@ -352,10 +486,22 @@ export default function Kanban() {
               onDragOver={(e) => handleColumnDragOver(e, column.key)}
               onDragLeave={(e) => handleColumnDragLeave(e, column.key)}
               onDrop={(e) => handleDrop(e, column.key)}
+              onMove={onMove}
             />
           ))}
         </div>
       )}
+
+      <BlockTaskDialog
+        pending={pendingBlock}
+        responsible={blockResponsible}
+        nextAction={blockNextAction}
+        isPending={moveMutation.isPending}
+        onResponsibleChange={setBlockResponsible}
+        onNextActionChange={setBlockNextAction}
+        onCancel={handleBlockCancel}
+        onConfirm={handleBlockConfirm}
+      />
     </div>
   )
 }

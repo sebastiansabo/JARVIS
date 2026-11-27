@@ -10,6 +10,8 @@ import {
   filterBoardByLocation,
   distinctAssignees,
   distinctLocationNames,
+  isBlockFormValid,
+  buildMoveContext,
   type KanbanFiltersState,
 } from './Kanban.helpers'
 import type { KanbanBoardDict, KanbanCard } from '@/api/logistics'
@@ -146,5 +148,29 @@ describe('distinctLocationNames', () => {
       Finalizat: [],
     }
     expect(distinctLocationNames(board)).toEqual(['Atelier', 'Rampă Sud'])
+  })
+})
+
+describe('isBlockFormValid', () => {
+  it('requires both fields non-empty after trimming', () => {
+    expect(isBlockFormValid('Ion Pop', 'Comandă piesă')).toBe(true)
+    expect(isBlockFormValid('', 'Comandă piesă')).toBe(false)
+    expect(isBlockFormValid('Ion Pop', '')).toBe(false)
+    expect(isBlockFormValid('   ', '   ')).toBe(false)
+    expect(isBlockFormValid('', '')).toBe(false)
+  })
+})
+
+describe('buildMoveContext', () => {
+  it('builds a trimmed block payload only when moving to Blocat', () => {
+    expect(buildMoveContext('Blocat', { responsible: '  Ion Pop  ', nextAction: ' Comandă piesă ' })).toEqual({
+      block: { responsible: 'Ion Pop', next_action: 'Comandă piesă' },
+    })
+  })
+
+  it('sends an empty ctx for every other transition, ignoring the block form', () => {
+    expect(buildMoveContext('În lucru', { responsible: 'Ion Pop', nextAction: 'Comandă piesă' })).toEqual({})
+    expect(buildMoveContext('De făcut', { responsible: '', nextAction: '' })).toEqual({})
+    expect(buildMoveContext('Finalizat', { responsible: '', nextAction: '' })).toEqual({})
   })
 })
