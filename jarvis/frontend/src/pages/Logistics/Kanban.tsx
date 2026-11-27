@@ -35,7 +35,7 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { logisticsApi, type KanbanBoardStatus, type KanbanCard } from '@/api/logistics'
+import { logisticsApi, type KanbanBoardStatus, type KanbanCard, type MoveTaskContext } from '@/api/logistics'
 import {
   EMPTY_KANBAN_FILTERS,
   groupBoardIntoColumns,
@@ -48,9 +48,14 @@ import {
   distinctLocationNames,
   isBlockFormValid,
   buildMoveContext,
+  EMPTY_RECEPTION_FORM,
+  isReceptionFormValid,
+  buildReceptionContext,
   type KanbanFiltersState,
+  type ReceptionFormState,
 } from './Kanban.helpers'
 import { extractErrorMessage } from './Parc.helpers'
+import { ConfirmReceptionDialog, type PendingReception } from './components/ConfirmReceptionDialog'
 
 /** The card + target status currently pending the "Blocat" dialog's
  * Responsabil/Următoarea acțiune input -- null when the dialog is closed. */
@@ -329,16 +334,21 @@ export default function Kanban() {
   // into. Moving to 'Blocat' needs a Responsabil + Următoarea acțiune first
   // (the backend gate in jarvis/logistics/services/moves.py rejects a bare
   // move), so that transition opens a small dialog instead of mutating
-  // immediately; every other transition mutates straight away.
+  // immediately; moving a `Recepție` card to 'Finalizat' ("Confirmă
+  // recepția" -- Task 9) needs its own 5-field dialog for the same reason.
+  // Every other transition mutates straight away.
   const [pendingBlock, setPendingBlock] = useState<PendingBlock | null>(null)
   const [blockResponsible, setBlockResponsible] = useState('')
   const [blockNextAction, setBlockNextAction] = useState('')
+
+  const [pendingReception, setPendingReception] = useState<PendingReception | null>(null)
+  const [receptionForm, setReceptionForm] = useState<ReceptionFormState>(EMPTY_RECEPTION_FORM)
 
   const moveMutation = useMutation({
     mutationFn: ({ card, toStatus, ctx }: {
       card: KanbanCard
       toStatus: KanbanBoardStatus
-      ctx: ReturnType<typeof buildMoveContext>
+      ctx: MoveTaskContext
     }) => logisticsApi.moveTask(card.id, toStatus, ctx),
     onSuccess: () => {
       // Refetch instead of a local patch -- a move can change which column
@@ -348,6 +358,8 @@ export default function Kanban() {
       setPendingBlock(null)
       setBlockResponsible('')
       setBlockNextAction('')
+      setPendingReception(null)
+      setReceptionForm(EMPTY_RECEPTION_FORM)
     },
     onError: (err) => {
       toast.error(extractErrorMessage(err))
@@ -359,6 +371,11 @@ export default function Kanban() {
       setBlockResponsible('')
       setBlockNextAction('')
       setPendingBlock({ card })
+      return
+    }
+    if (toStatus === 'Finalizat' && card.type === 'Recepție') {
+      setReceptionForm(EMPTY_RECEPTION_FORM)
+      setPendingReception({ card })
       return
     }
     moveMutation.mutate({ card, toStatus, ctx: buildMoveContext(toStatus, { responsible: '', nextAction: '' }) })
@@ -374,6 +391,23 @@ export default function Kanban() {
       card: pendingBlock.card,
       toStatus: 'Blocat',
       ctx: buildMoveContext('Blocat', { responsible: blockResponsible, nextAction: blockNextAction }),
+    })
+  }
+
+  function handleReceptionCancel() {
+    setPendingReception(null)
+  }
+
+  function handleReceptionFieldChange(field: keyof ReceptionFormState, value: string) {
+    setReceptionForm((prev) => ({ ...prev, [field]: value }))
+  }
+
+  function handleReceptionConfirm() {
+    if (!pendingReception || !isReceptionFormValid(receptionForm)) return
+    moveMutation.mutate({
+      card: pendingReception.card,
+      toStatus: 'Finalizat',
+      ctx: buildReceptionContext(receptionForm),
     })
   }
 
@@ -501,6 +535,15 @@ export default function Kanban() {
         onNextActionChange={setBlockNextAction}
         onCancel={handleBlockCancel}
         onConfirm={handleBlockConfirm}
+      />
+
+      <ConfirmReceptionDialog
+        pending={pendingReception}
+        form={receptionForm}
+        isPending={moveMutation.isPending}
+        onFieldChange={handleReceptionFieldChange}
+        onCancel={handleReceptionCancel}
+        onConfirm={handleReceptionConfirm}
       />
     </div>
   )

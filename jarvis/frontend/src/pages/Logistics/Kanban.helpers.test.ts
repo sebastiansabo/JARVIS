@@ -12,7 +12,11 @@ import {
   distinctLocationNames,
   isBlockFormValid,
   buildMoveContext,
+  isReceptionFormValid,
+  buildReceptionContext,
+  EMPTY_RECEPTION_FORM,
   type KanbanFiltersState,
+  type ReceptionFormState,
 } from './Kanban.helpers'
 import type { KanbanBoardDict, KanbanCard } from '@/api/logistics'
 
@@ -172,5 +176,63 @@ describe('buildMoveContext', () => {
     expect(buildMoveContext('În lucru', { responsible: 'Ion Pop', nextAction: 'Comandă piesă' })).toEqual({})
     expect(buildMoveContext('De făcut', { responsible: '', nextAction: '' })).toEqual({})
     expect(buildMoveContext('Finalizat', { responsible: '', nextAction: '' })).toEqual({})
+  })
+})
+
+const receptionForm = (overrides: Partial<ReceptionFormState> = {}): ReceptionFormState => ({
+  vin: 'WVWZZZ1KZAW000001',
+  location_id: '3',
+  position_id: '12',
+  keys: '2',
+  condition: 'Bună',
+  ...overrides,
+})
+
+describe('isReceptionFormValid', () => {
+  it('is valid when every field is filled, including keys=0', () => {
+    expect(isReceptionFormValid(receptionForm())).toBe(true)
+    expect(isReceptionFormValid(receptionForm({ keys: '0' }))).toBe(true)
+  })
+
+  it('is invalid when the empty starting form is untouched', () => {
+    expect(isReceptionFormValid(EMPTY_RECEPTION_FORM)).toBe(false)
+  })
+
+  it.each(['vin', 'condition'] as const)('is invalid when %s is blank/whitespace-only', (field) => {
+    expect(isReceptionFormValid(receptionForm({ [field]: '' }))).toBe(false)
+    expect(isReceptionFormValid(receptionForm({ [field]: '   ' }))).toBe(false)
+  })
+
+  it.each(['location_id', 'position_id'] as const)('is invalid when %s is 0, negative, or non-numeric', (field) => {
+    expect(isReceptionFormValid(receptionForm({ [field]: '0' }))).toBe(false)
+    expect(isReceptionFormValid(receptionForm({ [field]: '-1' }))).toBe(false)
+    expect(isReceptionFormValid(receptionForm({ [field]: 'abc' }))).toBe(false)
+    expect(isReceptionFormValid(receptionForm({ [field]: '' }))).toBe(false)
+  })
+
+  it('is invalid when keys is non-numeric or negative', () => {
+    expect(isReceptionFormValid(receptionForm({ keys: 'abc' }))).toBe(false)
+    expect(isReceptionFormValid(receptionForm({ keys: '-1' }))).toBe(false)
+    expect(isReceptionFormValid(receptionForm({ keys: '' }))).toBe(false)
+  })
+})
+
+describe('buildReceptionContext', () => {
+  it('trims strings and coerces the numeric fields', () => {
+    expect(buildReceptionContext(receptionForm({
+      vin: '  WVWZZZ1KZAW000001  ',
+      location_id: '3',
+      position_id: '12',
+      keys: '0',
+      condition: '  Bună  ',
+    }))).toEqual({
+      reception: {
+        vin: 'WVWZZZ1KZAW000001',
+        location_id: 3,
+        position_id: 12,
+        keys: 0,
+        condition: 'Bună',
+      },
+    })
   })
 })

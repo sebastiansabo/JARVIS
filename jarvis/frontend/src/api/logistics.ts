@@ -73,9 +73,19 @@ export interface GetBoardFilters {
 // ── Move engine (POST /api/logistics/tasks/:id/move) ───────────────────
 // Mirrors jarvis/logistics/services/moves.py::move_task's ctx shape --
 // `block` is required only when `to_status === 'Blocat'` (both fields
-// non-empty); omit it entirely for every other transition.
+// non-empty); `reception` is required only when moving a `Recepție` task to
+// `Finalizat` ("Confirmă recepția" -- Task 9, all 5 fields non-empty, else
+// the backend rejects with `MoveError('reception_incomplete')`). Omit
+// whichever one doesn't apply to the transition being made.
 export interface MoveTaskContext {
   block?: { responsible: string; next_action: string }
+  reception?: {
+    vin: string
+    location_id: number
+    position_id: number
+    keys: number
+    condition: string
+  }
 }
 
 // Returned task shape is the raw logistics_tasks row (TaskRepository.

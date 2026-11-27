@@ -162,3 +162,60 @@ export function buildMoveContext(
     },
   }
 }
+
+// ── Reception gate (Task 9: Recepție -> Finalizat, "Confirmă recepția") ──
+
+/** Raw <input> values for the ConfirmReceptionDialog -- every field is a
+ * string (what a controlled <input> hands back), including the two that are
+ * numeric IDs/counts on the wire (`location_id`/`position_id`/`keys`); see
+ * buildReceptionContext for the string -> number conversion. */
+export interface ReceptionFormState {
+  vin: string
+  location_id: string
+  position_id: string
+  keys: string
+  condition: string
+}
+
+export const EMPTY_RECEPTION_FORM: ReceptionFormState = {
+  vin: '', location_id: '', position_id: '', keys: '', condition: '',
+}
+
+/** A non-negative whole number, as typed into a plain text/number <input>
+ * (optional surrounding whitespace only -- no decimals, no sign). */
+function isWholeNumberString(value: string): boolean {
+  return /^\d+$/.test(value.trim())
+}
+
+/** The reception gate's own validation, mirrored client-side so the
+ * "Confirmă recepția" button disables itself instead of round-tripping to
+ * the server just to learn a field is missing (backend's `move_task` in
+ * jarvis/logistics/services/moves.py enforces the same rule via
+ * `_require_reception_fields` -- this is a UX head start, not a replacement
+ * for it). `location_id`/`position_id` must be a positive id (0 is never a
+ * real row); `keys` may be 0 (a car handed over with no keys is still a
+ * valid, complete reception). */
+export function isReceptionFormValid(form: ReceptionFormState): boolean {
+  return (
+    form.vin.trim().length > 0 &&
+    isWholeNumberString(form.location_id) && Number(form.location_id.trim()) > 0 &&
+    isWholeNumberString(form.position_id) && Number(form.position_id.trim()) > 0 &&
+    isWholeNumberString(form.keys) &&
+    form.condition.trim().length > 0
+  )
+}
+
+/** Build the `ctx.reception` body `moveTask()` sends for the "Confirmă
+ * recepția" move (vin/condition trimmed; location_id/position_id/keys
+ * coerced to numbers) -- call only once `isReceptionFormValid` is true. */
+export function buildReceptionContext(form: ReceptionFormState): MoveTaskContext {
+  return {
+    reception: {
+      vin: form.vin.trim(),
+      location_id: Number(form.location_id.trim()),
+      position_id: Number(form.position_id.trim()),
+      keys: Number(form.keys.trim()),
+      condition: form.condition.trim(),
+    },
+  }
+}
