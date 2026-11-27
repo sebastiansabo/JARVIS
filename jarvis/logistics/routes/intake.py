@@ -4,8 +4,8 @@
 active mapping rules it's dispatched against.
 
 Server-to-server surface — jarvis-alpha is not a logged-in JARVIS user, so
-these routes are NOT behind @login_required. Auth is an optional shared
-secret (see `_check_intake_auth`) instead.
+these routes are NOT behind @login_required. Auth is a fail-closed
+shared-secret gate (see `_check_intake_auth`) instead.
 
 No SQL here (per repo convention) — every route delegates to `apply_event`
 or a Task-1 repository. Exception mapping:
@@ -13,6 +13,7 @@ or a Task-1 repository. Exception mapping:
   PermissionError -> 403
   anything else   -> 500 (logged)
 """
+import hmac
 import logging
 import os
 
@@ -27,20 +28,27 @@ logger = logging.getLogger('jarvis.logistics')
 
 _INTAKE_SECRET_ENV = 'LOGISTICS_INTAKE_SECRET'
 _INTAKE_SECRET_HEADER = 'X-Intake-Secret'
+# Explicit opt-in to run the intake surface with NO shared secret — dev/test
+# only. Without this, an unset LOGISTICS_INTAKE_SECRET is a hard 503, so a
+# misconfigured prod deploy fails closed instead of silently accepting
+# unauthenticated writes.
+_INTAKE_ALLOW_UNAUTH_ENV = 'LOGISTICS_INTAKE_ALLOW_UNAUTH'
 
-# Set True the first time we let a request through with no shared-secret
-# configured, so the "auth is unconfigured" warning only fires once per
-# process instead of once per request.
+# Log the "running unauthenticated via explicit bypass" warning once per
+# process rather than once per request.
 _unconfigured_auth_warned = False
 
 
 def _check_intake_auth():
-    """Shared-secret gate for the jarvis-alpha feed.
+    """Fail-closed shared-secret gate for the jarvis-alpha feed.
 
-    LOGISTICS_INTAKE_SECRET set -> the request's X-Intake-Secret header must
-    match it exactly, else 401. LOGISTICS_INTAKE_SECRET unset -> every
-    request is allowed through (dev mode), but we log a warning once per
-    process so an unconfigured-auth deployment doesn't go unnoticed.
+    - LOGISTICS_INTAKE_SECRET set -> the request's X-Intake-Secret header
+      must match it (constant-time `hmac.compare_digest`), else 401.
+    - LOGISTICS_INTAKE_SECRET unset -> reject with 503 UNLESS
+      LOGISTICS_INTAKE_ALLOW_UNAUTH == '1' (explicit dev/test bypass), in
+      which case allow the request and warn once per process. A missing
+      secret is a misconfiguration, not an implicit "open" — we never accept
+      unauthenticated writes by default.
 
     Returns None when the request may proceed, or a (response, status)
     tuple to return immediately otherwise.
@@ -48,16 +56,24 @@ def _check_intake_auth():
     global _unconfigured_auth_warned
     secret = os.environ.get(_INTAKE_SECRET_ENV)
     if not secret:
-        if not _unconfigured_auth_warned:
-            logger.warning(
-                '%s is not set — /api/logistics/intake/events is accepting '
-                'requests with NO shared-secret auth (dev mode only; set '
-                '%s before exposing this endpoint in any shared/prod env)',
-                _INTAKE_SECRET_ENV, _INTAKE_SECRET_ENV,
-            )
-            _unconfigured_auth_warned = True
-        return None
-    if request.headers.get(_INTAKE_SECRET_HEADER) != secret:
+        if os.environ.get(_INTAKE_ALLOW_UNAUTH_ENV) == '1':
+            if not _unconfigured_auth_warned:
+                logger.warning(
+                    '%s is not set but %s=1 — the logistics intake surface is '
+                    'accepting requests with NO shared-secret auth (dev/test '
+                    'only; set %s before exposing this endpoint anywhere else)',
+                    _INTAKE_SECRET_ENV, _INTAKE_ALLOW_UNAUTH_ENV, _INTAKE_SECRET_ENV,
+                )
+                _unconfigured_auth_warned = True
+            return None
+        logger.error(
+            '%s is not set and %s!=1 — rejecting logistics intake request '
+            '(503). Configure the shared secret to enable the endpoint.',
+            _INTAKE_SECRET_ENV, _INTAKE_ALLOW_UNAUTH_ENV,
+        )
+        return jsonify({'error': 'Intake auth not configured'}), 503
+    provided = request.headers.get(_INTAKE_SECRET_HEADER, '')
+    if not hmac.compare_digest(provided, secret):
         return jsonify({'error': 'Unauthorized'}), 401
     return None
 
@@ -135,9 +151,26 @@ def intake_events():
 @logistics_bp.route('/api/logistics/intake/mapping', methods=['GET'])
 def intake_mapping():
     """Active mapping rules (trigger_code -> action) — the published rule
-    map the intake pipeline dispatches against (Setări → Reguli Dispo)."""
+    map the intake pipeline dispatches against (Setări → Reguli Dispo).
+
+    Tenant-scoped: `company_id` is a REQUIRED query param. Without it (or
+    with a non-integer value) this 400s rather than leaking every company's
+    rules — the result is always filtered to the one requested tenant.
+    """
+    auth_err = _check_intake_auth()
+    if auth_err is not None:
+        return auth_err
+
+    raw_company_id = request.args.get('company_id')
     try:
-        rules = MappingRuleRepository().get_active_rules()
+        if raw_company_id is None or raw_company_id == '':
+            raise ValueError('company_id query param is required')
+        company_id = int(raw_company_id)
+    except (ValueError, TypeError):
+        return jsonify({'error': 'company_id query param is required and must be an integer'}), 400
+
+    try:
+        rules = MappingRuleRepository().get_active_rules(company_id=company_id)
         return jsonify({'rules': rules}), 200
     except Exception as e:
         logger.error(f'Fetching active mapping rules failed: {e}', exc_info=True)

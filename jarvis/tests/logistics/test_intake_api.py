@@ -1,11 +1,16 @@
 """Real-DB integration tests for the logistics intake HTTP surface —
 POST /api/logistics/intake/events + GET /api/logistics/intake/mapping
-(Task 5 of the spine plan).
+(Task 5 of the spine plan; auth + tenant-scoping hardening from review).
 
 Uses the real Flask app (`app.py`) so the actual blueprint registration is
 exercised end-to-end (mirrors jarvis/tests/carpark/test_photo_upload.py).
 Unlike the carpark route tests, these endpoints are the server-to-server
-jarvis-alpha feed — no @login_required, no session login needed.
+jarvis-alpha feed — no @login_required. Auth is a FAIL-CLOSED shared-secret
+gate: with no `LOGISTICS_INTAKE_SECRET` set, the endpoint 503s unless the
+explicit `LOGISTICS_INTAKE_ALLOW_UNAUTH=1` dev/test bypass is present.
+
+Env is controlled per-test with monkeypatch.setenv/delenv (auto-undone), so
+these tests never depend on (or leak into) the ambient process environment.
 
 Runs against localhost/defaultdb via the probe in conftest.py; DB-backed
 assertions use the sentinel `TEST_COMPANY_ID` (990002) and the
@@ -30,11 +35,25 @@ from .conftest import TEST_COMPANY_ID  # noqa: E402
 _EVENTS_URL = '/api/logistics/intake/events'
 _MAPPING_URL = '/api/logistics/intake/mapping'
 
+# A second sentinel company used only to prove /mapping scoping — distinct
+# from TEST_COMPANY_ID so a cross-tenant leak would be visible.
+_OTHER_COMPANY_ID = 990003
+
 
 @pytest.fixture
 def client():
     flask_app.config['TESTING'] = True
     return flask_app.test_client()
+
+
+@pytest.fixture
+def allow_unauth(monkeypatch):
+    """Put the intake auth gate into the explicit dev/test bypass mode:
+    no shared secret configured, but LOGISTICS_INTAKE_ALLOW_UNAUTH=1 so
+    requests are accepted. Lets the body/validation/scoping behaviour be
+    tested without threading a secret header through every request."""
+    monkeypatch.delenv('LOGISTICS_INTAKE_SECRET', raising=False)
+    monkeypatch.setenv('LOGISTICS_INTAKE_ALLOW_UNAUTH', '1')
 
 
 def _count_vehicles(order_ref: str) -> int:
@@ -47,7 +66,54 @@ def _count_vehicles(order_ref: str) -> int:
         release_db(conn)
 
 
-def test_post_twice_created_then_duplicate_one_vehicle(client, require_real_db, logistics_cleanup):
+# ── Auth gate (fail-closed) ──────────────────────────────────────────────
+
+def test_post_without_secret_and_no_bypass_returns_503(client, monkeypatch):
+    """Fail-closed: no LOGISTICS_INTAKE_SECRET and no bypass flag -> 503, the
+    request never reaches validation/apply_event."""
+    monkeypatch.delenv('LOGISTICS_INTAKE_SECRET', raising=False)
+    monkeypatch.delenv('LOGISTICS_INTAKE_ALLOW_UNAUTH', raising=False)
+    r = client.post(_EVENTS_URL, json={
+        'order_ref': 'AW-NOAUTH', 'code': 'Transport in derulare',
+        'event_ts': 1732600000, 'payload': {},
+    })
+    assert r.status_code == 503
+    assert r.get_json() == {'error': 'Intake auth not configured'}
+
+
+def test_post_with_secret_correct_header_works_wrong_header_401(client, monkeypatch, require_real_db, logistics_cleanup):
+    """With a shared secret configured: correct X-Intake-Secret header is
+    accepted; wrong/missing header is 401."""
+    monkeypatch.setenv('LOGISTICS_INTAKE_SECRET', 's3cr3t-token')
+    monkeypatch.delenv('LOGISTICS_INTAKE_ALLOW_UNAUTH', raising=False)
+
+    order_ref = 'AW-INTAKE-API-SECRET'
+    event = {
+        'order_ref': order_ref,
+        'code': 'Transport in derulare',
+        'event_ts': 1732600300,
+        'payload': {'company_id': TEST_COMPANY_ID, 'destinatie': 'Intern'},
+    }
+
+    # Wrong header -> 401, nothing created.
+    bad = client.post(_EVENTS_URL, json=event, headers={'X-Intake-Secret': 'nope'})
+    assert bad.status_code == 401
+    assert _count_vehicles(order_ref) == 0
+
+    # Missing header -> 401.
+    missing = client.post(_EVENTS_URL, json=event)
+    assert missing.status_code == 401
+
+    # Correct header -> processed.
+    ok = client.post(_EVENTS_URL, json=event, headers={'X-Intake-Secret': 's3cr3t-token'})
+    assert ok.status_code == 200
+    assert ok.get_json()['result'] == 'created'
+    assert _count_vehicles(order_ref) == 1
+
+
+# ── Events: create / duplicate / malformed ───────────────────────────────
+
+def test_post_twice_created_then_duplicate_one_vehicle(client, allow_unauth, require_real_db, logistics_cleanup):
     order_ref = 'AW-INTAKE-API-1'
     event = {
         'order_ref': order_ref,
@@ -77,7 +143,7 @@ def test_post_twice_created_then_duplicate_one_vehicle(client, require_real_db, 
     assert vehicle['id'] == first_body['vehicle_id']
 
 
-def test_malformed_body_returns_ignored_and_logs_event(client, require_real_db):
+def test_malformed_body_returns_ignored_and_logs_event(client, allow_unauth, require_real_db):
     marker_code = 'TEST-MALFORMED-INTAKE-MARKER'
 
     def _delete_marker_rows():
@@ -117,7 +183,7 @@ def test_malformed_body_returns_ignored_and_logs_event(client, require_real_db):
         _delete_marker_rows()
 
 
-def test_malformed_non_json_body_returns_ignored_not_500(client, require_real_db):
+def test_malformed_non_json_body_returns_ignored_not_500(client, allow_unauth, require_real_db):
     """A body that isn't even JSON must also be a soft 'ignored' 200, never
     a 500 — jarvis-alpha retries any non-2xx, so a permanently-malformed
     delivery must not retry forever."""
@@ -126,9 +192,66 @@ def test_malformed_non_json_body_returns_ignored_not_500(client, require_real_db
     assert r.get_json() == {'result': 'ignored'}
 
 
-def test_mapping_endpoint_returns_rules_list(client, require_real_db):
+# ── Mapping: auth + tenant scoping ────────────────────────────────────────
+
+def test_mapping_without_company_id_returns_400(client, allow_unauth, require_real_db):
     r = client.get(_MAPPING_URL)
-    assert r.status_code == 200
-    body = r.get_json()
-    assert 'rules' in body
-    assert isinstance(body['rules'], list)
+    assert r.status_code == 400
+    assert 'company_id' in r.get_json()['error']
+
+
+def test_mapping_scopes_to_requested_company(client, allow_unauth, require_real_db):
+    """Seed an active rule under each of two companies and assert GET
+    /mapping?company_id=<X> returns ONLY company X's rules — no cross-tenant
+    leak."""
+    def _seed(trigger_code, company_id):
+        conn = get_db()
+        try:
+            cur = get_cursor(conn)
+            cur.execute(
+                "INSERT INTO logistics_mapping_rules (trigger_code, mode, is_active, company_id) "
+                "VALUES (%s, 'Activ', TRUE, %s)",
+                (trigger_code, company_id),
+            )
+            conn.commit()
+        finally:
+            release_db(conn)
+
+    def _cleanup():
+        conn = get_db()
+        try:
+            cur = get_cursor(conn)
+            cur.execute(
+                'DELETE FROM logistics_mapping_rules WHERE company_id IN (%s, %s)',
+                (TEST_COMPANY_ID, _OTHER_COMPANY_ID),
+            )
+            conn.commit()
+        finally:
+            release_db(conn)
+
+    _cleanup()  # defensive
+    try:
+        _seed('MINE-RULE', TEST_COMPANY_ID)
+        _seed('OTHER-RULE', _OTHER_COMPANY_ID)
+
+        r = client.get(_MAPPING_URL, query_string={'company_id': TEST_COMPANY_ID})
+        assert r.status_code == 200
+        rules = r.get_json()['rules']
+        company_ids = {rule['company_id'] for rule in rules}
+        assert company_ids == {TEST_COMPANY_ID}, (
+            f'/mapping leaked rules for other companies: {company_ids}'
+        )
+        trigger_codes = {rule['trigger_code'] for rule in rules}
+        assert 'MINE-RULE' in trigger_codes
+        assert 'OTHER-RULE' not in trigger_codes
+    finally:
+        _cleanup()
+
+
+def test_mapping_requires_auth(client, monkeypatch):
+    """The read endpoint is behind the same fail-closed gate as the write
+    endpoint — no secret + no bypass -> 503, before any DB read."""
+    monkeypatch.delenv('LOGISTICS_INTAKE_SECRET', raising=False)
+    monkeypatch.delenv('LOGISTICS_INTAKE_ALLOW_UNAUTH', raising=False)
+    r = client.get(_MAPPING_URL, query_string={'company_id': TEST_COMPANY_ID})
+    assert r.status_code == 503
